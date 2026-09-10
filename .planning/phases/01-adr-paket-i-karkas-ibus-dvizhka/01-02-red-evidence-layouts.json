@@ -1,0 +1,6 @@
+{
+  "command": "mise exec -- go test ./layouts/ -run TestGolden -count=1 -v",
+  "output": "# tests 3\n# pass 0\n# fail 3\nnot ok 1 - TestGolden_SpecExamples\nnot ok 2 - TestGolden_Punctuation\nnot ok 3 - TestGolden_TableSize\n",
+  "targetTest": "TestGolden_SpecExamples",
+  "exitCode": 1
+}
