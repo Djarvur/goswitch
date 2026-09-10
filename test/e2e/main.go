@@ -25,12 +25,15 @@ import (
 // Stand timing knobs: every value is a behavioral constant of the stand,
 // named once instead of sprinkled through call sites.
 const (
-	defaultPacingMs = 40 // -pacing default: ms between injected keystrokes
-	tapWindowFactor = 3  // key taps use pacing×3 so a multi-tap fits the 300 ms window
-	logPollInterval = 25 * time.Millisecond
-	killGrace       = 3 * time.Second  // SIGTERM → SIGKILL grace for the daemon
-	teardownTimeout = 15 * time.Second // whole-teardown budget on Ctrl-C
-	excerptLines    = 40               // daemon log tail dumped on FAIL
+	defaultPacingMs      = 40 // -pacing default: ms between injected keystrokes
+	tapWindowFactor      = 3  // key taps use pacing×3 so a multi-tap fits the 300 ms window
+	logPollInterval      = 25 * time.Millisecond
+	killGrace            = 3 * time.Second   // SIGTERM → SIGKILL grace for the daemon
+	teardownTimeout      = 15 * time.Second  // whole-teardown budget on Ctrl-C
+	restoreVerifyTimeout = 10 * time.Second  // post-teardown gsettings readback budget
+	cmdTimeout           = 15 * time.Second  // hard deadline for EVERY external CLI call
+	caseTimeout          = 180 * time.Second // hard watchdog over the whole case body
+	excerptLines         = 40                // daemon log tail dumped on FAIL
 )
 
 // gsettings input-source keys — the live-desktop state the stand snapshots
@@ -77,10 +80,12 @@ func main() {
 
 // run wires the whole stand: registry, setup, preflight, the case and the
 // ALWAYS-run teardown. Returning an int keeps the exit-code contract in one
-// place; defers are honored because run returns normally.
-func run() int {
+// place; defers are honored because run returns normally. The deferred
+// finisher also machine-verifies the gsettings restore (plan 01-04, T-04-02)
+// and may downgrade a PASS to FAIL through the named return.
+func run() (exit int) {
 	var cfg config
-	flag.StringVar(&cfg.caseName, "case", "", "case to run: m1-gate | ibus-restart | kill9-survive")
+	flag.StringVar(&cfg.caseName, "case", "", "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe")
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
@@ -103,7 +108,13 @@ func run() int {
 
 		return 1
 	}
-	defer s.teardown()
+	defer func() {
+		s.teardown()
+		if rerr := s.verifyRestored(); rerr != nil {
+			fmt.Fprintf(os.Stderr, "FAIL %s: teardown restore verification: %v\n", cfg.caseName, rerr)
+			exit = 1
+		}
+	}()
 
 	if err := preflight(ctx, s); err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
@@ -111,7 +122,7 @@ func run() int {
 		return 1
 	}
 
-	if err := caseFn(ctx, s); err != nil {
+	if err := runCaseWatchdog(ctx, cfg.caseName, caseFn, s); err != nil {
 		s.printLogExcerpt()
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
@@ -123,6 +134,32 @@ func run() int {
 	return 0
 }
 
+// runCaseWatchdog runs the case body under a hard deadline (caseTimeout) and
+// cancels its context on expiry: a live-session stand must never strand the
+// owner's desktop. A stuck case fails fast, names the case, and control
+// falls through to the teardown contract (restore + machine verification).
+func runCaseWatchdog(
+	ctx context.Context,
+	name string,
+	fn func(context.Context, *stand) error,
+	s *stand,
+) error {
+	caseCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- fn(caseCtx, s) }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(caseTimeout):
+		cancel()
+
+		return fmt.Errorf("watchdog: case %q did not complete within %v", name, caseTimeout)
+	}
+}
+
 // pickCase resolves the case name through the registry; the registry is
 // built per call (no mutable globals).
 func pickCase(name string) (func(context.Context, *stand) error, error) {
@@ -130,10 +167,12 @@ func pickCase(name string) (func(context.Context, *stand) error, error) {
 		"m1-gate":       runM1Gate,
 		"ibus-restart":  runIbusRestart,
 		"kill9-survive": runKill9Survive,
+		"d01-probe":     runD01Probe,
 	}
 	fn, ok := registry[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive)", name)
+		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
+			" d01-probe)", name)
 	}
 
 	return fn, nil
@@ -338,6 +377,31 @@ func (s *stand) restoreGsettings(ctx context.Context) {
 	}
 }
 
+// verifyRestored machine-checks the teardown contract (plan 01-04, T-04-02):
+// after the restore, BOTH gsettings input-source keys must read back equal
+// to the snapshot. A mismatch is a named FAIL — the owner's desktop state
+// was not put back — so it must fail the exit code, not a human's glance.
+func (s *stand) verifyRestored() error {
+	ctx, cancel := context.WithTimeout(context.Background(), restoreVerifyTimeout)
+	defer cancel()
+
+	for _, kv := range []struct{ key, snapshot string }{
+		{keySources, s.snap.sources},
+		{keyCurrent, s.snap.current},
+	} {
+		now, err := runCmd(ctx, "gsettings", "get", gsettingsSchema, kv.key)
+		if err != nil {
+			return fmt.Errorf("verify restore: read %s: %w", kv.key, err)
+		}
+		if now != kv.snapshot {
+			return fmt.Errorf("restore verification FAILED for %s: snapshot %q, now %q (desktop state not restored)",
+				kv.key, kv.snapshot, now)
+		}
+	}
+
+	return nil
+}
+
 // restoreEngine re-asserts the snapshotted global engine. Called after the
 // daemon's death (see teardown) and never to a goswitch engine — a snapshot
 // captured while a goswitch engine was global would otherwise point the
@@ -375,8 +439,15 @@ func (s *stand) fallbackEngine() string {
 }
 
 // runCmd runs a command capturing stdout; a non-zero exit reports the
-// command line and stderr for the named diagnostics.
+// command line and stderr for the named diagnostics. Every call carries its
+// own hard deadline (cmdTimeout): a congested D-Bus, a wedged ydotool or a
+// stalled helper must fail the named check instead of freezing the stand —
+// a frozen stand strands the owner's desktop state (live finding, run 2 of
+// the D-01 matrix: the runner sat 4+ minutes inside an unbounded call).
 func runCmd(ctx context.Context, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, cmdTimeout)
+	defer cancel()
+
 	cmd := exec.CommandContext(ctx, name, args...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out

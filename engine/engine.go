@@ -78,16 +78,20 @@ type EventHandler interface {
 type Engine struct {
 	conn    *dbus.Conn
 	path    dbus.ObjectPath
+	name    string
 	handler EventHandler
 	caps    uint32
 }
 
-// NewEngine creates an engine object for the given handler (may be nil).
-// The connection and object path are bound at export time; a detached
-// engine (no connection) simply skips signal emission, which keeps the
-// object constructible in headless unit tests.
-func NewEngine(handler EventHandler) *Engine {
-	return &Engine{handler: handler}
+// NewEngine creates an engine object for the named engine (e.g.
+// "goswitch-en"); the name rides along into lifecycle log records so an
+// observer can tell WHICH of the registered engines took focus — the
+// observable the D-01 experiment asserts on. The handler may be nil. The
+// connection and object path are bound at export time; a detached engine
+// (no connection) simply skips signal emission, which keeps the object
+// constructible in headless unit tests.
+func NewEngine(handler EventHandler, name string) *Engine {
+	return &Engine{handler: handler, name: name}
 }
 
 // recoverHandler contains a panic raised anywhere below a D-Bus handler:
@@ -168,7 +172,7 @@ func (e *Engine) SetCapabilities(caps uint32) (err *dbus.Error) {
 // FocusIn implements org.freedesktop.IBus.Engine.FocusIn ().
 func (e *Engine) FocusIn() (err *dbus.Error) {
 	defer recoverHandler("FocusIn", &err)
-	slog.Info("focus_in")
+	slog.Info("focus_in", "engine", e.name)
 	e.lifecycle(LifecycleFocusIn)
 
 	return nil
@@ -177,7 +181,7 @@ func (e *Engine) FocusIn() (err *dbus.Error) {
 // FocusOut implements org.freedesktop.IBus.Engine.FocusOut ().
 func (e *Engine) FocusOut() (err *dbus.Error) {
 	defer recoverHandler("FocusOut", &err)
-	slog.Info("focus_out")
+	slog.Info("focus_out", "engine", e.name)
 	e.lifecycle(LifecycleFocusOut)
 
 	return nil

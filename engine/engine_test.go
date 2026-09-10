@@ -76,7 +76,7 @@ func TestEngine_ProcessKeyEventReturnsFalse(t *testing.T) {
 			t.Parallel()
 
 			rec := &recordingHandler{}
-			eng := engine.NewEngine(rec)
+			eng := engine.NewEngine(rec, "goswitch-en")
 
 			handled, err := eng.ProcessKeyEvent(tt.keyval, tt.keycode, tt.state)
 			if err != nil {
@@ -112,7 +112,7 @@ func TestEngine_DecodeState(t *testing.T) {
 	t.Parallel()
 
 	rec := &recordingHandler{}
-	eng := engine.NewEngine(rec)
+	eng := engine.NewEngine(rec, "goswitch-en")
 
 	if _, err := eng.ProcessKeyEvent(0x67, 38, 0xff|engine.MaskRelease); err != nil {
 		t.Fatalf("ProcessKeyEvent() err = %v, want nil", err)
@@ -227,7 +227,7 @@ func TestEngine_RecoverContainsPanic(t *testing.T) {
 
 	var logBuf bytes.Buffer
 	logging.Setup(&logBuf, true)
-	eng := engine.NewEngine(panicHandler{})
+	eng := engine.NewEngine(panicHandler{}, "goswitch-en")
 
 	handled, keyErr := eng.ProcessKeyEvent(engine.KeyShiftR, 62, 0)
 	if keyErr != nil {

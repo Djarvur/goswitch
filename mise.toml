@@ -45,3 +45,7 @@ run = "go run ./test/e2e -case ibus-restart"
 [tasks.e2e-kill9-survive]
 description = "e2e: INTEG-05 — kill -9 daemon, desktop input alive, respawn (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case kill9-survive"
+
+[tasks.e2e-d01]
+description = "e2e: D-01 probe matrix — source-switch experiment, appends verdicts to docs/adr/d01-experiment-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case d01-probe"

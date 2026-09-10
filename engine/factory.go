@@ -35,7 +35,7 @@ func (f *factory) CreateEngine(name string) (path dbus.ObjectPath, err *dbus.Err
 	f.mu.Unlock()
 
 	path = dbus.ObjectPath(fmt.Sprintf(enginePathFmt, n))
-	eng := NewEngine(f.handler)
+	eng := NewEngine(f.handler, name)
 	eng.conn = f.conn
 	eng.path = path
 	for _, iface := range []string{ifaceEngine, ifaceService, ifaceProps} {
