@@ -31,3 +31,9 @@ run = "go mod tidy && git diff --exit-code -- go.mod go.sum"
 [tasks.ci]
 description = "Full CI gate: build + vet + lint + test (D-08)"
 depends = ["build", "vet", "lint", "test"]
+
+# Live-session e2e cases (D-09): they drive the owner's desktop —
+# deliberately NOT part of `mise run ci` (headless CI cannot run them).
+[tasks.e2e-m1]
+description = "e2e: M1 gate case (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case m1-gate"

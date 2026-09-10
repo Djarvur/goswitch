@@ -142,6 +142,21 @@ linters:
       # (logging / recover tests) forbid t.Parallel there
       - linters: [paralleltest]
         path: ".*_test\\.go"
+      # e2e runner (test/e2e, a CLI harness): its errors are printed in the
+      # PASS/FAIL report and never inspected with errors.Is/As — dynamic
+      # fmt.Errorf diagnostics are the design there, not a smell
+      - linters: [err113]
+        path: "test/e2e/.*\\.go"
+      # The runner's contract IS terminal output (per-case PASS/FAIL report);
+      # the fmt.Print ban targets daemon code, where logging is structured
+      - linters: [forbidigo]
+        path: "test/e2e/.*\\.go"
+      # The runner spawns external tools (ydotool, gsettings, ibus, python3,
+      # go build) with self-generated or owner-passed flag arguments — not
+      # attacker-controlled input
+      - linters: [gosec]
+        path: "test/e2e/.*\\.go"
+        text: "G204"
 
 issues:
   max-issues-per-linter: 0
