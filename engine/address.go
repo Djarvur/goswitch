@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// errNoAddress reports that no usable IBus address file was found.
-var errNoAddress = errors.New("no usable ibus address file")
+// ErrNoAddress reports that no usable IBus address file was found.
+var ErrNoAddress = errors.New("no usable ibus address file")
 
 // errNoAddressLine reports a bus file without an IBUS_ADDRESS entry.
 var errNoAddressLine = errors.New("no IBUS_ADDRESS line")
@@ -51,7 +51,7 @@ func Discover() (string, error) {
 		}
 	}
 	if best == "" {
-		return "", fmt.Errorf("%w in %s", errNoAddress, dir)
+		return "", fmt.Errorf("%w in %s", ErrNoAddress, dir)
 	}
 
 	return best, nil

@@ -1,0 +1,6 @@
+{
+  "command": "mise exec -- go test ./engine/ ./internal/logging/ -race -count=1",
+  "output": "# tests 11\n# pass 9\n# fail 2\nok 1 - TestAddress_EnvPrecedence\nnot ok 2 - TestAddress_PicksFreshest\nnot ok 3 - TestAddress_EmptyDirError\nok 4 - TestEngine_RecoverContainsPanic\nok 5 - TestEngine_DecodeState\nok 6 - TestEngine_KeyConstants\nok 7 - TestWire_FieldOrder\nok 8 - TestEngine_ProcessKeyEventReturnsFalse\nok 9 - TestLogging_JSONShape\nok 10 - TestLogging_LevelFiltering\nok 11 - TestLogging_KeyTraceGated\n",
+  "targetTest": "TestAddress_PicksFreshest",
+  "exitCode": 1
+}

@@ -138,6 +138,10 @@ linters:
       - linters: [gosec]
         path: "engine/address\\.go"
         text: "G703"
+      # t.Setenv (address tests) and the process-global slog default
+      # (logging / recover tests) forbid t.Parallel there
+      - linters: [paralleltest]
+        path: ".*_test\\.go"
 
 issues:
   max-issues-per-linter: 0
