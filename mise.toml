@@ -1,0 +1,33 @@
+# Single source of tool versions for local development and CI (plan 01-05).
+# D-09: mise tasks replace a Makefile; tools install per-project via `mise install`.
+[tools]
+go = "1.23"
+golangci-lint = "2"
+
+[env]
+# Deterministic build/test paths
+GOFLAGS = "-trimpath"
+
+[tasks.build]
+description = "Build all packages"
+run = "go build ./..."
+
+[tasks.test]
+description = "Run all tests with race detector"
+run = "go test -race -count=1 ./..."
+
+[tasks.lint]
+description = "Run golangci-lint v2 with strict config"
+run = "golangci-lint run"
+
+[tasks.vet]
+description = "Run go vet"
+run = "go vet ./..."
+
+[tasks.tidy-diff]
+description = "go mod tidy and fail on any go.mod/go.sum drift"
+run = "go mod tidy && git diff --exit-code -- go.mod go.sum"
+
+[tasks.ci]
+description = "Full CI gate: build + vet + lint + test (D-08)"
+depends = ["build", "vet", "lint", "test"]

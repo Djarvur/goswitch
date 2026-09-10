@@ -1,0 +1,26 @@
+# Binaries and build output
+bin/
+*.exe
+*.test
+
+# NOTE: no `dist/` entry here on purpose — dist/ holds tracked packaging
+# sources (systemd unit, plan 01-05), not build output.
+
+# Test and coverage output
+*.coverprofile
+coverage.out
+coverage.html
+
+# Tool caches
+.cache/
+.gocache/
+.gomodcache/
+
+# mise local overrides (mise.toml itself is tracked)
+.mise.local.toml
+
+# Editors and OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
