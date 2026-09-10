@@ -1,5 +1,5 @@
 {
-  "model_profile": "inherit",
+  "model_profile": "adaptive",
   "commit_docs": true,
   "parallelization": true,
   "search_gitignored": false,
@@ -21,7 +21,7 @@
     "research": true,
     "plan_check": true,
     "verifier": true,
-    "nyquist_validation": false,
+    "nyquist_validation": true,
     "auto_advance": true,
     "node_repair": true,
     "node_repair_budget": 2,
@@ -90,5 +90,5 @@
   },
   "resolve_model_ids": "omit",
   "mode": "yolo",
-  "granularity": "coarse"
+  "granularity": "fine"
 }
