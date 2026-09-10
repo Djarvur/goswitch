@@ -100,17 +100,20 @@ def cmd_witness():
 
 
 def read_text(node):
-    """Read a node's whole text through whichever Atspi.Text call works."""
-    count = node.get_character_count()
+    """Read a node's whole text.
+
+    atspi 2.52 quirk (live-verified): Atspi.Text.get_text's introspected
+    signature is broken (takes exactly 1 argument) — the deprecated
+    get_text_at_offset works and returns a TextRange whose content is the
+    text.
+    """
     try:
-        # get_text(start, end) is deprecated in atspi 2.52 and its
-        # introspected signature is broken; the offset form is the stable one.
-        text = node.get_text_at_offset(0, Atspi.TextBoundaryType.TEXT_GRANULARITY_ALL)
-        return text[0] if isinstance(text, tuple) else str(text)
+        span = node.get_text_at_offset(0, Atspi.TextBoundaryType.LINE_START)
+        return span.content
     except Exception:
         pass
     try:
-        return node.get_text(0, count)
+        return node.get_text(0, node.get_character_count())
     except Exception as exc:
         print(f"focus_helper: cannot read text node: {exc}", file=sys.stderr)
         return None

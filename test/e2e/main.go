@@ -57,8 +57,8 @@ type desktopSnapshot struct {
 	engineName string // empty when no global engine is set
 }
 
-// stand owns the per-run environment: the daemon subprocess, its log file
-// and the captured desktop state.
+// stand owns the per-run environment: the daemon subprocess, its log file,
+// the stand's input surface and the captured desktop state.
 type stand struct {
 	cfg       config
 	daemonBin string
@@ -66,6 +66,8 @@ type stand struct {
 	logPath   string
 	logFile   *os.File
 	daemon    *exec.Cmd
+	zenity    *exec.Cmd
+	zenityOut *bytes.Buffer
 	snap      desktopSnapshot
 }
 
@@ -125,11 +127,13 @@ func run() int {
 // built per call (no mutable globals).
 func pickCase(name string) (func(context.Context, *stand) error, error) {
 	registry := map[string]func(context.Context, *stand) error{
-		"m1-gate": runM1Gate,
+		"m1-gate":       runM1Gate,
+		"ibus-restart":  runIbusRestart,
+		"kill9-survive": runKill9Survive,
 	}
 	fn, ok := registry[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate)", name)
+		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive)", name)
 	}
 
 	return fn, nil
@@ -278,6 +282,7 @@ func (s *stand) teardown() {
 	s.restoreGsettings(ctx)
 	s.stopDaemon()
 	s.restoreEngine(ctx)
+	s.reapZenity()
 	_ = s.logFile.Close()
 	if s.cfg.logPath == "" {
 		_ = os.Remove(s.logPath)

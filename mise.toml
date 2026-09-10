@@ -37,3 +37,11 @@ depends = ["build", "vet", "lint", "test"]
 [tasks.e2e-m1]
 description = "e2e: M1 gate case (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case m1-gate"
+
+[tasks.e2e-ibus-restart]
+description = "e2e: INTEG-04 — ibus-daemon restart survival (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case ibus-restart"
+
+[tasks.e2e-kill9-survive]
+description = "e2e: INTEG-05 — kill -9 daemon, desktop input alive, respawn (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case kill9-survive"

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -17,16 +19,28 @@ const (
 	surfaceStep    = 2 * time.Second // one activation step before escalation
 	witnessPoll    = 100 * time.Millisecond
 	shellAppPrefix = "gnome-shell:"
+	zenityPrompt   = "goswitch e2e"
 )
 
-// searchEntryMark identifies the stand's shell-owned input surface in the
-// AT-SPI witness output. GNOME Shell exposes text entries as PASSWORD_TEXT
-// nodes (live-verified in phase 01-03): the overview search entry when the
-// session is unlocked, the lock-screen auth prompt when it is locked. Both
-// take injected text, route it through the active IBus engine and discard
-// it (search on close, password never commits) — exactly the disposal
-// properties the stand needs from a surface it activates itself.
+// searchEntryMark identifies the shell's own text entries in the AT-SPI
+// witness output. GNOME Shell exposes them as PASSWORD_TEXT nodes
+// (live-verified in phase 01-03): the overview search entry and the
+// lock-screen auth prompt. Both take injected text, route it through the
+// active IBus engine and discard it (search on close, password never
+// commits) — the disposal properties the stand needs from a surface it
+// activates itself.
 const searchEntryMark = ":PASSWORD_TEXT:"
+
+// surfaceKind names which input surface a case opened — it decides how the
+// surface closes and which desktop-input oracle applies.
+type surfaceKind int
+
+const (
+	// surfaceShell is the shell's own entry (search or lock prompt).
+	surfaceShell surfaceKind = iota
+	// surfaceZenity is the stand-spawned zenity entry window.
+	surfaceZenity
+)
 
 // runM1Gate proves the M1 gate (phase success criterion 2): with goswitch-en
 // the ACTIVE input source, physically injected keys reach the engine, the
@@ -36,8 +50,13 @@ func runM1Gate(ctx context.Context, s *stand) error {
 	if err := s.activateGoswitch(ctx); err != nil {
 		return err
 	}
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
 
-	if err := s.typeInSearch(ctx, "ghbdtn"); err != nil {
+	if err := s.injectText(ctx, "ghbdtn"); err != nil {
 		return err
 	}
 	if err := s.waitForNew(ctx, `"msg":"key"`, minKeyEvents, keyWait); err != nil {
@@ -69,60 +88,76 @@ func (s *stand) activateGoswitch(ctx context.Context) error {
 	return s.waitForLog(ctx, "focus_in", focusWait)
 }
 
-// typeInSearch opens the shell's search entry, types text into it and
-// closes it again: the text lands in the search box — discarded on Escape —
-// and never in the owner's windows. The search entry routes keys through
-// the active IBus engine (live-verified: 12 key records for a 6-char type).
-func (s *stand) typeInSearch(ctx context.Context, text string) (err error) {
-	if oerr := s.openSearchSurface(ctx); oerr != nil {
-		return oerr
-	}
-	defer func() {
-		if cerr := s.closeSearchSurface(ctx); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	return s.injectText(ctx, text)
-}
-
-// openSearchSurface activates the shell's own text entry — the one input
-// surface the stand can activate itself — and verifies through the AT-SPI
-// witness that the entry (PASSWORD_TEXT node) actually took focus. On an
-// unlocked session the super key opens the overview search; on a locked
-// one it wakes the lock screen, whose auth prompt needs a second
-// activation (Enter on the shield) before the entry appears. Background
-// focus grabs are refused by Wayland focus-stealing prevention
-// (live-verified: AT-SPI grabFocus errors on GTK4 windows and returns
-// false on GTK3), so this replaces the plan's grabFocus step; the helper
-// keeps its best-effort focus subcommand for platforms where grabs work.
-// The idempotency check comes first: when the entry already has focus
-// (overview left open by a crashed earlier run, or an already-awake lock
-// prompt), pressing super would toggle the overview shut.
-func (s *stand) openSearchSurface(ctx context.Context) error {
+// openEntrySurface activates the stand's own input surface and verifies
+// through the AT-SPI witness that it owns keyboard focus BEFORE any text is
+// injected — injected text never reaches the owner's windows (TEST-03).
+// Preferred surface: a spawned zenity entry, which takes focus on map
+// (background grabs are refused by Wayland focus-stealing prevention —
+// GTK4 errors, GTK3 returns false, live-verified; the helper keeps a
+// best-effort focus subcommand for platforms where grabs work). On a
+// locked session the zenity window cannot surface, so the fallback wakes
+// the shell's own entry instead: super opens the overview search, Enter
+// reveals the lock-screen prompt.
+func (s *stand) openEntrySurface(ctx context.Context) (surfaceKind, error) {
 	focused, err := s.focusWitness(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if s.shellEntryFocused(focused) {
-		return nil
+		return surfaceShell, nil
 	}
-	if err := s.pressKey(ctx, "super"); err != nil {
+	if err := s.startZenity(ctx); err != nil {
+		return 0, err
+	}
+	if err := s.waitZenityEntry(ctx); err == nil {
+		return surfaceZenity, nil
+	} else if ctx.Err() != nil {
+		s.reapZenity()
+
+		return 0, fmt.Errorf("surface activation aborted: %w", ctx.Err())
+	}
+	// The zenity window stayed hidden (locked session) — fall back to the
+	// shell's own entry.
+	s.reapZenity()
+
+	return s.openShellEntry(ctx)
+}
+
+// closeEntrySurface dismisses the surface opened by openEntrySurface.
+func (s *stand) closeEntrySurface(ctx context.Context, kind surfaceKind) error {
+	switch kind {
+	case surfaceZenity:
+		_, err := s.closeZenity(ctx)
+
 		return err
-	}
-	if err := s.waitShellEntry(ctx, surfaceStep); err == nil {
-		return nil
-	} else if cerr := ctx.Err(); cerr != nil {
-		return fmt.Errorf("surface activation aborted: %w", cerr)
-	}
-	// Focus sits on a non-entry shell node (lock-screen shield button,
-	// overview preview): activate it — Enter reveals the lock prompt and
-	// is inert on the empty overview search.
-	if err := s.pressKey(ctx, "enter"); err != nil {
-		return err
+	case surfaceShell:
+		return s.pressKey(ctx, "Escape")
 	}
 
-	return s.waitShellEntry(ctx, witnessWait)
+	return nil
+}
+
+// openShellEntry wakes the shell's text entry: super opens the overview
+// search (unlocked) or wakes the lock screen (locked); when a non-entry
+// node holds focus afterwards (lock-screen shield button), Enter reveals
+// the auth prompt.
+func (s *stand) openShellEntry(ctx context.Context) (surfaceKind, error) {
+	if err := s.pressKey(ctx, "super"); err != nil {
+		return 0, err
+	}
+	if err := s.waitShellEntry(ctx, surfaceStep); err == nil {
+		return surfaceShell, nil
+	} else if cerr := ctx.Err(); cerr != nil {
+		return 0, fmt.Errorf("surface activation aborted: %w", cerr)
+	}
+	if err := s.pressKey(ctx, "enter"); err != nil {
+		return 0, err
+	}
+	if err := s.waitShellEntry(ctx, witnessWait); err != nil {
+		return 0, err
+	}
+
+	return surfaceShell, nil
 }
 
 // shellEntryFocused reports whether one of the shell's own text entries
@@ -133,8 +168,82 @@ func (s *stand) shellEntryFocused(witness string) bool {
 	return strings.HasPrefix(witness, shellAppPrefix) && strings.Contains(witness, searchEntryMark)
 }
 
-func (s *stand) closeSearchSurface(ctx context.Context) error {
-	return s.pressKey(ctx, "Escape")
+// startZenity spawns a self-focusing text entry — the stand's input surface
+// on an unlocked session: a freshly mapped window takes keyboard focus
+// without any grab (live-verified in phase 01-03). The entry's stdout (the
+// typed text, printed on Enter) is the delivery readback oracle.
+func (s *stand) startZenity(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "zenity", "--entry", "--title=goswitch-e2e", "--text="+zenityPrompt)
+	out := &bytes.Buffer{}
+	cmd.Stdout = out
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start zenity: %w", err)
+	}
+	s.zenity = cmd
+	s.zenityOut = out
+
+	return nil
+}
+
+// waitZenityEntry polls the witness until the spawned entry owns keyboard
+// focus — the gate that makes injection safe.
+func (s *stand) waitZenityEntry(ctx context.Context) error {
+	deadline := time.Now().Add(witnessWait)
+	for {
+		now, err := s.focusWitness(ctx)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(now, "zenity:") && strings.Contains(now, ":TEXT") {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("zenity entry did not take focus (witness %q)", now)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return err
+		}
+	}
+}
+
+// closeZenity dismisses the entry with Enter (OK prints the text) and
+// returns the collected stdout — the proof the typed text was delivered.
+func (s *stand) closeZenity(ctx context.Context) (string, error) {
+	if s.zenity == nil {
+		return "", nil
+	}
+	if err := s.pressKey(ctx, "enter"); err != nil {
+		s.reapZenity()
+
+		return "", err
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = s.zenity.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(killGrace):
+		s.reapZenity()
+	}
+	out := strings.TrimSpace(s.zenityOut.String())
+	s.zenity = nil
+
+	return out, nil
+}
+
+// reapZenity force-kills a leftover entry (teardown and error paths); a
+// no-op once the entry was closed or reaped.
+func (s *stand) reapZenity() {
+	if s.zenity == nil {
+		return
+	}
+	if s.zenity.Process != nil {
+		_ = s.zenity.Process.Kill()
+	}
+	_ = s.zenity.Wait()
+	s.zenity = nil
 }
 
 // focusWitness reports the currently focused input surface
