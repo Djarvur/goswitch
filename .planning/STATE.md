@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: ADR-пакет и каркас IBus-движка
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-09-10T17:54:16.296Z"
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-09-10T18:59:44.790Z"
 last_activity: 2026-09-10
-last_activity_desc: Roadmap создан (4 фазы, 30/30 требований замаплено)
-state_head: d02464f8265d19239812cdb6e2afb35ecf5a9d46
+last_activity_desc: Phase 1 execution started
+state_head: e9dc626831cc4f438476e751b8970e54d20554f7
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 
 ## Current Position
 
-Phase: 1 (ADR-пакет и каркас IBus-движка) — READY TO EXECUTE
-Plan: 0 of TBD in current phase
+Phase: 1 (ADR-пакет и каркас IBus-движка) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-09-10 — Roadmap создан (4 фазы, 30/30 требований замаплено)
+Last activity: 2026-09-10 — Phase 1 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -57,6 +57,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 1 P01 | 35 min | 2 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -69,6 +74,9 @@ Recent decisions affecting current work:
 - Roadmap: recover-шим и цикл перерегистрации — day-one элементы Фазы 1 (падение движка = смерть ввода рабочего стола).
 - Roadmap: TEST-02/03 (e2e-стенд) в Фазе 1 как скелет (ydotool → лог), матрица кейсов (TEST-04) — Фаза 2.
 - Roadmap: INST-04 (логи/трассировка) в Фазе 1 — гейт M1 требует событий в логе.
+- [Phase 1]: RequestName targets the component name org.freedesktop.IBus.goswitch — org.freedesktop.IBus is reserved by ibus-daemon (live-probed); single-instance guard preserved
+- [Phase 1]: Live-gate proof uses ListActiveEngines (ibus list-engine reads only the XML registry) and layout-independent keycode assertions — keyvals follow the focused client's XKB group
+- [Phase 1]: nonamedreturns disabled in strict lint config: the INTEG-05 recover shim requires named returns for zero-value panic replies
 
 ### Pending Todos
 
@@ -90,6 +98,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-10T15:48:52.235Z
-Stopped at: Phase 1 context gathered
-Resume file: /home/nil/DiskD/W/Djarvur/goswitch/.planning/phases/01-adr-paket-i-karkas-ibus-dvizhka/01-CONTEXT.md
+Last session: 2026-09-10T18:59:44.763Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None

@@ -34,7 +34,7 @@
 
 ### INTEG — Интеграция с окружением
 
-- [ ] **INTEG-01**: `goswitchd` работает как IBus input method engine (D-Bus `org.freedesktop.IBus`, регистрация `_RegisterComponent`), текст инжектируется через `commit_text`
+- [x] **INTEG-01**: `goswitchd` работает как IBus input method engine (D-Bus `org.freedesktop.IBus`, регистрация `_RegisterComponent`), текст инжектируется через `commit_text`
 - [ ] **INTEG-02**: Совместимость с keyd/xremap: обычный набор идёт транзитом, никакого EVIOCGRAB / захвата клавиатуры
 - [ ] **INTEG-03**: Работает поверх дефолтного IM-стека Ubuntu 24.04 GNOME Wayland без root (членство в группе IBus-сокета)
 - [ ] **INTEG-04**: Движок перерегистрируется после рестарта ibus-daemon (известная потеря регистрации — ibus#2910)
@@ -100,7 +100,7 @@
 | CONF-01 | Phase 3 | Pending |
 | CONF-02 | Phase 3 | Pending |
 | CONF-03 | Phase 3 | Pending |
-| INTEG-01 | Phase 1 | Pending |
+| INTEG-01 | Phase 1 | Complete |
 | INTEG-02 | Phase 1 | Pending |
 | INTEG-03 | Phase 1 | Pending |
 | INTEG-04 | Phase 1 | Pending |
@@ -116,6 +116,7 @@
 | INST-04 | Phase 1 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 30 total (по фактическому числу REQ-ID; ранее указанное «29» было ошибкой счёта)
 - Mapped to phases: 30 (Phase 1: 10, Phase 2: 6, Phase 3: 12, Phase 4: 2)
 - Unmapped: 0
