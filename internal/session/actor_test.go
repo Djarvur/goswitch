@@ -29,12 +29,15 @@ type syncBuffer struct {
 	buf bytes.Buffer
 }
 
-// Write appends under the guard.
+// Write appends under the guard. bytes.Buffer.Write is documented to
+// always return a nil error, so there is nothing to propagate.
 func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	return b.buf.Write(p)
+	n, _ := b.buf.Write(p)
+
+	return n, nil
 }
 
 // String snapshots the buffer under the guard.

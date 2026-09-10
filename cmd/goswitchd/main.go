@@ -12,7 +12,9 @@ import (
 	"syscall"
 
 	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/logging"
+	"github.com/Djarvur/goswitch/internal/session"
 )
 
 func main() {
@@ -48,10 +50,11 @@ func engineConfig() engine.Config {
 		engine.NewEngineDesc("goswitch-en", "goswitch English (US)", "en", "us", "en"),
 		engine.NewEngineDesc("goswitch-ru", "goswitch Русская", "ru", "ru", "ru"),
 	}
+	actor := session.NewActor(hotkey.DefaultWindow)
 
 	return engine.Config{
 		Component: engine.NewComponent(engines),
 		Engines:   engines,
-		Handler:   nil, // Phase 1: pure observer, no key consumption.
+		Handler:   actor, // decisions are logged at window expiry; keys stay unconsumed.
 	}
 }
