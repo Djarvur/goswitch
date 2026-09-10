@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Обычный набор идёт транзитом при активном движке — без EVIOCGRAB и захвата клавиатуры, включая сессию с работающим keyd/xremap; демон работает поверх дефолтного IM-стека Ubuntu 24.04 GNOME Wayland без root
   5. Headless CI зелёный: golden-тесты генерируемых `go:generate` таблиц ЙЦУКЕН↔QWERTY (включая знаки `[ ] ; ' , . /`), unit-корпус FSM хоткеев на синтетических потоках событий, логи структурированные с уровнями и debug-трассировкой клавиш
 
-**Plans**: 2/5 plans executed
+**Plans**: 3/5 plans executed
 Plans:
 **Wave 1**
 
@@ -46,7 +46,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md — e2e-стенд: инжекция ydotool, AT-SPI фокус, кейсы m1-gate/ibus-restart/kill9-survive, актор FSM в демоне — TEST-02/03, живые INTEG-02..05
+- [x] 01-03-PLAN.md — e2e-стенд: инжекция ydotool, AT-SPI фокус, кейсы m1-gate/ibus-restart/kill9-survive, актор FSM в демоне — TEST-02/03, живые INTEG-02..05
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -110,7 +110,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. ADR-пакет и каркас IBus-движка | 2/5 | In Progress|  |
+| 1. ADR-пакет и каркас IBus-движка | 3/5 | In Progress|  |
 | 2. Коррекция слова EN↔RU | 0/? | Not started | - |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |

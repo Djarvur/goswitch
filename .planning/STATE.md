@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 1
+current_phase: 01
 current_phase_name: ADR-пакет и каркас IBus-движка
 status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-09-10T19:22:13.727Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-09-10T21:17:47.763Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 1 execution started
-state_head: 3911e4cf9e6b67142d017094d8db785b201ac00b
+last_activity_desc: Phase 01 execution started
+state_head: a23ce3329417d4d71da2445414fe0ef16d323dad
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 1 — ADR-пакет и каркас IBus-движка
+**Current focus:** Phase 01 — ADR-пакет и каркас IBus-движка
 
 ## Current Position
 
-Phase: 1 (ADR-пакет и каркас IBus-движка) — EXECUTING
-Plan: 3 of 5
+Phase: 01 (ADR-пакет и каркас IBus-движка) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-09-10 — Phase 1 execution started
+Last activity: 2026-09-10 — Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 |------|----------|-------|-------|
 | Phase 1 P01 | 35 min | 2 tasks | 19 files |
 | Phase 01 P02 | 20 min | 2 tasks | 8 files |
+| Phase 01 P03 | 80 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,10 @@ Recent decisions affecting current work:
 - [Phase 1]: 01-02: FSM TimerExpired honors the last tap's deadline — stale AfterFunc timers are no-ops; required by the intervening-key-cancel pin and race-safe for the adapter's re-arm
 - [Phase 1]: 01-02: generator's Cyrillic table keyed by keysym NAME with values resolved from ibuskeysyms.h (Latin-1 direct 0x20–0xff); unknown names fail generation loudly — golden corpus pins at generation time, never runtime
 - [Phase 1]: 01-02: KeyvalShiftR (0xffe2) lives in internal/hotkey, not imported from engine — pure package stays D-Bus-free; dependency direction will be engine → hotkey
+- [Phase 01]: [Phase 1] 01-03: engine activation is IBus SetGlobalEngine — GNOME 46 shell runtime-ignores gsettings sources/current writes (live-verified); both keys stay snapshotted, restored only-if-changed
+- [Phase 01]: [Phase 1] 01-03: e2e surface = self-focused zenity entry (primary) / shell PASSWORD_TEXT entry (locked fallback) — AT-SPI grabFocus refused under Wayland; injection gated on the AT-SPI witness
+- [Phase 01]: [Phase 1] 01-03: teardown re-asserts the global engine AFTER daemon death — ibus-daemon unsets it on engine-component disconnect; never restores to a goswitch engine (xkb fallback)
+- [Phase 01]: [Phase 1] 01-03: readback oracles are length-based — the desktop's active XKB group maps ghbdtn to привет, content comparison would be layout-dependent
 
 ### Pending Todos
 
@@ -103,6 +108,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-10T19:22:13.698Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-09-10T21:17:47.733Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
