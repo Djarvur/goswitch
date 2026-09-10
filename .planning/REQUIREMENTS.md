@@ -80,16 +80,45 @@
 
 ## Traceability
 
-Заполняется при создании роадмапа.
+Заполнено при создании роадмапа (2026-09-10). Структура фаз следует вехам `docs/SPEC.md` §9: M0+M1 → Фаза 1, M2 → Фаза 2, M3 → Фаза 3, M4 → Фаза 4.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | — |
+| CORR-01 | Phase 2 | Pending |
+| CORR-02 | Phase 3 | Pending |
+| CORR-03 | Phase 3 | Pending |
+| CORR-04 | Phase 2 | Pending |
+| CORR-05 | Phase 2 | Pending |
+| CORR-06 | Phase 3 | Pending |
+| CORR-07 | Phase 2 | Pending |
+| CORR-08 | Phase 1 | Pending |
+| CORR-09 | Phase 2 | Pending |
+| SWCH-01 | Phase 3 | Pending |
+| SWCH-02 | Phase 3 | Pending |
+| SWCH-03 | Phase 3 | Pending |
+| SWCH-04 | Phase 3 | Pending |
+| CONF-01 | Phase 3 | Pending |
+| CONF-02 | Phase 3 | Pending |
+| CONF-03 | Phase 3 | Pending |
+| INTEG-01 | Phase 1 | Pending |
+| INTEG-02 | Phase 1 | Pending |
+| INTEG-03 | Phase 1 | Pending |
+| INTEG-04 | Phase 1 | Pending |
+| INTEG-05 | Phase 1 | Pending |
+| MACR-01 | Phase 3 | Pending (кандидат на descoping в v2 по ADR Фазы 1) |
+| TEST-01 | Phase 1 | Pending |
+| TEST-02 | Phase 1 | Pending |
+| TEST-03 | Phase 1 | Pending |
+| TEST-04 | Phase 2 | Pending (матрица v1; широта v2 наращивается в Фазе 3) |
+| INST-01 | Phase 4 | Pending |
+| INST-02 | Phase 3 | Pending |
+| INST-03 | Phase 4 | Pending |
+| INST-04 | Phase 1 | Pending |
 
 **Coverage:**
-- v1 requirements: 29 total
-- Mapped to phases: 0 (заполнит roadmapper)
-- Unmapped: 0 (проверка после роадмапа)
+- v1 requirements: 30 total (по фактическому числу REQ-ID; ранее указанное «29» было ошибкой счёта)
+- Mapped to phases: 30 (Phase 1: 10, Phase 2: 6, Phase 3: 12, Phase 4: 2)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-10*
