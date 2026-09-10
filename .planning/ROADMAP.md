@@ -30,12 +30,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `ibus restart` и `kill -9` движка не роняют ввод рабочего стола: цикл переподключения и перерегистрации с бэкоффом (ibus#2910) и recover-шим на каждом экспортированном D-Bus обработчике работают с первого коммита D-Bus-слоя
   4. Обычный набор идёт транзитом при активном движке — без EVIOCGRAB и захвата клавиатуры, включая сессию с работающим keyd/xremap; демон работает поверх дефолтного IM-стека Ubuntu 24.04 GNOME Wayland без root
   5. Headless CI зелёный: golden-тесты генерируемых `go:generate` таблиц ЙЦУКЕН↔QWERTY (включая знаки `[ ] ; ' , . /`), unit-корпус FSM хоткеев на синтетических потоках событий, логи структурированные с уровнями и debug-трассировкой клавиш
-**Plans**: 4 plans
+**Plans**: 5 plans
 Plans:
-- [ ] 01-01-PLAN.md — Walking skeleton: goswitchd на шине IBus (адаптер engine/, наблюдатель, recover-шим, цикл перерегистрации, логи, CI) — INTEG-01..05, INST-04
+- [ ] 01-01-PLAN.md — Walking skeleton: goswitchd на шине IBus (адаптер engine/, наблюдатель, recover-шим, цикл перерегистрации, логи) — INTEG-01..05, INST-04
 - [ ] 01-02-PLAN.md — Чистые пакеты: генерируемые таблицы ЙЦУКЕН↔QWERTY (golden) + FSM тапов (корпус) — CORR-08, TEST-01
 - [ ] 01-03-PLAN.md — e2e-стенд: инжекция ydotool, AT-SPI фокус, кейсы m1-gate/ibus-restart/kill9-survive, актор FSM в демоне — TEST-02/03, живые INTEG-02..05
 - [ ] 01-04-PLAN.md — Эксперимент D-01 + ADR-пак 001..005 + гейт M0 (ревью владельца, MACR-01, spec-deltas)
+- [ ] 01-05-PLAN.md — CI с полным гейтом go-ultimate (tidy+govulncheck), dev systemd unit, README о конфиденциальности -debug, отклонение lint в AGENTS.md — TEST-01, INST-04, INTEG-03
 
 ### Phase 2: Коррекция слова EN↔RU
 **Goal**: Пользователь двойным нажатием Right Shift исправляет последнее слово, набранное не в той раскладке, в любом поле ввода GNOME — направление определяется автоматически, регистр сохраняется, замена происходит ровно по диапазону неверного текста без визуального прыжка; это подтверждает зелёная e2e-матрица v1.

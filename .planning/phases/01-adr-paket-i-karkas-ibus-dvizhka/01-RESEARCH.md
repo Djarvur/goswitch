@@ -554,14 +554,16 @@ wait_for_log '"msg":"action","n":2' 5s               # wait-for-condition, not s
 | A5 | gsettings `sources` restore in teardown is sufficient cleanup for live-desktop mutation | Runtime State | `current` index may shift if sources list changed length; snapshot both keys; verify in e2e teardown |
 | A6 | Cyrillic keysym→Unicode table (~70 entries) embedded in generator, pinned by golden tests, is correct | Layout pipeline | Golden corpus (ghbdtn→привет + full rows) catches any wrong char at generation time, not runtime |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does ANY programmatic switch mechanism satisfy D-02 on GNOME 46?**
+All three questions carry a disposition mapped to a phase-1 plan task (checker round 1, research_resolution).
+
+1. **Does ANY programmatic switch mechanism satisfy D-02 on GNOME 46?** — (RESOLVED by experiment → plan 01-04, Task 1: матрица проб D-01 с наблюдаемыми вердиктами в docs/adr/d01-experiment-log.md; timeboxed, Option B (owner-proven) as the no-drama fallback)
    - What we know: keyboard.js 46 source rules out SetGlobalEngine as sufficient; gsettings writability verified but effect untested; ydotool Super+Space and micro-extension are untested on 46.
    - What's unclear: which candidate actually switches the source at runtime.
    - Recommendation: that's exactly the D-01 experiment (§ Pattern "D-01 branch"); run it with the skeleton, timeboxed, with Option B (owner-proven) as the no-drama fallback.
-2. **Exact keycode semantics on the live IM path (A2)** — resolved empirically by the M1 skeleton's own key trace log; no extra work, just record the observation into Phase 2 planning.
-3. **ADR-005 (MACR-01) owner decision** — cannot be researched; owner checkpoint at ADR review (OPEN-01 binds: no code, no plan for it).
+2. **Exact keycode semantics on the live IM path (A2)** — (RESOLVED empirically → plan 01-03: M1 skeleton's own key trace log; record the observation into 01-03-SUMMARY.md for Phase 2 planning)
+3. **ADR-005 (MACR-01) owner decision** — (RESOLVED by owner checkpoint → plan 01-04, Task 3: gate M0 / OPEN-01 binds: no code, no plan for it until the owner decides)
 
 ## Environment Availability
 
