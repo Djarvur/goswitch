@@ -77,7 +77,7 @@ None yet.
 ### Blockers/Concerns
 
 - Phase 1: ADR Decision #1 (two-engine vs внутренний флип) — конфликтующие данные по `gsettings set current` на GNOME 46; решается kill-criterion спайком в Фазе 1 до любого кода коррекции.
-- Phase 1: MACR-01 — кандидат на descoping в v2 по итогам ADR; решение оформить spec-delta.
+- Phase 1: MACR-01 — РЕШЕНО владельцем 2026-09-10 (D-12): в v1, внутри goswitch; keyd отвергнут. ADR-005 выбирает механизм. Открытых вопросов владельца нет.
 - Go-работа всех фаз идёт по скиллу go-ultimate (project skill, .zcode/skills/) — конвенции и ревью-чеклист оттуда.
 
 ## Deferred Items
