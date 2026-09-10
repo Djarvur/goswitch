@@ -83,7 +83,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. ADR-пакет и каркас IBus-движка | 0/4 | Planned | - |
+| 1. ADR-пакет и каркас IBus-движка | 0/5 | Planned | - |
 | 2. Коррекция слова EN↔RU | 0/? | Not started | - |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |
