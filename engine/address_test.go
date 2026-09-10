@@ -92,6 +92,7 @@ func TestAddress_PicksFreshest(t *testing.T) {
 
 	t.Run("X11 suffix when only DISPLAY is set", func(t *testing.T) {
 		dir := busDirWith(t)
+		t.Setenv("WAYLAND_DISPLAY", "") // inherited from the live session otherwise
 		t.Setenv("DISPLAY", ":0")
 		writeBusFile(t, dir, "mid-unix-wayland-0", "unix:path=/tmp/fresh-wayland", base.Add(time.Hour))
 		writeBusFile(t, dir, "mid-unix-0", "unix:path=/tmp/old-x11", base)
