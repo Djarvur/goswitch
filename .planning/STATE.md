@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: Коррекция слова EN↔RU
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-09-11T22:15:18.090Z"
-last_activity: 2026-09-11
-last_activity_desc: Phase 01 complete, transitioned to Phase 2
-state_head: f122ceac2ec433be23e10b0de12c598270728234
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-09-11T22:35:19.951Z"
+last_activity: 2026-09-12
+last_activity_desc: Phase 02 execution started
+state_head: 888effd5bf8d6caf29fb1bf11e16f4181def4b95
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 12
-  completed_plans: 5
+  completed_plans: 6
   percent: 25
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-11)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 2 — Коррекция слова EN↔RU
+**Current focus:** Phase 02 — Коррекция слова EN↔RU
 
 ## Current Position
 
-Phase: 02 (Коррекция слова EN↔RU) — READY TO EXECUTE
-Plan: Not started
+Phase: 02 (Коррекция слова EN↔RU) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-09-11 — Phase 01 complete, transitioned to Phase 2
+Last activity: 2026-09-12 — Phase 02 execution started
 
 Progress: [███░░░░░░░] 25%
 
@@ -67,6 +67,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 01 P03 | 80 min | 3 tasks | 13 files |
 | Phase 01 P04 | 40 min | 3 tasks | 14 files |
 | Phase 01 P05 | 8 min | 2 tasks | 7 files |
+| Phase 02 P01 | 10 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,10 @@ Recent decisions affecting current work:
 - [Phase 01]: [Phase 01] 01-05: CONVENTIONS.md directives are single-line bullets — generate-claude-md's summarizer drops numbered lists/indented sub-bullets; directives must stay transport-safe for AGENTS.md regeneration
 - [Phase 01]: verify-work 2026-09-11: UAT 4/4 — keyd-сосуществование подтверждено владельцем; первый pr-sanity зелёный на реальном раннере (PR #1, run 34596048376: build/vet/lint/test 39с, govulncheck 29с); dependabot-PR и cron-запуск приняты владельцем по эквивалентным доказательствам (активируются после мержа PR #1)
 - [Phase 01]: SECURITY.md создан при verify-work (post-hook): 21 угроза из threat-моделей 5 планов, 21 закрыто / 0 открыто (ASVS L1), 3 принятых риска задокументированы
+- [Phase 02]: [02-01] Both ladder levels replace token+tail and recommit converted+tail — deleting exactly the token at a non-empty tail strands the cursor after the tail (D-13 pin geometry, Pitfall 1)
+- [Phase 02]: [02-01] CapSurroundingText mirrored as 1<<5 in internal/correct instead of importing engine — pure packages never import the D-Bus-bound engine (Phase 1 dependency direction precedent)
+- [Phase 02]: [02-01] Backspace keeps the separator in Tail(): buffer mirrors the field («ghbdtn » after the pop) — plan's Tail=="" expectation was internally inconsistent with its own D-13 pin (Pitfall 1)
+- [Phase 02]: [02-01] Corpus literals named as constants (wordEN/wordRU) per goconst of the strict lint; targeted #nosec G115 with justification on the plan.go int conversions
 
 ### Pending Todos
 
@@ -117,6 +122,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-11T19:34:54.184Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-korrektsiya-slova-en-ru/02-CONTEXT.md
+Last session: 2026-09-11T22:35:19.905Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None
