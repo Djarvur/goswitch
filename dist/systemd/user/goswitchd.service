@@ -1,0 +1,23 @@
+# goswitchd — dev systemd user unit (plan 01-05, INTEG-03).
+#
+# Installed BY HAND by the owner (see README) — deliberately not by a phase
+# script: this file is a tracked template, the live copy lives in the owner's
+# session.
+#
+# Ordering: start only inside a graphical session, after the GNOME IBus user
+# service — goswitchd registers with ibus-daemon and retries until it answers
+# (research 01, Runtime State Inventory).
+[Unit]
+Description=goswitch layout engine
+PartOf=graphical-session.target
+After=org.freedesktop.IBus.session.GNOME.service
+
+[Service]
+# Dev path: `go install ./cmd/goswitchd` drops the binary here (%h = $HOME).
+ExecStart=%h/go/bin/goswitchd
+# Covers uncatchable deaths too (kill -9): systemd respawns the daemon, the
+# desktop keeps its input because ibus falls back to the previous engine.
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target
