@@ -70,7 +70,27 @@ Plans:
   4. Буфер очищается по Enter, Tab, Escape и смене фокуса окна — поведение подтверждено эмпирически e2e-кейсами на клиентских классах (GTK/Chromium)
   5. e2e-матрица v1 зелёная: YAML-кейсы «ввод → ожидание» (gnome-text-editor + Chromium), отчёт PASS/FAIL по кейсам, код выхода ≠ 0 при падении
 
-**Plans**: TBD
+**Plans**: 5/5 planned
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Трассер: двойной Right Shift исправляет ghbdtn→привет сквозным конвейером (буфер→направление→сверка→лестница ур.1) + границы слова D-13/D-14/D-15 — CORR-01, CORR-04, CORR-05, CORR-07
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02-PLAN.md — Флип-режим EN↔RU (Single→флип, потребление+коммит кириллицы), RU→EN-коррекция, смешанное слово нетронуто (D-16) — CORR-01, CORR-04
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-03-PLAN.md — Лестница ур.2 (Backspace×N по рунам), verify-after, триггеры сброса буфера (CORR-09), Chromium-поверхность стенда — CORR-07, CORR-09
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02-04-PLAN.md — YAML-матрица v1: полный словесный набор D-18 на zenity+chromium+gnome-text-editor, отчёт PASS/FAIL, exit≠0 — TEST-04
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 02-05-PLAN.md — Self-hosted GNOME-раннер (systemd user unit, ярлык gnome) + workflow e2e-matrix (dispatch-only), первый зелёный CI-прогон — TEST-04, D-19
 
 ### Phase 3: Фразы, выделение, переключение и конфигурация
 
@@ -111,7 +131,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
-| 2. Коррекция слова EN↔RU | 0/? | Not started | - |
+| 2. Коррекция слова EN↔RU | 0/5 | Not started | - |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 
