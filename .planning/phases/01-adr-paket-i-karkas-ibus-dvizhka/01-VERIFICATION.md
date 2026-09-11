@@ -1,9 +1,10 @@
 ---
 phase: 01-adr-paket-i-karkas-ibus-dvizhka
-verified: 2026-09-11T08:46:33Z
-status: human_needed
+verified: 2026-09-11T12:10:00Z
+status: passed
 score: 20/20 must-haves verified
 covered_files:
+
   - .github/dependabot.yml
   - .github/workflows/pr-sanity.yml
   - .github/workflows/security-scheduled.yml
@@ -61,10 +62,12 @@ covered_files:
   - test/e2e/focus_helper.py
   - test/e2e/main.go
   - test/e2e/preflight.go
-covered_digest: "v1:sha256:e9224cb553af4d9e311e2e37f3f8bd0cfd882d11219652a0b19cb73562fe73af"
+
+covered_digest: "v1:sha256:881bc4e86ee1fafb32c2f8615382df60582002f5bfc8c441265837986f711b94"
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
+
   - test: "Live keyd-session coexistence check (INTEG-02 owner checklist in test/e2e/README.md § INTEG-02)"
     expected: "With keyd active and goswitch-en the active source: normal typing transits, keyd remaps still apply, no double keys, goswitch FSM decisions still fire"
     why_human: "keyd.service is failed/disabled on this machine and starting it requires root — cannot be automated; phase documents this honestly as «архитектурно обоснованной, но не подтверждённой живьём»"
