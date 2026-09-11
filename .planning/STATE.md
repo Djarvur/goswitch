@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: ADR-пакет и каркас IBus-движка
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-09-10T21:17:47.763Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-09-11T07:57:27.386Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 01 execution started
-state_head: a23ce3329417d4d71da2445414fe0ef16d323dad
+state_head: 0a48f769c7de329fd0e797a6a62f7f4bc8c4b69c
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 01 (ADR-пакет и каркас IBus-движка) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 01 execution started
 
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 1 P01 | 35 min | 2 tasks | 19 files |
 | Phase 01 P02 | 20 min | 2 tasks | 8 files |
 | Phase 01 P03 | 80 min | 3 tasks | 13 files |
+| Phase 01 P04 | 40 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase 01]: [Phase 1] 01-03: e2e surface = self-focused zenity entry (primary) / shell PASSWORD_TEXT entry (locked fallback) — AT-SPI grabFocus refused under Wayland; injection gated on the AT-SPI witness
 - [Phase 01]: [Phase 1] 01-03: teardown re-asserts the global engine AFTER daemon death — ibus-daemon unsets it on engine-component disconnect; never restores to a goswitch engine (xkb fallback)
 - [Phase 01]: [Phase 1] 01-03: readback oracles are length-based — the desktop's active XKB group maps ghbdtn to привет, content comparison would be layout-dependent
+- [Phase 01]: [Phase 01] 01-04 M0 passed: owner approved the ADR pack («утверждено», 2026-09-10) — Option B internal flip (D-01 experiment, zero switched probes), ADR-001..005 Accepted; STATE blocker «Decision #1» closed by kill-criterion spike before any correction code
+- [Phase 01]: [Phase 01] 01-04: spec-deltas applied to SPEC on top of owner edits — §5 (waitless actions < 50 ms; Right Shift actions bounded by the 300 ms discrimination window) and §4.3 (mouse click out of reset triggers; mandatory surrounding-text check + best-effort cursor-jump reset); owner macros section renumbered 4.4→4.5 to fix duplicate numbering
 
 ### Pending Todos
 
@@ -94,8 +97,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 1: ADR Decision #1 (two-engine vs внутренний флип) — конфликтующие данные по `gsettings set current` на GNOME 46; решается kill-criterion спайком в Фазе 1 до любого кода коррекции.
-- Phase 1: MACR-01 — РЕШЕНО владельцем 2026-09-10 (D-12): в v1, внутри goswitch; keyd отвергнут. ADR-005 выбирает механизм. Открытых вопросов владельца нет.
+- Phase 1: ADR Decision #1 — ЗАКРЫТО планом 01-04 (2026-09-11): kill-criterion спайк D-01 прогнан до кода коррекции, ноль switched-проб, побеждает Option B (внутренний флип); ADR-001 Accepted на гейте M0.
+- Phase 1: MACR-01 — РЕШЕНО владельцем 2026-09-10 (D-12): в v1, внутри goswitch; keyd отвергнут. Механизм утверждён на M0 (ADR-005 Accepted): глобальные правила + per-app YAML списки, идентичность — AT-SPI; код в Фазе 3.
 - Go-работа всех фаз идёт по скиллу go-ultimate (project skill, .zcode/skills/) — конвенции и ревью-чеклист оттуда.
 
 ## Deferred Items
@@ -108,6 +111,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-10T21:17:47.733Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-09-11T07:57:27.356Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
