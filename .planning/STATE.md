@@ -1,44 +1,44 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 01
-current_phase_name: ADR-пакет и каркас IBus-движка
-status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-09-11T08:10:10.257Z"
-last_activity: 2026-09-10
-last_activity_desc: Phase 01 execution started
-state_head: cb932537a921a586e1b416900f4f55c6f61e7afa
+current_phase: 2
+current_phase_name: Коррекция слова EN↔RU
+status: planning
+stopped_at: Phase 01 complete, ready to plan Phase 2
+last_updated: "2026-09-11T13:03:40.943Z"
+last_activity: 2026-09-11
+last_activity_desc: Phase 01 complete, transitioned to Phase 2
+state_head: 305226dfa95bf950a9500c5b4a30add6a0adc180
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
   completed_plans: 5
-  percent: 0
+  percent: 25
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-10)
+See: .planning/PROJECT.md (updated 2026-09-11)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 01 — ADR-пакет и каркас IBus-движка
+**Current focus:** Phase 2 — Коррекция слова EN↔RU
 
 ## Current Position
 
-Phase: 01 (ADR-пакет и каркас IBus-движка) — EXECUTING
-Plan: 4 of 5
-Status: Ready to execute
-Last activity: 2026-09-10 — Phase 01 execution started
+Phase: 2 — Коррекция слова EN↔RU
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-11 — Phase 01 complete, transitioned to Phase 2
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 5
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | 2. Коррекция слова EN↔RU | 0/? | - | - |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | - | - |
 | 4. Поставка и приёмка | 0/? | - | - |
+| 01 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -93,6 +94,8 @@ Recent decisions affecting current work:
 - [Phase 01]: [Phase 01] 01-04: spec-deltas applied to SPEC on top of owner edits — §5 (waitless actions < 50 ms; Right Shift actions bounded by the 300 ms discrimination window) and §4.3 (mouse click out of reset triggers; mandatory surrounding-text check + best-effort cursor-jump reset); owner macros section renumbered 4.4→4.5 to fix duplicate numbering
 - [Phase 01]: [Phase 01] 01-05: CI installs tools via mise install from mise.toml (not setup-go/golangci-lint-action — the action's version input would duplicate the mise pin and drift); CI and local mise run ci are the same tasks (D-09/D-11a)
 - [Phase 01]: [Phase 01] 01-05: CONVENTIONS.md directives are single-line bullets — generate-claude-md's summarizer drops numbered lists/indented sub-bullets; directives must stay transport-safe for AGENTS.md regeneration
+- [Phase 01]: verify-work 2026-09-11: UAT 4/4 — keyd-сосуществование подтверждено владельцем; первый pr-sanity зелёный на реальном раннере (PR #1, run 34596048376: build/vet/lint/test 39с, govulncheck 29с); dependabot-PR и cron-запуск приняты владельцем по эквивалентным доказательствам (активируются после мержа PR #1)
+- [Phase 01]: SECURITY.md создан при verify-work (post-hook): 21 угроза из threat-моделей 5 планов, 21 закрыто / 0 открыто (ASVS L1), 3 принятых риска задокументированы
 
 ### Pending Todos
 
@@ -114,6 +117,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-11T08:10:10.221Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-09-11T13:10:00Z
+Stopped at: Phase 01 complete (UAT 4/4, SECURITY 21/0), ready to plan Phase 2
 Resume file: None

@@ -87,3 +87,13 @@ Existing infrastructure covers all phase requirements — go test + mise task ch
 - [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** approved 2026-09-11 (gap gate: manual-only selected for environment-gated checks — root-keyd and GitHub-side CI activations; nyquist auditor dispatch skipped as non-test-writable)
+
+## Validation Audit 2026-09-11 (verify-work)
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+Manual-Only table re-checked during UAT (01-UAT.md): INTEG-02 keyd coexistence — owner-verified **pass**; first pr-sanity on real runner — **proven green** (PR #1, run 34596048376: build/vet/lint/test 39s ✓, govulncheck 29s ✓); first dependabot PR and first scheduled security run — deferred follow-ups (activate after PR #1 merges workflows onto main; govulncheck substance already green). All automated rows remain green; `nyquist_compliant: true` unchanged.
