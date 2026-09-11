@@ -6,6 +6,15 @@ import (
 	"github.com/Djarvur/goswitch/internal/correct"
 )
 
+// The SPEC correction word in both layouts, named so every corpus case
+// states its contract (style of the timing constants in fsm_test.go).
+const (
+	wordEN       = "ghbdtn"
+	wordRU       = "привет"
+	wordENDigits = "ghbdtn2026"
+	wordENComma  = "ghbdtn,"
+)
+
 // push feeds every rune of s into the buffer.
 func push(b *correct.Buffer, s string) {
 	for _, r := range s {
@@ -21,23 +30,23 @@ func TestBuffer_TokenRules(t *testing.T) {
 	t.Parallel()
 
 	b := correct.NewBuffer()
-	push(b, "ghbdtn")
-	if got := string(b.Token()); got != "ghbdtn" {
-		t.Fatalf("Token() = %q, want %q", got, "ghbdtn")
+	push(b, wordEN)
+	if got := string(b.Token()); got != wordEN {
+		t.Fatalf("Token() = %q, want %q", got, wordEN)
 	}
 	if got := string(b.Tail()); got != "" {
 		t.Fatalf("Tail() = %q, want empty", got)
 	}
 	b.Push(' ')
-	if got := string(b.Token()); got != "ghbdtn" {
-		t.Errorf("Token() after space = %q, want %q (D-13: the last word lives on)", got, "ghbdtn")
+	if got := string(b.Token()); got != wordEN {
+		t.Errorf("Token() after space = %q, want %q (D-13: the last word lives on)", got, wordEN)
 	}
 	if got := string(b.Tail()); got != " " {
 		t.Errorf("Tail() after space = %q, want %q", got, " ")
 	}
 	b.Backspace()
-	if got := string(b.Token()); got != "ghbdtn" {
-		t.Errorf("Token() after Backspace over the space = %q, want %q", got, "ghbdtn")
+	if got := string(b.Token()); got != wordEN {
+		t.Errorf("Token() after Backspace over the space = %q, want %q", got, wordEN)
 	}
 	if got := string(b.Tail()); got != "" {
 		t.Errorf("Tail() after Backspace over the space = %q, want empty", got)
@@ -88,10 +97,10 @@ func TestBuffer_WordAfterSpace(t *testing.T) {
 	t.Run("word then space", func(t *testing.T) {
 		t.Parallel()
 		b := correct.NewBuffer()
-		push(b, "ghbdtn")
+		push(b, wordEN)
 		b.Push(' ')
-		if got := string(b.Token()); got != "ghbdtn" {
-			t.Errorf("Token() = %q, want %q", got, "ghbdtn")
+		if got := string(b.Token()); got != wordEN {
+			t.Errorf("Token() = %q, want %q", got, wordEN)
 		}
 		if got := string(b.Tail()); got != " " {
 			t.Errorf("Tail() = %q, want %q", got, " ")
@@ -136,10 +145,10 @@ func TestBuffer_PunctuationToken(t *testing.T) {
 		token string
 		tail  string
 	}{
-		{name: "comma joins the token", in: "ghbdtn,", token: "ghbdtn,", tail: ""},
+		{name: "comma joins the token", in: wordENComma, token: wordENComma, tail: ""},
 		{name: "semicolon joins the token", in: "ghbdtn;", token: "ghbdtn;", tail: ""},
-		{name: "slash is a boundary", in: "ghbdtn/", token: "ghbdtn", tail: "/"},
-		{name: "dash is a boundary", in: "ghbdtn-", token: "ghbdtn", tail: "-"},
+		{name: "slash is a boundary", in: "ghbdtn/", token: wordEN, tail: "/"},
+		{name: "dash is a boundary", in: "ghbdtn-", token: wordEN, tail: "-"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -164,9 +173,9 @@ func TestBuffer_DigitsInToken(t *testing.T) {
 	t.Run("digits extend the word", func(t *testing.T) {
 		t.Parallel()
 		b := correct.NewBuffer()
-		push(b, "ghbdtn2026")
-		if got := string(b.Token()); got != "ghbdtn2026" {
-			t.Errorf("Token() = %q, want %q", got, "ghbdtn2026")
+		push(b, wordENDigits)
+		if got := string(b.Token()); got != wordENDigits {
+			t.Errorf("Token() = %q, want %q", got, wordENDigits)
 		}
 	})
 
@@ -191,8 +200,8 @@ func TestBuffer_BackspacePop(t *testing.T) {
 	b := correct.NewBuffer()
 	push(b, "ghbdtn v")
 	b.Backspace()
-	if got := string(b.Token()); got != "ghbdtn" {
-		t.Errorf("Token() after Backspace = %q, want %q (back to the previous word)", got, "ghbdtn")
+	if got := string(b.Token()); got != wordEN {
+		t.Errorf("Token() after Backspace = %q, want %q (back to the previous word)", got, wordEN)
 	}
 	if got := string(b.Tail()); got != " " {
 		t.Errorf("Tail() after Backspace = %q, want %q (the separator stays)", got, " ")
@@ -217,9 +226,9 @@ func TestBuffer_ReplaceTokenToggle(t *testing.T) {
 
 	b := correct.NewBuffer()
 	push(b, "ghbdtn ")
-	b.ReplaceToken([]rune("привет"))
-	if got := string(b.Token()); got != "привет" {
-		t.Fatalf("Token() after ReplaceToken = %q, want %q", got, "привет")
+	b.ReplaceToken([]rune(wordRU))
+	if got := string(b.Token()); got != wordRU {
+		t.Fatalf("Token() after ReplaceToken = %q, want %q", got, wordRU)
 	}
 	if got := string(b.Tail()); got != " " {
 		t.Errorf("Tail() after ReplaceToken = %q, want %q (tail preserved)", got, " ")
@@ -229,7 +238,7 @@ func TestBuffer_ReplaceTokenToggle(t *testing.T) {
 		t.Fatalf("Detect(corrected token) = (%d, %v), want (%d, true)", dir, ok, correct.RUtoEN)
 	}
 	back, ok := correct.Convert(b.Token(), dir)
-	if !ok || string(back) != "ghbdtn" {
+	if !ok || string(back) != wordEN {
 		t.Errorf("Convert(corrected token) = (%q, %v), want (ghbdtn, true)", string(back), ok)
 	}
 }

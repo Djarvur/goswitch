@@ -20,7 +20,23 @@ const (
 // direction. No dictionaries or frequency heuristics — the script
 // composition of the buffer is the only input (SPEC §11).
 func Detect(token []rune) (Dir, bool) {
-	_, _ = unicode.Latin, unicode.Cyrillic
+	var en, ru int
+	for _, r := range token {
+		switch {
+		case unicode.Is(unicode.Latin, r):
+			en++
+		case unicode.Is(unicode.Cyrillic, r):
+			ru++
+		}
+	}
+	switch {
+	case en > 0 && ru > 0:
+		return 0, false // mixed — silent refusal (D-16)
+	case en > 0:
+		return ENtoRU, true
+	case ru > 0:
+		return RUtoEN, true
+	}
 
-	return 0, false
+	return 0, false // no letters — no direction
 }

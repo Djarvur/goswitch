@@ -13,7 +13,28 @@ import (
 // identically (D-14/D-15: "ghbdtn,"→"привет,"); a letter missing from the
 // table fails the whole conversion.
 func Convert(token []rune, dir Dir) ([]rune, bool) {
-	_, _, _ = unicode.IsLetter, layouts.ENToRU, layouts.RUToEN
+	var table map[rune]rune
+	switch dir {
+	case ENtoRU:
+		table = layouts.ENToRU
+	case RUtoEN:
+		table = layouts.RUToEN
+	default:
+		return nil, false
+	}
+	out := make([]rune, 0, len(token))
+	for _, r := range token {
+		if !unicode.IsLetter(r) {
+			out = append(out, r) // digits and token punctuation ride along identically
 
-	return nil, false
+			continue
+		}
+		m, ok := table[r]
+		if !ok {
+			return nil, false
+		}
+		out = append(out, m)
+	}
+
+	return out, true
 }

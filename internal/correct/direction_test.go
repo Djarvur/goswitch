@@ -18,9 +18,9 @@ func TestDetect_PureScript(t *testing.T) {
 		dir   correct.Dir
 		ok    bool
 	}{
-		{name: "latin word", token: "ghbdtn", dir: correct.ENtoRU, ok: true},
-		{name: "cyrillic word", token: "привет", dir: correct.RUtoEN, ok: true},
-		{name: "latin word with digits", token: "ghbdtn2026", dir: correct.ENtoRU, ok: true},
+		{name: "latin word", token: wordEN, dir: correct.ENtoRU, ok: true},
+		{name: "cyrillic word", token: wordRU, dir: correct.RUtoEN, ok: true},
+		{name: "latin word with digits", token: wordENDigits, dir: correct.ENtoRU, ok: true},
 		{name: "no letters at all", token: "2026", dir: 0, ok: false},
 	}
 	for _, tc := range cases {
@@ -60,7 +60,7 @@ func TestDetect_NeutralNotMixed(t *testing.T) {
 		token string
 		dir   correct.Dir
 	}{
-		{name: "latin with digits", token: "ghbdtn2026", dir: correct.ENtoRU},
+		{name: "latin with digits", token: wordENDigits, dir: correct.ENtoRU},
 		{name: "cyrillic with digits", token: "привет2026", dir: correct.RUtoEN},
 		{name: "latin with token punctuation", token: "ghbdtn,;", dir: correct.ENtoRU},
 	}
