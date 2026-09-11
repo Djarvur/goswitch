@@ -31,10 +31,31 @@ type Plan struct {
 
 // BuildPlan computes the replacement geometry for the token, its boundary
 // tail and the converted token, choosing the ladder level by the
-// surrounding-text capability bit (CORR-07, ADR-003).
+// surrounding-text capability bit (CORR-07, ADR-003). GEOMETRY: deleting
+// exactly the token while the tail is non-empty is impossible — after the
+// deletion the cursor lands AFTER the tail and the commit would insert the
+// corrected word behind it ("abc  привет" with the order lost); the D-13
+// pin ("ghbdtn " → "привет ") allows only deleting token+tail and
+// recommitting converted+tail. BOTH levels therefore replace token+tail:
+// Level1 with a single DeleteSurroundingText range, Level2 with
+// token+tail Backspaces and the tail re-committed. Wiring — plans 02-03
+// (Level1) and 02-05 (Level2).
 func BuildPlan(token, tail, converted []rune, caps uint32) Plan {
-	_, _, _ = token, tail, converted
-	_ = caps
+	n := len(token) + len(tail) // runes, never bytes (ADR-003)
+	commit := make([]rune, 0, len(converted)+len(tail))
+	commit = append(commit, converted...)
+	commit = append(commit, tail...)
+	if caps&CapSurroundingText != 0 {
+		return Plan{
+			Level: Level1,
+			// #nosec G115 -- a phrase since the last hard reset is
+			// bounded by human typing, far below 2^31 runes.
+			Offset: -int32(n),
+			// #nosec G115 -- same phrase-length bound as Offset.
+			NChars: uint32(n),
+			Commit: commit,
+		}
+	}
 
-	return Plan{}
+	return Plan{Level: Level2, Backspaces: n, Commit: commit}
 }
