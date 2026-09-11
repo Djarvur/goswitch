@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: ADR-пакет и каркас IBus-движка
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-09-11T07:57:27.386Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-09-11T08:10:10.257Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 01 execution started
-state_head: 0a48f769c7de329fd0e797a6a62f7f4bc8c4b69c
+state_head: cb932537a921a586e1b416900f4f55c6f61e7afa
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 01 (ADR-пакет и каркас IBus-движка) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 01 execution started
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P02 | 20 min | 2 tasks | 8 files |
 | Phase 01 P03 | 80 min | 3 tasks | 13 files |
 | Phase 01 P04 | 40 min | 3 tasks | 14 files |
+| Phase 01 P05 | 8 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,8 @@ Recent decisions affecting current work:
 - [Phase 01]: [Phase 1] 01-03: readback oracles are length-based — the desktop's active XKB group maps ghbdtn to привет, content comparison would be layout-dependent
 - [Phase 01]: [Phase 01] 01-04 M0 passed: owner approved the ADR pack («утверждено», 2026-09-10) — Option B internal flip (D-01 experiment, zero switched probes), ADR-001..005 Accepted; STATE blocker «Decision #1» closed by kill-criterion spike before any correction code
 - [Phase 01]: [Phase 01] 01-04: spec-deltas applied to SPEC on top of owner edits — §5 (waitless actions < 50 ms; Right Shift actions bounded by the 300 ms discrimination window) and §4.3 (mouse click out of reset triggers; mandatory surrounding-text check + best-effort cursor-jump reset); owner macros section renumbered 4.4→4.5 to fix duplicate numbering
+- [Phase 01]: [Phase 01] 01-05: CI installs tools via mise install from mise.toml (not setup-go/golangci-lint-action — the action's version input would duplicate the mise pin and drift); CI and local mise run ci are the same tasks (D-09/D-11a)
+- [Phase 01]: [Phase 01] 01-05: CONVENTIONS.md directives are single-line bullets — generate-claude-md's summarizer drops numbered lists/indented sub-bullets; directives must stay transport-safe for AGENTS.md regeneration
 
 ### Pending Todos
 
@@ -111,6 +114,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-11T07:57:27.356Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-09-11T08:10:10.221Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
