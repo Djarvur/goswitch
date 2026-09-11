@@ -1,0 +1,93 @@
+# PR sanity — headless gates on every push/PR (D-11a).
+#
+# Gates: build + vet + golangci-lint + test -race + tidy-diff, plus a separate
+# govulncheck job. All gates are mise tasks from mise.toml — CI calls exactly the
+# same tasks as the local `mise run ci` (D-09).
+#
+# Tool source: `mise install` reads mise.toml — the single place where go and
+# golangci-lint versions live. golangci-lint-action was rejected on purpose: its
+# `version` input would pin the linter a SECOND time and drift from mise.toml;
+# mise gives exact parity with the local dev loop.
+#
+# e2e-* mise tasks are deliberately NOT called here: the live stand needs a real
+# GNOME session and drives the owner's desktop — it stays local-only (T-03-03).
+name: pr-sanity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Minimal default token rights (T-05-02); no secrets are used by any job.
+permissions:
+  contents: read
+
+concurrency:
+  # Event name keeps a push and a pull_request for the same ref from
+  # cancelling each other.
+  group: pr-sanity-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanity:
+    name: build / vet / lint / test / tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Official mise installer (T-05-03: mise.run is the canonical distribution
+      # point of jdx/mise; ephemeral runner, contents: read, no secrets).
+      - name: Install mise
+        run: curl https://mise.run | sh
+
+      - name: Add mise to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Installs go and golangci-lint at exactly the versions pinned in
+      # mise.toml — the single source of tool versions (D-09/D-11).
+      - name: Install tools from mise.toml
+        run: mise install
+
+      - name: build
+        run: mise run build
+
+      - name: vet
+        run: mise run vet
+
+      # golangci-lint from Phase 1 — owner directive (D-10), strict config.
+      - name: golangci-lint
+        run: mise run lint
+
+      - name: test -race
+        run: mise run test
+
+      # go mod tidy + git diff --exit-code — go.mod/go.sum drift fails the job.
+      - name: modules are tidy
+        run: mise run tidy-diff
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        run: curl https://mise.run | sh
+
+      - name: Add mise to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install tools from mise.toml
+        run: mise install
+
+      # Network-side tool by design: govulncheck and its vulnerability DB are
+      # fetched here only — the local gate does not mirror it. Non-zero exit on
+      # reachable vulnerabilities turns the job red.
+      #
+      # T-05-01: golang.org/x/vuln is the Go team's first-party module, run on
+      # an ephemeral runner with contents: read and no secrets. If @latest ever
+      # requires a newer toolchain, raise the go pin in mise.toml together with
+      # the go.mod directive — one place.
+      - name: govulncheck
+        run: mise exec -- go run golang.org/x/vuln/cmd/govulncheck@latest ./...

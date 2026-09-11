@@ -16,7 +16,7 @@
 - [ ] **CORR-05**: Регистр сохраняется посимвольно: `GHBDTN`→`ПРИВЕТ`, `Ghbdtn`→`Привет`, `ghbdtn`→`привет`
 - [ ] **CORR-06**: Смешанный текст: корректируется только часть, набранная не той раскладкой (точная семантика — ADR фазы решения)
 - [ ] **CORR-07**: Замена применяется ровно к диапазону неверного текста без визуального «прыжка» (surrounding-text; fallback Backspace×N / буфер обмена — по capability ladder)
-- [ ] **CORR-08**: Таблицы ЙЦУКЕН↔QWERTY включают знаки `[ ] ; ' , . /` и генерируются `go:generate` из xkb symbols
+- [x] **CORR-08**: Таблицы ЙЦУКЕН↔QWERTY включают знаки `[ ] ; ' , . /` и генерируются `go:generate` из xkb symbols
 - [ ] **CORR-09**: Буфер очищается по Enter, Tab, Escape, смене фокуса окна; клик мыши — по результатам ADR (на уровне IME ненаблюдаем)
 
 ### SWCH — Переключение раскладки
@@ -34,11 +34,11 @@
 
 ### INTEG — Интеграция с окружением
 
-- [ ] **INTEG-01**: `goswitchd` работает как IBus input method engine (D-Bus `org.freedesktop.IBus`, регистрация `_RegisterComponent`), текст инжектируется через `commit_text`
-- [ ] **INTEG-02**: Совместимость с keyd/xremap: обычный набор идёт транзитом, никакого EVIOCGRAB / захвата клавиатуры
-- [ ] **INTEG-03**: Работает поверх дефолтного IM-стека Ubuntu 24.04 GNOME Wayland без root (членство в группе IBus-сокета)
-- [ ] **INTEG-04**: Движок перерегистрируется после рестарта ibus-daemon (известная потеря регистрации — ibus#2910)
-- [ ] **INTEG-05**: Паника обработчика не роняет движок и не убивает ввод сессии (recover-шим на точке диспетчеризации; падение движка = смерть ввода всего рабочего стола)
+- [x] **INTEG-01**: `goswitchd` работает как IBus input method engine (D-Bus `org.freedesktop.IBus`, регистрация `_RegisterComponent`), текст инжектируется через `commit_text`
+- [x] **INTEG-02**: Совместимость с keyd/xremap: обычный набор идёт транзитом, никакого EVIOCGRAB / захвата клавиатуры
+- [x] **INTEG-03**: Работает поверх дефолтного IM-стека Ubuntu 24.04 GNOME Wayland без root (членство в группе IBus-сокета)
+- [x] **INTEG-04**: Движок перерегистрируется после рестарта ibus-daemon (известная потеря регистрации — ibus#2910)
+- [x] **INTEG-05**: Паника обработчика не роняет движок и не убивает ввод сессии (recover-шим на точке диспетчеризации; падение движка = смерть ввода всего рабочего стола)
 
 ### MACR — Клавиатурные макросы
 
@@ -46,9 +46,9 @@
 
 ### TEST — Автоматизированное тестирование
 
-- [ ] **TEST-01**: Unit/golden-тесты в headless CI: таблицы раскладок, детектор направления, регистры, логика буфера (клавиша→буфер→решение), парсер конфига и hot reload
-- [ ] **TEST-02**: e2e-стенд: инжекция нажатий физическим путём (ydotool/uinput — тот же путь, что живая клавиатура), чтение результата из поля редактора через AT-SPI
-- [ ] **TEST-03**: e2e-стенд сам активирует целевое окно перед каждым кейсом (фокус непредсказуем)
+- [x] **TEST-01**: Unit/golden-тесты в headless CI: таблицы раскладок, детектор направления, регистры, логика буфера (клавиша→буфер→решение), парсер конфига и hot reload
+- [x] **TEST-02**: e2e-стенд: инжекция нажатий физическим путём (ydotool/uinput — тот же путь, что живая клавиатура), чтение результата из поля редактора через AT-SPI
+- [x] **TEST-03**: e2e-стенд сам активирует целевое окно перед каждым кейсом (фокус непредсказуем)
 - [ ] **TEST-04**: Матрица кейсов в YAML (ввод → ожидание): `ghbdtn`+хоткей→`привет`, регистры, фразы, выделение, смешанный текст, разные приложения (gnome-text-editor, Chrome); отчёт PASS/FAIL, код выхода ≠ 0 при падении
 
 ### INST — Поставка и эксплуатация
@@ -56,7 +56,7 @@
 - [ ] **INST-01**: Установка без root: systemd user unit, регистрация engine в IBus, `go install` + бинарник из GitHub releases
 - [ ] **INST-02**: CLI `goswitchctl`: статус, перечитать конфиг, принудительно скорректировать
 - [ ] **INST-03**: Реакция на горячую клавишу < 50 мс; потребление памяти < 50 МБ
-- [ ] **INST-04**: Структурные логи с уровнями; debug-режим с трассировкой клавиш
+- [x] **INST-04**: Структурные логи с уровнями; debug-режим с трассировкой клавиш
 
 ## v2 Requirements
 
@@ -91,7 +91,7 @@
 | CORR-05 | Phase 2 | Pending |
 | CORR-06 | Phase 3 | Pending |
 | CORR-07 | Phase 2 | Pending |
-| CORR-08 | Phase 1 | Pending |
+| CORR-08 | Phase 1 | Complete |
 | CORR-09 | Phase 2 | Pending |
 | SWCH-01 | Phase 3 | Pending |
 | SWCH-02 | Phase 3 | Pending |
@@ -100,22 +100,23 @@
 | CONF-01 | Phase 3 | Pending |
 | CONF-02 | Phase 3 | Pending |
 | CONF-03 | Phase 3 | Pending |
-| INTEG-01 | Phase 1 | Pending |
-| INTEG-02 | Phase 1 | Pending |
-| INTEG-03 | Phase 1 | Pending |
-| INTEG-04 | Phase 1 | Pending |
-| INTEG-05 | Phase 1 | Pending |
+| INTEG-01 | Phase 1 | Complete |
+| INTEG-02 | Phase 1 | Complete |
+| INTEG-03 | Phase 1 | Complete |
+| INTEG-04 | Phase 1 | Complete |
+| INTEG-05 | Phase 1 | Complete |
 | MACR-01 | Phase 3 | Pending (в v1, внутри goswitch — решение D-12; механизм — ADR-005 фазы 1) |
-| TEST-01 | Phase 1 | Pending |
-| TEST-02 | Phase 1 | Pending |
-| TEST-03 | Phase 1 | Pending |
+| TEST-01 | Phase 1 | Complete |
+| TEST-02 | Phase 1 | Complete |
+| TEST-03 | Phase 1 | Complete |
 | TEST-04 | Phase 2 | Pending (матрица v1; широта v2 наращивается в Фазе 3) |
 | INST-01 | Phase 4 | Pending |
 | INST-02 | Phase 3 | Pending |
 | INST-03 | Phase 4 | Pending |
-| INST-04 | Phase 1 | Pending |
+| INST-04 | Phase 1 | Complete |
 
 **Coverage:**
+
 - v1 requirements: 30 total (по фактическому числу REQ-ID; ранее указанное «29» было ошибкой счёта)
 - Mapped to phases: 30 (Phase 1: 10, Phase 2: 6, Phase 3: 12, Phase 4: 2)
 - Unmapped: 0

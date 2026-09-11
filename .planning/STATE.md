@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 1
+current_phase: 01
 current_phase_name: ADR-пакет и каркас IBus-движка
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-09-10T17:54:16.296Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-09-11T08:10:10.257Z"
 last_activity: 2026-09-10
-last_activity_desc: Roadmap создан (4 фазы, 30/30 требований замаплено)
-state_head: d02464f8265d19239812cdb6e2afb35ecf5a9d46
+last_activity_desc: Phase 01 execution started
+state_head: cb932537a921a586e1b416900f4f55c6f61e7afa
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 5
   percent: 0
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-10)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 1 — ADR-пакет и каркас IBus-движка
+**Current focus:** Phase 01 — ADR-пакет и каркас IBus-движка
 
 ## Current Position
 
-Phase: 1 (ADR-пакет и каркас IBus-движка) — READY TO EXECUTE
-Plan: 0 of TBD in current phase
+Phase: 01 (ADR-пакет и каркас IBus-движка) — EXECUTING
+Plan: 4 of 5
 Status: Ready to execute
-Last activity: 2026-09-10 — Roadmap создан (4 фазы, 30/30 требований замаплено)
+Last activity: 2026-09-10 — Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -57,6 +57,15 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 1 P01 | 35 min | 2 tasks | 19 files |
+| Phase 01 P02 | 20 min | 2 tasks | 8 files |
+| Phase 01 P03 | 80 min | 3 tasks | 13 files |
+| Phase 01 P04 | 40 min | 3 tasks | 14 files |
+| Phase 01 P05 | 8 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -69,6 +78,21 @@ Recent decisions affecting current work:
 - Roadmap: recover-шим и цикл перерегистрации — day-one элементы Фазы 1 (падение движка = смерть ввода рабочего стола).
 - Roadmap: TEST-02/03 (e2e-стенд) в Фазе 1 как скелет (ydotool → лог), матрица кейсов (TEST-04) — Фаза 2.
 - Roadmap: INST-04 (логи/трассировка) в Фазе 1 — гейт M1 требует событий в логе.
+- [Phase 1]: RequestName targets the component name org.freedesktop.IBus.goswitch — org.freedesktop.IBus is reserved by ibus-daemon (live-probed); single-instance guard preserved
+- [Phase 1]: Live-gate proof uses ListActiveEngines (ibus list-engine reads only the XML registry) and layout-independent keycode assertions — keyvals follow the focused client's XKB group
+- [Phase 1]: nonamedreturns disabled in strict lint config: the INTEG-05 recover shim requires named returns for zero-value panic replies
+- [Phase 1]: 01-02: layout tables join by xkb KEY POSITION (not character) — asymmetric pairs (&↔?, @↔", #↔№, $↔;, ^↔:, |↔/) fall out of the join; plan bullet's wrong per-char pairs (h→и, b→б, d→д) corrected to the string-level SPEC truth (h→р, b→и, d→в)
+- [Phase 1]: 01-02: FSM TimerExpired honors the last tap's deadline — stale AfterFunc timers are no-ops; required by the intervening-key-cancel pin and race-safe for the adapter's re-arm
+- [Phase 1]: 01-02: generator's Cyrillic table keyed by keysym NAME with values resolved from ibuskeysyms.h (Latin-1 direct 0x20–0xff); unknown names fail generation loudly — golden corpus pins at generation time, never runtime
+- [Phase 1]: 01-02: KeyvalShiftR (0xffe2) lives in internal/hotkey, not imported from engine — pure package stays D-Bus-free; dependency direction will be engine → hotkey
+- [Phase 01]: [Phase 1] 01-03: engine activation is IBus SetGlobalEngine — GNOME 46 shell runtime-ignores gsettings sources/current writes (live-verified); both keys stay snapshotted, restored only-if-changed
+- [Phase 01]: [Phase 1] 01-03: e2e surface = self-focused zenity entry (primary) / shell PASSWORD_TEXT entry (locked fallback) — AT-SPI grabFocus refused under Wayland; injection gated on the AT-SPI witness
+- [Phase 01]: [Phase 1] 01-03: teardown re-asserts the global engine AFTER daemon death — ibus-daemon unsets it on engine-component disconnect; never restores to a goswitch engine (xkb fallback)
+- [Phase 01]: [Phase 1] 01-03: readback oracles are length-based — the desktop's active XKB group maps ghbdtn to привет, content comparison would be layout-dependent
+- [Phase 01]: [Phase 01] 01-04 M0 passed: owner approved the ADR pack («утверждено», 2026-09-10) — Option B internal flip (D-01 experiment, zero switched probes), ADR-001..005 Accepted; STATE blocker «Decision #1» closed by kill-criterion spike before any correction code
+- [Phase 01]: [Phase 01] 01-04: spec-deltas applied to SPEC on top of owner edits — §5 (waitless actions < 50 ms; Right Shift actions bounded by the 300 ms discrimination window) and §4.3 (mouse click out of reset triggers; mandatory surrounding-text check + best-effort cursor-jump reset); owner macros section renumbered 4.4→4.5 to fix duplicate numbering
+- [Phase 01]: [Phase 01] 01-05: CI installs tools via mise install from mise.toml (not setup-go/golangci-lint-action — the action's version input would duplicate the mise pin and drift); CI and local mise run ci are the same tasks (D-09/D-11a)
+- [Phase 01]: [Phase 01] 01-05: CONVENTIONS.md directives are single-line bullets — generate-claude-md's summarizer drops numbered lists/indented sub-bullets; directives must stay transport-safe for AGENTS.md regeneration
 
 ### Pending Todos
 
@@ -76,8 +100,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 1: ADR Decision #1 (two-engine vs внутренний флип) — конфликтующие данные по `gsettings set current` на GNOME 46; решается kill-criterion спайком в Фазе 1 до любого кода коррекции.
-- Phase 1: MACR-01 — РЕШЕНО владельцем 2026-09-10 (D-12): в v1, внутри goswitch; keyd отвергнут. ADR-005 выбирает механизм. Открытых вопросов владельца нет.
+- Phase 1: ADR Decision #1 — ЗАКРЫТО планом 01-04 (2026-09-11): kill-criterion спайк D-01 прогнан до кода коррекции, ноль switched-проб, побеждает Option B (внутренний флип); ADR-001 Accepted на гейте M0.
+- Phase 1: MACR-01 — РЕШЕНО владельцем 2026-09-10 (D-12): в v1, внутри goswitch; keyd отвергнут. Механизм утверждён на M0 (ADR-005 Accepted): глобальные правила + per-app YAML списки, идентичность — AT-SPI; код в Фазе 3.
 - Go-работа всех фаз идёт по скиллу go-ultimate (project skill, .zcode/skills/) — конвенции и ревью-чеклист оттуда.
 
 ## Deferred Items
@@ -90,6 +114,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-10T15:48:52.235Z
-Stopped at: Phase 1 context gathered
-Resume file: /home/nil/DiskD/W/Djarvur/goswitch/.planning/phases/01-adr-paket-i-karkas-ibus-dvizhka/01-CONTEXT.md
+Last session: 2026-09-11T08:10:10.221Z
+Stopped at: Completed 01-05-PLAN.md
+Resume file: None

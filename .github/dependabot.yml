@@ -1,0 +1,14 @@
+# Periodic dependency updates (D-11b): weekly dependabot PRs for go modules.
+#
+# Mechanism choice, fixed on purpose: dependabot opens a PR, and every PR
+# automatically runs the full pr-sanity gate (build / vet / golangci-lint /
+# test -race / tidy-diff / govulncheck) — an update cannot reach main without
+# the green gate. The report-only alternative (a scheduled job running
+# `go list -m -u all`) merely prints a list and still needs manual triage of
+# every entry; it was rejected (D-11b).
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly

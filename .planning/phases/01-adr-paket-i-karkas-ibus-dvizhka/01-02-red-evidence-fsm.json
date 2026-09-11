@@ -1,0 +1,6 @@
+{
+  "command": "mise exec -- go test ./internal/hotkey/ -race -count=1 -v",
+  "output": "# tests 11\n# pass 3\n# fail 8\nnot ok 1 - TestFSM_SingleAtWindowExpiry\nnot ok 2 - TestFSM_DoubleAndTriple\nnot ok 3 - TestFSM_WindowEdges\nnot ok 4 - TestFSM_InterveningKeyCancels\nnot ok 5 - TestFSM_FourthTapStaysAtThree\nnot ok 6 - TestFSM_ReleaseWithoutPress\nnot ok 7 - TestFSM_ShiftGlitch\nnot ok 8 - TestFSM_BurstOfTen\nok 9 - TestFSM_ModifierUse\nok 10 - TestFSM_FocusOutDisarms\nok 11 - TestFSM_DefaultWindow\n",
+  "targetTest": "TestFSM_SingleAtWindowExpiry",
+  "exitCode": 1
+}

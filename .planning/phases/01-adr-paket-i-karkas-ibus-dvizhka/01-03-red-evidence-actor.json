@@ -1,0 +1,6 @@
+{
+  "command": "mise exec -- go test ./internal/session/ -race -count=1 -v",
+  "output": "# tests 5\n# pass 0\n# fail 5\nnot ok 1 - TestActor_KeyEventsFeedFSM\nnot ok 2 - TestActor_DoubleTriple\nnot ok 3 - TestActor_FocusOutDisarms\nnot ok 4 - TestActor_Serialization\nnot ok 5 - TestActor_WindowTimerFiresAutomatically\n--- FAIL: TestActor_KeyEventsFeedFSM — action records after single tap = 0, want 1 (expected one {\"msg\":\"action\",\"n\":1} at window expiry)\n--- FAIL: TestActor_DoubleTriple — 2 taps: action records = 0, want 1 (expected one {\"n\":2}; 3 taps expected {\"n\":3})\n--- FAIL: TestActor_FocusOutDisarms — positive control: expected one n=2 action, got 0\n--- FAIL: TestActor_Serialization — actions after parallel burst = 0, want exactly 1\n--- FAIL: TestActor_WindowTimerFiresAutomatically — timer-fired actions = 0, want 1 within 2s\n",
+  "targetTest": "TestActor_KeyEventsFeedFSM",
+  "exitCode": 1
+}
