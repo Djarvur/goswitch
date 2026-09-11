@@ -22,30 +22,32 @@ result: pass
 
 ### 3. First dependabot gomod PR through the gate
 expected: Dependabot opens a gomod bump PR; full pr-sanity gate runs on it automatically
-result: skipped
-reason: "Deferred follow-up: first dependabot PR is a weekly-scheduled future event; fetch-updates API unavailable (404); mechanism verified via dependabot.yml on main + pr-sanity gate proven green in test 2"
+result: pass
+note: "owner-accepted equivalent evidence (2026-09-11): full pr-sanity gate runs automatically on every PR — proven green on PR #1 run 34596048376; dependabot.yml wires gomod bumps through that same gate; first actual bump PR arrives on the weekly schedule (all three deps currently at latest)"
 
 ### 4. First scheduled security-scheduled run
 expected: Workflow fires (weekly cron, Mon 06:00 UTC) and govulncheck exits 0 (no reachable vulnerabilities)
-result: skipped
-reason: "Deferred follow-up: workflow not yet on default branch (registers after PR #1 merges — dispatch API 404s until then); govulncheck-exits-0 substance already proven by green govulncheck job in pr-sanity run 34596048376; cron block verified in .github/workflows/security-scheduled.yml"
+result: pass
+note: "owner-accepted equivalent evidence (2026-09-11): govulncheck-exits-0 over this module proven green in pr-sanity run 34596048376; weekly cron block (Mon 06:00 UTC) + minimal permissions verified in .github/workflows/security-scheduled.yml; first cron firing activates after PR #1 merges workflows onto main"
 
 ## Summary
 
 total: 4
-passed: 2
+passed: 4
 issues: 0
 pending: 0
-skipped: 2
+skipped: 0
 blocked: 0
 
 ## Gaps
 
 ## Deferred Follow-Ups
 
+Observations accepted on equivalent evidence 2026-09-11 (owner, item «1»); confirm when they naturally occur:
+
 - test: 3
-  idea: "First dependabot gomod bump PR through the pr-sanity gate — arrives on the weekly schedule once an outdated dependency exists (all three deps currently at latest)"
+  idea: "First dependabot gomod bump PR through the pr-sanity gate — arrives on the weekly schedule once an outdated dependency exists"
   deferred_at: 2026-09-11
 - test: 4
-  idea: "First cron-triggered security-scheduled run (Mon 06:00 UTC) — activates after PR #1 merges workflows onto main; govulncheck substance already green in pr-sanity"
+  idea: "First cron-triggered security-scheduled run (Mon 06:00 UTC) — activates after PR #1 merges workflows onto main"
   deferred_at: 2026-09-11
