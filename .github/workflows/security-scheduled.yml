@@ -1,0 +1,36 @@
+# Periodic security check (D-11c): weekly govulncheck over the whole module.
+#
+# govulncheck exits non-zero when it finds vulnerabilities reachable from this
+# module's call graph — a red job is the alert. Tools come from mise.toml via
+# `mise install` (D-09), the same source as pr-sanity.
+name: security-scheduled
+
+on:
+  schedule:
+    # Mondays 06:00 UTC — weekly.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+# Minimal default token rights (T-05-02); no secrets are used.
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        run: curl https://mise.run | sh
+
+      - name: Add mise to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install tools from mise.toml
+        run: mise install
+
+      # Non-zero exit on reachable vulnerabilities → red job (D-11c).
+      - name: govulncheck
+        run: mise exec -- go run golang.org/x/vuln/cmd/govulncheck@latest ./...

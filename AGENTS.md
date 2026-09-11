@@ -146,7 +146,18 @@
 
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+## Engineering directives (owner, 2026-09-10 — bind all phases)
+
+- **1. Строгий TDD.** Каждая задача на поведение пишется red → green → refactor: сначала падающий тест, потом минимальная реализация, потом рефакторинг. Verify-блоки задач прогоняют тесты на каждом шаге.
+- **2. Зелёная итерация.** Каждая итерация (задача/план) завершается только при безошибочном прохождении: `go build ./...`, `go test -race ./...`, `golangci-lint run`. Никаких «поправим линт потом».
+- **3. Проверочные сценарии — mise, не make.** Задачи сборки/тестов/линта/e2e — задачи mise (`mise.toml`, `[tasks]`), Makefile не создаётся. mise же управляет инструментами (`[tools]`: go, golangci-lint) — отсутствие golangci-lint в системе больше не отклонение, ставится per-project.
+- **4. golangci-lint — максимально строгий конфиг с Фазы 1.** `.golangci.yml` адаптируется с эталона владельца `~/DiskD/W/Djarvur/ass-guard-agent/.golangci.yml` (v2, `linters.default: all`, точечные disable только с обоснованием, depguard deny `unsafe`, потолки сложности, formatters gofmt+goimports, `local-prefixes: github.com/Djarvur/goswitch`). Отклонений нет.
+- **5. GitHub Actions создаются и поддерживаются актуальными:** PR sanity (build + vet + golangci-lint + test -race + tidy-diff + govulncheck) на каждый push/PR; периодическая проверка обновлений зависимостей (dependabot weekly — D-11b); периодические проверки безопасности (scheduled govulncheck — D-11c).
+
+## CI gates (go-ultimate skill)
+
+- CI-гейты скилла go-ultimate — build / vet / test -race -cover / go mod tidy + git diff --exit-code / govulncheck — включены с Фазы 1 и дополняются директивами выше (golangci-lint с Фазы 1 через mise, см. `.github/workflows/`).
+
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
