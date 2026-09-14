@@ -351,11 +351,20 @@ func (a *Actor) flipScript() {
 // feedKey decides one press: whether the engine consumes the key and which
 // rune the buffer takes — the script-true invariant made branch-local (a
 // rune that reaches the field also reaches the buffer, whatever delivered
-// it). The caller holds the mutex.
+// it). The CORR-09 reset keyvals (Enter and its keypad variant, Tab,
+// Escape) end the phrase instead of feeding it. The caller holds the mutex.
 func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 	switch {
 	case ev.Keyval == engine.KeyBackSpace:
 		a.buf.Backspace()
+
+		return false
+	case isResetKeyval(ev.Keyval):
+		// CORR-09: the commit/abort keys end the phrase — the buffer dies
+		// with its word's context. The reset is engine state, never
+		// consumption: the key transits so the client sees its Enter, Tab
+		// or Escape exactly as before.
+		a.buf.HardReset()
 
 		return false
 	case !printableKeyval(ev.Keyval) || ev.Mods&comboMask != 0:
@@ -536,6 +545,19 @@ func (a *Actor) elapsed() time.Duration {
 // range land in the field as characters.
 func printableKeyval(keyval uint32) bool {
 	return keyval >= 0x20 && keyval < 0xFE00
+}
+
+// isResetKeyval reports whether keyval is one of the CORR-09 hard-reset
+// triggers observable at the IME level: Enter and its keypad variant, Tab
+// and Escape (ADR-004 — the mouse click is not observable here and is
+// replaced by the pre-correction verification, not by this table).
+func isResetKeyval(keyval uint32) bool {
+	switch keyval {
+	case engine.KeyReturn, engine.KeyKPEnter, engine.KeyTab, engine.KeyEscape:
+		return true
+	default:
+		return false
+	}
 }
 
 // beforeCursor returns the rune slice of text up to the cursor position,

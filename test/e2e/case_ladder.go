@@ -89,3 +89,63 @@ func runLadderChromium(ctx context.Context, s *stand) error {
 
 	return nil
 }
+
+// runResetEscape proves the CORR-09 reset trigger live: "ghbdtn" typed into
+// the chromium field, Escape pressed — the field survives it (Pitfall 6 is
+// exactly why the surface is chromium, not zenity) — and the double tap
+// must find an EMPTY buffer: the daemon logs the empty-buffer refusal
+// reason (D-20) and the field keeps the typed word untouched.
+func runResetEscape(ctx context.Context, s *stand) error {
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+	if err := s.startChromium(ctx); err != nil {
+		return err
+	}
+	defer s.closeChromium()
+
+	if err := s.waitChromiumInput(ctx, 0); err != nil {
+		return err
+	}
+	if err := s.injectText(ctx, wordProbeEN); err != nil {
+		return err
+	}
+	if err := s.waitChromiumInput(ctx, len(wordProbeEN)); err != nil {
+		return fmt.Errorf("reset-escape injected field: %w", err)
+	}
+
+	// ydotool 0.1.8 resolves "Escape" to the physical E key (first-letter
+	// fallback, live finding 2026-09-15 — the daemon saw keyval 0x65/keycode
+	// 18 and the token grew a trailing 'e'); the lowercase "esc" is the name
+	// its table maps to the real KEY_ESC (keyval 0xff1b, keycode 1). Same
+	// name-resolution trap as the 02-03 "space"→S finding.
+	if err := s.pressKey(ctx, "esc"); err != nil {
+		return err
+	}
+
+	if err := s.injectKeys(ctx, "Shift_R", "Shift_R"); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"action","n":2`, decisionWait); err != nil {
+		return fmt.Errorf("reset-escape double-tap decision: %w", err)
+	}
+	// CORR-09/D-20: the refusal lands in the log with its reason — the
+	// buffer died with the Escape press, nothing is left to correct.
+	if err := s.waitForLog(ctx, `"reason":"empty-buffer"`, correctionWait); err != nil {
+		return fmt.Errorf("reset-escape buffer reset: %w", err)
+	}
+
+	// The field must be untouched: exactly the typed word.
+	if err := s.waitChromiumInput(ctx, len(wordProbeEN)); err != nil {
+		return fmt.Errorf("reset-escape field changed by the refused correction: %w", err)
+	}
+	got, err := s.readChromiumText(ctx)
+	if err != nil {
+		return err
+	}
+	if got != wordProbeEN {
+		return fmt.Errorf("reset-escape readback %q, want the untouched %q", got, wordProbeEN)
+	}
+
+	return nil
+}
