@@ -88,7 +88,7 @@ func NewActor(window time.Duration) *Actor {
 // presses outside true combos feed the phrase buffer (see comboMask); a
 // Backspace press pops it honestly, so the buffer keeps mirroring the field
 // (Pitfall 7).
-func (a *Actor) HandleKey(ev engine.EngineEvent) {
+func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -107,6 +107,8 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) {
 		// would silently drop the decision.
 		a.armTimer()
 	}
+
+	return false
 }
 
 // HandleLifecycle implements engine.EventHandler: FocusOut and Reset disarm

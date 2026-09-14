@@ -550,6 +550,244 @@ func TestActor_DebugCorrectionRecord(t *testing.T) {
 	}
 }
 
+// flipMode delivers one clean Shift_R tap and expires the window: the
+// runtime path of the Single decision — the flip fires at expiry, not inside
+// HandleKey (D-04).
+func flipMode(a *session.Actor) {
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+}
+
+// TestActor_FlipOnSingle pins the ADR-001 Option B flip: a single-tap series
+// resolved at window expiry switches the actor's internal script mode EN→RU
+// and back RU→EN, each switch logging the exact INFO mode record — and the
+// flip is purely internal: zero calls of any kind on the sink (the XKB group
+// of the session is not touched, D-01 verdict).
+func TestActor_FlipOnSingle(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	flipMode(a) // EN → RU
+	flipMode(a) // RU → EN
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("first flip: mode-to-ru record missing; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"en"`) {
+		t.Errorf("second flip: mode-to-en record missing; log:\n%s", logged)
+	}
+	if strings.Index(logged, `"to":"ru"`) > strings.Index(logged, `"to":"en"`) {
+		t.Errorf("mode records out of order (ru must precede en); log:\n%s", logged)
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("flip made %d RequireSurroundingText calls, want 0", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("flip deleted %+v, want nothing", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("flip committed %q, want nothing", texts)
+	}
+}
+
+// TestActor_RUConsumesPrintable pins the RU-mode table consumption (T-02-04-01
+// mitigation): a clean printable press is consumed and the mapped Cyrillic
+// rune is committed — 'g'→"п", '['→"х", '?'→"," (the shift level already
+// rides in the keyval; both table levels are exercised by the plan corpus).
+func TestActor_RUConsumesPrintable(t *testing.T) {
+	a, sink := wiredActor()
+	flipMode(a)
+
+	for _, tc := range []struct {
+		key  rune
+		want string
+	}{
+		{'g', "п"},
+		{'[', "х"},
+		{'?', ","},
+	} {
+		if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32(tc.key)}); !consume {
+			t.Errorf("RU press %q: consume = false, want true", tc.key)
+		}
+	}
+	if texts := sink.commitTexts(); len(texts) != 3 || texts[0] != "п" || texts[1] != "х" || texts[2] != "," {
+		t.Fatalf("RU commits = %q, want [п х ,]", texts)
+	}
+}
+
+// TestActor_RUTransitUnmapped pins the unmapped transit of RU mode: a key
+// outside layouts.ENToRU (Return) is neither consumed nor committed and does
+// not feed the buffer — its handling belongs to the client (and the
+// correction reset wiring arrives in plan 02-05).
+func TestActor_RUTransitUnmapped(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	flipMode(a)
+
+	if consume := a.HandleKey(engine.EngineEvent{Keyval: engine.KeyReturn}); consume {
+		t.Errorf("RU press Return: consume = true, want false (unmapped transit)")
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Fatalf("RU unmapped commits = %q, want none", texts)
+	}
+
+	// The buffer must not have been fed: a double tap finds it empty.
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("empty-buffer record missing — Return fed the buffer; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_RUCtrlModifiedNotCommitted pins the combo guard of RU mode: a
+// Ctrl-modified press is a shortcut, not text — not consumed, not committed,
+// never fed into the buffer (the buffer mirrors the field, and a combo
+// inserts nothing).
+func TestActor_RUCtrlModifiedNotCommitted(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	flipMode(a)
+
+	if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32('g'), Mods: engine.MaskControl}); consume {
+		t.Errorf("RU Ctrl+g: consume = true, want false (combo, not text)")
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Fatalf("RU Ctrl+g commits = %q, want none", texts)
+	}
+
+	// The buffer must stay empty: a double tap finds nothing to correct.
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("empty-buffer record missing — combo fed the buffer; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_ENTransitUnchanged pins the EN mode as the untouched Phase 1
+// path: a clean printable press transits (consume=false, zero commits) but
+// still feeds the buffer — the correction pipeline then works on it exactly
+// as before the flip mode existed.
+func TestActor_ENTransitUnchanged(t *testing.T) {
+	a, sink := wiredActor() // starts in EN
+
+	if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32('g')}); consume {
+		t.Errorf("EN press 'g': consume = true, want false (transit)")
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Fatalf("EN transit commits = %q, want none", texts)
+	}
+
+	// Phase 1 semantics: the transited rune is in the buffer, so the
+	// double tap corrects it through the whole pipeline.
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("RequireSurroundingText calls = %d, want 1 (transit must feed the buffer)", got)
+	}
+	a.HandleSurroundingText("g", runeLen("g"))
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != "п" {
+		t.Fatalf("EN-transit correction commits = %q, want one [п]", texts)
+	}
+}
+
+// TestActor_RUScriptTrueAllBranches pins the script-true invariant (T-02-04-03
+// mitigation) on EVERY printing branch of RU mode: a rune that lands in the
+// field lands in the buffer. The committed branch feeds the committed
+// Cyrillic rune ('g'→'п', '['→'х'); the identical-map branch transits
+// ('2' maps to itself — pinned choice: no consume, no commit) but the client
+// inserts the original rune, so the buffer takes it too. The correction on
+// "п2х" converting back to "g2[" proves the buffer held the field runes.
+func TestActor_RUScriptTrueAllBranches(t *testing.T) {
+	a, sink := wiredActor()
+	flipMode(a)
+
+	typeWord(a, "g2[")
+
+	// Only the two mapped runes were committed — '2' is the pinned
+	// identical-map transit.
+	if texts := sink.commitTexts(); len(texts) != 2 || texts[0] != "п" || texts[1] != "х" {
+		t.Fatalf("RU branch commits = %q, want [п х] ('2' transits)", texts)
+	}
+
+	// The buffer must hold the field runes "п2х": the double-tap
+	// correction converts the whole token back through RUToEN.
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText("п2х", runeLen("п2х"))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -3, nchars: 3}) {
+		t.Fatalf("deletions = %+v, want exactly one (-3,3) — the whole script-true token", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 3 || texts[2] != "g2[" {
+		t.Fatalf("correction commits = %q, want the last one to be [g2[]", texts)
+	}
+}
+
+// TestActor_RUDigitsFullPipeline is the edge-probe desync pin (T-02-04-03):
+// digits inside a RU-typed word reach the field through the identical-map
+// transit and MUST reach the buffer as well — otherwise the RU→EN correction
+// range would overrun the token. "ghbdtn2026" typed in RU mode: the engine
+// commits "привет", the digits transit, the buffer token is "привет2026"
+// (10 runes, NOT 14 bytes), and the correction deletes exactly 10 runes and
+// commits "ghbdtn2026".
+func TestActor_RUDigitsFullPipeline(t *testing.T) {
+	a, sink := wiredActor()
+	flipMode(a)
+
+	typeWord(a, "ghbdtn2026")
+
+	if texts := sink.commitTexts(); len(texts) != 6 || texts[0]+texts[1]+texts[2]+texts[3]+texts[4]+texts[5] != wordRU {
+		t.Fatalf("RU typing commits = %q, want the six runes of %q (digits transit)", texts, wordRU)
+	}
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText(wordRU+"2026", runeLen(wordRU+"2026"))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -10, nchars: 10}) {
+		t.Fatalf("deletions = %+v, want exactly one (-10,10) — 10 runes, not 14 bytes", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 7 || texts[6] != wordEN+"2026" {
+		t.Fatalf("correction commits = %q, want the last one to be [%s2026]", texts, wordEN)
+	}
+}
+
+// TestActor_ScriptTrueBuffer pins the full RU→EN correction on the fake
+// sink: RU-typed letters enter the buffer as the committed Cyrillic runes,
+// so the double tap converts "привет" back to "ghbdtn" — the second
+// correction direction of CORR-01, enabled by the flip.
+func TestActor_ScriptTrueBuffer(t *testing.T) {
+	a, sink := wiredActor()
+	flipMode(a)
+
+	typeWord(a, wordEN)
+
+	if texts := sink.commitTexts(); len(texts) != 6 || texts[0]+texts[1]+texts[2]+texts[3]+texts[4]+texts[5] != wordRU {
+		t.Fatalf("RU typing commits = %q, want the six runes of %q", texts, wordRU)
+	}
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText(wordRU, runeLen(wordRU))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
+		t.Fatalf("deletions = %+v, want exactly one (-6,6)", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 7 || texts[6] != wordEN {
+		t.Fatalf("RU→EN correction commits = %q, want the last one to be [%s]", texts, wordEN)
+	}
+}
+
 // TestActor_KeyEventsFeedFSM pins the single-tap path: a clean Shift_R
 // press/release pair produces exactly one decision record, n=1, at window
 // expiry — never inside HandleKey.

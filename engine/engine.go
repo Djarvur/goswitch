@@ -75,9 +75,11 @@ type Emitter interface {
 
 // EventHandler is the seam the rest of the daemon plugs into (hotkey FSM,
 // buffers, correction). A nil handler is legal: the engine then only
-// observes and logs.
+// observes and logs. HandleKey's bool is the consumption verdict: true means
+// the handler already delivered the key's character (RU-mode commit) and the
+// client must not insert anything.
 type EventHandler interface {
-	HandleKey(ev EngineEvent)
+	HandleKey(ev EngineEvent) (consume bool)
 	HandleLifecycle(kind LifecycleKind)
 	// HandleSurroundingText delivers the surrounding text the client
 	// reported (the runes before the anchor at cursorPos) — the input of

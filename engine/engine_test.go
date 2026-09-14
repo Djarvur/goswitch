@@ -24,8 +24,10 @@ type recordingHandler struct {
 	attached []engine.Emitter
 }
 
-func (h *recordingHandler) HandleKey(ev engine.EngineEvent) {
+func (h *recordingHandler) HandleKey(ev engine.EngineEvent) bool {
 	h.events = append(h.events, ev)
+
+	return false
 }
 
 func (h *recordingHandler) HandleLifecycle(kind engine.LifecycleKind) {
@@ -48,7 +50,7 @@ func (h *recordingHandler) AttachEngine(eng engine.Emitter) {
 // panicHandler injects a panic into every seam call (INTEG-05 test double).
 type panicHandler struct{}
 
-func (panicHandler) HandleKey(engine.EngineEvent) {
+func (panicHandler) HandleKey(engine.EngineEvent) bool {
 	panic("injected handler panic")
 }
 
@@ -124,6 +126,54 @@ func TestEngine_ProcessKeyEventReturnsFalse(t *testing.T) {
 			}
 			if ev.Mods != tt.wantMods {
 				t.Errorf("Mods = 0x%x, want 0x%x", ev.Mods, tt.wantMods)
+			}
+		})
+	}
+}
+
+// consumeStubHandler is the configurable decision double of the consume
+// contract: HandleKey answers the configured verdict, nothing else.
+type consumeStubHandler struct {
+	consume bool
+}
+
+func (h *consumeStubHandler) HandleKey(engine.EngineEvent) bool { return h.consume }
+
+func (h *consumeStubHandler) HandleLifecycle(engine.LifecycleKind) {}
+
+func (h *consumeStubHandler) HandleSurroundingText(string, uint32) {}
+
+func (h *consumeStubHandler) HandleCapabilities(uint32) {}
+
+func (h *consumeStubHandler) AttachEngine(engine.Emitter) {}
+
+// TestEngine_ProcessKeyEventConsumePropagation pins the 02-04 contract that
+// replaces the Phase 1 observer-false table: the handler's verdict IS the
+// method's answer — true means consumed (the RU-mode commit path), false
+// means transit; a nil handler stays a pure observer.
+func TestEngine_ProcessKeyEventConsumePropagation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		handler engine.EventHandler
+		want    bool
+	}{
+		{"handler consumes", &consumeStubHandler{consume: true}, true},
+		{"handler declines", &consumeStubHandler{consume: false}, false},
+		{"nil handler observes", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			eng := engine.NewEngine(tt.handler, "goswitch-en")
+			handled, err := eng.ProcessKeyEvent(0x67, 38, 0)
+			if err != nil {
+				t.Fatalf("ProcessKeyEvent() err = %v, want nil", err)
+			}
+			if handled != tt.want {
+				t.Errorf("ProcessKeyEvent() = %v, want %v (handler verdict must propagate)", handled, tt.want)
 			}
 		})
 	}
