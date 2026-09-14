@@ -17,6 +17,8 @@ $ mise run e2e-kill9-survive  # INTEG-05: kill -9 демона не роняет
 $ mise run e2e-d01            # D-01: матрица проб переключения источника (план 01-04)
 $ mise run e2e-chromium-smoke # 02-02: драйвер chromium — свежий инстанс, ввод→readback
 $ mise run e2e-gte-smoke      # 02-02: драйвер gnome-text-editor — standalone-инстанс, ввод→readback
+$ mise run e2e-word          # 02-03: трассер коррекции — ghbdtn→привет в zenity сквозным конвейером
+$ mise run e2e-word-space    # 02-03: геометрия D-13 — слово после пробела, ghbdtn␠→привет␠
 ```
 
 Напрямую (то же самое, что делает mise):
@@ -29,7 +31,7 @@ $ go run ./test/e2e -case m1-gate
 
 | Флаг       | Значение                                                                |
 |------------|------------------------------------------------------------------------|
-| `-case`    | `m1-gate` \| `ibus-restart` \| `kill9-survive` \| `d01-probe` \| `chromium-smoke` \| `gte-smoke` |
+| `-case`    | `m1-gate` \| `ibus-restart` \| `kill9-survive` \| `d01-probe` \| `chromium-smoke` \| `gte-smoke` \| `word-en-ru` \| `word-after-space` |
 | `-pacing`  | мс между инжектируемыми нажатиями ydotool (дефолт 40; поднять на нагруженной машине) |
 | `-log`     | путь лога демона (дефолт — temp-файл, удаляется в teardown)             |
 | `-helper`  | путь AT-SPI-хелпера (дефолт `test/e2e/focus_helper.py`)                 |
