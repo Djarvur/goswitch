@@ -755,6 +755,135 @@ func TestActor_VerifyAfterLevel1(t *testing.T) {
 	})
 }
 
+// TestActor_HardResetKeyvals pins the keyval half of CORR-09: Enter and its
+// keypad variant, Tab and Escape each hard-reset the phrase buffer on
+// press — after any of them a double tap finds an EMPTY buffer and skips
+// with the empty-buffer reason, zero calls of any kind on the sink. The
+// reset is engine state, never consumption: the key transits (the client
+// sees its Enter/Tab/Escape exactly as before). The keypad Enter is covered
+// explicitly — 0xff8b is a distinct keyval that must ride the same table.
+func TestActor_HardResetKeyvals(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		keyval uint32
+	}{
+		{"Return", engine.KeyReturn},
+		{"KP_Enter", engine.KeyKPEnter},
+		{"Tab", engine.KeyTab},
+		{"Escape", engine.KeyEscape},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := captureLogs(t)
+			a, sink := wiredActor()
+
+			typeWord(a, wordEN)
+			if consume := a.HandleKey(engine.EngineEvent{Keyval: tc.keyval}); consume {
+				t.Errorf("%s press: consume = true, want false — a reset transits", tc.name)
+			}
+			a.HandleKey(engine.EngineEvent{Keyval: tc.keyval, Release: true})
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+
+			if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+				t.Errorf("%s left a correctable token — buffer not hard-reset; log:\n%s", tc.name, buf.String())
+			}
+			if got := sink.requireCount(); got != 0 {
+				t.Errorf("%s: sink saw %d RequireSurroundingText calls, want 0", tc.name, got)
+			}
+			if calls := sink.deleteCalls(); len(calls) != 0 {
+				t.Errorf("%s: sink saw deletions %+v, want none", tc.name, calls)
+			}
+			if texts := sink.commitTexts(); len(texts) != 0 {
+				t.Errorf("%s: sink saw commits %q, want none", tc.name, texts)
+			}
+			if got := sink.forwardCalls(); len(got) != 0 {
+				t.Errorf("%s: sink saw forwards %+v, want none", tc.name, got)
+			}
+		})
+	}
+}
+
+// TestBuffer_ResetByFocusOut pins the lifecycle half of CORR-09 (wired
+// since 02-03, pinned here as part of the reset corpus): FocusOut and Reset
+// both hard-reset the buffer — the phrase belongs to the input context that
+// just left.
+func TestBuffer_ResetByFocusOut(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kind engine.LifecycleKind
+	}{
+		{"FocusOut", engine.LifecycleFocusOut},
+		{"Reset", engine.LifecycleReset},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := captureLogs(t)
+			a, sink := wiredActor()
+
+			typeWord(a, wordEN)
+			a.HandleLifecycle(tc.kind)
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+
+			if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+				t.Errorf("%s left a correctable token — buffer not hard-reset; log:\n%s", tc.name, buf.String())
+			}
+			if got := sink.requireCount(); got != 0 {
+				t.Errorf("%s: sink saw %d RequireSurroundingText calls, want 0", tc.name, got)
+			}
+		})
+	}
+}
+
+// TestBuffer_CtrlIsolation pins the combo isolation of the buffer (Pitfall 7
+// measure, implemented by the 02-04 comboMask guard — the corpus pins it as
+// part of the reset semantics): a Ctrl-modified press is a shortcut, not
+// text — in BOTH script modes the buffer must not change, and a Ctrl+Shift
+// chord is a combo all the same.
+func TestBuffer_CtrlIsolation(t *testing.T) {
+	assertEmpty := func(t *testing.T, a *session.Actor, sink *fakeSink, logs *syncBuffer, label string) {
+		t.Helper()
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+		if !strings.Contains(logs.String(), `"reason":"empty-buffer"`) {
+			t.Errorf("%s: buffer was fed by a combo (no empty-buffer skip); log:\n%s", label, logs.String())
+		}
+		if got := sink.requireCount(); got != 0 {
+			t.Errorf("%s: sink saw %d RequireSurroundingText calls, want 0", label, got)
+		}
+	}
+
+	t.Run("EN ctrl combo", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor() // starts in EN
+
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskControl})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskControl, Release: true})
+		assertEmpty(t, a, sink, buf, "EN Ctrl+a")
+	})
+
+	t.Run("RU ctrl combo", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		flipMode(a) // EN → RU
+
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskControl})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskControl, Release: true})
+		assertEmpty(t, a, sink, buf, "RU Ctrl+a")
+	})
+
+	t.Run("ctrl shift chord", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('c'), Mods: engine.MaskControl | engine.MaskShift})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('c'), Mods: engine.MaskControl | engine.MaskShift, Release: true})
+		assertEmpty(t, a, sink, buf, "Ctrl+Shift+c")
+	})
+}
+
 // flipMode delivers one clean Shift_R tap and expires the window: the
 // runtime path of the Single decision — the flip fires at expiry, not inside
 // HandleKey (D-04).

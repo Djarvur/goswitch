@@ -26,10 +26,14 @@ const (
 	KeyTab       = 0xff09
 	KeyReturn    = 0xff0d
 	KeyEscape    = 0xff1b
-	KeyShiftL    = 0xffe1
-	KeyShiftR    = 0xffe2
-	KeyControlL  = 0xffe3
-	KeySpace     = 0x020
+	// KeyKPEnter is the keypad variant of Enter (XK_KP_Enter) — a CORR-09
+	// reset trigger in its own right: the numpad Enter must clear the buffer
+	// exactly like the main-row one (plan 02-05).
+	KeyKPEnter  = 0xff8b
+	KeyShiftL   = 0xffe1
+	KeyShiftR   = 0xffe2
+	KeyControlL = 0xffe3
+	KeySpace    = 0x020
 )
 
 // modsMask isolates the low modifier byte of the IBus state word; the
