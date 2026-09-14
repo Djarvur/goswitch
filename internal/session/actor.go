@@ -79,6 +79,26 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 	}
 }
 
+// HandleSurroundingText implements engine.EventHandler: the surrounding
+// text the client reported in answer to RequireSurroundingText (or
+// spontaneously). Input of the ADR-004 pre-correction verification.
+func (a *Actor) HandleSurroundingText(text string, cursorPos uint32) {
+	_ = text
+	_ = cursorPos
+}
+
+// HandleCapabilities implements engine.EventHandler: the capability bitmap
+// of the current input context — the input of the ADR-003 ladder choice.
+func (a *Actor) HandleCapabilities(caps uint32) {
+	_ = caps
+}
+
+// AttachEngine implements engine.EventHandler: the emitter sink of the
+// engine minted for the input context.
+func (a *Actor) AttachEngine(eng engine.Emitter) {
+	_ = eng
+}
+
 // Expiry is the timer callback: time.AfterFunc(window) re-enters here when
 // the disambiguation window closes.
 func (a *Actor) Expiry() {
@@ -97,6 +117,13 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 	for _, action := range a.fsm.Feed(hotkey.TimerExpired{}, now) {
 		slog.Info("action", "n", int(action))
 	}
+}
+
+// VerifyExpiry is the verify-deadline timer callback: the ~100 ms wait for
+// a fresh SetSurroundingText after RequireSurroundingText closed without an
+// answer (ADR-004, Pitfall 4 — the wait lives in a timer, never in a
+// handler).
+func (a *Actor) VerifyExpiry() {
 }
 
 // armTimer replaces the deadline timer; the caller holds the mutex.

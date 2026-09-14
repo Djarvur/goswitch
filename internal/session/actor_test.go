@@ -68,6 +68,343 @@ func countActions(buf *syncBuffer) int {
 	return strings.Count(buf.String(), `"msg":"action"`)
 }
 
+// Corpus words of the correction pipeline (the 02-01 corpus pair — named
+// once, goconst).
+const (
+	wordEN = "ghbdtn"
+	wordRU = "привет"
+)
+
+// deleteCall is one recorded DeleteSurroundingText emission.
+type deleteCall struct {
+	offset int32
+	nchars uint32
+}
+
+// fakeSink is the test double of engine.Emitter: every emitter call is
+// recorded under a mutex — the observable surface the correction pipeline
+// drives (the guarded-sink style of syncBuffer).
+type fakeSink struct {
+	mu       sync.Mutex
+	requires int
+	deletes  []deleteCall
+	commits  []string
+}
+
+// RequireSurroundingText records the verification request.
+func (f *fakeSink) RequireSurroundingText() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.requires++
+}
+
+// DeleteSurroundingText records the ladder deletion with its exact range.
+func (f *fakeSink) DeleteSurroundingText(offset int32, nchars uint32) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.deletes = append(f.deletes, deleteCall{offset: offset, nchars: nchars})
+}
+
+// CommitText records the committed text payload.
+func (f *fakeSink) CommitText(text engine.IBusText) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.commits = append(f.commits, text.Text)
+}
+
+// requireCount snapshots the verification-request count.
+func (f *fakeSink) requireCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.requires
+}
+
+// deleteCalls snapshots the recorded deletions.
+func (f *fakeSink) deleteCalls() []deleteCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]deleteCall(nil), f.deletes...)
+}
+
+// commitTexts snapshots the recorded commits.
+func (f *fakeSink) commitTexts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.commits...)
+}
+
+// wiredActor returns an actor with the fake sink attached and the
+// surrounding-text capability announced — the minimal live pipeline state.
+func wiredActor() (*session.Actor, *fakeSink) {
+	a := session.NewActor(farWindow)
+	sink := &fakeSink{}
+	a.AttachEngine(sink)
+	a.HandleCapabilities(engine.CapSurroundingText)
+
+	return a, sink
+}
+
+// typeWord feeds printable key presses the way the engine delivers them:
+// one press/release pair per rune, keyval = the rune itself.
+func typeWord(a *session.Actor, word string) {
+	for _, r := range word {
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r)})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Release: true})
+	}
+}
+
+// captureLogsLevel redirects the default logger at the given level: the
+// correction corpus asserts both the INFO contract (D-20 — reasons without
+// word contents) and the DEBUG record shape (D-21 — level first).
+func captureLogsLevel(t *testing.T, level slog.Level) *syncBuffer {
+	t.Helper()
+	buf := &syncBuffer{}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: level})))
+
+	return buf
+}
+
+// TestActor_DoubleTapCorrects pins the tracer pipeline end to end (CORR-01,
+// CORR-07 level 1): printable presses feed the buffer, a double tap at
+// window expiry starts the two-phase correction — RequireSurroundingText on
+// the sink, nothing destructive yet — and the matching SetSurroundingText
+// resolves it: exactly one DeleteSurroundingText(-6,6) (the token, no tail)
+// and one CommitText("привет"), plus the INFO completion record.
+func TestActor_DoubleTapCorrects(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("RequireSurroundingText calls after double tap = %d, want 1", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Fatalf("two-phase violation: %d deletions before surrounding text, want 0", len(calls))
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Fatalf("two-phase violation: %d commits before surrounding text, want 0", len(texts))
+	}
+
+	// The cursor at the end of the line sees the whole text.
+	a.HandleSurroundingText("abc "+wordEN, runeLen("abc "+wordEN))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
+		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the token range, no tail", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// runeLen is the cursor position at the end of s — the surrounding-text
+// argument shape every test uses (self-computed, never hand-counted).
+func runeLen(s string) uint32 {
+	return uint32(len([]rune(s)))
+}
+
+// TestActor_VerifyPaths pins the ADR-004 abort discipline of the two-phase
+// verification: a suffix mismatch and the verify timeout each skip the
+// correction with the exact INFO reason — and not one of them deletes or
+// commits anything ("abort, не мусорить").
+func TestActor_VerifyPaths(t *testing.T) {
+	t.Run("mismatch", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		typeWord(a, wordEN)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+		mismatch := "abc другойтекст"
+		a.HandleSurroundingText(mismatch, runeLen(mismatch)) // does not end with the token
+
+		if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
+			t.Errorf("verify-mismatch record missing; log:\n%s", buf.String())
+		}
+		if calls := sink.deleteCalls(); len(calls) != 0 {
+			t.Errorf("mismatch deleted %+v — abort, не мусорить", calls)
+		}
+		if texts := sink.commitTexts(); len(texts) != 0 {
+			t.Errorf("mismatch committed %q — abort, не мусорить", texts)
+		}
+
+		// A late surrounding text (the client answering after the verdict)
+		// must not resurrect the correction: the pending fix is gone.
+		a.HandleSurroundingText("abc "+wordEN, runeLen("abc "+wordEN))
+		if calls := sink.deleteCalls(); len(calls) != 0 {
+			t.Errorf("late surrounding text deleted %+v after the mismatch verdict", calls)
+		}
+		if texts := sink.commitTexts(); len(texts) != 0 {
+			t.Errorf("late surrounding text committed %q after the mismatch verdict", texts)
+		}
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		typeWord(a, wordEN)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+		a.VerifyExpiry() // deterministic injection of the 100 ms deadline
+
+		if !strings.Contains(buf.String(), `"reason":"verify-timeout"`) {
+			t.Errorf("verify-timeout record missing; log:\n%s", buf.String())
+		}
+		if calls := sink.deleteCalls(); len(calls) != 0 {
+			t.Errorf("timeout deleted %+v — abort, не мусорить", calls)
+		}
+		if texts := sink.commitTexts(); len(texts) != 0 {
+			t.Errorf("timeout committed %q — abort, не мусорить", texts)
+		}
+	})
+}
+
+// TestActor_TokenRefusals pins the pipeline-entry refusals of the D-20
+// vocabulary: a mixed-script token (D-16), a letterless token and a client
+// without the surrounding-text capability each skip with the exact INFO
+// reason and never even start the verification round.
+func TestActor_TokenRefusals(t *testing.T) {
+	t.Run("mixed script", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		typeWord(a, "gfb"+wordRU) // letters of both scripts: D-16 silent refusal
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if !strings.Contains(buf.String(), `"reason":"mixed-script"`) {
+			t.Errorf("mixed-script record missing; log:\n%s", buf.String())
+		}
+		if got := sink.requireCount(); got != 0 {
+			t.Errorf("mixed token started verification %d times, want 0", got)
+		}
+	})
+
+	t.Run("no letters", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		typeWord(a, "2026") // digits only: no direction
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if !strings.Contains(buf.String(), `"reason":"no-letters"`) {
+			t.Errorf("no-letters record missing; log:\n%s", buf.String())
+		}
+		if got := sink.requireCount(); got != 0 {
+			t.Errorf("letterless token started verification %d times, want 0", got)
+		}
+	})
+
+	t.Run("no surrounding capability", func(t *testing.T) {
+		buf := captureLogs(t)
+		a := session.NewActor(farWindow)
+		sink := &fakeSink{}
+		a.AttachEngine(sink)
+		a.HandleCapabilities(engine.CapPreeditText) // no CapSurroundingText
+
+		typeWord(a, wordEN)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if !strings.Contains(buf.String(), `"reason":"no-surrounding"`) {
+			t.Errorf("no-surrounding record missing; log:\n%s", buf.String())
+		}
+		if got := sink.requireCount(); got != 0 {
+			t.Errorf("no-cap client was asked for surrounding text %d times, want 0", got)
+		}
+	})
+}
+
+// TestActor_EmptyBufferNoDestructive pins the empty-input edge of CORR-07:
+// a double tap with no token in the buffer skips with the empty-buffer
+// reason and makes zero calls of any kind on the sink.
+func TestActor_EmptyBufferNoDestructive(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("empty-buffer record missing; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("empty buffer asked for surrounding text %d times, want 0", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("empty buffer deleted %+v, want nothing", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("empty buffer committed %q, want nothing", texts)
+	}
+}
+
+// TestActor_DebugCorrectionRecord pins the D-21 log contract of a
+// successful correction: the DEBUG record carries the ladder level as its
+// first attribute after msg (the matrix greps the exact form), with the
+// source, result and latency — and no INFO record in the whole stream
+// contains a word of the correction (D-20).
+func TestActor_DebugCorrectionRecord(t *testing.T) {
+	buf := captureLogsLevel(t, slog.LevelDebug)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText(wordEN, runeLen(wordEN))
+
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits = %q, want one %q (precondition of the log pin)", texts, wordRU)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","level":1`) {
+		t.Errorf("DEBUG correction record with level-first attribute missing; log:\n%s", logged)
+	}
+	for _, want := range []string{
+		`"source":"` + wordEN + `"`,
+		`"result":"` + wordRU + `"`,
+		`"latency_ms"`,
+	} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("DEBUG correction record misses %s; log:\n%s", want, logged)
+		}
+	}
+
+	// D-20: every INFO record is word-free.
+	for _, line := range strings.Split(logged, "\n") {
+		if !strings.Contains(line, `"level":"INFO"`) {
+			continue
+		}
+		if strings.Contains(line, wordEN) || strings.Contains(line, wordRU) {
+			t.Errorf("INFO record leaks correction contents: %s", line)
+		}
+	}
+}
+
 // TestActor_KeyEventsFeedFSM pins the single-tap path: a clean Shift_R
 // press/release pair produces exactly one decision record, n=1, at window
 // expiry — never inside HandleKey.

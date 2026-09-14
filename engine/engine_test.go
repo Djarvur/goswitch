@@ -28,6 +28,12 @@ func (h *recordingHandler) HandleLifecycle(kind engine.LifecycleKind) {
 	h.kinds = append(h.kinds, kind)
 }
 
+func (h *recordingHandler) HandleSurroundingText(string, uint32) {}
+
+func (h *recordingHandler) HandleCapabilities(uint32) {}
+
+func (h *recordingHandler) AttachEngine(engine.Emitter) {}
+
 // panicHandler injects a panic into every seam call (INTEG-05 test double).
 type panicHandler struct{}
 
@@ -38,6 +44,12 @@ func (panicHandler) HandleKey(engine.EngineEvent) {
 func (panicHandler) HandleLifecycle(engine.LifecycleKind) {
 	panic("injected handler panic")
 }
+
+func (panicHandler) HandleSurroundingText(string, uint32) {}
+
+func (panicHandler) HandleCapabilities(uint32) {}
+
+func (panicHandler) AttachEngine(engine.Emitter) {}
 
 // discardLogger resets the default slog logger after a test replaced it.
 func discardLogger(t *testing.T) {
@@ -104,6 +116,19 @@ func TestEngine_ProcessKeyEventReturnsFalse(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEmitters_DetachedQuiet pins the detached-engine contract of every
+// emitter: with no connection bound (headless construction, the state every
+// unit test creates) the calls are quiet returns — nothing panics, nothing
+// is expected on the wire.
+func TestEmitters_DetachedQuiet(t *testing.T) {
+	t.Parallel()
+
+	eng := engine.NewEngine(nil, "goswitch-en")
+	eng.RequireSurroundingText()
+	eng.DeleteSurroundingText(-6, 6)
+	eng.CommitText(engine.NewIBusText("quiet"))
 }
 
 // TestEngine_DecodeState pins the one-shot decode of the raw IBus state

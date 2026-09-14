@@ -62,12 +62,33 @@ type EngineEvent struct {
 	Mods    uint32
 }
 
+// Emitter is the outgoing-signal surface of an Engine — the ladder
+// primitives the correction pipeline drives (ADR-003). Declared here
+// because EventHandler.AttachEngine hands the freshly minted engine to the
+// handler as this seam, not as the concrete object: consumers (and their
+// test doubles) program against the three emitters alone.
+type Emitter interface {
+	RequireSurroundingText()
+	DeleteSurroundingText(offset int32, nchars uint32)
+	CommitText(text IBusText)
+}
+
 // EventHandler is the seam the rest of the daemon plugs into (hotkey FSM,
-// buffers, correction — later phases). A nil handler is legal: the engine
-// then only observes and logs.
+// buffers, correction). A nil handler is legal: the engine then only
+// observes and logs.
 type EventHandler interface {
 	HandleKey(ev EngineEvent)
 	HandleLifecycle(kind LifecycleKind)
+	// HandleSurroundingText delivers the surrounding text the client
+	// reported (the runes before the anchor at cursorPos) — the input of
+	// the ADR-004 pre-correction verification.
+	HandleSurroundingText(text string, cursorPos uint32)
+	// HandleCapabilities delivers the per-input-context capability bitmap
+	// (SetCapabilities), the input of the ADR-003 ladder-level choice.
+	HandleCapabilities(caps uint32)
+	// AttachEngine binds the emitter sink of the engine minted for the
+	// input context: the handler's corrections drive it.
+	AttachEngine(eng Emitter)
 }
 
 // Engine is the per-input-context D-Bus object exported on the three
@@ -314,6 +335,21 @@ func (e *Engine) CommitText(text IBusText) {
 	if err := e.conn.Emit(e.path, ifaceEngine+".CommitText", dbus.MakeVariant(text)); err != nil {
 		slog.Error("commit text emit failed", "error", err)
 	}
+}
+
+// DeleteSurroundingText emits the org.freedesktop.IBus.Engine.
+// DeleteSurroundingText signal — the level-1 ladder primitive (ADR-003):
+// the client is asked to delete nchars runes before (negative offset) or
+// after the cursor. Fire-and-forget on IBus 1.5.29 — the ADR-004
+// verification is the compensation, not an ack.
+func (e *Engine) DeleteSurroundingText(offset int32, nchars uint32) {
+}
+
+// RequireSurroundingText emits the org.freedesktop.IBus.Engine.
+// RequireSurroundingText signal — the client answers with a fresh
+// SetSurroundingText, which is the input of the pre-correction
+// verification (ADR-004).
+func (e *Engine) RequireSurroundingText() {
 }
 
 // lifecycle forwards a lifecycle event to the handler, if installed.
