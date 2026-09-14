@@ -19,6 +19,8 @@ $ mise run e2e-chromium-smoke # 02-02: драйвер chromium — свежий 
 $ mise run e2e-gte-smoke      # 02-02: драйвер gnome-text-editor — standalone-инстанс, ввод→readback
 $ mise run e2e-word          # 02-03: трассер коррекции — ghbdtn→привет в zenity сквозным конвейером
 $ mise run e2e-word-space    # 02-03: геометрия D-13 — слово после пробела, ghbdtn␠→привет␠
+$ mise run e2e-word-ru       # 02-04: флип→RU-набор привет→тап-тап→ghbdtn — второе направление
+$ mise run e2e-word-mixed    # 02-04: смешанное слово gfbпривет не трогается (D-16, тихий отказ)
 ```
 
 Напрямую (то же самое, что делает mise):
