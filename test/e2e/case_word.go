@@ -20,6 +20,10 @@ const (
 	// wordResultRUAfterSpace is the D-13 expectation: the corrected word
 	// WITH its separator — the trailing space is load-bearing.
 	wordResultRUAfterSpace = "привет "
+	// wordMixedExpected is the D-16 oracle: the mixed word exactly as
+	// assembled — the EN part typed in EN mode (transit) plus the RU part
+	// committed by the engine after the flip — and left untouched.
+	wordMixedExpected = "gfb" + wordResultRU
 )
 
 // runWordENRU proves the core-value tracer (CORR-01, CORR-07 level 1):
@@ -134,6 +138,147 @@ func runWordAfterSpace(ctx context.Context, s *stand) error {
 	// AT-SPI readback above; stdout pins the word itself.
 	if out != wordResultRU {
 		return fmt.Errorf("word-after-space stdout oracle: entry printed %q, want %q", out, wordResultRU)
+	}
+
+	return nil
+}
+
+// flipToRU performs the single-tap script flip and gates on its mode
+// record: the Single decision fires at window expiry (~300 ms after the
+// tap), so every following step must wait for the record — typing earlier
+// would land in EN mode (Pitfall 5).
+func (s *stand) flipToRU(ctx context.Context, caseName string) error {
+	if err := s.injectKeys(ctx, "Shift_R"); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"mode","to":"ru"`, decisionWait); err != nil {
+		return fmt.Errorf("%s single-tap flip: %w", caseName, err)
+	}
+
+	return nil
+}
+
+// runWordRUEN proves the second correction direction end to end (CORR-01,
+// D-18, plan 02-04): the daemon starts in its EN mode, a single Right Shift
+// flips the engine's script mode to RU at window expiry (the mode log record
+// is the sequencing gate — the flip fires ~300 ms after the tap, Pitfall 5),
+// "ghbdtn" typed through the physical path is consumed key by key and
+// committed as «привет» by the engine, and the double tap corrects the
+// Cyrillic word BACK to "ghbdtn" — one full loop of the ADR-001 Option B
+// flip: flip → RU typing → correction, with the stdout oracle proving the
+// final field content.
+func runWordRUEN(ctx context.Context, s *stand) error {
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("word-ru-en needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+
+	// Flip EN → RU: the Single decision fires at window expiry, so the
+	// INFO mode record — not the tap — gates the typing step (Pitfall 5).
+	if err := s.flipToRU(ctx, "word-ru-en"); err != nil {
+		return err
+	}
+
+	// Physical Latin keys: the engine consumes each press and commits the
+	// Cyrillic rune of the same key position — the entry settles at привет.
+	if err := s.injectText(ctx, wordProbeEN); err != nil {
+		return err
+	}
+	if err := s.waitZenityText(ctx, wordResultRU); err != nil {
+		return fmt.Errorf("word-ru-en RU typing: %w", err)
+	}
+
+	if err := s.injectKeys(ctx, "Shift_R", "Shift_R"); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"action","n":2`, decisionWait); err != nil {
+		return fmt.Errorf("word-ru-en double-tap decision: %w", err)
+	}
+	if err := s.waitForLog(ctx, `"msg":"correction","outcome":"done"`, correctionWait); err != nil {
+		return fmt.Errorf("word-ru-en correction: %w", err)
+	}
+
+	// The correction must replace привет with ghbdtn — content-exact.
+	if err := s.waitZenityText(ctx, wordProbeEN); err != nil {
+		return fmt.Errorf("word-ru-en applied correction: %w", err)
+	}
+	out, err := s.closeZenity(ctx)
+	if err != nil {
+		return err
+	}
+	if out != wordProbeEN {
+		return fmt.Errorf("word-ru-en oracle: entry printed %q, want %q", out, wordProbeEN)
+	}
+
+	return nil
+}
+
+// runWordMixed proves the D-16 refusal live (plan 02-04): "gfb" typed in EN
+// mode transits, the flip switches to RU, "ghbdtn" is committed as «привет»
+// — the field holds the mixed word gfbпривет assembled through both real
+// printing branches, and the double tap must leave it EXACTLY as it is: the
+// daemon logs the mixed-script skip reason (D-20) and both oracles — the
+// content-exact readback and the zenity stdout — print the untouched word.
+func runWordMixed(ctx context.Context, s *stand) error {
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("word-mixed needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+
+	if err := s.injectText(ctx, "gfb"); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, `"msg":"key"`, minKeyEvents, keyWait); err != nil {
+		return fmt.Errorf("word-mixed key visibility: %w", err)
+	}
+
+	// Flip EN → RU and wait for the mode record before typing (Pitfall 5).
+	if err := s.flipToRU(ctx, "word-mixed"); err != nil {
+		return err
+	}
+
+	if err := s.injectText(ctx, wordProbeEN); err != nil {
+		return err
+	}
+	if err := s.waitZenityChars(ctx, len([]rune(wordMixedExpected))); err != nil {
+		return fmt.Errorf("word-mixed RU typing: %w", err)
+	}
+
+	if err := s.injectKeys(ctx, "Shift_R", "Shift_R"); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"action","n":2`, decisionWait); err != nil {
+		return fmt.Errorf("word-mixed double-tap decision: %w", err)
+	}
+	// D-16/D-20: the refusal lands in the log with its reason — and the
+	// field must not change by one rune.
+	if err := s.waitForLog(ctx, `"reason":"mixed-script"`, correctionWait); err != nil {
+		return fmt.Errorf("word-mixed D-16 refusal: %w", err)
+	}
+
+	if err := s.waitZenityText(ctx, wordMixedExpected); err != nil {
+		return fmt.Errorf("word-mixed untouched oracle (D-16): %w", err)
+	}
+	out, err := s.closeZenity(ctx)
+	if err != nil {
+		return err
+	}
+	if out != wordMixedExpected {
+		return fmt.Errorf("word-mixed oracle: entry printed %q, want the untouched %q", out, wordMixedExpected)
 	}
 
 	return nil

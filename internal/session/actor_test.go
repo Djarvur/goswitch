@@ -788,6 +788,44 @@ func TestActor_ScriptTrueBuffer(t *testing.T) {
 	}
 }
 
+// TestActor_MixedWordUntouched pins the D-16 live path on the sink: a mixed
+// word assembled the way the desktop produces it — "gfb" typed in EN
+// (transit), then the flip, then the rest typed in RU (committed Cyrillic
+// runes) — is refused by the direction detector, and the refusal is TOTAL:
+// the exact INFO reason and zero destructive calls (no deletion, no commit,
+// not even a verification round).
+func TestActor_MixedWordUntouched(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, "gfb")  // EN part: transit, buffer fed as typed
+	flipMode(a)         // EN → RU
+	typeWord(a, wordEN) // RU part: commits "привет", buffer script-true
+
+	// The RU part must have arrived as Cyrillic commits — the mixed word
+	// "gfbпривет" is what the field holds.
+	if texts := sink.commitTexts(); len(texts) != 6 || texts[0]+texts[1]+texts[2]+texts[3]+texts[4]+texts[5] != wordRU {
+		t.Fatalf("RU typing commits = %q, want the six runes of %q", texts, wordRU)
+	}
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"mixed-script"`) {
+		t.Errorf("mixed-script record missing; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("mixed word started verification %d times, want 0", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("mixed word deleted %+v — D-16: не трогать", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 6 {
+		t.Errorf("mixed word got %d extra commits beyond the typed runes — D-16: не трогать", len(texts)-6)
+	}
+}
+
 // TestActor_KeyEventsFeedFSM pins the single-tap path: a clean Shift_R
 // press/release pair produces exactly one decision record, n=1, at window
 // expiry — never inside HandleKey.

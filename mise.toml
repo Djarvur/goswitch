@@ -65,3 +65,11 @@ run = "go run ./test/e2e -case word-en-ru"
 [tasks.e2e-word-space]
 description = "e2e: 02-03 word-after-space D-13 geometry — ghbdtn␠→привет␠ in zenity (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case word-after-space"
+
+[tasks.e2e-word-ru]
+description = "e2e: 02-04 RU→EN correction — flip→RU typing привет→double tap→ghbdtn in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-ru-en"
+
+[tasks.e2e-word-mixed]
+description = "e2e: 02-04 mixed word D-16 — gfbпривет untouched after double tap in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-mixed"
