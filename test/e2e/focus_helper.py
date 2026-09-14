@@ -10,6 +10,21 @@ Subcommands:
               (live-verified in phase 01-03).
   text <app>  print the text of the app's first text-bearing node — the
               desktop-input readback primitive (bridge to Phase 2 TEST-04).
+              App-name matching picks the FIRST matching application in the
+              desktop tree, so it is only safe for uniquely named apps.
+  focused-text
+              print the text of the currently focused input surface — the
+              readback for stand-spawned apps whose AT-SPI name is shared
+              with the owner's own instances (e.g. "Google Chrome",
+              live-verified 2026-09-12): app-name lookup would read the
+              owner's window instead of the stand's.
+  focused-inputs
+              print one app:role:chars=N line per focused input surface.
+              AT-SPI focus can lag the compositor (a shell overlay may
+              hold real focus while the case's node still reports focused,
+              live-verified 2026-09-12) — the stand enumerates every
+              candidate and refuses to inject while the shell's own entry
+              is among them.
   focus <app> best-effort Component.grabFocus on the app's newest window
               frame. Under GNOME Wayland focus-stealing prevention a
               background grab is refused (GTK4 errors, GTK3 returns false —
@@ -136,6 +151,60 @@ def cmd_text(app_name):
     return f"no text-bearing node found in application: {app_name}"
 
 
+def focused_inputs():
+    """Yield (app_name, node) of every focused input-surface node.
+
+    AT-SPI focus state can lag the compositor: a shell overlay may hold
+    real keyboard focus while a freshly opened window still reports its
+    node focused (live-verified 2026-09-12). Enumerating ALL candidates
+    lets the stand refuse to inject while the shell's own entry is among
+    them (plan 02-02).
+    """
+    for app in applications():
+        for node in walk(app):
+            try:
+                if not node.get_state_set().contains(Atspi.StateType.FOCUSED):
+                    continue
+            except Exception:
+                continue
+            if role_name(node) in INPUT_ROLES:
+                yield app.get_name(), node
+
+
+def focused_input():
+    """Return the first focused input-surface node, or None.
+
+    Same node the witness reports. Readback keyed on this node cannot land
+    in a same-named application of the owner (plan 02-02).
+    """
+    for _, node in focused_inputs():
+        return node
+    return None
+
+
+def cmd_focused_text():
+    """Print the text of the currently focused input surface."""
+    node = focused_input()
+    if node is None:
+        return "no focused input surface"
+    text = read_text(node)
+    if text is None:
+        return "cannot read the focused input surface"
+    print(text)
+    return None
+
+
+def cmd_focused_inputs():
+    """Print one app:role:chars=N line per focused input surface."""
+    seen = False
+    for app_name, node in focused_inputs():
+        seen = True
+        print(f"{app_name}:{role_name(node)}:chars={char_count(node)}")
+    if not seen:
+        print("(none)")
+    return None
+
+
 def cmd_focus(app_name):
     """Grab focus for the newest window frame of the named application."""
     target = None
@@ -161,10 +230,15 @@ def main(argv):
         problem = cmd_witness()
     elif len(argv) == 3 and argv[1] == "text":
         problem = cmd_text(argv[2])
+    elif len(argv) == 2 and argv[1] == "focused-text":
+        problem = cmd_focused_text()
+    elif len(argv) == 2 and argv[1] == "focused-inputs":
+        problem = cmd_focused_inputs()
     elif len(argv) == 3 and argv[1] == "focus":
         problem = cmd_focus(argv[2])
     else:
-        print("usage: focus_helper.py witness | text <app> | focus <app-name>", file=sys.stderr)
+        print("usage: focus_helper.py witness | text <app> | focused-text | focused-inputs"
+              " | focus <app-name>", file=sys.stderr)
         return 2
     if problem is not None:
         print(f"focus_helper: {problem}", file=sys.stderr)

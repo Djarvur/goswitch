@@ -16,6 +16,9 @@ coverage.html
 .gocache/
 .gomodcache/
 
+# Python bytecode from the e2e AT-SPI helper runs
+__pycache__/
+
 # mise local overrides (mise.toml itself is tracked)
 .mise.local.toml
 

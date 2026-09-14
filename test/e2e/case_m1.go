@@ -132,6 +132,10 @@ func (s *stand) closeEntrySurface(ctx context.Context, kind surfaceKind) error {
 		return err
 	case surfaceShell:
 		return s.pressKey(ctx, "Escape")
+	case surfaceChromium:
+		// Driver-managed surface (surface.go): chromium cases close their
+		// instance through the driver, never through the entry-surface path.
+		return nil
 	}
 
 	return nil

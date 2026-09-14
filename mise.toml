@@ -49,3 +49,7 @@ run = "go run ./test/e2e -case kill9-survive"
 [tasks.e2e-d01]
 description = "e2e: D-01 probe matrix — source-switch experiment, appends verdicts to docs/adr/d01-experiment-log.md (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case d01-probe"
+
+[tasks.e2e-chromium-smoke]
+description = "e2e: 02-02 chromium surface smoke — fresh-instance driver proof (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case chromium-smoke"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"syscall"
@@ -37,6 +38,7 @@ func preflight(ctx context.Context, s *stand) error {
 		{"python-gi", checkPythonGI},
 		{"engine-registered", checkEngineRegistered},
 		{"daemon-log-heartbeat", checkLogHeartbeat},
+		{"chromium-launch", checkChromiumLaunch},
 	}
 	for _, check := range checks {
 		if err := check.run(ctx, s); err != nil {
@@ -123,6 +125,27 @@ func checkLogHeartbeat(_ context.Context, s *stand) error {
 			return fmt.Errorf("daemon log misses startup record %q", want)
 		}
 	}
+
+	return nil
+}
+
+// checkChromiumLaunch proves the Chromium surface driver's happy path: the
+// pinned binary exists, a fresh instance opens the fixture page, the page
+// input takes focus per the witness, and the PID close cleans up. One
+// actionable diagnostic line when the binary is missing (plan 02-02).
+func checkChromiumLaunch(ctx context.Context, s *stand) error {
+	if _, err := exec.LookPath(chromiumBin); err != nil {
+		return fmt.Errorf("%s not in PATH: %w (install google-chrome or chromium)", chromiumBin, err)
+	}
+	if err := s.startChromium(ctx); err != nil {
+		return err
+	}
+	if err := s.waitChromiumInput(ctx, 0); err != nil {
+		s.closeChromium()
+
+		return fmt.Errorf("%w (does the fixture window open and take focus?)", err)
+	}
+	s.closeChromium()
 
 	return nil
 }

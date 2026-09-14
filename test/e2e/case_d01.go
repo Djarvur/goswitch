@@ -395,6 +395,10 @@ func (s *stand) readBackText(ctx context.Context, kind surfaceKind) string {
 		_ = s.pressKey(ctx, "Escape")
 
 		return fmt.Sprintf("(length-only oracle: chars=%d, err=%v)", after, err)
+	case surfaceChromium:
+		// Driver-managed surface (surface.go): readback goes through the
+		// focused-text bridge, not the entry-surface oracle.
+		return ""
 	}
 
 	return ""

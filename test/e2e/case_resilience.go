@@ -163,6 +163,10 @@ func (s *stand) kill9Oracle(ctx context.Context, kind surfaceKind, charsBefore i
 		}
 
 		return nil
+	case surfaceChromium:
+		// Driver-managed surface (surface.go): resilience cases stay on the
+		// entry surfaces.
+		return nil
 	}
 
 	return nil
