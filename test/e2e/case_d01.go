@@ -399,6 +399,10 @@ func (s *stand) readBackText(ctx context.Context, kind surfaceKind) string {
 		// Driver-managed surface (surface.go): readback goes through the
 		// focused-text bridge, not the entry-surface oracle.
 		return ""
+	case surfaceGnomeTextEditor:
+		// Driver-managed surface (surface.go): same as chromium — the
+		// focused-text bridge owns the readback.
+		return ""
 	}
 
 	return ""

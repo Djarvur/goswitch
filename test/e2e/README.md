@@ -16,6 +16,7 @@ $ mise run e2e-ibus-restart   # INTEG-04: рестарт ibus-daemon переж�
 $ mise run e2e-kill9-survive  # INTEG-05: kill -9 демона не роняет ввод стола, respawn
 $ mise run e2e-d01            # D-01: матрица проб переключения источника (план 01-04)
 $ mise run e2e-chromium-smoke # 02-02: драйвер chromium — свежий инстанс, ввод→readback
+$ mise run e2e-gte-smoke      # 02-02: драйвер gnome-text-editor — standalone-инстанс, ввод→readback
 ```
 
 Напрямую (то же самое, что делает mise):
@@ -28,7 +29,7 @@ $ go run ./test/e2e -case m1-gate
 
 | Флаг       | Значение                                                                |
 |------------|------------------------------------------------------------------------|
-| `-case`    | `m1-gate` \| `ibus-restart` \| `kill9-survive` \| `d01-probe` \| `chromium-smoke` |
+| `-case`    | `m1-gate` \| `ibus-restart` \| `kill9-survive` \| `d01-probe` \| `chromium-smoke` \| `gte-smoke` |
 | `-pacing`  | мс между инжектируемыми нажатиями ydotool (дефолт 40; поднять на нагруженной машине) |
 | `-log`     | путь лога демона (дефолт — temp-файл, удаляется в teardown)             |
 | `-helper`  | путь AT-SPI-хелпера (дефолт `test/e2e/focus_helper.py`)                 |

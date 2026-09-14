@@ -72,3 +72,16 @@ func runChromiumSmoke(ctx context.Context, s *stand) error {
 		close: s.closeChromium,
 	})
 }
+
+// runGTESmoke proves the gnome-text-editor surface (the GtkSourceView
+// multiline class of the matrix): standalone instance with an isolated
+// data dir, witness-gated injection, focused readback, PID close.
+func runGTESmoke(ctx context.Context, s *stand) error {
+	return runSurfaceSmoke(ctx, s, surfaceDriver{
+		app:   gteAppName,
+		open:  s.startGTE,
+		await: s.waitGTEInput,
+		read:  s.readGTEText,
+		close: s.closeGTE,
+	})
+}

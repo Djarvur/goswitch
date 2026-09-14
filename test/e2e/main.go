@@ -72,6 +72,7 @@ type stand struct {
 	zenity    *exec.Cmd
 	zenityOut *bytes.Buffer
 	chromium  *exec.Cmd
+	gte       *exec.Cmd
 	snap      desktopSnapshot
 }
 
@@ -87,7 +88,7 @@ func main() {
 func run() (exit int) {
 	var cfg config
 	flag.StringVar(&cfg.caseName, "case", "",
-		"case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke")
+		"case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke")
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
@@ -171,11 +172,12 @@ func pickCase(name string) (func(context.Context, *stand) error, error) {
 		"kill9-survive":  runKill9Survive,
 		"d01-probe":      runD01Probe,
 		"chromium-smoke": runChromiumSmoke,
+		"gte-smoke":      runGTESmoke,
 	}
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
-			" d01-probe, chromium-smoke)", name)
+			" d01-probe, chromium-smoke, gte-smoke)", name)
 	}
 
 	return fn, nil
@@ -326,6 +328,7 @@ func (s *stand) teardown() {
 	s.restoreEngine(ctx)
 	s.reapZenity()
 	s.closeChromium()
+	s.closeGTE()
 	_ = s.logFile.Close()
 	if s.cfg.logPath == "" {
 		_ = os.Remove(s.logPath)

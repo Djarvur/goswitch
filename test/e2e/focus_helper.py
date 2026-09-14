@@ -18,6 +18,9 @@ Subcommands:
               with the owner's own instances (e.g. "Google Chrome",
               live-verified 2026-09-12): app-name lookup would read the
               owner's window instead of the stand's.
+  focused-text-pid <pid>
+              focused-text scoped to the pid's application — the
+              instance-exact readback pairing with focused-input-pid.
   focused-inputs
               print one app:role:chars=N line per focused input surface.
               AT-SPI focus can lag the compositor (a shell overlay may
@@ -25,6 +28,17 @@ Subcommands:
               live-verified 2026-09-12) — the stand enumerates every
               candidate and refuses to inject while the shell's own entry
               is among them.
+  focused-input-pid <pid>
+              print role:chars=N when the focused input surface belongs
+              to the application with the given process id, else (none).
+              Instance-exact witness for stand-spawned apps whose AT-SPI
+              name is shared with the owner's own instances.
+  grab-input-pid <pid>
+              grabFocus on the pid's first focusable input node. GTK4
+              answers the call with an error and STILL services the
+              widget grab as a fresh activation request whose timestamp
+              outranks a focus-stealing denial (live-verified 2026-09-14)
+              — the error is swallowed on purpose.
   focus <app> best-effort Component.grabFocus on the app's newest window
               frame. Under GNOME Wayland focus-stealing prevention a
               background grab is refused (GTK4 errors, GTK3 returns false —
@@ -115,13 +129,22 @@ def cmd_witness():
 
 
 def read_text(node):
-    """Read a node's whole text.
+    """Read a node's whole (first-line) text.
 
-    atspi 2.52 quirk (live-verified): Atspi.Text.get_text's introspected
-    signature is broken (takes exactly 1 argument) — the deprecated
-    get_text_at_offset works and returns a TextRange whose content is the
-    text.
+    Two server-side quirks, both live-verified (plan 02-02):
+    - GTK4's AT-SPI bridge only serves the modern GetStringAtOffset and
+      raises on the deprecated GetTextAtOffset ("deprecated in favor of
+      GetStringAtOffset"); Chromium answers the deprecated one. The
+      modern granularity call goes first.
+    - Atspi.Text.get_text's introspected signature is broken in atspi
+      2.52 (takes exactly 1 argument) — kept as a last resort for
+      servers that answer neither range call.
     """
+    try:
+        span = node.get_string_at_offset(0, Atspi.TextGranularity.LINE)
+        return span.content
+    except Exception:
+        pass
     try:
         span = node.get_text_at_offset(0, Atspi.TextBoundaryType.LINE_START)
         return span.content
@@ -194,6 +217,31 @@ def cmd_focused_text():
     return None
 
 
+def cmd_focused_text_pid(pid_str):
+    """Print the focused input node's text, scoped to the pid's application."""
+    try:
+        pid = int(pid_str)
+    except ValueError:
+        return f"not a process id: {pid_str}"
+    app = app_by_pid(pid)
+    if app is None:
+        return f"no application with pid {pid} in the AT-SPI tree"
+    for node in walk(app):
+        try:
+            if not node.get_state_set().contains(Atspi.StateType.FOCUSED):
+                continue
+            if role_name(node) not in INPUT_ROLES:
+                continue
+        except Exception:
+            continue
+        text = read_text(node)
+        if text is None:
+            return "cannot read the focused input surface"
+        print(text)
+        return None
+    return "no focused input surface in the pid's application"
+
+
 def cmd_focused_inputs():
     """Print one app:role:chars=N line per focused input surface."""
     seen = False
@@ -202,6 +250,78 @@ def cmd_focused_inputs():
         print(f"{app_name}:{role_name(node)}:chars={char_count(node)}")
     if not seen:
         print("(none)")
+    return None
+
+
+def app_by_pid(pid):
+    """Return the application node whose process id is pid, or None."""
+    for app in applications():
+        try:
+            if app.get_process_id() == pid:
+                return app
+        except Exception:
+            continue
+    return None
+
+
+def first_input_node(app):
+    """Return the app's first focusable input-surface node, or None."""
+    for node in walk(app):
+        try:
+            if role_name(node) not in INPUT_ROLES:
+                continue
+            if not node.get_state_set().contains(Atspi.StateType.FOCUSABLE):
+                continue
+        except Exception:
+            continue
+        return node
+    return None
+
+
+def cmd_focused_input_pid(pid_str):
+    """Print role:chars=N when the focused input surface has pid_str's pid."""
+    try:
+        pid = int(pid_str)
+    except ValueError:
+        return f"not a process id: {pid_str}"
+    app = app_by_pid(pid)
+    if app is not None:
+        for node in walk(app):
+            try:
+                if not node.get_state_set().contains(Atspi.StateType.FOCUSED):
+                    continue
+                if role_name(node) not in INPUT_ROLES:
+                    continue
+            except Exception:
+                continue
+            print(f"{role_name(node)}:chars={char_count(node)}")
+            return None
+    print("(none)")
+    return None
+
+
+def cmd_grab_input_pid(pid_str):
+    """GrabFocus the pid's first focusable input node, swallowing the error.
+
+    GTK4 refuses the AT-SPI call ("This method is deprecated..."-class
+    atspi_error) and still services the underlying widget grab as a fresh
+    window-activation request — the refusal is expected, the grab works
+    (live-verified 2026-09-14, plan 02-02).
+    """
+    try:
+        pid = int(pid_str)
+    except ValueError:
+        return f"not a process id: {pid_str}"
+    app = app_by_pid(pid)
+    if app is None:
+        return f"no application with pid {pid} in the AT-SPI tree (still starting?)"
+    node = first_input_node(app)
+    if node is None:
+        return f"application {pid} has no focusable input node yet"
+    try:
+        node.grab_focus()
+    except Exception:
+        pass  # the refused call still triggers the fresh activation request
     return None
 
 
@@ -232,12 +352,19 @@ def main(argv):
         problem = cmd_text(argv[2])
     elif len(argv) == 2 and argv[1] == "focused-text":
         problem = cmd_focused_text()
+    elif len(argv) == 3 and argv[1] == "focused-text-pid":
+        problem = cmd_focused_text_pid(argv[2])
     elif len(argv) == 2 and argv[1] == "focused-inputs":
         problem = cmd_focused_inputs()
+    elif len(argv) == 3 and argv[1] == "focused-input-pid":
+        problem = cmd_focused_input_pid(argv[2])
+    elif len(argv) == 3 and argv[1] == "grab-input-pid":
+        problem = cmd_grab_input_pid(argv[2])
     elif len(argv) == 3 and argv[1] == "focus":
         problem = cmd_focus(argv[2])
     else:
-        print("usage: focus_helper.py witness | text <app> | focused-text | focused-inputs"
+        print("usage: focus_helper.py witness | text <app> | focused-text | focused-text-pid <pid>"
+              " | focused-inputs | focused-input-pid <pid> | grab-input-pid <pid>"
               " | focus <app-name>", file=sys.stderr)
         return 2
     if problem is not None:
