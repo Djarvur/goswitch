@@ -61,3 +61,7 @@ run = "go run ./test/e2e -case gte-smoke"
 [tasks.e2e-word]
 description = "e2e: 02-03 word-correction tracer — ghbdtn→привет in zenity (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case word-en-ru"
+
+[tasks.e2e-word-space]
+description = "e2e: 02-03 word-after-space D-13 geometry — ghbdtn␠→привет␠ in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-after-space"

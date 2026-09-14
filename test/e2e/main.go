@@ -88,7 +88,8 @@ func main() {
 func run() (exit int) {
 	var cfg config
 	flag.StringVar(&cfg.caseName, "case", "",
-		"case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke | word-en-ru")
+		"case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke"+
+			" | word-en-ru | word-after-space")
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
@@ -167,18 +168,19 @@ func runCaseWatchdog(
 // built per call (no mutable globals).
 func pickCase(name string) (func(context.Context, *stand) error, error) {
 	registry := map[string]func(context.Context, *stand) error{
-		"m1-gate":        runM1Gate,
-		"ibus-restart":   runIbusRestart,
-		"kill9-survive":  runKill9Survive,
-		"d01-probe":      runD01Probe,
-		"chromium-smoke": runChromiumSmoke,
-		"gte-smoke":      runGTESmoke,
-		"word-en-ru":     runWordENRU,
+		"m1-gate":          runM1Gate,
+		"ibus-restart":     runIbusRestart,
+		"kill9-survive":    runKill9Survive,
+		"d01-probe":        runD01Probe,
+		"chromium-smoke":   runChromiumSmoke,
+		"gte-smoke":        runGTESmoke,
+		"word-en-ru":       runWordENRU,
+		"word-after-space": runWordAfterSpace,
 	}
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
-			" d01-probe, chromium-smoke, gte-smoke, word-en-ru)", name)
+			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space)", name)
 	}
 
 	return fn, nil

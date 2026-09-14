@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -14,6 +17,9 @@ const (
 	correctionWait = 5 * time.Second
 	wordProbeEN    = "ghbdtn"
 	wordResultRU   = "привет"
+	// wordResultRUAfterSpace is the D-13 expectation: the corrected word
+	// WITH its separator — the trailing space is load-bearing.
+	wordResultRUAfterSpace = "привет "
 )
 
 // runWordENRU proves the core-value tracer (CORR-01, CORR-07 level 1):
@@ -65,6 +71,123 @@ func runWordENRU(ctx context.Context, s *stand) error {
 	}
 
 	return nil
+}
+
+// runWordAfterSpace proves the D-13 geometry on the real desktop — the
+// phase's main geometric test (Pitfall 1): a word already separated by a
+// space is corrected TOGETHER with the separator, "ghbdtn " → "привет ".
+// The deletion must cover token+tail: deleting only the token would leave
+// the space, land the commit behind it and produce "gпривет " — the exact
+// defect of the owner's prototype (punto_engine.py delete_word). The oracle is
+// content-exact AT-SPI readback: the character-count settle gate alone
+// cannot tell "привет " from "gпривет " (both 7 runes).
+func runWordAfterSpace(ctx context.Context, s *stand) error {
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("word-after-space needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+
+	if err := s.injectText(ctx, wordProbeEN); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, `"msg":"key"`, minKeyEvents, keyWait); err != nil {
+		return fmt.Errorf("word-after-space key visibility: %w", err)
+	}
+	// The separator arrives through the typing path, not pressKey("space"):
+	// ydotool 0.1.8's key-name parser resolves "space" to keycode 31 — the
+	// physical S key (live-verified 2026-09-14: the engine saw keyval 0x73,
+	// the token grew a trailing s and the correction produced приветЫ).
+	if err := s.injectText(ctx, " "); err != nil {
+		return err
+	}
+
+	if err := s.injectKeys(ctx, "Shift_R", "Shift_R"); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"action","n":2`, decisionWait); err != nil {
+		return fmt.Errorf("word-after-space double-tap decision: %w", err)
+	}
+	if err := s.waitForLog(ctx, `"msg":"correction","outcome":"done"`, correctionWait); err != nil {
+		return fmt.Errorf("word-after-space correction: %w", err)
+	}
+
+	if err := s.waitZenityChars(ctx, len([]rune(wordResultRUAfterSpace))); err != nil {
+		return fmt.Errorf("word-after-space applied correction: %w", err)
+	}
+	if err := s.waitZenityText(ctx, wordResultRUAfterSpace); err != nil {
+		return fmt.Errorf("word-after-space oracle (Pitfall 1 geometry): %w", err)
+	}
+
+	out, err := s.closeZenity(ctx)
+	if err != nil {
+		return err
+	}
+	// zenity prints the entry text on OK, but closeZenity trims surrounding
+	// whitespace of the printed line — the trailing space is pinned by the
+	// AT-SPI readback above; stdout pins the word itself.
+	if out != wordResultRU {
+		return fmt.Errorf("word-after-space stdout oracle: entry printed %q, want %q", out, wordResultRU)
+	}
+
+	return nil
+}
+
+// readFocusedTextRaw reads the focused input's text content-exactly — the
+// D-13 oracle is whitespace-sensitive and the trailing separator is
+// load-bearing, so this path strips nothing but the helper's newline (the
+// generic runCmd trims surrounding whitespace and eats the trailing space;
+// live finding 2026-09-15: the stand's oracle read "привет" while a
+// parallel shell read of the same field returned "привет ").
+func (s *stand) readFocusedTextRaw(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, cmdTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "/usr/bin/python3", s.cfg.helper, "focused-text")
+	var out, errOut bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("focused-text readback: %w: %s", err, strings.TrimSpace(errOut.String()))
+	}
+
+	return strings.TrimSuffix(out.String(), "\n"), nil
+}
+
+// waitZenityText polls the content-exact readback until the focused entry
+// holds exactly want — the AT-SPI bridge can lag the content update behind
+// the character count (live-verified 2026-09-14: a trailing space showed
+// in chars immediately but in the text a beat later), so the oracle rides
+// the lag out instead of reading once.
+func (s *stand) waitZenityText(ctx context.Context, want string) error {
+	deadline := time.Now().Add(witnessWait)
+	var last string
+	for {
+		out, err := s.readFocusedTextRaw(ctx)
+		if err != nil {
+			return err
+		}
+		last = out
+		if out == want {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			witness, _ := s.focusWitness(ctx)
+			inputs, _ := runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "focused-inputs")
+
+			return fmt.Errorf("entry did not settle to %q (readback %q, witness %q, focused inputs %q)",
+				want, last, witness, inputs)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return err
+		}
+	}
 }
 
 // waitZenityChars polls the witness until the zenity entry holds exactly

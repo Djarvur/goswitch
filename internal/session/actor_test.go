@@ -430,6 +430,82 @@ func TestActor_EmptyBufferNoDestructive(t *testing.T) {
 	}
 }
 
+// pressSpace feeds one space press/release pair — the D-13 separator.
+func pressSpace(a *session.Actor) {
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySpace})
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySpace, Release: true})
+}
+
+// TestActor_AfterSpaceCorrects pins the D-13 tail geometry on the actor:
+// the word already separated by a space is corrected TOGETHER with the
+// separator — exactly one DeleteSurroundingText(-7,7) (token+tail) and one
+// CommitText("привет ") — never the token alone, which would land the
+// correction behind the surviving space (Pitfall 1).
+func TestActor_AfterSpaceCorrects(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	pressSpace(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("RequireSurroundingText calls after double tap = %d, want 1", got)
+	}
+
+	line := "abc " + wordEN + " "
+	a.HandleSurroundingText(line, runeLen(line))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -7, nchars: 7}) {
+		t.Fatalf("deletions = %+v, want exactly one (-7,7) — token+tail, D-13", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != wordRU+" " {
+		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU+" ")
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_ToggleRepeat pins the ReplaceToken toggle invariant through the
+// whole pipeline: after a successful correction the buffer holds the
+// converted word, so a repeated double tap converts it BACK — the field
+// mirrors what the buffer believes (plan 02-01 invariant, wired by 02-03).
+func TestActor_ToggleRepeat(t *testing.T) {
+	a, sink := wiredActor()
+
+	// First correction: ghbdtn → привет.
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText(wordEN, runeLen(wordEN))
+
+	// Repeat: the buffer holds привет, the field too.
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText(wordRU, runeLen(wordRU))
+
+	texts := sink.commitTexts()
+	if len(texts) != 2 || texts[0] != wordRU || texts[1] != wordEN {
+		t.Fatalf("commits = %q, want [%s %s] — the second double tap toggles back", texts, wordRU, wordEN)
+	}
+	calls := sink.deleteCalls()
+	if len(calls) != 2 {
+		t.Fatalf("deletions = %+v, want exactly two (one per correction)", calls)
+	}
+	for i, want := range []deleteCall{{offset: -6, nchars: 6}, {offset: -6, nchars: 6}} {
+		if calls[i] != want {
+			t.Errorf("deletion %d = %+v, want %+v", i, calls[i], want)
+		}
+	}
+}
+
 // TestActor_DebugCorrectionRecord pins the D-21 log contract of a
 // successful correction: the DEBUG record carries the ladder level as its
 // first attribute after msg (the matrix greps the exact form), with the
