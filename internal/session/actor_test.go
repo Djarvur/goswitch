@@ -2,7 +2,9 @@ package session_test
 
 import (
 	"bytes"
+	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -81,14 +83,25 @@ type deleteCall struct {
 	nchars uint32
 }
 
+// forwardCall is one recorded ForwardKeyEvent emission with its exact
+// arguments (the level-2 Backspace burst, plan 02-05).
+type forwardCall struct {
+	keyval  uint32
+	keycode uint32
+	state   uint32
+}
+
 // fakeSink is the test double of engine.Emitter: every emitter call is
 // recorded under a mutex — the observable surface the correction pipeline
-// drives (the guarded-sink style of syncBuffer).
+// drives (the guarded-sink style of syncBuffer) — and the unified op log
+// pins the ORDER of the calls (the burst→commit sequence of the ladder).
 type fakeSink struct {
 	mu       sync.Mutex
 	requires int
 	deletes  []deleteCall
 	commits  []string
+	forwards []forwardCall
+	ops      []string
 }
 
 // RequireSurroundingText records the verification request.
@@ -97,6 +110,7 @@ func (f *fakeSink) RequireSurroundingText() {
 	defer f.mu.Unlock()
 
 	f.requires++
+	f.ops = append(f.ops, "require")
 }
 
 // DeleteSurroundingText records the ladder deletion with its exact range.
@@ -105,6 +119,7 @@ func (f *fakeSink) DeleteSurroundingText(offset int32, nchars uint32) {
 	defer f.mu.Unlock()
 
 	f.deletes = append(f.deletes, deleteCall{offset: offset, nchars: nchars})
+	f.ops = append(f.ops, fmt.Sprintf("delete(%d,%d)", offset, nchars))
 }
 
 // CommitText records the committed text payload.
@@ -113,6 +128,16 @@ func (f *fakeSink) CommitText(text engine.IBusText) {
 	defer f.mu.Unlock()
 
 	f.commits = append(f.commits, text.Text)
+	f.ops = append(f.ops, "commit("+text.Text+")")
+}
+
+// ForwardKeyEvent records the replayed key event with its exact arguments.
+func (f *fakeSink) ForwardKeyEvent(keyval, keycode, state uint32) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.forwards = append(f.forwards, forwardCall{keyval: keyval, keycode: keycode, state: state})
+	f.ops = append(f.ops, fmt.Sprintf("forward(%d,%d,%d)", keyval, keycode, state))
 }
 
 // requireCount snapshots the verification-request count.
@@ -139,13 +164,35 @@ func (f *fakeSink) commitTexts() []string {
 	return append([]string(nil), f.commits...)
 }
 
+// forwardCalls snapshots the recorded key-event replays.
+func (f *fakeSink) forwardCalls() []forwardCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]forwardCall(nil), f.forwards...)
+}
+
+// opLog snapshots the unified emitter-call sequence in arrival order.
+func (f *fakeSink) opLog() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.ops...)
+}
+
 // wiredActor returns an actor with the fake sink attached and the
 // surrounding-text capability announced — the minimal live pipeline state.
 func wiredActor() (*session.Actor, *fakeSink) {
+	return wiredActorCaps(engine.CapSurroundingText)
+}
+
+// wiredActorCaps is wiredActor with an explicit capability bitmap — the
+// level-2 corpus announces a client WITHOUT the surrounding-text bit.
+func wiredActorCaps(caps uint32) (*session.Actor, *fakeSink) {
 	a := session.NewActor(farWindow)
 	sink := &fakeSink{}
 	a.AttachEngine(sink)
-	a.HandleCapabilities(engine.CapSurroundingText)
+	a.HandleCapabilities(caps)
 
 	return a, sink
 }
@@ -548,6 +595,180 @@ func TestActor_DebugCorrectionRecord(t *testing.T) {
 			t.Errorf("INFO record leaks correction contents: %s", line)
 		}
 	}
+}
+
+// backSpaceOp is the unified op-log entry of one level-2 Backspace replay:
+// keyval 0xff08, physical keycode 14, no modifiers (RESEARCH Pattern 1 — the
+// wire contract the actor must emit verbatim).
+func backSpaceOp() string {
+	return fmt.Sprintf("forward(%d,%d,%d)", engine.KeyBackSpace, 14, 0)
+}
+
+// backSpaceWireCall is the recorded-argument form of the same replay.
+func backSpaceWireCall() forwardCall {
+	return forwardCall{keyval: engine.KeyBackSpace, keycode: 14, state: 0}
+}
+
+// burstOps builds the unified op-log suffix of a level-2 correction: n
+// Backspace forwards followed by the single replacement commit.
+func burstOps(n int, commit string) []string {
+	ops := make([]string, 0, n+1)
+	for range n {
+		ops = append(ops, backSpaceOp())
+	}
+
+	return append(ops, "commit("+commit+")")
+}
+
+// TestActor_Level2NoCaps pins the level-2 ladder on a client WITHOUT the
+// surrounding-text bit (CORR-07, the ADR-004 degradation): verification is
+// impossible, so the correction trusts the buffer plus the explicit CORR-09
+// reset triggers and executes IMMEDIATELY at the Double decision — zero
+// RequireSurroundingText calls, exactly six ForwardKeyEvent(BackSpace)
+// replays (one per RUNE of the token, Pitfall 2) and one CommitText of the
+// converted word, the burst→commit order pinned by the unified op log. This
+// test supersedes the 02-03 "no-surrounding" refusal pin: level 2 IS the
+// replacement for that skip.
+func TestActor_Level2NoCaps(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActorCaps(engine.CapPreeditText) // no CapSurroundingText
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 0 {
+		t.Fatalf("no-caps client was asked for surrounding text %d times, want 0 — verification impossible", got)
+	}
+	if got, want := sink.opLog(), burstOps(len([]rune(wordEN)), wordRU); !slices.Equal(got, want) {
+		t.Fatalf("op log = %q, want the 6-forward burst then one commit — burst→commit order", got)
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Errorf("commits = %q, want exactly one %q", texts, wordRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_Level2WithTailAndRunes pins the level-2 geometry through the
+// real RU feeding branches (Pitfall 2): "ghbdtn" typed in RU mode commits
+// «привет» rune by rune (the 02-04 script-true buffer) and the space
+// transits, so the buffer holds "привет " — SIX token runes plus the
+// one-rune tail. The RU→EN correction replays exactly SEVEN Backspaces
+// (runes, never bytes — привет is 12 UTF-8 bytes and a byte count would
+// erase twice the text) and commits "ghbdtn " with the tail re-committed.
+func TestActor_Level2WithTailAndRunes(t *testing.T) {
+	a, sink := wiredActorCaps(engine.CapPreeditText)
+
+	flipMode(a)         // EN → RU: the Cyrillic buffer is fed by the 02-04 commits
+	typeWord(a, wordEN) // commits привет; buffer script-true
+	pressSpace(a)       // the D-13 separator: buffer "привет "
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	const tailRunes = 1 // the separator space
+	tokenRunes := len([]rune(wordRU))
+	if got := sink.requireCount(); got != 0 {
+		t.Fatalf("no-caps client was asked for surrounding text %d times, want 0", got)
+	}
+	forwards := sink.forwardCalls()
+	if len(forwards) != tokenRunes+tailRunes {
+		t.Fatalf("forward count = %d, want %d (token+tail in RUNES, not bytes)", len(forwards), tokenRunes+tailRunes)
+	}
+	for i, call := range forwards {
+		if want := backSpaceWireCall(); call != want {
+			t.Errorf("forward %d = %+v, want %+v", i, call, want)
+		}
+	}
+	ops := sink.opLog()
+	burst := ops[len(ops)-(tokenRunes+tailRunes+1):] // the 7 forwards + the commit
+	if want := burstOps(tokenRunes+tailRunes, wordEN+" "); !slices.Equal(burst, want) {
+		t.Fatalf("op-log tail = %q, want %q — burst→commit order", burst, want)
+	}
+	if texts := sink.commitTexts(); texts[len(texts)-1] != wordEN+" " {
+		t.Errorf("correction commit = %q, want %q (converted+tail)", texts[len(texts)-1], wordEN+" ")
+	}
+}
+
+// TestActor_VerifyAfterLevel1 pins the post-correction check of the level-1
+// ladder (ADR-003/ADR-004: DeleteSurroundingText is ack-less on 1.5.29, the
+// verify-after is the compensation): the correction itself asks for a fresh
+// surrounding text — the require counter grows past the pre-correction
+// round — and the answer decides. A field ending with the expected
+// replacement is quiet; a field that does not raises the INFO mismatch
+// counter exactly once and is NEVER followed by a second correction
+// ("abort, не мусорить" — no auto-repair, the residual risk stays
+// documented in ADR-003).
+func TestActor_VerifyAfterLevel1(t *testing.T) {
+	// settled runs one complete level-1 correction and returns the actor at
+	// the moment the verify-after round is pending.
+	settled := func(t *testing.T) (*session.Actor, *fakeSink, *syncBuffer) {
+		t.Helper()
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		typeWord(a, wordEN)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+		line := "abc " + wordEN
+		a.HandleSurroundingText(line, runeLen(line)) // settles the pre-correction round
+
+		return a, sink, buf
+	}
+
+	t.Run("match is quiet", func(t *testing.T) {
+		a, sink, buf := settled(t)
+
+		if got := sink.requireCount(); got != 2 {
+			t.Fatalf("require calls after the correction = %d, want 2 (pre-correction round + verify-after)", got)
+		}
+		// The fresh verify answer: the field holds the replacement.
+		after := "abc " + wordRU
+		a.HandleSurroundingText(after, runeLen(after))
+
+		if strings.Contains(buf.String(), `"msg":"correction verify","outcome":"mismatch"`) {
+			t.Errorf("a matching field raised a mismatch; log:\n%s", buf.String())
+		}
+		if calls := sink.deleteCalls(); len(calls) != 1 {
+			t.Errorf("matching verify-after re-corrected: deletions = %+v, want 1", calls)
+		}
+		if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+			t.Errorf("matching verify-after re-corrected: commits = %q", texts)
+		}
+	})
+
+	t.Run("mismatch counts once without repair", func(t *testing.T) {
+		a, sink, buf := settled(t)
+
+		// The correction never landed in the field (the plan's oracle): the
+		// client reports the pre-correction text — the suffix no longer
+		// matches the expected replacement.
+		uncorrected := "abc " + wordEN
+		a.HandleSurroundingText(uncorrected, runeLen(uncorrected))
+
+		if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
+			t.Fatalf("mismatch counter = %d, want exactly 1; log:\n%s", got, buf.String())
+		}
+		if calls := sink.deleteCalls(); len(calls) != 1 {
+			t.Errorf("mismatch triggered a repair: deletions = %+v, want 1 — no auto-repeat", calls)
+		}
+		if texts := sink.commitTexts(); len(texts) != 1 {
+			t.Errorf("mismatch triggered a repair: commits = %q, want 1", texts)
+		}
+
+		// pendingAfter is quenched: a further push does nothing at all.
+		a.HandleSurroundingText(wordRU, runeLen(wordRU))
+		if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
+			t.Errorf("quenched pendingAfter re-fired: mismatch counter = %d, want 1", got)
+		}
+		if texts := sink.commitTexts(); len(texts) != 1 {
+			t.Errorf("quenched pendingAfter re-corrected: commits = %q, want 1", texts)
+		}
+	})
 }
 
 // flipMode delivers one clean Shift_R tap and expires the window: the

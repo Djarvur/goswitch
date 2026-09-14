@@ -235,3 +235,25 @@ func TestEmitters_DeleteAndRequire(t *testing.T) {
 		}
 	})
 }
+
+// TestEmitters_ForwardKeyEvent pins the wire contract of the level-2 ladder
+// emitter (plan 02-05, ADR-003): a ForwardKeyEvent(keyval, keycode, state)
+// signal on the engine interface with the three uint32 arguments in exactly
+// that positional order — the Backspace burst the no-surrounding clients
+// receive before the replacement commit.
+func TestEmitters_ForwardKeyEvent(t *testing.T) {
+	t.Parallel()
+
+	eng, rec := newBoundEngine(t)
+	eng.ForwardKeyEvent(KeyBackSpace, 14, 0)
+	sig := rec.last(t)
+	wantEngineSignal(t, sig, "ForwardKeyEvent")
+	if len(sig.body) != 3 {
+		t.Fatalf("body has %d args, want 3: %+v", len(sig.body), sig.body)
+	}
+	for i, want := range []uint32{KeyBackSpace, 14, 0} {
+		if got, ok := sig.body[i].(uint32); !ok || got != want {
+			t.Errorf("arg%d = %#v, want uint32(%d)", i, sig.body[i], want)
+		}
+	}
+}

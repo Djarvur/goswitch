@@ -412,6 +412,14 @@ func (e *Engine) RequireSurroundingText() {
 	}
 }
 
+// ForwardKeyEvent emits the org.freedesktop.IBus.Engine.ForwardKeyEvent
+// signal — the level-2 ladder primitive (ADR-003): the key event is replayed
+// to the client as if the user pressed it (the Backspace burst before the
+// replacement commit). RED stub of plan 02-05: the body arrives in GREEN,
+// the empty shape exists so the wire pin fails on a missing emission
+// instead of a compile error.
+func (e *Engine) ForwardKeyEvent(_, _, _ uint32) {}
+
 // lifecycle forwards a lifecycle event to the handler, if installed.
 func (e *Engine) lifecycle(kind LifecycleKind) {
 	if e.handler != nil {
