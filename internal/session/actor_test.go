@@ -217,6 +217,75 @@ func runeLen(s string) uint32 {
 	return uint32(len([]rune(s)))
 }
 
+// TestActor_CachedSurroundingCorrects pins the live transport behavior of
+// GTK/mutter clients (live finding 2026-09-14): they never answer
+// RequireSurroundingText — they push SetSurroundingText spontaneously after
+// every keystroke. The correction must verify against that cached push and
+// execute at the Double decision itself, with no post-decision answer.
+func TestActor_CachedSurroundingCorrects(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	for i, r := range wordEN {
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r)})
+		a.HandleSurroundingText(wordEN[:i+1], uint32(i+1)) // the client's spontaneous push
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Release: true})
+	}
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("cache hit still asked for surrounding text %d times, want 0", got)
+	}
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
+		t.Fatalf("deletions = %+v, want exactly one (-6,6)", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits = %q, want one %q", texts, wordRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_LatchedModsStillFeed pins the live finding of the tracer run
+// (2026-09-14): on a NumLock-lit desktop every letter arrives with the
+// NumLock latch (mods 0x10) in the IBus state word — latch-state modifiers
+// must not starve the buffer, the correction has to run exactly as with
+// bare keys (Ctrl/Alt/Super combos still never feed it).
+func TestActor_LatchedModsStillFeed(t *testing.T) {
+	const numLockLatch = 0x10 // IBUS_MOD2_MASK: latched NumLock (live-observed)
+	a, sink := wiredActor()
+
+	for _, r := range wordEN {
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Mods: numLockLatch})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Mods: numLockLatch, Release: true})
+	}
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText(wordEN, runeLen(wordEN))
+
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits under NumLock = %q, want one %q", texts, wordRU)
+	}
+
+	// The negative control: a Ctrl-modified press is a combo, not a
+	// character — it must not feed the buffer either.
+	b, sink2 := wiredActor()
+	b.HandleKey(engine.EngineEvent{Keyval: uint32('c'), Mods: engine.MaskControl})
+	b.HandleKey(engine.EngineEvent{Keyval: uint32('c'), Mods: engine.MaskControl, Release: true})
+	tapShift(b)
+	tapShift(b)
+	b.ExpiryAt(expiryAfterWindow)
+	if got := sink2.requireCount(); got != 0 {
+		t.Errorf("Ctrl-combo press fed the buffer (started verification %d times), want 0", got)
+	}
+}
+
 // TestActor_VerifyPaths pins the ADR-004 abort discipline of the two-phase
 // verification: a suffix mismatch and the verify timeout each skip the
 // correction with the exact INFO reason — and not one of them deletes or

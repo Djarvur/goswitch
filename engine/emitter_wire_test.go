@@ -220,12 +220,18 @@ func TestEmitters_DeleteAndRequire(t *testing.T) {
 		if !ok {
 			t.Fatalf("arg0 = %T, want dbus.Variant", sig.body[0])
 		}
+		if got := variant.Signature().String(); got != "(sa{sv}sv)" {
+			t.Errorf("CommitText payload signature = %q, want (sa{sv}sv)", got)
+		}
 		text, ok := variant.Value().(IBusText)
 		if !ok {
 			t.Fatalf("variant payload = %T, want engine.IBusText", variant.Value())
 		}
 		if text.Text != "привет" {
 			t.Errorf("text = %q, want %q", text.Text, "привет")
+		}
+		if got := text.AttrList.Signature().String(); got != "(sa{sv}av)" {
+			t.Errorf("AttrList signature = %q, want (sa{sv}av) — an 'au' there crashes ibus-daemon 1.5.29", got)
 		}
 	})
 }

@@ -57,3 +57,7 @@ run = "go run ./test/e2e -case chromium-smoke"
 [tasks.e2e-gte-smoke]
 description = "e2e: 02-02 gnome-text-editor surface smoke — standalone-instance driver proof (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case gte-smoke"
+
+[tasks.e2e-word]
+description = "e2e: 02-03 word-correction tracer — ghbdtn→привет in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-en-ru"

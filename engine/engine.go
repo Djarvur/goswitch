@@ -172,20 +172,62 @@ func (e *Engine) SetCursorLocation(x, y, width, height int32) (err *dbus.Error) 
 
 // SetSurroundingText implements
 // org.freedesktop.IBus.Engine.SetSurroundingText (v text, u cursor_pos,
-// u anchor_pos): logged at DEBUG, contents never recorded at INFO.
+// u anchor_pos): the variant-wrapped IBusText is decoded once here and the
+// text with its cursor position is funneled to the handler — the input of
+// the ADR-004 pre-correction verification. Logged at DEBUG, contents never
+// recorded at INFO (D-20). A payload that does not decode as IBusText is
+// dropped: the correction waiting on it then times out silently.
 func (e *Engine) SetSurroundingText(text dbus.Variant, cursorPos, anchorPos uint32) (err *dbus.Error) {
 	defer recoverHandler("SetSurroundingText", &err)
 	slog.Debug("surrounding_text", "cursor_pos", cursorPos, "anchor_pos", anchorPos)
+	if e.handler != nil {
+		if t, ok := decodeIBusText(text); ok {
+			e.handler.HandleSurroundingText(t.Text, cursorPos)
+		}
+	}
 
 	return nil
 }
 
+// decodeIBusText decodes a variant-wrapped IBusText wire struct. godbus
+// decodes STRUCT generically into []any — the typed struct never appears on
+// the incoming path — so the positional fields (types.go field order is the
+// wire contract) are extracted defensively and any other shape is refused.
+func decodeIBusText(text dbus.Variant) (IBusText, bool) {
+	fields, ok := text.Value().([]any)
+	if !ok || len(fields) < 4 {
+		return IBusText{}, false
+	}
+	name, ok := fields[0].(string)
+	if !ok {
+		return IBusText{}, false
+	}
+	attachments, ok := fields[1].(map[string]dbus.Variant)
+	if !ok {
+		return IBusText{}, false
+	}
+	value, ok := fields[2].(string)
+	if !ok {
+		return IBusText{}, false
+	}
+	attrList, ok := fields[3].(dbus.Variant)
+	if !ok {
+		return IBusText{}, false
+	}
+
+	return IBusText{Name: name, Attachments: attachments, Text: value, AttrList: attrList}, true
+}
+
 // SetCapabilities implements org.freedesktop.IBus.Engine.SetCapabilities
-// (u caps): the capability bitmap is stored per input context.
+// (u caps): the capability bitmap is stored per input context and funneled
+// to the handler — the input of the ADR-003 ladder-level choice.
 func (e *Engine) SetCapabilities(caps uint32) (err *dbus.Error) {
 	defer recoverHandler("SetCapabilities", &err)
 	e.caps = caps
 	slog.Debug("capabilities", "caps", fmt.Sprintf("0x%x", caps))
+	if e.handler != nil {
+		e.handler.HandleCapabilities(caps)
+	}
 
 	return nil
 }
@@ -343,6 +385,12 @@ func (e *Engine) CommitText(text IBusText) {
 // after the cursor. Fire-and-forget on IBus 1.5.29 — the ADR-004
 // verification is the compensation, not an ack.
 func (e *Engine) DeleteSurroundingText(offset int32, nchars uint32) {
+	if e.conn == nil {
+		return
+	}
+	if err := e.conn.Emit(e.path, ifaceEngine+".DeleteSurroundingText", offset, nchars); err != nil {
+		slog.Error("delete surrounding emit failed", "error", err)
+	}
 }
 
 // RequireSurroundingText emits the org.freedesktop.IBus.Engine.
@@ -350,6 +398,12 @@ func (e *Engine) DeleteSurroundingText(offset int32, nchars uint32) {
 // SetSurroundingText, which is the input of the pre-correction
 // verification (ADR-004).
 func (e *Engine) RequireSurroundingText() {
+	if e.conn == nil {
+		return
+	}
+	if err := e.conn.Emit(e.path, ifaceEngine+".RequireSurroundingText"); err != nil {
+		slog.Error("require surrounding emit failed", "error", err)
+	}
 }
 
 // lifecycle forwards a lifecycle event to the handler, if installed.

@@ -16,8 +16,12 @@ import (
 
 // recordingHandler captures everything the engine funnels through the seam.
 type recordingHandler struct {
-	events []engine.EngineEvent
-	kinds  []engine.LifecycleKind
+	events   []engine.EngineEvent
+	kinds    []engine.LifecycleKind
+	texts    []string
+	cursors  []uint32
+	caps     []uint32
+	attached []engine.Emitter
 }
 
 func (h *recordingHandler) HandleKey(ev engine.EngineEvent) {
@@ -28,11 +32,18 @@ func (h *recordingHandler) HandleLifecycle(kind engine.LifecycleKind) {
 	h.kinds = append(h.kinds, kind)
 }
 
-func (h *recordingHandler) HandleSurroundingText(string, uint32) {}
+func (h *recordingHandler) HandleSurroundingText(text string, cursorPos uint32) {
+	h.texts = append(h.texts, text)
+	h.cursors = append(h.cursors, cursorPos)
+}
 
-func (h *recordingHandler) HandleCapabilities(uint32) {}
+func (h *recordingHandler) HandleCapabilities(caps uint32) {
+	h.caps = append(h.caps, caps)
+}
 
-func (h *recordingHandler) AttachEngine(engine.Emitter) {}
+func (h *recordingHandler) AttachEngine(eng engine.Emitter) {
+	h.attached = append(h.attached, eng)
+}
 
 // panicHandler injects a panic into every seam call (INTEG-05 test double).
 type panicHandler struct{}
@@ -115,6 +126,65 @@ func TestEngine_ProcessKeyEventReturnsFalse(t *testing.T) {
 				t.Errorf("Mods = 0x%x, want 0x%x", ev.Mods, tt.wantMods)
 			}
 		})
+	}
+}
+
+// ibusTextVariant builds the wire shape of a SetSurroundingText payload the
+// way godbus decodes it on the incoming path: the IBusText struct as a
+// positional []any (STRUCT never decodes into the typed struct).
+func ibusTextVariant(t *testing.T, text string) dbus.Variant {
+	t.Helper()
+
+	sig, err := dbus.ParseSignature("(sa{sv}sv)")
+	if err != nil {
+		t.Fatalf("parse struct signature: %v", err)
+	}
+	attrSig, err := dbus.ParseSignature("(sa{sv}av)")
+	if err != nil {
+		t.Fatalf("parse attrlist signature: %v", err)
+	}
+
+	return dbus.MakeVariantWithSignature([]any{
+		"IBusText",
+		map[string]dbus.Variant{},
+		text,
+		dbus.MakeVariantWithSignature([]any{
+			"IBusAttrList",
+			map[string]dbus.Variant{},
+			[]dbus.Variant{},
+		}, attrSig),
+	}, sig)
+}
+
+// TestEngine_SurroundingTextForward pins the incoming decode of the
+// surrounding text (plan 02-03): a struct-shaped payload is decoded and
+// forwarded with text and cursor position; every other shape is dropped
+// without a call. Capabilities forward likewise.
+func TestEngine_SurroundingTextForward(t *testing.T) {
+	t.Parallel()
+
+	rec := &recordingHandler{}
+	eng := engine.NewEngine(rec, "goswitch-en")
+
+	if err := eng.SetSurroundingText(ibusTextVariant(t, "ghbdtn"), 6, 6); err != nil {
+		t.Fatalf("SetSurroundingText() err = %v, want nil", err)
+	}
+	if err := eng.SetSurroundingText(dbus.MakeVariant("not a struct"), 1, 1); err != nil {
+		t.Fatalf("SetSurroundingText(malformed) err = %v, want nil", err)
+	}
+
+	if len(rec.texts) != 1 || rec.texts[0] != "ghbdtn" {
+		t.Errorf("forwarded texts = %q, want exactly [ghbdtn]", rec.texts)
+	}
+	if len(rec.cursors) != 1 || rec.cursors[0] != 6 {
+		t.Errorf("forwarded cursors = %v, want exactly [6]", rec.cursors)
+	}
+
+	if err := eng.SetCapabilities(engine.CapSurroundingText); err != nil {
+		t.Fatalf("SetCapabilities() err = %v, want nil", err)
+	}
+	if len(rec.caps) != 1 || rec.caps[0] != engine.CapSurroundingText {
+		t.Errorf("forwarded caps = %v, want exactly [CapSurroundingText]", rec.caps)
 	}
 }
 
