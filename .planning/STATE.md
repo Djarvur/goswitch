@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: Коррекция слова EN↔RU
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-09-14T21:48:22.540Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-09-14T22:29:16.386Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 02 execution started
-state_head: 22c1d0272340b3f876a3c63fb0c4cbb8e8f6a5a5
+state_head: 4de8155f0ed03c22bb189813007aab04ab57819a
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 12
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-11)
 ## Current Position
 
 Phase: 02 (Коррекция слова EN↔RU) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 02 execution started
 
@@ -71,6 +71,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P02 | 54 min | 2 tasks | 12 files |
 | Phase 02 P03 | 86 min | 2 tasks | 13 files |
 | Phase 02 P04 | 15 min | 2 tasks | 10 files |
+| Phase 02 P05 | 38 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,8 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-04] comboMask (Ctrl/Alt/Super, лэтчи разрешены) управляет и RU-потреблением — буквальная маска плана mods&^MaskShift==0 уморила бы флип на NumLock-столе (живая находка 02-03: буквы с mods 0x10)
 - [Phase 02]: [02-04] Тождественная карта RU ('2'→'2') пинена транзитом: consume=false без коммита, руна в буфере — инвариант script-true от выбора не зависит
 - [Phase 02]: [02-04] TestActor_MixedWordUntouched зелёный сразу (Detect 02-01 уже отказывал) — по распоряжению плана RED-коммит не нужен; движок потребляет по вердикту EventHandler, observer-false контракт Фазы 1 заменён
+- [Phase 02]: [02-05] Живая находка: google-chrome 153 сообщает caps 0x29 (CapSurroundingText) и ПРИМЕНЯЕТ DeleteSurroundingText — фактический уровень лестницы в chromium = 1, ibus#2354 (Pitfall 3) на цели устарел; кейс пинирует фактический уровень; живого level-2 свидетеля на столе нет (zenity/chromium/GTE — все с битом), контракт уровня 2 несёт юнит-корпус
+- [Phase 02]: [02-05] ydotool 0.1.8: имя 'Escape' резолвится в физическую клавишу E (fallback первой буквы), рабочее имя — 'esc'; тот же класс ловушки, что 'space'→S (02-03); пред-существующий closeEntrySurface — в deferred-items
 
 ### Pending Todos
 
@@ -134,6 +137,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-14T21:48:22.488Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-09-14T22:29:08.288Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None

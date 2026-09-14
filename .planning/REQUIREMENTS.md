@@ -15,9 +15,9 @@
 - [x] **CORR-04**: Направление EN→RU / RU→EN определяется автоматически по составу буфера (букв какой раскладки больше)
 - [x] **CORR-05**: Регистр сохраняется посимвольно: `GHBDTN`→`ПРИВЕТ`, `Ghbdtn`→`Привет`, `ghbdtn`→`привет`
 - [ ] **CORR-06**: Смешанный текст: корректируется только часть, набранная не той раскладкой (точная семантика — ADR фазы решения)
-- [ ] **CORR-07**: Замена применяется ровно к диапазону неверного текста без визуального «прыжка» (surrounding-text; fallback Backspace×N / буфер обмена — по capability ladder)
+- [x] **CORR-07**: Замена применяется ровно к диапазону неверного текста без визуального «прыжка» (surrounding-text; fallback Backspace×N / буфер обмена — по capability ladder)
 - [x] **CORR-08**: Таблицы ЙЦУКЕН↔QWERTY включают знаки `[ ] ; ' , . /` и генерируются `go:generate` из xkb symbols
-- [ ] **CORR-09**: Буфер очищается по Enter, Tab, Escape, смене фокуса окна; клик мыши — по результатам ADR (на уровне IME ненаблюдаем)
+- [x] **CORR-09**: Буфер очищается по Enter, Tab, Escape, смене фокуса окна; клик мыши — по результатам ADR (на уровне IME ненаблюдаем)
 
 ### SWCH — Переключение раскладки
 
@@ -90,9 +90,9 @@
 | CORR-04 | Phase 2 | Complete |
 | CORR-05 | Phase 2 | Complete |
 | CORR-06 | Phase 3 | Pending |
-| CORR-07 | Phase 2 | Pending |
+| CORR-07 | Phase 2 | Complete |
 | CORR-08 | Phase 1 | Complete |
-| CORR-09 | Phase 2 | Pending |
+| CORR-09 | Phase 2 | Complete |
 | SWCH-01 | Phase 3 | Pending |
 | SWCH-02 | Phase 3 | Pending |
 | SWCH-03 | Phase 3 | Pending |

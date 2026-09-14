@@ -87,7 +87,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 02-05-PLAN.md — Лестница ур.2 (Backspace×N по рунам), verify-after, триггеры сброса буфера (CORR-09), живой ladder-chromium на драйвере 02-02 — CORR-07, CORR-09
+- [x] 02-05-PLAN.md — Лестница ур.2 (Backspace×N по рунам), verify-after, триггеры сброса буфера (CORR-09), живой ladder-chromium на драйвере 02-02 — CORR-07, CORR-09
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -136,7 +136,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
-| 2. Коррекция слова EN↔RU | 4/7 | In Progress|  |
+| 2. Коррекция слова EN↔RU | 5/7 | In Progress|  |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 
