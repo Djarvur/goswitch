@@ -7,6 +7,7 @@ bin/
 # sources (systemd unit, plan 01-05), not build output.
 
 # Test and coverage output
+e2e-report.txt
 *.coverprofile
 coverage.out
 coverage.html

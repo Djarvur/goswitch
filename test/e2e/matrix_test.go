@@ -47,15 +47,40 @@ func TestMatrixDecode_Valid(t *testing.T) {
 		t.Fatalf("decoded %d cases, want 2", len(cases))
 	}
 
-	first := cases[0]
+	t.Run("word-after-space-en-ru", func(t *testing.T) {
+		t.Parallel()
+
+		assertAfterSpaceCase(t, cases[0])
+	})
+
+	t.Run("reset-escape-noop", func(t *testing.T) {
+		t.Parallel()
+
+		second := cases[1]
+		if second.Name != "reset-escape-noop" {
+			t.Errorf("Name = %q, want %q", second.Name, "reset-escape-noop")
+		}
+		if second.Surface != "chromium" {
+			t.Errorf("Surface = %q, want %q", second.Surface, "chromium")
+		}
+		if second.Steps[1].Key != "Escape" {
+			t.Errorf("Steps[1].Key = %q, want %q", second.Steps[1].Key, "Escape")
+		}
+		if second.ExpectLevel != 0 {
+			t.Errorf("ExpectLevel = %d, want 0 (unset)", second.ExpectLevel)
+		}
+	})
+}
+
+// assertAfterSpaceCase pins the D-13 corpus case field by field.
+func assertAfterSpaceCase(t *testing.T, first matrixCase) {
+	t.Helper()
+
 	if first.Name != "word-after-space-en-ru" {
 		t.Errorf("Name = %q, want %q", first.Name, "word-after-space-en-ru")
 	}
-	if first.Surface != "zenity" {
-		t.Errorf("Surface = %q, want %q", first.Surface, "zenity")
-	}
-	if first.Mode != "en" {
-		t.Errorf("Mode = %q, want %q", first.Mode, "en")
+	if first.Surface != "zenity" || first.Mode != "en" {
+		t.Errorf("Surface/Mode = %q/%q, want zenity/en", first.Surface, first.Mode)
 	}
 	if len(first.Steps) != 3 {
 		t.Fatalf("Steps = %d, want 3", len(first.Steps))
@@ -74,20 +99,6 @@ func TestMatrixDecode_Valid(t *testing.T) {
 	}
 	if first.ExpectLevel != 1 {
 		t.Errorf("ExpectLevel = %d, want 1", first.ExpectLevel)
-	}
-
-	second := cases[1]
-	if second.Name != "reset-escape-noop" {
-		t.Errorf("Name = %q, want %q", second.Name, "reset-escape-noop")
-	}
-	if second.Surface != "chromium" {
-		t.Errorf("Surface = %q, want %q", second.Surface, "chromium")
-	}
-	if second.Steps[1].Key != "Escape" {
-		t.Errorf("Steps[1].Key = %q, want %q", second.Steps[1].Key, "Escape")
-	}
-	if second.ExpectLevel != 0 {
-		t.Errorf("ExpectLevel = %d, want 0 (unset)", second.ExpectLevel)
 	}
 }
 
@@ -112,59 +123,35 @@ expct_text: "привет"
 // TestMatrixDecode_MissingRequiredRejected pins the mandatory fields: a
 // case without steps, without a name or without expect_text is rejected by
 // validation, and a step carrying no (or more than one) kind is an error —
-// the "exactly one step kind" rule.
+// the "exactly one step kind" rule. Corpora ride YAML flow mappings: one
+// case per line keeps the rejection table scannable.
 func TestMatrixDecode_MissingRequiredRejected(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name  string
+		name   string
 		corpus string
 	}{
 		{
-			name: "no steps",
-			corpus: `name: no-steps
-surface: zenity
-mode: en
-expect_text: "привет"
-`,
+			name:   "no steps",
+			corpus: `{name: no-steps, surface: zenity, mode: en, expect_text: "привет"}`,
 		},
 		{
-			name: "no name",
-			corpus: `surface: zenity
-mode: en
-steps:
-  - {type: "ghbdtn"}
-expect_text: "привет"
-`,
+			name:   "no name",
+			corpus: `{surface: zenity, mode: en, steps: [{type: ghbdtn}], expect_text: "привет"}`,
 		},
 		{
-			name: "no expect_text",
-			corpus: `name: no-expect
-surface: zenity
-mode: en
-steps:
-  - {type: "ghbdtn"}
-`,
+			name:   "no expect_text",
+			corpus: `{name: no-expect, surface: zenity, mode: en, steps: [{type: ghbdtn}]}`,
 		},
 		{
-			name: "step without a kind",
-			corpus: `name: empty-step
-surface: zenity
-mode: en
-steps:
-  - {}
-expect_text: "привет"
-`,
+			name:   "step without a kind",
+			corpus: `{name: empty-step, surface: zenity, mode: en, steps: [{}], expect_text: "привет"}`,
 		},
 		{
 			name: "step with two kinds",
-			corpus: `name: greedy-step
-surface: zenity
-mode: en
-steps:
-  - {type: "ghbdtn", tap: double}
-expect_text: "привет"
-`,
+			corpus: "{name: greedy-step, surface: zenity, mode: en," +
+				` steps: [{type: ghbdtn, tap: double}], expect_text: "привет"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -221,36 +208,34 @@ expect_text: "с"
 func TestMatrixStepValidation(t *testing.T) {
 	t.Parallel()
 
-	const head = "name: v\nmode: en\nsteps:\n  - {type: \"ghbdtn\"}\nexpect_text: \"x\"\n"
 	for _, tc := range []struct {
 		name   string
 		corpus string
 	}{
 		{
 			name:   "tap quadruple",
-			corpus: "name: v\nsurface: zenity\nmode: en\nsteps:\n  - {tap: quadruple}\nexpect_text: \"x\"\n",
+			corpus: `{name: v, surface: zenity, mode: en, steps: [{tap: quadruple}], expect_text: x}`,
 		},
 		{
 			name:   "surface terminal",
-			corpus: "name: v\nsurface: terminal\nmode: en\nsteps:\n  - {type: \"ghbdtn\"}\nexpect_text: \"x\"\n",
+			corpus: `{name: v, surface: terminal, mode: en, steps: [{type: ghbdtn}], expect_text: x}`,
 		},
 		{
 			name:   "mode xx",
-			corpus: "name: v\nsurface: zenity\nmode: xx\nsteps:\n  - {type: \"ghbdtn\"}\nexpect_text: \"x\"\n",
+			corpus: `{name: v, surface: zenity, mode: xx, steps: [{type: ghbdtn}], expect_text: x}`,
 		},
 		{
 			name:   "focus unknown surface",
-			corpus: "name: v\nsurface: chromium\nmode: en\nsteps:\n  - {focus: terminal}\nexpect_text: \"x\"\n",
+			corpus: `{name: v, surface: chromium, mode: en, steps: [{focus: terminal}], expect_text: x}`,
 		},
 		{
 			name:   "key unknown name",
-			corpus: "name: v\nsurface: chromium\nmode: en\nsteps:\n  - {key: WakeUp}\nexpect_text: \"x\"\n",
+			corpus: `{name: v, surface: chromium, mode: en, steps: [{key: WakeUp}], expect_text: x}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			_ = head // corpus strings carry their own full case
 			if _, err := loadMatrixCases([]byte(tc.corpus)); err == nil {
 				t.Fatalf("decode of %q succeeded, want an error", tc.name)
 			}

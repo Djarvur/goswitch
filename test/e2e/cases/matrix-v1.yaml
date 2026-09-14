@@ -1,0 +1,38 @@
+# goswitch e2e matrix v1 (TEST-04, D-18).
+#
+# One case per `---`-separated document, strict schema (unknown fields are
+# decode errors): name / surface (zenity|chromium|gnome-text-editor) /
+# mode (en|ru — ru flips the engine to RU before the steps) / steps (each
+# exactly one of type|key|tap|focus) / expect_text (rune-exact field
+# oracle) / expect_level (0 = skip; otherwise the ACTUAL ladder level the
+# daemon chose — ADR-003, never the caps-bit assumption).
+#
+# Smoke set of plan 02-06 Task 1 (three cases, all three surfaces); the
+# full D-18 corpus arrives in Task 2.
+---
+name: word-en-ru
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {tap: double}
+expect_text: "привет"
+expect_level: 1  # actual GTK-class level (check A1): caps bit set, deletion applied
+---
+name: word-gte
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {tap: double}
+expect_text: "привет"
+expect_level: 1  # pinned live 02-06: GTE reports CapSurroundingText (0x29) like every matrix surface on this desktop
+---
+name: reset-escape
+surface: chromium
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: Escape}
+  - {tap: double}
+expect_text: "ghbdtn"  # CORR-09: Escape reset the buffer — the refused correction leaves the field untouched

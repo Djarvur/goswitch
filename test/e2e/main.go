@@ -47,10 +47,11 @@ const (
 
 // config is the stand's CLI surface.
 type config struct {
-	caseName string
-	pacing   int
-	logPath  string
-	helper   string
+	caseName   string
+	pacing     int
+	logPath    string
+	helper     string
+	matrixPath string
 }
 
 // desktopSnapshot is the live-desktop state the teardown restores.
@@ -94,7 +95,19 @@ func run() (exit int) {
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
 	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py", "path to the AT-SPI helper script")
+	flag.StringVar(&cfg.matrixPath, "matrix", "",
+		"YAML case matrix to run (multi-doc cases; every case gets a fresh daemon)")
 	flag.Parse()
+
+	// The matrix branch owns its whole stand lifecycle: case isolation needs
+	// a setupStand → case → teardown cycle PER CASE (02-06), so the single
+	// shared stand of the -case path must not wrap it.
+	if cfg.matrixPath != "" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		return runMatrixFile(ctx, cfg, cfg.matrixPath)
+	}
 
 	caseFn, err := pickCase(cfg.caseName)
 	if err != nil {
