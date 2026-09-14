@@ -89,7 +89,7 @@ func run() (exit int) {
 	var cfg config
 	flag.StringVar(&cfg.caseName, "case", "",
 		"case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke"+
-			" | word-en-ru | word-after-space | word-ru-en | word-mixed")
+			" | word-en-ru | word-after-space | word-ru-en | word-mixed | ladder-chromium")
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
@@ -178,11 +178,13 @@ func pickCase(name string) (func(context.Context, *stand) error, error) {
 		"word-after-space": runWordAfterSpace,
 		"word-ru-en":       runWordRUEN,
 		"word-mixed":       runWordMixed,
+		"ladder-chromium":  runLadderChromium,
 	}
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
-			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed)", name)
+			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed,"+
+			" ladder-chromium)", name)
 	}
 
 	return fn, nil

@@ -73,3 +73,7 @@ run = "go run ./test/e2e -case word-ru-en"
 [tasks.e2e-word-mixed]
 description = "e2e: 02-04 mixed word D-16 — gfbпривет untouched after double tap in zenity (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case word-mixed"
+
+[tasks.e2e-ladder-chromium]
+description = "e2e: 02-05 ladder actual level in chromium — ghbdtn→привет, level+verify-after pinned from -debug log (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case ladder-chromium"

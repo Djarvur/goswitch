@@ -66,10 +66,11 @@ type EngineEvent struct {
 // primitives the correction pipeline drives (ADR-003). Declared here
 // because EventHandler.AttachEngine hands the freshly minted engine to the
 // handler as this seam, not as the concrete object: consumers (and their
-// test doubles) program against the three emitters alone.
+// test doubles) program against the four emitters alone.
 type Emitter interface {
 	RequireSurroundingText()
 	DeleteSurroundingText(offset int32, nchars uint32)
+	ForwardKeyEvent(keyval, keycode, state uint32)
 	CommitText(text IBusText)
 }
 
@@ -415,10 +416,16 @@ func (e *Engine) RequireSurroundingText() {
 // ForwardKeyEvent emits the org.freedesktop.IBus.Engine.ForwardKeyEvent
 // signal — the level-2 ladder primitive (ADR-003): the key event is replayed
 // to the client as if the user pressed it (the Backspace burst before the
-// replacement commit). RED stub of plan 02-05: the body arrives in GREEN,
-// the empty shape exists so the wire pin fails on a missing emission
-// instead of a compile error.
-func (e *Engine) ForwardKeyEvent(_, _, _ uint32) {}
+// replacement commit). Fire-and-forget like every engine signal — the
+// ADR-004 verification is the compensation, never an expected ack.
+func (e *Engine) ForwardKeyEvent(keyval, keycode, state uint32) {
+	if e.conn == nil {
+		return
+	}
+	if err := e.conn.Emit(e.path, ifaceEngine+".ForwardKeyEvent", keyval, keycode, state); err != nil {
+		slog.Error("forward key event emit failed", "error", err)
+	}
+}
 
 // lifecycle forwards a lifecycle event to the handler, if installed.
 func (e *Engine) lifecycle(kind LifecycleKind) {

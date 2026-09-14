@@ -34,6 +34,11 @@ const verifyWait = 100 * time.Millisecond
 // Latin and the flip would be dead on the real desktop.
 const comboMask = engine.MaskControl | engine.MaskMod1 | engine.MaskMod4
 
+// backSpaceKeycode is the physical keycode of the Backspace key — the
+// keycode half of the level-2 replay ForwardKeyEvent(KeyBackSpace, 14, 0)
+// (RESEARCH Pattern 1; the keyval half is engine.KeyBackSpace).
+const backSpaceKeycode = 14
+
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
 // flip toggles it on every Single decision while the session's XKB group
 // stays untouched — the mode is pure daemon state, the rune the field
@@ -66,17 +71,19 @@ const (
 // mutex is the actor's single entry point: without it the FSM state would
 // race between concurrent ProcessKeyEvent calls.
 type Actor struct {
-	mu      sync.Mutex
-	fsm     *hotkey.FSM
-	window  time.Duration
-	start   time.Time
-	timer   *time.Timer
-	buf     *correct.Buffer
-	caps    uint32
-	eng     engine.Emitter
-	surr    []rune // cached text-before-cursor from the latest client push
-	pending *pendingFix
-	mode    scriptMode // output-script state, EN at start (ADR-001 Option B)
+	mu          sync.Mutex
+	fsm         *hotkey.FSM
+	window      time.Duration
+	start       time.Time
+	timer       *time.Timer
+	buf         *correct.Buffer
+	caps        uint32
+	eng         engine.Emitter
+	surr        []rune // cached text-before-cursor from the latest client push
+	pending     *pendingFix
+	after       *pendingAfter
+	verifyEpoch uint64     // monotonic verify-after round tag (stale-timer guard)
+	mode        scriptMode // output-script state, EN at start (ADR-001 Option B)
 }
 
 // pendingFix is the state of a correction between the Double decision and
@@ -91,6 +98,17 @@ type pendingFix struct {
 	match     []rune
 	armed     time.Time
 	deadline  *time.Timer
+}
+
+// pendingAfter is the state of the verify-after round — the post-correction
+// check that compensates the ack-less DeleteSurroundingText (ADR-003): the
+// suffix the client's fresh surrounding text must END with (converted+tail)
+// and the round's epoch. The epoch makes a stale deadline from a superseded
+// round a no-op: the timer callback re-checks the tag under the mutex.
+type pendingAfter struct {
+	expected []rune
+	epoch    uint64
+	deadline *time.Timer
 }
 
 // NewActor returns an actor deciding tap series inside the given
@@ -141,8 +159,9 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 
 // HandleLifecycle implements engine.EventHandler: FocusOut and Reset disarm
 // a pending series (the input context is gone — a decision there would be
-// garbage) and hard-reset the phrase buffer (CORR-09); everything else is a
-// DEBUG trace.
+// garbage), hard-reset the phrase buffer (CORR-09) and retire any open
+// correction round — its verify answer belongs to an input context that no
+// longer exists; everything else is a DEBUG trace.
 func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -152,6 +171,8 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		a.fsm.Feed(hotkey.Reset{}, a.elapsed())
 		a.buf.HardReset()
 		a.surr = nil // the cache belongs to the input context that just left
+		a.resolvePending()
+		a.clearAfter()
 		if a.timer != nil {
 			a.timer.Stop()
 			a.timer = nil
@@ -162,26 +183,41 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 }
 
 // HandleSurroundingText implements engine.EventHandler: the arriving text
-// updates the surrounding cache, and when a correction is pending it also
-// settles it (ADR-004). The runes before the cursor must END with the
-// correction range (token+tail — exactly what the ladder deletes, CORR-07);
-// a match executes the plan, a mismatch aborts silently ("abort, не
-// мусорить": not one character is touched).
+// updates the surrounding cache and settles whichever round is open. A
+// pending correction (ADR-004 pre-check) executes only when the runes before
+// the cursor END with the correction range (token+tail — exactly what the
+// ladder deletes, CORR-07); otherwise it aborts silently ("abort, не
+// мусорить": not one character is touched). A pending verify-after
+// (ADR-003/ADR-004 post-check) compares the suffix against the replacement
+// the correction left behind: a mismatch — the client ignored the deletion,
+// Chromium ibus#2354, Pitfall 3 — counts as an INFO record and is NEVER
+// followed by an automatic repair.
 func (a *Actor) HandleSurroundingText(text string, cursorPos uint32) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.surr = beforeCursor(text, cursorPos)
-	if a.pending == nil {
-		return
-	}
-	if !correct.MatchesSuffix(a.surr, a.pending.match) {
-		a.resolvePending()
-		slog.Info("correction skipped", "reason", "verify-mismatch")
+	if a.pending != nil {
+		if !correct.MatchesSuffix(a.surr, a.pending.match) {
+			a.resolvePending()
+			slog.Info("correction skipped", "reason", "verify-mismatch")
+
+			return
+		}
+		a.executeCorrection()
 
 		return
 	}
-	a.executeCorrection()
+	if a.after != nil {
+		expected := a.after.expected
+		a.clearAfter()
+		if !correct.MatchesSuffix(a.surr, expected) {
+			slog.Info("correction verify", "outcome", "mismatch")
+
+			return
+		}
+		slog.Debug("correction verify", "outcome", "match")
+	}
 }
 
 // HandleCapabilities implements engine.EventHandler: the capability bitmap
@@ -232,10 +268,12 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 	}
 }
 
-// VerifyExpiry is the verify-deadline timer callback: the verifyWait budget
-// for a fresh SetSurroundingText closed without an answer — the correction
-// is dropped silently (ADR-004, Pitfall 4: the wait lives in a timer, never
-// in a handler). Tests inject it directly (deterministic deadline).
+// VerifyExpiry is the verify-deadline timer callback of the pre-correction
+// round: the verifyWait budget for a fresh SetSurroundingText closed without
+// an answer — the correction is dropped silently (ADR-004, Pitfall 4: the
+// wait lives in a timer, never in a handler). The timeout also retires any
+// pendingAfter: a round that never executed leaves its would-be post-check
+// moot. Tests inject it directly (deterministic deadline).
 func (a *Actor) VerifyExpiry() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -244,7 +282,52 @@ func (a *Actor) VerifyExpiry() {
 		return // already settled — a stale timer is a no-op
 	}
 	a.resolvePending()
+	a.clearAfter()
 	slog.Info("correction skipped", "reason", "verify-timeout")
+}
+
+// afterExpiry is the verify-after deadline: the client never answered the
+// post-correction Require, so the check is dropped quietly — the
+// compensation is best-effort and never a repair (ADR-003 residual risk).
+// The epoch tag makes a deadline from a superseded round a no-op.
+func (a *Actor) afterExpiry(epoch uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.after == nil || a.after.epoch != epoch {
+		return // stale deadline — a newer round owns the state
+	}
+	a.clearAfter()
+	slog.Debug("correction verify", "outcome", "timeout")
+}
+
+// armAfterVerify starts the verify-after round (the caller holds the
+// mutex): the actor itself asks for a fresh surrounding text and expects a
+// suffix of converted+tail — the replacement the ladder just wrote. A
+// client that silently ignored the deletion reports a text that no longer
+// ends with it and lands in the INFO mismatch counter (Pitfall 3).
+func (a *Actor) armAfterVerify(converted, tail []rune) {
+	a.verifyEpoch++
+	a.clearAfter() // never two open rounds
+	a.after = &pendingAfter{
+		expected: concatRunes(converted, tail),
+		epoch:    a.verifyEpoch,
+	}
+	epoch := a.verifyEpoch
+	a.after.deadline = time.AfterFunc(verifyWait, func() { a.afterExpiry(epoch) })
+	a.eng.RequireSurroundingText()
+}
+
+// clearAfter retires the verify-after round together with its deadline
+// timer; the caller holds the mutex.
+func (a *Actor) clearAfter() {
+	if a.after == nil {
+		return
+	}
+	if a.after.deadline != nil {
+		a.after.deadline.Stop()
+	}
+	a.after = nil
 }
 
 // flipScript toggles the internal output-script mode (ADR-001 Option B):
@@ -319,6 +402,7 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 // the last keystroke is the freshest state the client can report); only on
 // a miss does the Require round-trip run inside the verifyWait budget.
 func (a *Actor) startCorrection() {
+	armed := time.Now()
 	token := a.buf.Token()
 	if len(token) == 0 {
 		slog.Info("correction skipped", "reason", "empty-buffer")
@@ -342,21 +426,24 @@ func (a *Actor) startCorrection() {
 
 		return
 	}
+	tail := a.buf.Tail()
+	a.resolvePending() // a second Double supersedes the stale round
+	a.clearAfter()     // …and the previous round's verify-after with it
 	if a.caps&correct.CapSurroundingText == 0 {
-		// No surrounding text, no verification — level 2 arrives in plan
-		// 02-05; until then the correction is refused, never guessed.
-		slog.Info("correction skipped", "reason", "no-surrounding")
+		// Ladder level 2 (ADR-003): no surrounding text, no verification —
+		// the documented ADR-004 degradation. The buffer plus the explicit
+		// CORR-09 reset triggers are the only synchronization the daemon
+		// has, so the correction executes immediately, never guessed twice.
+		a.executeLevel2(token, tail, converted, armed)
 
 		return
 	}
-	tail := a.buf.Tail()
-	a.resolvePending() // a second Double supersedes the stale round
 	a.pending = &pendingFix{
 		token:     token,
 		tail:      tail,
 		converted: converted,
 		match:     concatRunes(token, tail),
-		armed:     time.Now(),
+		armed:     armed,
 	}
 	if correct.MatchesSuffix(a.surr, a.pending.match) {
 		a.executeCorrection() // cached push is the freshest report
@@ -367,11 +454,13 @@ func (a *Actor) startCorrection() {
 	a.eng.RequireSurroundingText()
 }
 
-// executeCorrection runs the ladder plan of the settled pending fix — one
-// DeleteSurroundingText exactly over the token+tail range, one commit of
-// the converted token plus the tail (CORR-07) — and replaces the token in
-// the buffer so a repeated correction converts back. The caller holds the
-// mutex and pending != nil.
+// executeCorrection runs the level-1 ladder plan of the settled pending fix
+// — one DeleteSurroundingText exactly over the token+tail range, one commit
+// of the converted token plus the tail (CORR-07) — replaces the token in
+// the buffer so a repeated correction converts back, and arms the
+// verify-after round: the deletion is ack-less on 1.5.29, so the correction
+// itself asks for the surrounding text back and checks the suffix
+// (ADR-003/ADR-004). The caller holds the mutex and pending != nil.
 func (a *Actor) executeCorrection() {
 	p := a.pending
 	a.pending = nil
@@ -382,13 +471,38 @@ func (a *Actor) executeCorrection() {
 	a.eng.DeleteSurroundingText(plan.Offset, plan.NChars)
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	a.buf.ReplaceToken(p.converted) // the buffer keeps mirroring the field — repeat converts back
+	logCorrectionDone(plan.Level, p.token, p.converted, time.Since(p.armed))
+	a.armAfterVerify(p.converted, p.tail)
+}
+
+// executeLevel2 runs the ladder's Backspace level on a client without the
+// surrounding-text capability (ADR-003): plan.Backspaces replayed
+// ForwardKeyEvent(BackSpace) — counted in runes by BuildPlan, the tail
+// included — followed by ONE commit of the converted token plus the tail.
+// The burst→commit order is the wire contract (research A4: the daemon
+// preserves it for every client). The caller holds the mutex.
+func (a *Actor) executeLevel2(token, tail, converted []rune, armed time.Time) {
+	plan := correct.BuildPlan(token, tail, converted, a.caps)
+	for range plan.Backspaces {
+		a.eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
+	}
+	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
+	a.buf.ReplaceToken(converted)
+	logCorrectionDone(plan.Level, token, converted, time.Since(armed))
+}
+
+// logCorrectionDone writes the completion pair of one ladder execution: the
+// INFO counter (D-20 — outcome only, never the word) and the DEBUG detail
+// record whose FIRST attribute after msg is the ladder level — the exact
+// form the e2e matrix greps to pin the ACTUAL level a client got (D-21).
+func logCorrectionDone(level correct.Level, token, converted []rune, latency time.Duration) {
 	slog.Info("correction", "outcome", "done")
 	slog.Debug("correction",
-		"level", int(plan.Level), // first attribute after msg — the matrix greps this exact form (D-21)
-		"runes", len(p.token),
-		"source", string(p.token),
-		"result", string(p.converted),
-		"latency_ms", time.Since(p.armed).Milliseconds())
+		"level", int(level),
+		"runes", len(token),
+		"source", string(token),
+		"result", string(converted),
+		"latency_ms", latency.Milliseconds())
 }
 
 // resolvePending retires the pending fix together with its deadline timer;

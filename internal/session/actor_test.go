@@ -268,7 +268,9 @@ func runeLen(s string) uint32 {
 // GTK/mutter clients (live finding 2026-09-14): they never answer
 // RequireSurroundingText — they push SetSurroundingText spontaneously after
 // every keystroke. The correction must verify against that cached push and
-// execute at the Double decision itself, with no post-decision answer.
+// execute at the Double decision itself; the only Require the actor makes
+// afterwards is the verify-after round of plan 02-05 (exactly one), never a
+// pre-correction round.
 func TestActor_CachedSurroundingCorrects(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
@@ -282,8 +284,8 @@ func TestActor_CachedSurroundingCorrects(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	if got := sink.requireCount(); got != 0 {
-		t.Errorf("cache hit still asked for surrounding text %d times, want 0", got)
+	if got := sink.requireCount(); got != 1 {
+		t.Errorf("require calls = %d, want exactly 1 — the verify-after round, never a pre-correction one", got)
 	}
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
@@ -393,9 +395,11 @@ func TestActor_VerifyPaths(t *testing.T) {
 }
 
 // TestActor_TokenRefusals pins the pipeline-entry refusals of the D-20
-// vocabulary: a mixed-script token (D-16), a letterless token and a client
-// without the surrounding-text capability each skip with the exact INFO
-// reason and never even start the verification round.
+// vocabulary: a mixed-script token (D-16) and a letterless token each skip
+// with the exact INFO reason and never even start the verification round.
+// (The 02-03 "no surrounding capability" refusal pin is superseded by
+// TestActor_Level2NoCaps: a no-caps client is no longer refused — ladder
+// level 2 executes.)
 func TestActor_TokenRefusals(t *testing.T) {
 	t.Run("mixed script", func(t *testing.T) {
 		buf := captureLogs(t)
@@ -428,26 +432,6 @@ func TestActor_TokenRefusals(t *testing.T) {
 		}
 		if got := sink.requireCount(); got != 0 {
 			t.Errorf("letterless token started verification %d times, want 0", got)
-		}
-	})
-
-	t.Run("no surrounding capability", func(t *testing.T) {
-		buf := captureLogs(t)
-		a := session.NewActor(farWindow)
-		sink := &fakeSink{}
-		a.AttachEngine(sink)
-		a.HandleCapabilities(engine.CapPreeditText) // no CapSurroundingText
-
-		typeWord(a, wordEN)
-		tapShift(a)
-		tapShift(a)
-		a.ExpiryAt(expiryAfterWindow)
-
-		if !strings.Contains(buf.String(), `"reason":"no-surrounding"`) {
-			t.Errorf("no-surrounding record missing; log:\n%s", buf.String())
-		}
-		if got := sink.requireCount(); got != 0 {
-			t.Errorf("no-cap client was asked for surrounding text %d times, want 0", got)
 		}
 	})
 }
