@@ -145,9 +145,12 @@ func decodeEvent(keyval, keycode, state uint32) EngineEvent {
 
 // ProcessKeyEvent implements org.freedesktop.IBus.Engine.ProcessKeyEvent
 // (u keyval, u keycode, u state) → b. It decodes the event, traces it at
-// DEBUG, forwards it to the handler and immediately returns false: the
-// Phase 1 engine is an observer, transit by construction (INTEG-02). Bare
-// modifier presses are never consumed.
+// DEBUG and forwards it to the handler: the handler's verdict IS the answer
+// — consumption is decided by the EventHandler (the RU script mode of Phase
+// 2 commits a Cyrillic rune and consumes the key), the transport only
+// returns it. A nil handler stays a pure observer (transit, the Phase 1
+// contract), and bare modifier presses are never consumed — the actor
+// declines every non-printable.
 func (e *Engine) ProcessKeyEvent(keyval, keycode, state uint32) (handled bool, err *dbus.Error) {
 	defer recoverHandler("ProcessKeyEvent", &err)
 
@@ -157,11 +160,12 @@ func (e *Engine) ProcessKeyEvent(keyval, keycode, state uint32) (handled bool, e
 		"keycode", ev.Keycode,
 		"release", ev.Release,
 		"mods", fmt.Sprintf("0x%x", ev.Mods))
+	var consume bool
 	if e.handler != nil {
-		e.handler.HandleKey(ev)
+		consume = e.handler.HandleKey(ev)
 	}
 
-	return false, nil
+	return consume, nil
 }
 
 // SetCursorLocation implements org.freedesktop.IBus.Engine.SetCursorLocation

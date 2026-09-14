@@ -12,6 +12,7 @@ import (
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/correct"
 	"github.com/Djarvur/goswitch/internal/hotkey"
+	"github.com/Djarvur/goswitch/layouts"
 )
 
 // verifyWait is the ADR-004 budget for a fresh SetSurroundingText to arrive
@@ -22,13 +23,29 @@ const verifyWait = 100 * time.Millisecond
 
 // comboMask isolates the true key combinations whose characters never
 // reach the field (Ctrl shortcuts, Alt menus, Super shell keys): a press
-// carrying any of them must not feed the buffer. Latch-state modifiers
-// (CapsLock, NumLock) ride along with every key on a lit desktop and stay
-// allowed — the keyval is already the XKB-translated character, so it keeps
-// mirroring the field (live finding of the tracer run, 2026-09-14: every
-// injected letter arrived with mods 0x10 — NumLock — and the plan's literal
-// Shift-only guard starved the buffer).
+// carrying any of them must not feed the buffer and must never be consumed.
+// Latch-state modifiers (CapsLock, NumLock) ride along with every key on a
+// lit desktop and stay allowed — the keyval is already the XKB-translated
+// character, so it keeps mirroring the field (live finding of the tracer
+// run, 2026-09-14: every injected letter arrived with mods 0x10 — NumLock —
+// and a literal Shift-only guard starved the buffer). The same guard governs
+// RU-mode consumption: the plan's literal mods&^MaskShift==0 is superseded
+// by this live-proven mask, or every NumLock-lit keystroke would transit
+// Latin and the flip would be dead on the real desktop.
 const comboMask = engine.MaskControl | engine.MaskMod1 | engine.MaskMod4
+
+// scriptMode is the daemon's output-script state (ADR-001 Option B): the
+// flip toggles it on every Single decision while the session's XKB group
+// stays untouched — the mode is pure daemon state, the rune the field
+// receives comes from the engine's own commits in RU mode. EN is the start
+// state.
+type scriptMode int
+
+// Script modes of the flip.
+const (
+	modeEN scriptMode = iota
+	modeRU
+)
 
 // Actor implements engine.EventHandler for the daemon: every key and
 // lifecycle event is serialized through one mutex into the pure hotkey FSM,
@@ -39,7 +56,11 @@ const comboMask = engine.MaskControl | engine.MaskMod1 | engine.MaskMod4
 // checked against the freshest surrounding text the client reported — the
 // cached spontaneous push, or a fresh answer to RequireSurroundingText
 // within verifyWait for clients that implement the round trip. The
-// ProcessKeyEvent answer never waits (ADR-004, Pitfall 4).
+// ProcessKeyEvent answer never waits (ADR-004, Pitfall 4). A Single
+// decision flips the internal script mode (ADR-001 Option B, plan 02-04):
+// in RU mode clean printable presses are consumed and their Cyrillic runes
+// committed through layouts.ENToRU, in EN mode everything transits as in
+// Phase 1.
 //
 // godbus dispatches every D-Bus method call on its own goroutine, so the
 // mutex is the actor's single entry point: without it the FSM state would
@@ -55,6 +76,7 @@ type Actor struct {
 	eng     engine.Emitter
 	surr    []rune // cached text-before-cursor from the latest client push
 	pending *pendingFix
+	mode    scriptMode // output-script state, EN at start (ADR-001 Option B)
 }
 
 // pendingFix is the state of a correction between the Double decision and
@@ -84,31 +106,37 @@ func NewActor(window time.Duration) *Actor {
 
 // HandleKey implements engine.EventHandler: the decoded event is fed into
 // the FSM under the mutex and a Shift_R release re-arms the deadline timer.
-// Decisions never fire here — only at window expiry (D-04). Printable
-// presses outside true combos feed the phrase buffer (see comboMask); a
-// Backspace press pops it honestly, so the buffer keeps mirroring the field
-// (Pitfall 7).
+// Decisions never fire here — only at window expiry (D-04). The returned
+// verdict is the consumption decision of the script mode: in RU mode a
+// clean printable press whose key maps to a different rune is consumed
+// after committing the Cyrillic rune (the owner-prototype pattern,
+// punto_engine.py:394-414); everything else — EN mode, identical mappings,
+// unmapped keys, combos, bare modifiers — transits. The buffer is fed
+// script-true in EVERY branch that puts a rune in the field (plan 02-04,
+// A6): the committed Cyrillic rune on a RU commit, the original keyval on
+// every transit the client will insert. A Backspace press pops the buffer
+// honestly, so it keeps mirroring the field (Pitfall 7).
 func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if ev.Release {
 		a.fsm.Feed(hotkey.KeyRelease{Keyval: ev.Keyval}, a.elapsed())
-	} else {
-		a.fsm.Feed(hotkey.KeyPress{Keyval: ev.Keyval}, a.elapsed())
-		a.feedBuffer(ev)
-	}
-	if ev.Release && ev.Keyval == hotkey.KeyvalShiftR {
-		// Only a Shift_R release can move the series deadline (the FSM
-		// counts taps on clean releases); re-arming on any other event
-		// would either extend the deadline from the wrong instant or
-		// arm a timer over a cancelled series. A stale expiry is a
-		// no-op in the FSM, so over-arming is harmless, under-arming
-		// would silently drop the decision.
-		a.armTimer()
-	}
+		if ev.Keyval == hotkey.KeyvalShiftR {
+			// Only a Shift_R release can move the series deadline (the FSM
+			// counts taps on clean releases); re-arming on any other event
+			// would either extend the deadline from the wrong instant or
+			// arm a timer over a cancelled series. A stale expiry is a
+			// no-op in the FSM, so over-arming is harmless, under-arming
+			// would silently drop the decision.
+			a.armTimer()
+		}
 
-	return false
+		return false
+	}
+	a.fsm.Feed(hotkey.KeyPress{Keyval: ev.Keyval}, a.elapsed())
+
+	return a.feedKey(ev)
 }
 
 // HandleLifecycle implements engine.EventHandler: FocusOut and Reset disarm
@@ -182,10 +210,10 @@ func (a *Actor) Expiry() {
 
 // ExpiryAt feeds the FSM a window expiry at the given logical time, logs
 // every decision as {"msg":"action","n":N} — the e2e stand greps this exact
-// shape — and dispatches it: Double starts the correction pipeline; Single
-// (the layout flip) and Triple (the phrase) arrive with plans 02-04/02-05.
-// Tests inject the logical time directly (deterministic expiry); the daemon
-// path always goes through Expiry's real clock.
+// shape — and dispatches it: Double starts the correction pipeline, Single
+// flips the script mode (plan 02-04), Triple stays deferred to the phrase
+// (02-05). Tests inject the logical time directly (deterministic expiry);
+// the daemon path always goes through Expiry's real clock.
 func (a *Actor) ExpiryAt(now time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -196,8 +224,10 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 		switch action {
 		case hotkey.Double:
 			a.startCorrection()
-		case hotkey.Single, hotkey.Triple:
-			slog.Debug("action deferred", "n", int(action)) // 02-04 flip, 02-05 phrase
+		case hotkey.Single:
+			a.flipScript()
+		case hotkey.Triple:
+			slog.Debug("action deferred", "n", int(action)) // 02-05 phrase
 		}
 	}
 }
@@ -217,16 +247,61 @@ func (a *Actor) VerifyExpiry() {
 	slog.Info("correction skipped", "reason", "verify-timeout")
 }
 
-// feedBuffer mirrors one press into the phrase buffer; the caller holds the
-// mutex. Shift keys and releases never feed it.
-func (a *Actor) feedBuffer(ev engine.EngineEvent) {
+// flipScript toggles the internal output-script mode (ADR-001 Option B):
+// the switch is daemon state only — the session's XKB group is never
+// touched and the flip itself emits nothing on the sink. The INFO mode
+// record is the e2e sequencing contract: the stand waits for it after a
+// single tap before typing in the new script, because the flip fires at
+// window expiry, not inside the tap (Pitfall 5). The caller holds the
+// mutex.
+func (a *Actor) flipScript() {
+	if a.mode == modeEN {
+		a.mode = modeRU
+		slog.Info("mode", "to", "ru")
+
+		return
+	}
+	a.mode = modeEN
+	slog.Info("mode", "to", "en")
+}
+
+// feedKey decides one press: whether the engine consumes the key and which
+// rune the buffer takes — the script-true invariant made branch-local (a
+// rune that reaches the field also reaches the buffer, whatever delivered
+// it). The caller holds the mutex.
+func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 	switch {
 	case ev.Keyval == engine.KeyBackSpace:
 		a.buf.Backspace()
-	case printableKeyval(ev.Keyval) && ev.Mods&comboMask == 0:
+
+		return false
+	case !printableKeyval(ev.Keyval) || ev.Mods&comboMask != 0:
+		// Non-printables (bare modifiers included) and true combos put no
+		// rune in the field — the buffer must not see them either.
+		return false
+	case a.mode == modeRU:
+		// #nosec G115 -- printableKeyval bounds the keyval below
+		// 0xFE00, so the uint32→rune conversion cannot overflow.
+		r := rune(ev.Keyval)
+		if ru, ok := layouts.ENToRU[r]; ok && ru != r && a.eng != nil {
+			a.eng.CommitText(engine.NewIBusText(string(ru)))
+			a.buf.Push(ru) // the committed rune is what the field now holds
+
+			return true
+		}
+		// Identical map (digits, parentheses…) or unmapped key: transit —
+		// the client inserts the original rune, so that rune is the field
+		// truth the buffer must mirror.
+		a.buf.Push(r)
+
+		return false
+	default:
+		// EN mode: Phase 1 semantics — transit, buffer fed as typed.
 		// #nosec G115 -- printableKeyval bounds the keyval below
 		// 0xFE00, so the uint32→rune conversion cannot overflow.
 		a.buf.Push(rune(ev.Keyval))
+
+		return false
 	}
 }
 

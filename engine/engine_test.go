@@ -73,9 +73,10 @@ func discardLogger(t *testing.T) {
 	})
 }
 
-// TestEngine_ProcessKeyEventReturnsFalse pins the observer contract
-// (INTEG-02): every event — bare modifiers included — transits, nothing is
-// consumed.
+// TestEngine_ProcessKeyEventReturnsFalse pins the decline half of the
+// consume contract (formerly the Phase 1 observer contract, INTEG-02): with
+// a handler that declines, every event — bare modifiers included — transits
+// and decodes exactly once on the way through.
 func TestEngine_ProcessKeyEventReturnsFalse(t *testing.T) {
 	t.Parallel()
 
