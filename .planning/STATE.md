@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: Коррекция слова EN↔RU
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-09-11T22:35:19.951Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-09-14T19:55:16.895Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 02 execution started
-state_head: 888effd5bf8d6caf29fb1bf11e16f4181def4b95
+state_head: 7fec1807093730f7b11ddb3f4895a4c11b2059fb
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 12
-  completed_plans: 6
-  percent: 25
+  completed_plans: 7
+  percent: 0
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-11)
 ## Current Position
 
 Phase: 02 (Коррекция слова EN↔RU) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 02 execution started
 
-Progress: [███░░░░░░░] 25%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 01 P04 | 40 min | 3 tasks | 14 files |
 | Phase 01 P05 | 8 min | 2 tasks | 7 files |
 | Phase 02 P01 | 10 min | 2 tasks | 12 files |
+| Phase 02 P02 | 54 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,9 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-01] CapSurroundingText mirrored as 1<<5 in internal/correct instead of importing engine — pure packages never import the D-Bus-bound engine (Phase 1 dependency direction precedent)
 - [Phase 02]: [02-01] Backspace keeps the separator in Tail(): buffer mirrors the field («ghbdtn » after the pop) — plan's Tail=="" expectation was internally inconsistent with its own D-13 pin (Pitfall 1)
 - [Phase 02]: [02-01] Corpus literals named as constants (wordEN/wordRU) per goconst of the strict lint; targeted #nosec G115 with justification on the plan.go int conversions
+- [Phase 02]: [02-02] GTE-драйвер: --standalone + XDG_DATA_HOME в temp — single-instance и реставрация сессии владельца (даже с --ignore-session, 46.3) иначе делают PID-close невозможным и трогают draft-store владельца — живое зондирование 2026-09-14; plan's naivный spawn без аргументов нарушал бы запрет плана на чужие поверхности
+- [Phase 02]: [02-02] grabFocus-реактивация фокуса: отказанный AT-SPI grabFocus на input-node GTK4 всё равно триггерит свежий activation request — PASS gte-smoke доказан под непрерывным pointer-вигглом (mutter focus-stealing denial лечится) — контролируемые матрицы: pointer-событие после map → отказ 4/4 на wayland и x11 бэкендах; grabFocus → восстановление
+- [Phase 02]: [02-02] pid-ключевой AT-SPI witness/readback (focused-input-pid/focused-text-pid) — имена Google Chrome и gnome-text-editor разделяются с инстансами владельца — exhaustive-точность инстанса вместо app-name матчинга; read_text хелпера теперь GetStringAtOffset-first (GTK4-мост отказывает deprecated)
 
 ### Pending Todos
 
@@ -122,6 +126,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-11T22:35:19.905Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-09-14T19:55:16.850Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
