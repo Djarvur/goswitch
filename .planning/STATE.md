@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: Коррекция слова EN↔RU
 status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-09-14T19:55:16.895Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-09-14T21:26:41.998Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 02 execution started
-state_head: 7fec1807093730f7b11ddb3f4895a4c11b2059fb
+state_head: a7c3dc32080c46f615df8d513aec929a6a53ddb9
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 12
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-11)
 ## Current Position
 
 Phase: 02 (Коррекция слова EN↔RU) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 02 execution started
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 8 min | 2 tasks | 7 files |
 | Phase 02 P01 | 10 min | 2 tasks | 12 files |
 | Phase 02 P02 | 54 min | 2 tasks | 12 files |
+| Phase 02 P03 | 86 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,9 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-02] GTE-драйвер: --standalone + XDG_DATA_HOME в temp — single-instance и реставрация сессии владельца (даже с --ignore-session, 46.3) иначе делают PID-close невозможным и трогают draft-store владельца — живое зондирование 2026-09-14; plan's naivный spawn без аргументов нарушал бы запрет плана на чужие поверхности
 - [Phase 02]: [02-02] grabFocus-реактивация фокуса: отказанный AT-SPI grabFocus на input-node GTK4 всё равно триггерит свежий activation request — PASS gte-smoke доказан под непрерывным pointer-вигглом (mutter focus-stealing denial лечится) — контролируемые матрицы: pointer-событие после map → отказ 4/4 на wayland и x11 бэкендах; grabFocus → восстановление
 - [Phase 02]: [02-02] pid-ключевой AT-SPI witness/readback (focused-input-pid/focused-text-pid) — имена Google Chrome и gnome-text-editor разделяются с инстансами владельца — exhaustive-точность инстанса вместо app-name матчинга; read_text хелпера теперь GetStringAtOffset-first (GTK4-мост отказывает deprecated)
+- [Phase 02]: [02-03] AttrList wire-тип av, не au: дневной 'au' ронял ibus-daemon 1.5.29 SEGV на первом живом CommitText — wire-тест пинит сигнатуры; трассер доказал незаменимость живых прогонов
+- [Phase 02]: [02-03] Сверка ADR-004 построена на кэше спонтанных surrounding-пушей: GTK/mutter не отвечают RequireSurroundingText (живьём: монитором шины и строками бинарников); Require-раунд остался фолбэком в таймере 100 мс — инвариант без сверки не заменять сохранён
+- [Phase 02]: [02-03] Буфер кормится вне комбо Ctrl/Alt/Super, лэтчи (NumLock/CapsLock) разрешены — keyval уже XKB-переведён (живая находка: все буквы с mods 0x10); верификация сверяет суффикс token+tail — весь диапазон замены
 
 ### Pending Todos
 
@@ -126,6 +130,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-14T19:55:16.850Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-09-14T21:26:41.950Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None

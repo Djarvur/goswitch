@@ -79,7 +79,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-03-PLAN.md — Трассер: двойной Right Shift исправляет ghbdtn→привет сквозным конвейером (буфер→направление→сверка→лестница ур.1) + слово после пробела живьём (D-13) — CORR-01, CORR-07
+- [x] 02-03-PLAN.md — Трассер: двойной Right Shift исправляет ghbdtn→привет сквозным конвейером (буфер→направление→сверка→лестница ур.1) + слово после пробела живьём (D-13) — CORR-01, CORR-07
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -136,7 +136,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
-| 2. Коррекция слова EN↔RU | 2/7 | In Progress|  |
+| 2. Коррекция слова EN↔RU | 3/7 | In Progress|  |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 
