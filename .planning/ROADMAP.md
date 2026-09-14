@@ -83,7 +83,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-04-PLAN.md — Флип-режим EN↔RU (Single→флип, потребление+коммит кириллицы, script-true буфер во всех ветвях), RU→EN-коррекция, смешанное слово нетронуто (D-16) — CORR-01, CORR-04
+- [x] 02-04-PLAN.md — Флип-режим EN↔RU (Single→флип, потребление+коммит кириллицы, script-true буфер во всех ветвях), RU→EN-коррекция, смешанное слово нетронуто (D-16) — CORR-01, CORR-04
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -136,7 +136,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
-| 2. Коррекция слова EN↔RU | 3/7 | In Progress|  |
+| 2. Коррекция слова EN↔RU | 4/7 | In Progress|  |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 

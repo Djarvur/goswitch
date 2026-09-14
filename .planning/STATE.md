@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: Коррекция слова EN↔RU
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-09-14T21:26:41.998Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-09-14T21:48:22.540Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 02 execution started
-state_head: a7c3dc32080c46f615df8d513aec929a6a53ddb9
+state_head: 22c1d0272340b3f876a3c63fb0c4cbb8e8f6a5a5
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-11)
 ## Current Position
 
 Phase: 02 (Коррекция слова EN↔RU) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 02 execution started
 
@@ -70,6 +70,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P01 | 10 min | 2 tasks | 12 files |
 | Phase 02 P02 | 54 min | 2 tasks | 12 files |
 | Phase 02 P03 | 86 min | 2 tasks | 13 files |
+| Phase 02 P04 | 15 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,9 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-03] AttrList wire-тип av, не au: дневной 'au' ронял ibus-daemon 1.5.29 SEGV на первом живом CommitText — wire-тест пинит сигнатуры; трассер доказал незаменимость живых прогонов
 - [Phase 02]: [02-03] Сверка ADR-004 построена на кэше спонтанных surrounding-пушей: GTK/mutter не отвечают RequireSurroundingText (живьём: монитором шины и строками бинарников); Require-раунд остался фолбэком в таймере 100 мс — инвариант без сверки не заменять сохранён
 - [Phase 02]: [02-03] Буфер кормится вне комбо Ctrl/Alt/Super, лэтчи (NumLock/CapsLock) разрешены — keyval уже XKB-переведён (живая находка: все буквы с mods 0x10); верификация сверяет суффикс token+tail — весь диапазон замены
+- [Phase 02]: [02-04] comboMask (Ctrl/Alt/Super, лэтчи разрешены) управляет и RU-потреблением — буквальная маска плана mods&^MaskShift==0 уморила бы флип на NumLock-столе (живая находка 02-03: буквы с mods 0x10)
+- [Phase 02]: [02-04] Тождественная карта RU ('2'→'2') пинена транзитом: consume=false без коммита, руна в буфере — инвариант script-true от выбора не зависит
+- [Phase 02]: [02-04] TestActor_MixedWordUntouched зелёный сразу (Detect 02-01 уже отказывал) — по распоряжению плана RED-коммит не нужен; движок потребляет по вердикту EventHandler, observer-false контракт Фазы 1 заменён
 
 ### Pending Todos
 
@@ -130,6 +134,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-14T21:26:41.950Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-09-14T21:48:22.488Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None
