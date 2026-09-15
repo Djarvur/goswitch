@@ -63,9 +63,14 @@ jobs:
       # Локальный и CI-прогон — одна и та же задача (D-09). Path-инпут
       # выбирает задачу: v1-файл — v1-регрессия, иначе v2 (дефолт).
       # Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
+      # Инпут идёт через env, не через интерполяцию в shell — каноническая
+      # защита от expression-injection (WR-04): раннер живёт в графической
+      # сессии владельца, и `$(…)` в диспатч-инпуте не должен исполняться.
       - name: e2e matrix (${{ inputs.matrix }})
+        env:
+          MATRIX: ${{ inputs.matrix }}
         run: |
-          if [ "${{ inputs.matrix }}" = "test/e2e/cases/matrix-v1.yaml" ]; then
+          if [ "$MATRIX" = "test/e2e/cases/matrix-v1.yaml" ]; then
             mise run e2e-matrix
           else
             mise run e2e-matrix-v2
