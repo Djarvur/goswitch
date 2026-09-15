@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: Фразы, выделение, переключение и конфигурация
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-09-15T11:37:55.683Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-09-15T13:24:29.640Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 3 execution started
-state_head: 20b4f74099eb6250063351c786e9ff2058100e24
+state_head: 2a3417168def59626779b698daa27e22f3c7f7ed
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 3 (Фразы, выделение, переключение и конфигурация) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 3 execution started
 
@@ -79,6 +79,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P02 | 30 min | 3 tasks | 12 files |
 | Phase 03 P03 | 45 min | 3 tasks | 15 files |
 | Phase 03 P04 | 63 min | 2 tasks | 14 files |
+| Phase 03 P05 | 99 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -142,6 +143,9 @@ Recent decisions affecting current work:
 - [Phase 03]: [03-04] Press-side binding match: a key PRESS's IBus state word carries only the modifiers held before the key (Control_R press under Shift = mods 0x11; the own Control bit rides the release) — the combo matches Binding.ModMask with the key's family bit cleared via hotkey.FamilyMask; the plan's literal exact-mask predicate was unsatisfiable on the wire — Live trace 2026-09-15; 03-02 explicitly deferred the matching predicate to 03-04
 - [Phase 03]: [03-04] SetOptions → snapshot succession: SetOptions stays the no-config/test surface; once a config source is attached, applySnapshot overwrites options/combo per event — the attached source has priority (one Snapshot() read per event, value-folded, Pitfall-8: armed timers keep their deadline) — CONF-02 live consumption; Pattern 2 of the phase research
 - [Phase 03]: [03-04] Super+Space is NOT injectable on ydotool 0.1.8 (every name spelling falls back to its first physical letter — live finding; the D-01 log's own verdict for ydotool super+space was not-switched); super-space-alive pins the D-34 working interpretation via the bare Super key + name-owner + post-chord correction; alt+Shift_L alternate removed — it can genuinely switch the session's input source — A5/Q-marker resolution risk closed by the case's live probe
+- [Phase 3]: [03-05] MACR-01 interception per ADR-005: Super+letter delivered to the IME with Mod4 ONLY for shell-unbound letters (Super+a = toggle-application-view here: press delivered, focus stolen — the bound set is read from gsettings, never injected); the Ctrl+letter burst rides the Super RELEASE (a press-time burst reaches the client as Ctrl+Super — held-modifier pollution); consumed-upstream detect on Super-release-without-letter, armed only while enabled
+- [Phase 3]: [03-05] GTK4-Wayland does not apply IBus-forwarded key events on this desktop (GNOME 46): the wire relay demonstrably lands (dbus-monitor oracle in macr-super-letter) but the widget never acts — the same path as the never-live-driven ADR-003 level-2 replay and D-28 Ctrl+V; daemon-side contracts carry the unit corpus, the limitation is WINDOWS-tracked for the owner's verify gate
+- [Phase 3]: [03-05] Per-app identity = the bridge path namespace of the a11y StateChanged(focused) event (/org/gnome/Zenity/a11y/x → org.gnome.Zenity), pure godbus on the a11y bus (A4 closed positive); the observer starts lazily only under a non-empty macr.apps, learns only from focus GAINS of bridge-marked paths, and every failure degrades to the global rule with WARN "app identity unavailable" (errors, never panics)
 
 ### Pending Todos
 
@@ -163,6 +167,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T11:37:55.616Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-09-15T13:23:43.027Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None

@@ -128,7 +128,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 03-05-PLAN.md — MACR-01 по ADR-005: спайк доставки Super+Буква, перехват Super→Ctrl, consumed-upstream, per-app appid с деградацией — MACR-01
+- [x] 03-05-PLAN.md — MACR-01 по ADR-005: спайк доставки Super+Буква, перехват Super→Ctrl, consumed-upstream, per-app appid с деградацией — MACR-01
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -162,7 +162,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
 | 2. Коррекция слова EN↔RU | 7/7 | Complete    | 2026-09-15 |
-| 3. Фразы, выделение, переключение и конфигурация | 4/7 | In Progress|  |
+| 3. Фразы, выделение, переключение и конфигурация | 5/7 | In Progress|  |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 
 ## Coverage
