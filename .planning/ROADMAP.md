@@ -170,7 +170,10 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [ ] 04-06-PLAN.md — Двойной прогон D-48: mise e2e-matrix-v3 + workflow (два прогона подряд, fresh_session-префлайт loginctl) + процедура в docs/ci-runner.md — критерий №2
-- [ ] 04-07-PLAN.md — Двуязычный README + perf-таблица (D-50/D-46), docs/ACCEPTANCE.md (D-49), сверка WINDOWS-ledger, релиз v1.0.0 (тег → ассеты → каналы) — INST-01, критерий №4
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 04-07-PLAN.md — Двуязычный README + perf-таблица (D-50/D-46), docs/ACCEPTANCE.md (D-49), сверка WINDOWS-ledger, релиз v1.0.0 (тег → ассеты → каналы; гейт T3 требует доказанного двойного прогона 04-06) — INST-01, критерий №4
 
 ## Progress
 

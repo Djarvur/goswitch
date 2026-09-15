@@ -480,13 +480,20 @@ cmd.Env = append(os.Environ(), "IBUS_COMPONENT_PATH="+filepath.Join(home, userCo
 | A7 | Tag scheme / asset format details (v1.0.0 vs 0.x; tar.gz vs bare; +arm64) — owner discretion per CONTEXT | Standard Stack | none (explicitly delegated) |
 | A8 | "Свежеподнятая GNOME-сессия раннера" (D-48) maps to a documented runner-session restart procedure (runner lives in owner's graphical session — green106) | Open Questions | double-run definition may need an owner-agreed operational step (relogin before the gate run) |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All five questions closed at Phase 4 planning (plan set 04-01..04-07, revision 2026-09-15). Each disposition below names the deciding plan/task.
 
 1. **WINDOWS.md ledger vs closure notes** — frontmatter `open_count: 2` while STATE/REQUIREMENTS record #2 and #4 closed by owner 2026-09-15. What we know: both files read this session, discrepancy is factual. What's unclear: whether closure was recorded only in docs, not via the ledger verb. Recommendation: reconcile as an early housekeeping task (ship gate reads open_count).
+   - **RESOLVED:** reconciliation runs through the ledger verbs, not doc edits — `gsd-tools windows fixed 2` (owner confirmed reading D-24 at the Phase 3 verify gate) and `gsd-tools windows waive 4 "owner accepted GTK4-Wayland forwarded-events platform limitation"` with reasons from the owner's 2026-09-15 decisions — plan 04-07, Task 2 (gate LEDGER-CLEAN: `open_count: 0`).
 2. **D-48 session-freshness operationally** — what we know: runner is inside the owner's graphical session. What's unclear: who/what resets it and how the workflow asserts freshness. Recommendation: preflight check (session start time vs run start) + documented owner relogin step before the gate run.
+   - **RESOLVED:** workflow input `fresh_session` (bool, default false) + loginctl session-age preflight (30-minute threshold, named constant; over-threshold fails the job with a relogin hint) + step-by-step owner relogin procedure in docs/ci-runner.md — plan 04-06, Task 1.
 3. **Component XML `<exec>`** — empty (recommended: systemd sole supervisor) vs binary path (ibus can spawn on demand, double-supervision conflicts). Recommendation: empty; planner confirms.
+   - **RESOLVED:** planner confirms empty `<exec>` — systemd is the sole supervisor (a binary path double-spawns the daemon and breaks the ctlsvc single-instance guard); pinned by TestInstall_ComponentXMLMirrorsWireIdentity — plan 04-01, Task 1.
 4. **Matrix v3 composition** — explicitly planner-owned after gedit/x11 spikes (CONTEXT Discretion); this research provides the surface facts, not the case list.
+   - **RESOLVED:** composition fixed post-spikes — the full v2 body copied verbatim (superset, name-set gated by comm over sorted `^name:` lists) + gedit series + chromium-x11 series; select/level expectations only from spike verdicts — plan 04-05 (spikes Task 1, matrix-v3.yaml Task 2).
 5. **Default config generation on install** (CONTEXT Discretion) — generate `~/.config/goswitch/config.yaml` at install vs built-in defaults until first user config; note Phase 3's strict rule: empty/missing EXPLICIT config = visible start refusal, defaults apply only without `-config` — install must not write a config that accidentally trips the strict decode.
+   - **RESOLVED:** install does NOT generate a config — the daemon runs on built-in defaults until the first user config (no file can trip the strict decode D-33); pinned by TestSelfcheck_ConfigNoFileGreen — plan 04-02, Task 2.
 
 ## Environment Availability
 
