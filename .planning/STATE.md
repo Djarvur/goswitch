@@ -1,44 +1,44 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 02
-current_phase_name: Коррекция слова EN↔RU
-status: verifying
-stopped_at: Completed 02-07-PLAN.md
-last_updated: "2026-09-15T00:39:44.342Z"
-last_activity: 2026-09-12
-last_activity_desc: Phase 02 execution started
-state_head: e4bc55a2f85655b59931aa889947c4dcba8fc590
+current_phase: 3
+current_phase_name: Фразы, выделение, переключение и конфигурация
+status: planning
+stopped_at: Phase 2 complete, ready to plan Phase 3
+last_updated: "2026-09-15T05:38:41.217Z"
+last_activity: 2026-09-15
+last_activity_desc: Phase 2 complete, transitioned to Phase 3
+state_head: 7ca4e0d2f7e08beea47a44898f844b439af86357
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 2
   total_plans: 12
   completed_plans: 12
-  percent: 0
+  percent: 50
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-11)
+See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 02 — Коррекция слова EN↔RU
+**Current focus:** Phase 03 — Фразы, выделение, переключение и конфигурация
 
 ## Current Position
 
-Phase: 02 (Коррекция слова EN↔RU) — EXECUTING
-Plan: 7 of 7
-Status: Phase complete — ready for verification
-Last activity: 2026-09-12 — Phase 02 execution started
+Phase: 3 — Фразы, выделение, переключение и конфигурация
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-15 — Phase 2 complete, transitioned to Phase 3
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 12
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | - | - |
 | 4. Поставка и приёмка | 0/? | - | - |
 | 01 | 5 | - | - |
+| 2 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -122,6 +123,10 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-06] Живые ловушки: флип только после открытия поверхности; Tab уводит фокус в омнибокс (grab-input-pid научился want-chars); оборванный прогон оставляет осиротевшее имя IBus (префлайт ловит, ibus restart лечит); серийные SIGKILL поверхностей вешают мост gnome-shell — лечится перезапуском шины a11y, стойкая форма в deferred-items
 - [Phase 02]: [02-07] Токены минта раннера (registration/remove) требуют gh api --method POST — GET отвечает 404; живая находка, обе команды в docs/ci-runner.md исправлены
 - [Phase 02]: [02-07] Заявленная bootstrap-модель подтверждена живьём: GitHub резолвит workflow_dispatch-воркфлоусы от default branch (до регистрации — HTTP 404); chore-PR с одним файлом workflow (d815e72) → dispatch --ref фаза-ветка; раннер green106 (2.337.0) в сессии через GDM-импорт окружения user-менеджера
+- [Phase 02]: verify-work 2026-09-15: UAT 2/2 — отклонение level-1 лестницы принято владельцем без правки ADR-003 (WINDOWS #1 закрыт); визуальный no-jump подтверждён вживую на живом столе (демон + ibus engine goswitch-en: ghbdtn→привет in place; лог: action n:2 → correction done → verify match)
+- [Phase 02]: verify-work 2026-09-15: первоначальный no-op-отчёт UAT-2 был средовым (демон не запущен, активный движок xkb:us::eng — предусловие теста не выполнено), не дефектом кода; G-02-2 закрыт по повторному тесту с live-настройкой
+- [Phase 02]: verify-work 2026-09-15: covered_digest отчёта 02-VERIFICATION был посчитан верификатором по промежуточному состоянию (не соответствовал дереву собственного коммита) — stale-маршрут; отпечаток пересчитан каноническим verification.fingerprint, контент не менялся. Урок: digest всегда через verb, никогда вручную
+- [Phase 01]: re-verify 2026-09-15 (post-Phase-2 tree): 20/20 passed — must-haves Фазы 1 держатся на дереве с кодом Фазы 2 (две запланированные сукцессии: потребление делегировано EventHandler; yaml.v3 в go.mod); fingerprint обновлён
 
 ### Pending Todos
 
@@ -143,6 +148,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T00:39:44.291Z
-Stopped at: Completed 02-07-PLAN.md
+Last session: 2026-09-15T05:45:00Z
+Stopped at: Phase 2 complete (verified + transitioned via manager verify-work), ready to plan Phase 3
 Resume file: None

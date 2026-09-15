@@ -1,7 +1,7 @@
 ---
 phase: 02-korrektsiya-slova-en-ru
 verified: 2026-09-15T00:55:00Z
-status: human_needed
+status: passed
 score: 23/23 must-haves verified
 covered_files:
   - .planning/phases/02-korrektsiya-slova-en-ru/02-01-PLAN.md
@@ -302,28 +302,23 @@ matrix-decoupled); the ydotool/AT-SPI items are stand/environment tooling
 with documented remedies; the level-witness question is the owner decision
 already flagged. No gaps.
 
-### Human Verification Required
+### Human Verification Required — RESOLVED 2026-09-15
 
 1. **Owner decision — live ladder finding vs ADR-003/ROADMAP wording**
-   **Test:** review WINDOWS ledger entry #1 (kind: deviation, status:
-   open) and the 02-05 finding: google-chrome 153 reports caps 0x29 and
-   APPLIES DeleteSurroundingText — actual level 1 on every matrix surface;
-   ibus#2354 lore is obsolete on this target; no live level-2 witness
-   exists (level-2 contract carried by TestActor_Level2NoCaps /
-   Level2WithTailAndRunes / TestEmitters_ForwardKeyEvent).
-   **Expected:** owner either annotates ADR-003/ROADMAP SC-3 («fallback» →
-   «фактический уровень») or accepts the deviation; ledger entry resolved.
-   **Why human:** ADR-003 is Accepted under the owner gate and was
-   deliberately left unedited by the executor pending this review.
+   **Resolution:** owner accepted the recorded deviation as-is (ADR-003
+   wording left unedited, Option B); WINDOWS ledger entry #1 resolved
+   (`windows fixed 1`). Recorded in 02-UAT.md test 1 — pass.
 
 2. **Visual no-jump confirmation (goal clause «без визуального прыжка»)**
-   **Test:** with goswitch-en active, type `ghbdtn` in a real GNOME field
-   (gedit / browser box), double-tap Right Shift, watch the replacement.
-   **Expected:** word becomes «привет» in place — atomic replacement over
-   exactly the wrong range, no cursor jump/flicker/doubling.
-   **Why human:** e2e proves rune-exact field content and the range
-   arithmetic is unit-pinned, but the perceptual no-jump property of the
-   DeleteSurroundingText+CommitText transaction is visual by nature.
+   **Resolution:** initial attempt reported no-op — environmental: no daemon
+   running on the live desktop and active engine was `xkb:us::eng`, so the
+   test precondition (goswitch-en active) was unmet; not a code defect.
+   Retest with live setup (daemon + `ibus engine goswitch-en`): owner
+   confirmed in-place replacement with no visual jump. Daemon log
+   independently confirms the transaction: `action n:2` → `correction done
+   source:ghbdtn result:привет level:1 runes:6 latency_ms:0` →
+   `correction verify outcome:match`. Recorded in 02-UAT.md test 2 — pass
+   (gap G-02-2 resolved: environmental root cause).
 
 ### Gaps Summary
 
