@@ -117,3 +117,7 @@ run = "go run ./test/e2e -case layout-single"
 [tasks.e2e-super-space]
 description = "e2e: 03-04 SWCH-03 — native super+space leaves the daemon alive: name owner kept, correction works after (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case super-space-alive"
+
+[tasks.e2e-macr-probe]
+description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case macr-probe"
