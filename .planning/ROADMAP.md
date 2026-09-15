@@ -120,7 +120,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-03-PLAN.md — Выделение: anchorPos-seam, спайк фактической ступени per-surface, геометрия в обе стороны D-30, clipboard-ступень opt-in D-28/D-29 — CORR-03
+- [x] 03-03-PLAN.md — Выделение: anchorPos-seam, спайк фактической ступени per-surface, геометрия в обе стороны D-30, clipboard-ступень opt-in D-28/D-29 — CORR-03
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -162,7 +162,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
 | 2. Коррекция слова EN↔RU | 7/7 | Complete    | 2026-09-15 |
-| 3. Фразы, выделение, переключение и конфигурация | 2/7 | In Progress|  |
+| 3. Фразы, выделение, переключение и конфигурация | 3/7 | In Progress|  |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 
 ## Coverage
