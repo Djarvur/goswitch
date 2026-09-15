@@ -1,10 +1,12 @@
-# e2e-matrix — живая YAML-матрица v1 на столе владельца (D-19, TEST-04).
+# e2e-matrix — живая YAML-матрица на столе владельца (D-19, TEST-04).
 #
-# Прогоняет полный корпус D-18 (16 кейсов, zenity + chromium +
-# gnome-text-editor) той же mise-задачей, что и локальный цикл:
-# `mise run e2e-matrix` (D-09 — CI вызывает ровно те же задачи, что и
-# владелец; прецедент pr-sanity.yml). Отчёт дублируется в e2e-report.txt
-# и выгружается артефактом при любом исходе (if: always()).
+# По умолчанию прогоняет матрицу v2 (03-07, критерий №5 фазы 3: полная
+# широта жестов — фразы/выделение/комбо/reload/MACR); path-инпут
+# сохраняет v1-регрессию (явное указание файла v1 запускает mise-задачу
+# v1). Обе задачи — те же, что и локальный цикл (D-09 — CI вызывает ровно
+# те же задачи, что и владелец; прецедент pr-sanity.yml). Отчёт
+# дублируется в e2e-report.txt и выгружается артефактом при любом исходе
+# (if: always()).
 #
 # Триггер — ТОЛЬКО workflow_dispatch, сознательно (T-02-07-01). Раннер
 # живёт ВНУТРИ графической сессии владельца, стенд печатает на живом
@@ -19,7 +21,13 @@
 # systemd user unit внутри графической сессии).
 name: e2e-matrix
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      matrix:
+        description: "matrix file to run (v2 default; v1 keeps the regression path)"
+        default: test/e2e/cases/matrix-v2.yaml
+        type: string
 
 # Минимальные права токена (T-02-07-01); секретов workflow не использует.
 permissions:
@@ -31,9 +39,9 @@ concurrency:
 
 jobs:
   e2e:
-    name: matrix v1 (live GNOME session)
+    name: matrix (live GNOME session)
     runs-on: [self-hosted, gnome]
-    # Watchdog кейса — 180 с; 16 кейсов + сборка демона укладываются
+    # Watchdog кейса — 180 с; 21 кейс v2 + сборка демона укладываются
     # с запасом. Потолок защищает стол от зависшего прогона.
     timeout-minutes: 60
     steps:
@@ -52,10 +60,16 @@ jobs:
       - name: Install tools from mise.toml
         run: mise install
 
-      # Локальный и CI-прогон — одна и та же задача (D-09).
+      # Локальный и CI-прогон — одна и та же задача (D-09). Path-инпут
+      # выбирает задачу: v1-файл — v1-регрессия, иначе v2 (дефолт).
       # Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
-      - name: e2e matrix v1
-        run: mise run e2e-matrix
+      - name: e2e matrix (${{ inputs.matrix }})
+        run: |
+          if [ "${{ inputs.matrix }}" = "test/e2e/cases/matrix-v1.yaml" ]; then
+            mise run e2e-matrix
+          else
+            mise run e2e-matrix-v2
+          fi
 
       # Отчёт — даже с упавшего прогона: FAIL-строки и есть диагностика.
       - name: Upload e2e report

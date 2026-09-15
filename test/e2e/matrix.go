@@ -11,6 +11,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -68,8 +69,9 @@ func matrixTaps() []string {
 //
 // The phase-3 chord entries (plan 03-07) are identity mappings ON PURPOSE:
 // their spellings are the canonical names the phase's live spikes pinned
-// (ctrl+a — 03-03; SHIFT_R+CTRL_R — 03-04; super+x — 03-05), and the
-// spike-proven spelling itself is the only safe schema vocabulary — an
+// (ctrl+a — 03-03; SHIFT_R+CTRL_R — 03-04; super+x — 03-05; home /
+// shift+right / shift+end — the 03-07 live probe, readback-verified), and
+// the spike-proven spelling itself is the only safe schema vocabulary — an
 // invented alias would hide the physical truth behind an unproven name
 // (Pitfall 5).
 func matrixKeyNames() map[string]string {
@@ -78,19 +80,22 @@ func matrixKeyNames() map[string]string {
 		"Enter":  "enter",
 		"Tab":    "tab",
 		"Super":  "super",
+		"Home":   "home",
 		// The identity-mapped chord spellings (see the doc comment above).
 		selectAllCanonical: selectAllCanonical,
 		comboCanonicalName: comboCanonicalName,
 		"super+x":          "super+x",
+		selectExtendRight:  selectExtendRight,
+		selectExtendEnd:    selectExtendEnd,
 	}
 }
 
 // matrixSelectNames returns the closed vocabulary of selection-forming
-// injection names — every entry a canonical spelling proven live by the
-// 03-03 spike (a name outside this set fails case validation, never the
-// live run: T-03-07-01).
+// injection names — every entry a canonical spelling proven live (the
+// 03-03 spike plus the 03-07 readback probe; a name outside this set fails
+// case validation, never the live run: T-03-07-01).
 func matrixSelectNames() []string {
-	return []string{selectAllCanonical}
+	return []string{selectAllCanonical, selectExtendRight, selectExtendEnd}
 }
 
 // matrixComboNames returns the closed vocabulary of combo injection names —
@@ -117,6 +122,13 @@ const componentRegisteredMark = "component registered"
 // canonicalized (the X-table form) — the one name the stand and the matrix
 // trust for the Shift+Control_R chord.
 const comboCanonicalName = "SHIFT_R+CTRL_R"
+
+// The 03-07 live-probed selection-chord spellings (readback-verified on
+// gnome-text-editor; identity-mapped like the other pinned chords).
+const (
+	selectExtendRight = "shift+right"
+	selectExtendEnd   = "shift+end"
+)
 
 // matrixReportPath is the file artifact the run duplicates its report into
 // (CI evidence, plan 02-07); gitignored.
@@ -244,13 +256,25 @@ type matrixReload struct {
 // matrixCase is one "typing → expectation" case of the YAML matrix
 // (02-RESEARCH Pattern 5 schema). ExpectLevel 0 means "do not pin the
 // ladder level"; 1 and 2 pin the ACTUAL level the daemon chose (ADR-003).
+// ExpectSelStep (03-07) names the ACTUAL selection-replacement rung the
+// 03-03 spike table documented for the surface — "" skips the pin.
 type matrixCase struct {
-	Name        string       `yaml:"name"`
-	Surface     string       `yaml:"surface"`
-	Mode        string       `yaml:"mode"`
-	Steps       []matrixStep `yaml:"steps"`
-	ExpectText  string       `yaml:"expect_text"`
-	ExpectLevel uint8        `yaml:"expect_level"`
+	Name          string       `yaml:"name"`
+	Surface       string       `yaml:"surface"`
+	Mode          string       `yaml:"mode"`
+	Steps         []matrixStep `yaml:"steps"`
+	ExpectText    string       `yaml:"expect_text"`
+	ExpectLevel   uint8        `yaml:"expect_level"`
+	ExpectSelStep string       `yaml:"expect_sel_step"`
+}
+
+// matrixSelSteps is the closed vocabulary of expect_sel_step — the actual
+// replacement rungs under an active selection, per the 03-03 spike table:
+// zenity never pushes an anchor (D-30 degradation — the word path keeps
+// the Double), GTE applies delete+commit over the range, chromium's commit
+// REPLACES the active selection.
+func matrixSelSteps() []string {
+	return []string{"degraded", "delete-commit", "commit-replaces"}
 }
 
 // loadMatrixCases decodes the multi-document YAML matrix strictly: a case
@@ -308,6 +332,10 @@ func (c matrixCase) validate() error {
 	}
 	if c.ExpectLevel > matrixLevelMax {
 		return fmt.Errorf("expect_level %d must be 0 (skip), 1 or %d", c.ExpectLevel, matrixLevelMax)
+	}
+	if c.ExpectSelStep != "" && !slices.Contains(matrixSelSteps(), c.ExpectSelStep) {
+		return fmt.Errorf("expect_sel_step %q must be one of %s",
+			c.ExpectSelStep, strings.Join(matrixSelSteps(), "|"))
 	}
 
 	return nil
@@ -851,13 +879,35 @@ func selectMatrixStep(ctx context.Context, s *stand, c matrixCase, st matrixStep
 	if !matrixSurfaceReportsAnchor(c.Surface) {
 		return nil // D-30 degradation: no anchor push ever arrives on this surface
 	}
-	rep, ok := s.waitNewSurrounding(ctx, before)
-	if !ok || !rep.selectionActive() {
-		return fmt.Errorf("select %s: no selection anchor push after the injection"+
-			" (report %+v) — selection unobservable", st.Select, rep)
+	rep, ok := s.waitActiveSurrounding(ctx, before)
+	if !ok {
+		return fmt.Errorf("select %s: no active selection push after the injection"+
+			" (newest report %+v) — selection unobservable", st.Select, rep)
 	}
 
 	return nil
+}
+
+// waitActiveSurrounding polls until a push NEWER than the before-count is
+// ACTIVE. Pure caret moves push too (Home pushes cursor=0/anchor=0 — live
+// finding of the first v2 run: the lagging Home push raced the shift+end
+// gate), so "some new push arrived" is not the selection oracle — the
+// newest push must carry anchor != cursor.
+func (s *stand) waitActiveSurrounding(ctx context.Context, before int) (surroundingReport, bool) {
+	deadline := time.Now().Add(selectProbeWait)
+	for {
+		if s.countSub(surroundingMark) > before {
+			if rep, ok := s.lastSurrounding(); ok && rep.selectionActive() {
+				return rep, true
+			}
+		}
+		if time.Now().After(deadline) {
+			return surroundingReport{}, false
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return surroundingReport{}, false
+		}
+	}
 }
 
 // matrixSurfaceReportsAnchor names the surfaces whose surrounding pushes
@@ -1274,8 +1324,62 @@ func verifyMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
 			return fmt.Errorf("expected actual ladder level %d: %w", c.ExpectLevel, err)
 		}
 	}
+	if err := verifySelStep(s, c.ExpectSelStep); err != nil {
+		return err
+	}
 
 	return verifyMatrixText(ctx, s, c)
+}
+
+// verifySelStep enforces the expect_sel_step pin against the daemon's own
+// surrounding-text trace, over the PRE-CORRECTION window (the correction
+// itself makes clients push transient active states — cursor=7/anchor=0
+// mid-delete — which are artifacts, not selection observability): every
+// rung except the zenity degradation REQUIRES an observed active-selection
+// push before the first correction record (D-30), and the degradation pin
+// requires that NONE arrived there.
+func verifySelStep(s *stand, step string) error {
+	switch step {
+	case "":
+		return nil
+	case "degraded":
+		if s.preCorrectionActiveSelection() {
+			return errors.New("expect_sel_step degraded contradicted: an active selection" +
+				" push WAS observed before the correction — the 03-03 spike table is stale for this surface")
+		}
+
+		return nil
+	}
+	if !s.preCorrectionActiveSelection() {
+		return fmt.Errorf("expect_sel_step %s unproven: no active selection push before the correction", step)
+	}
+
+	return nil
+}
+
+// preCorrectionActiveSelection reports whether any surrounding-text push
+// BEFORE the first correction record carried an active selection.
+func (s *stand) preCorrectionActiveSelection() bool {
+	for _, line := range s.logLines() {
+		if strings.Contains(line, `"msg":"correction`) { // skipped/done/verify close the window
+			break
+		}
+		if !strings.Contains(line, surroundingMark) {
+			continue
+		}
+		var rec struct {
+			CursorPos uint32 `json:"cursor_pos"`
+			AnchorPos uint32 `json:"anchor_pos"`
+		}
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			continue
+		}
+		if rec.AnchorPos != rec.CursorPos {
+			return true
+		}
+	}
+
+	return false
 }
 
 // verifyMatrixText compares the field content with expect_text rune for
