@@ -1,0 +1,66 @@
+# e2e-matrix — живая YAML-матрица v1 на столе владельца (D-19, TEST-04).
+#
+# Прогоняет полный корпус D-18 (16 кейсов, zenity + chromium +
+# gnome-text-editor) той же mise-задачей, что и локальный цикл:
+# `mise run e2e-matrix` (D-09 — CI вызывает ровно те же задачи, что и
+# владелец; прецедент pr-sanity.yml). Отчёт дублируется в e2e-report.txt
+# и выгружается артефактом при любом исходе (if: always()).
+#
+# Триггер — ТОЛЬКО workflow_dispatch, сознательно (T-02-07-01). Раннер
+# живёт ВНУТРИ графической сессии владельца, стенд печатает на живом
+# столе: событие из форка или ветки никогда не должно уметь его запустить.
+# Диспатчить могут только роли с правом write.
+#
+# Один прогон за раз (Pitfall 8): concurrency-группа e2e-gnome БЕЗ
+# cancel-in-progress — второй диспатч встаёт в очередь, а не отменяет
+# бегущий; два стенда, печатающие на одном столе, запрещены планом.
+#
+# Сам раннер ставится по docs/ci-runner.md (self-hosted, ярлык gnome,
+# systemd user unit внутри графической сессии).
+name: e2e-matrix
+
+on: workflow_dispatch
+
+# Минимальные права токена (T-02-07-01); секретов workflow не использует.
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-gnome
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: matrix v1 (live GNOME session)
+    runs-on: [self-hosted, gnome]
+    # Watchdog кейса — 180 с; 16 кейсов + сборка демона укладываются
+    # с запасом. Потолок защищает стол от зависшего прогона.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Официальный инсталлятор mise (прецедент pr-sanity: mise.run —
+      # каноническая точка раздачи jdx/mise; contents: read, без секретов).
+      - name: Install mise
+        run: curl https://mise.run | sh
+
+      - name: Add mise to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Ставит go и golangci-lint ровно в версиях из mise.toml —
+      # единственное место версий инструментов (D-09/D-11).
+      - name: Install tools from mise.toml
+        run: mise install
+
+      # Локальный и CI-прогон — одна и та же задача (D-09).
+      # Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
+      - name: e2e matrix v1
+        run: mise run e2e-matrix
+
+      # Отчёт — даже с упавшего прогона: FAIL-строки и есть диагностика.
+      - name: Upload e2e report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: e2e-report.txt
