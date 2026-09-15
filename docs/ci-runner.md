@@ -45,11 +45,12 @@ $ tar xzf actions-runner-linux-x64.tar.gz
 Регистрационный токен одноразовый, живёт минуты. Минтится через gh CLI
 (нужен admin на репозитории) или из UI: GitHub → Djarvur/goswitch →
 Settings → Actions → Runners → New self-hosted runner. Токен НЕ
-логируется и НЕ коммитится:
+логируется и НЕ коммитится. Endpoint минта — POST (живая находка 02-07:
+`gh api` без `--method POST` делает GET и получает HTTP 404):
 
 ```console
 $ cd ~/actions-runner
-$ TOKEN=$(gh api repos/Djarvur/goswitch/actions/runners/registration-token --jq .token)
+$ TOKEN=$(gh api --method POST repos/Djarvur/goswitch/actions/runners/registration-token --jq .token)
 $ ./config.sh --url https://github.com/Djarvur/goswitch --token "$TOKEN" \
     --labels gnome --unattended
 $ unset TOKEN
@@ -164,7 +165,7 @@ $ systemctl --user start goswitch-ci-runner
 ```console
 $ systemctl --user disable --now goswitch-ci-runner
 $ cd ~/actions-runner
-$ TOKEN=$(gh api repos/Djarvur/goswitch/actions/runners/remove-token --jq .token)
+$ TOKEN=$(gh api --method POST repos/Djarvur/goswitch/actions/runners/remove-token --jq .token)
 $ ./config.sh remove --token "$TOKEN"
 $ unset TOKEN
 ```
