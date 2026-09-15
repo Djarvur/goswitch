@@ -67,6 +67,15 @@ func NewFSM(window time.Duration, tapKeyval uint32) *FSM {
 	return &FSM{window: window, tapKeyval: tapKeyval}
 }
 
+// SetWindow replaces the disambiguation window — the hot-reload seam
+// (CONF-02, Pitfall 8): the new window governs series armed AFTER the
+// change (gap and expiry checks), while an adapter timer already armed
+// keeps its own deadline; the stale-timer guard of expired absorbs the
+// difference, so a reload never re-arms or cancels a live decision.
+func (f *FSM) SetWindow(window time.Duration) {
+	f.window = window
+}
+
 // Feed advances the machine by one event at the given injected time and
 // returns the decision — exactly one Action — when a window expires over a
 // live series; every other event returns no actions.

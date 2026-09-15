@@ -51,11 +51,16 @@ func run(ctx context.Context, debug bool, configPath string) error {
 		// never section content.
 		slog.Info("config loaded", "path", configPath, "tap_window_ms", cfg.Timeouts.TapWindowMs)
 	}
-	if err := watchConfig(ctx, configPath); err != nil {
-		return err
+	var watcher *config.Watcher
+	if configPath != "" {
+		w, werr := config.NewWatcher(ctx, configPath)
+		if werr != nil {
+			return fmt.Errorf("watch config: %w", werr)
+		}
+		watcher = w
 	}
 
-	if err := engine.Run(ctx, engineConfig(cfg)); err != nil {
+	if err := engine.Run(ctx, engineConfig(cfg, watcher)); err != nil {
 		return fmt.Errorf("engine run: %w", err)
 	}
 
@@ -79,30 +84,16 @@ func loadConfig(path string) (config.Config, error) {
 	return *cfg, nil
 }
 
-// watchConfig starts the hot-reload watcher on the daemon's signal context
-// (D-32): valid re-edits publish new snapshots, rejected ones keep the
-// last-good serving. The snapshots await their actor consumer — plan 03-04
-// wires them into the tap window, the Backspace cap, the clipboard rung
-// flag and the combo binding; the watcher's own lifecycle ends with ctx.
-func watchConfig(ctx context.Context, path string) error {
-	if path == "" {
-		return nil
-	}
-	if _, err := config.NewWatcher(ctx, path); err != nil {
-		return fmt.Errorf("watch config: %w", err)
-	}
-
-	return nil
-}
-
 // engineConfig builds the registration payload: one component, two
 // engines — the D-01 experiment needs both from day one. The FSM's tap
 // window flows from the config (SWCH-04/D-35): without -config the
 // built-in default equals hotkey.DefaultWindow (pinned by
 // config.TestDefaults). The correction options — the D-27 Backspace cap
-// and the D-28 clipboard rung switch — are fed at startup the same way
-// (the snapshot consumption on hot reload is plan 03-04).
-func engineConfig(cfg config.Config) engine.Config {
+// and the D-28 clipboard rung switch — are fed at startup through
+// SetOptions; an attached watcher has PRIORITY per event (the succession
+// of plan 03-04: SetOptions remains the no-config surface, the snapshot
+// wins once a source exists).
+func engineConfig(cfg config.Config, watcher *config.Watcher) engine.Config {
 	engines := []engine.EngineDesc{
 		engine.NewEngineDesc("goswitch-en", "goswitch English (US)", "en", "us", "en"),
 		engine.NewEngineDesc("goswitch-ru", "goswitch Русская", "ru", "ru", "ru"),
@@ -113,6 +104,9 @@ func engineConfig(cfg config.Config) engine.Config {
 		BackspaceCap:  cfg.Correction.BackspaceCap,
 		ClipboardRung: cfg.Correction.ClipboardRung,
 	})
+	if watcher != nil {
+		actor.AttachConfig(watcher)
+	}
 
 	return engine.Config{
 		Component: engine.NewComponent(engines),

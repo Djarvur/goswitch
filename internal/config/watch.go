@@ -197,9 +197,12 @@ func (w *Watcher) handle(ev fsnotify.Event) {
 }
 
 // reload re-parses the config: a valid document replaces the served
-// snapshot atomically; a rejected one WARNs ("config reload rejected",
-// D-32) and leaves the last-good in place with the error exposed through
-// LastError — status only, never section content (T-03-02-04).
+// snapshot atomically and logs the applied window (the reload-application
+// record the live cases gate on — the same content-free shape as the
+// startup "config loaded"); a rejected one WARNs ("config reload
+// rejected", D-32) and leaves the last-good in place with the error
+// exposed through LastError — status only, never section content
+// (T-03-02-04).
 func (w *Watcher) reload() {
 	w.reloadMu.Lock()
 	defer w.reloadMu.Unlock()
@@ -212,6 +215,7 @@ func (w *Watcher) reload() {
 		return
 	}
 	w.current.Store(cfg)
+	slog.Info("config reloaded", "tap_window_ms", cfg.Timeouts.TapWindowMs)
 	var none error
 	w.lastErr.Store(&none)
 }

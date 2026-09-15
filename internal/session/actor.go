@@ -94,7 +94,8 @@ type Actor struct {
 	// cfgSrc is the live config source (the 03-02 watcher's Snapshot
 	// contract); nil on the no-config path, where SetOptions and the
 	// built-in defaults govern.
-	cfgSrc interface{ Snapshot() config.Config }
+	cfgSrc    interface{ Snapshot() config.Config }
+	comboName string // the resolved document's combo binding name (parse cache)
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -248,6 +249,8 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
+
 	if ev.Release {
 		a.fsm.Feed(hotkey.KeyRelease{Keyval: ev.Keyval}, a.elapsed())
 		if ev.Keyval == hotkey.KeyvalShiftR {
@@ -314,6 +317,8 @@ func (a *Actor) HandleSurroundingText(text string, cursorPos, anchorPos uint32) 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
+
 	a.surr = beforeCursor(text, cursorPos)
 	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
 	if a.pending != nil {
@@ -378,6 +383,8 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
+
 	a.timer = nil
 	for _, action := range a.fsm.Feed(hotkey.TimerExpired{}, now) {
 		slog.Info("action", "n", int(action))
@@ -401,6 +408,8 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 func (a *Actor) VerifyExpiry() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
 
 	if a.pending == nil {
 		return // already settled — a stale timer is a no-op
@@ -433,6 +442,38 @@ func (a *Actor) settleCombo() {
 	}
 	a.comboPending = false
 	a.flipScript()
+}
+
+// applySnapshot reads the live config source ONCE and folds the document
+// into the actor (CONF-02, Pattern 2: a value into local state — a pointer
+// is never held across events). The snapshot's tap window reaches both the
+// timer arming of NEW series (armTimer reads a.window) and the FSM's gap
+// and expiry checks (SetWindow); an already-armed timer keeps its own
+// deadline — a reload never re-arms or cancels a live decision (Pitfall 8).
+// The options overwrite whatever SetOptions fed (an attached source has
+// priority — the documented succession: SetOptions stays the surface of
+// the no-config path and the tests). The combo binding is re-resolved only
+// when the document's binding NAME changed; a name that fails to parse —
+// impossible from a validated document — keeps the last-good binding (the
+// D-32 discipline). The caller holds the mutex.
+func (a *Actor) applySnapshot() {
+	if a.cfgSrc == nil {
+		return
+	}
+	snap := a.cfgSrc.Snapshot()
+
+	if w := time.Duration(snap.Timeouts.TapWindowMs) * time.Millisecond; w != a.window {
+		a.window = w
+		a.fsm.SetWindow(w)
+	}
+	a.opts.BackspaceCap = snap.Correction.BackspaceCap
+	a.opts.ClipboardRung = snap.Correction.ClipboardRung
+	if name := snap.Hotkeys.WordLayoutCombo; name != a.comboName {
+		if binding, err := hotkey.ParseBinding(name); err == nil {
+			a.opts.WordLayoutCombo = binding
+			a.comboName = name
+		}
+	}
 }
 
 // pendingVerdict checks the pending fix's range against the fresh push: the

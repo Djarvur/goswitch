@@ -109,3 +109,11 @@ run = "go run ./test/e2e -case select-clipboard"
 [tasks.e2e-combo]
 description = "e2e: 03-04 combo word-layout — Shift+RightCtrl corrects ghbdtn→привет then flips the mode, order pinned from -debug log (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case combo-word-layout"
+
+[tasks.e2e-layout-single]
+description = "e2e: 03-04 SWCH-01 — single Right Shift flips the internal mode en→ru→en, daemon mode records the only oracle (D-34) (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case layout-single"
+
+[tasks.e2e-super-space]
+description = "e2e: 03-04 SWCH-03 — native super+space leaves the daemon alive: name owner kept, correction works after (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case super-space-alive"

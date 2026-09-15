@@ -87,7 +87,7 @@ func caseListUsage() string {
 	return "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke" +
 		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
-		" | combo-word-layout"
+		" | combo-word-layout | layout-single | super-space-alive"
 }
 
 // parseFlags fills the stand's CLI surface from os.Args.
@@ -211,13 +211,15 @@ func pickCase(name string) (func(context.Context, *stand) error, error) {
 		"select-correct":    runSelectCorrect,
 		"select-clipboard":  runSelectClipboard,
 		"combo-word-layout": runComboWordLayout,
+		"layout-single":     runLayoutSingle,
+		"super-space-alive": runSuperSpaceAlive,
 	}
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
 			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed,"+
 			" phrase-en-ru, phrase-mixed, ladder-chromium, reset-escape, select-smoke, select-correct,"+
-			" select-clipboard, combo-word-layout)", name)
+			" select-clipboard, combo-word-layout, layout-single, super-space-alive)", name)
 	}
 
 	return fn, nil

@@ -2164,7 +2164,8 @@ func TestActor_HotReloadWindowNewSeries(t *testing.T) {
 			t.Fatalf("new series never decided; log:\n%s", buf.String())
 		}
 		if d := time.Since(t0); d > newWindowCeiling {
-			t.Errorf("new-series decision took %v, want < %v — the 150 ms window governs new series", d, newWindowCeiling)
+			t.Errorf("new-series decision took %v, want < %v — the 150 ms window governs",
+				d, newWindowCeiling)
 		}
 	})
 }
@@ -2200,7 +2201,8 @@ func TestActor_HotReloadOptionsAndCombo(t *testing.T) {
 		tapShift(a)
 		a.ExpiryAt(expiryAfterWindow)
 		if got := len(sink.forwardCalls()); got != len([]rune(wordEN)) {
-			t.Errorf("post-reload burst replayed %d Backspaces, want %d — the new cap governs", got, len([]rune(wordEN)))
+			t.Errorf("post-reload burst replayed %d Backspaces, want %d — the new cap governs",
+				got, len([]rune(wordEN)))
 		}
 	})
 
@@ -2223,11 +2225,13 @@ func TestActor_HotReloadOptionsAndCombo(t *testing.T) {
 
 		// Reload back to the default binding: the alt shape must die with
 		// the old snapshot, the default Shift+Control_R shape must fire.
+		// Require budget: 2 spent by the first correction (pre-round +
+		// verify-after), 1 more by the rebound combo's pre-round.
 		src.set(reloadCfg(300, "shift+ctrl_r"))
 		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalShiftR})
 		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalCtrlR, Mods: engine.MaskShift})
-		if got := sink.requireCount(); got != 2 {
-			t.Fatalf("default-binding combo require calls = %d, want 2 — the rebind follows the snapshot", got)
+		if got := sink.requireCount(); got != 3 {
+			t.Fatalf("default-binding combo require calls = %d, want 3 — the rebind follows the snapshot", got)
 		}
 	})
 }
