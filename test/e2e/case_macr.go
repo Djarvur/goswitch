@@ -614,7 +614,7 @@ func startMacrConfigDaemon(ctx context.Context, s *stand) error {
 	if err := s.waitForLog(ctx, `"msg":"config loaded"`, registrationWait); err != nil {
 		return fmt.Errorf("macr-super-letter daemon -config spawn: %w", err)
 	}
-	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+	if err := s.waitForLog(ctx, componentRegisteredMark, registrationWait); err != nil {
 		return fmt.Errorf("macr-super-letter daemon re-registration: %w", err)
 	}
 
@@ -761,7 +761,7 @@ func startPerAppDaemon(ctx context.Context, s *stand, app string) error {
 	if err := s.waitForLog(ctx, `"msg":"config loaded"`, registrationWait); err != nil {
 		return fmt.Errorf("macr-per-app daemon -config spawn: %w", err)
 	}
-	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+	if err := s.waitForLog(ctx, componentRegisteredMark, registrationWait); err != nil {
 		return fmt.Errorf("macr-per-app daemon re-registration: %w", err)
 	}
 

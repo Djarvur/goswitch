@@ -41,7 +41,7 @@ const selectSettleWait = 1500 * time.Millisecond
 // the verdict). A function, not a var: the strict lint forbids mutable
 // globals (matrix.go idiom).
 func selectAllCandidates() []string {
-	return []string{"ctrl+a", "ctrl+A", "Control+a"}
+	return []string{selectAllCanonical, "ctrl+A", "Control+a"}
 }
 
 // selectFieldEN is the spike's probe field: two SPEC words typed in EN mode
@@ -119,7 +119,7 @@ func runSelectClipboard(ctx context.Context, s *stand) error {
 	if err := s.waitForLog(ctx, `"msg":"config loaded"`, registrationWait); err != nil {
 		return fmt.Errorf("select-clipboard daemon -config spawn: %w", err)
 	}
-	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+	if err := s.waitForLog(ctx, componentRegisteredMark, registrationWait); err != nil {
 		return fmt.Errorf("select-clipboard daemon re-registration: %w", err)
 	}
 

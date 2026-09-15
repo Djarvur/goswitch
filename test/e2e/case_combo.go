@@ -34,7 +34,7 @@ const comboProbeWait = 3 * time.Second
 // Shift+Control_R physical combo, in try order. A function, not a var: the
 // strict lint forbids mutable globals (matrix.go idiom).
 func comboCandidates() []string {
-	return []string{"Shift_R+Control_R", "SHIFT_R+CTRL_R", "Shift+Control_R"}
+	return []string{"Shift_R+Control_R", comboCanonicalName, "Shift+Control_R"}
 }
 
 // comboWindowStart/comboWindowReload are the tap_window_ms values of the
@@ -102,7 +102,7 @@ func runComboWordLayout(ctx context.Context, s *stand) error {
 	if err := s.waitForLog(ctx, `"msg":"config loaded"`, registrationWait); err != nil {
 		return fmt.Errorf("combo-word-layout daemon -config spawn: %w", err)
 	}
-	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+	if err := s.waitForLog(ctx, componentRegisteredMark, registrationWait); err != nil {
 		return fmt.Errorf("combo-word-layout daemon re-registration: %w", err)
 	}
 	if err := s.activateGoswitch(ctx); err != nil {

@@ -321,7 +321,7 @@ func (s *stand) waitShellEntry(ctx context.Context, timeout time.Duration) error
 // assertRegisteredBeforeFocusIn checks the lifecycle order by JSON record
 // timestamps: the component registered strictly before the first focus_in.
 func assertRegisteredBeforeFocusIn(s *stand) error {
-	registered, err := s.firstRecordTime("component registered")
+	registered, err := s.firstRecordTime(componentRegisteredMark)
 	if err != nil {
 		return err
 	}

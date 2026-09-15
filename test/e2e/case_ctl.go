@@ -122,7 +122,7 @@ func runCtlSmoke(ctx context.Context, s *stand) error {
 	}
 	for _, mark := range []string{
 		`"msg":"config loaded"`,
-		"component registered",
+		componentRegisteredMark,
 		ctlListeningMark,
 	} {
 		if err := s.waitForLog(ctx, mark, registrationWait); err != nil {

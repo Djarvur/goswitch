@@ -64,17 +64,18 @@ type desktopSnapshot struct {
 // stand owns the per-run environment: the daemon subprocess, its log file,
 // the stand's input surface and the captured desktop state.
 type stand struct {
-	cfg       config
-	daemonBin string
-	tmpDir    string
-	logPath   string
-	logFile   *os.File
-	daemon    *exec.Cmd
-	zenity    *exec.Cmd
-	zenityOut *bytes.Buffer
-	chromium  *exec.Cmd
-	gte       *exec.Cmd
-	snap      desktopSnapshot
+	cfg         config
+	daemonBin   string
+	tmpDir      string
+	logPath     string
+	logFile     *os.File
+	daemon      *exec.Cmd
+	zenity      *exec.Cmd
+	zenityOut   *bytes.Buffer
+	chromium    *exec.Cmd
+	gte         *exec.Cmd
+	snap        desktopSnapshot
+	caseCfgPath string // the matrix case's -config doc ("" until a reload step establishes it)
 }
 
 func main() {

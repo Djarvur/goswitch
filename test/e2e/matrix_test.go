@@ -304,16 +304,16 @@ func TestMatrixDecode_SelectComboReload(t *testing.T) {
 		t.Parallel()
 
 		st := cases[0].Steps[1]
-		if st.Select != "ctrl+a" {
-			t.Errorf("Steps[1].Select = %q, want %q", st.Select, "ctrl+a")
+		if st.Select != selectAllCanonical {
+			t.Errorf("Steps[1].Select = %q, want %q", st.Select, selectAllCanonical)
 		}
 	})
 	t.Run("combo", func(t *testing.T) {
 		t.Parallel()
 
 		st := cases[1].Steps[1]
-		if st.Combo != "SHIFT_R+CTRL_R" {
-			t.Errorf("Steps[1].Combo = %q, want %q", st.Combo, "SHIFT_R+CTRL_R")
+		if st.Combo != comboCanonicalName {
+			t.Errorf("Steps[1].Combo = %q, want %q", st.Combo, comboCanonicalName)
 		}
 	})
 	t.Run("reload applied and rejected", func(t *testing.T) {
@@ -363,11 +363,11 @@ func TestMatrixDecode_RejectsNew(t *testing.T) {
 				` steps: [reload: {lines: [], expect: maybe}], expect_text: ф}`,
 		},
 		{
-			name: "select unknown name",
+			name:   "select unknown name",
 			corpus: `{name: v, surface: zenity, mode: en, steps: [{select: "ctrl+z"}], expect_text: ф}`,
 		},
 		{
-			name: "combo unknown name",
+			name:   "combo unknown name",
 			corpus: `{name: v, surface: zenity, mode: en, steps: [{combo: "alt+x"}], expect_text: ф}`,
 		},
 	} {
@@ -472,24 +472,34 @@ func TestMatrixStep_RunDispatch(t *testing.T) {
 	t.Run("step kinds classify and summarize", func(t *testing.T) {
 		t.Parallel()
 
-		for _, tc := range []struct {
-			step matrixStep
-			kind string
-			want string
-		}{
-			{matrixStep{Select: "ctrl+a"}, "select", "select ctrl+a"},
-			{matrixStep{Combo: "SHIFT_R+CTRL_R"}, "combo", "combo SHIFT_R+CTRL_R"},
-			{matrixStep{Reload: &matrixReload{Expect: "applied"}}, "reload", `reload applied []`},
-			{matrixStep{Type: "ghbdtn"}, "type", "type ghbdtn"},
-		} {
-			if got := matrixStepKind(tc.step); got != tc.kind {
-				t.Errorf("matrixStepKind(%+v) = %q, want %q", tc.step, got, tc.kind)
-			}
-			if got := stepSummary(tc.step); got != tc.want {
-				t.Errorf("stepSummary(%+v) = %q, want %q", tc.step, got, tc.want)
-			}
-		}
+		assertStepKindSummary(t)
 	})
+}
+
+// assertStepKindSummary pins the dispatch classification and the report
+// arms of the new step kinds.
+func assertStepKindSummary(t *testing.T) {
+	t.Helper()
+
+	cases := []struct {
+		step matrixStep
+		kind string
+		want string
+	}{
+		{matrixStep{Select: selectAllCanonical}, matrixKindSelect, "select " + selectAllCanonical},
+		{matrixStep{Combo: comboCanonicalName}, matrixKindCombo, "combo " + comboCanonicalName},
+		{matrixStep{Reload: &matrixReload{Expect: "applied"}}, matrixKindReload, `reload applied []`},
+		{matrixStep{Type: "ghbdtn"}, matrixKindType, "type ghbdtn"},
+	}
+	for i := range cases {
+		tc := &cases[i]
+		if got := matrixStepKind(tc.step); got != tc.kind {
+			t.Errorf("matrixStepKind(%+v) = %q, want %q", tc.step, got, tc.kind)
+		}
+		if got := stepSummary(tc.step); got != tc.want {
+			t.Errorf("stepSummary(%+v) = %q, want %q", tc.step, got, tc.want)
+		}
+	}
 }
 
 // TestMatrixReport_ExitCode pins the TEST-04 exit contract without a live

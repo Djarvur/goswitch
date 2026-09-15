@@ -16,6 +16,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -64,12 +65,38 @@ func matrixTaps() []string {
 // "Escape" to the physical E key (first-letter fallback, findings 02-03 and
 // 02-05), so the separator rides the typing path and Escape goes by its
 // lowercase table name.
+//
+// The phase-3 chord entries (plan 03-07) are identity mappings ON PURPOSE:
+// their spellings are the canonical names the phase's live spikes pinned
+// (ctrl+a — 03-03; SHIFT_R+CTRL_R — 03-04; super+x — 03-05), and the
+// spike-proven spelling itself is the only safe schema vocabulary — an
+// invented alias would hide the physical truth behind an unproven name
+// (Pitfall 5).
 func matrixKeyNames() map[string]string {
 	return map[string]string{
 		"Escape": "esc",
 		"Enter":  "enter",
 		"Tab":    "tab",
+		"Super":  "super",
+		// The identity-mapped chord spellings (see the doc comment above).
+		selectAllCanonical: selectAllCanonical,
+		comboCanonicalName: comboCanonicalName,
+		"super+x":          "super+x",
 	}
+}
+
+// matrixSelectNames returns the closed vocabulary of selection-forming
+// injection names — every entry a canonical spelling proven live by the
+// 03-03 spike (a name outside this set fails case validation, never the
+// live run: T-03-07-01).
+func matrixSelectNames() []string {
+	return []string{selectAllCanonical}
+}
+
+// matrixComboNames returns the closed vocabulary of combo injection names —
+// the canonical spelling the 03-04 live probe pinned (the X-table form).
+func matrixComboNames() []string {
+	return []string{comboCanonicalName}
 }
 
 // matrixSpaceKey rides the typing path instead of the key table (see
@@ -81,41 +108,117 @@ const matrixSpaceKey = "space"
 // engine constant).
 const goswitchComponentName = "org.freedesktop.IBus.goswitch"
 
+// componentRegisteredMark is the daemon's registration readiness record —
+// the gate every spawn/restart ladder waits on (preflight, the ctl and
+// reload cases, the matrix).
+const componentRegisteredMark = "component registered"
+
+// comboCanonicalName is the combo injection spelling the 03-04 live probe
+// canonicalized (the X-table form) — the one name the stand and the matrix
+// trust for the Shift+Control_R chord.
+const comboCanonicalName = "SHIFT_R+CTRL_R"
+
 // matrixReportPath is the file artifact the run duplicates its report into
 // (CI evidence, plan 02-07); gitignored.
 const matrixReportPath = "e2e-report.txt"
 
-// matrixSelectNames returns the closed vocabulary of selection-forming
-// injection names (the select step's values).
-func matrixSelectNames() []string {
-	return nil // RED stub
-}
-
-// matrixComboNames returns the closed vocabulary of combo injection names
-// (the combo step's values).
-func matrixComboNames() []string {
-	return nil // RED stub
-}
+// The step-kind names (matrixStepKind's vocabulary).
+const (
+	matrixKindType   = "type"
+	matrixKindKey    = "key"
+	matrixKindTap    = "tap"
+	matrixKindFocus  = "focus"
+	matrixKindSelect = "select"
+	matrixKindCombo  = "combo"
+	matrixKindReload = "reload"
+)
 
 // matrixStepKind names the one set field of a step — the dispatch's single
-// source of classification.
-func matrixStepKind(matrixStep) string {
-	return "" // RED stub
+// source of classification ("empty" only when validation was bypassed).
+func matrixStepKind(st matrixStep) string {
+	switch {
+	case st.Type != "":
+		return matrixKindType
+	case st.Key != "":
+		return matrixKindKey
+	case st.Tap != "":
+		return matrixKindTap
+	case st.Focus != "":
+		return matrixKindFocus
+	case st.Select != "":
+		return matrixKindSelect
+	case st.Combo != "":
+		return matrixKindCombo
+	case st.Reload != nil:
+		return matrixKindReload
+	}
+
+	return "empty"
+}
+
+// reloadFragmentKey extracts a fragment line's mapping key (the trimmed
+// text before the first colon).
+func reloadFragmentKey(line string) (string, bool) {
+	key, _, ok := strings.Cut(line, ":")
+	key = strings.TrimSpace(key)
+
+	return key, ok && key != ""
 }
 
 // applyReloadLines applies a reload fragment to a complete config
-// document: a line replaces the document line with the same key, an
-// unknown key appends (the broken-edit mechanics), a colon-less line is an
-// error.
-func applyReloadLines(doc string, _ []string) (string, error) {
-	return doc, nil // RED stub
+// document: a line REPLACES the document line carrying the same mapping
+// key; an unknown key APPENDS (exactly how a broken edit is manufactured —
+// the appended unknown key fails the strict decode, D-33); a colon-less
+// line is an error. Pure: the caller owns the write.
+func applyReloadLines(doc string, lines []string) (string, error) {
+	if len(lines) == 0 {
+		return doc, nil
+	}
+	docLines := strings.Split(doc, "\n")
+	trailing := ""
+	if last := len(docLines) - 1; docLines[last] == "" {
+		trailing = "\n"
+		docLines = docLines[:last]
+	}
+	for _, frag := range lines {
+		key, ok := reloadFragmentKey(frag)
+		if !ok {
+			return "", fmt.Errorf("reload fragment line %q has no mapping key", frag)
+		}
+		replaced := false
+		for i, line := range docLines {
+			docKey, ok := reloadFragmentKey(line)
+			if ok && docKey == key {
+				docLines[i] = frag
+				replaced = true
+
+				break
+			}
+		}
+		if !replaced {
+			docLines = append(docLines, frag)
+		}
+	}
+
+	return strings.Join(docLines, "\n") + trailing, nil
 }
 
+// The reload step's expectations (closed set).
+const (
+	matrixReloadApplied  = "applied"
+	matrixReloadRejected = "rejected"
+)
+
 // reloadGateMark maps a reload expectation onto the daemon log record that
-// proves it: the applied publication or the WARN rejection (both forms are
-// valid matrix oracles — D-32 last-good cases gate on the rejection).
-func reloadGateMark(string) string {
-	return "" // RED stub
+// proves it: the applied publication or the WARN rejection — BOTH forms
+// are valid matrix oracles (the last-good cases of D-32 gate on the
+// rejection).
+func reloadGateMark(expect string) string {
+	if expect == matrixReloadRejected {
+		return `"msg":"config reload rejected"`
+	}
+
+	return `"msg":"config reloaded"`
 }
 
 // matrixStep is one step of a case: exactly one of the seven fields is set
@@ -210,18 +313,27 @@ func (c matrixCase) validate() error {
 	return nil
 }
 
-// validate enforces the "exactly one step kind" rule and the tap/focus/key
-// vocabularies.
+// validate enforces the "exactly one step kind" rule (the counter grows
+// with the field list) and delegates each kind's vocabulary check.
 func (s matrixStep) validate() error {
 	set := 0
-	for _, v := range []string{s.Type, s.Key, s.Tap, s.Focus} {
+	for _, v := range []string{s.Type, s.Key, s.Tap, s.Focus, s.Select, s.Combo} {
 		if v != "" {
 			set++
 		}
 	}
-	if set != 1 {
-		return fmt.Errorf("exactly one of type|key|tap|focus is required, got %d", set)
+	if s.Reload != nil {
+		set++
 	}
+	if set != 1 {
+		return fmt.Errorf("exactly one of type|key|tap|focus|select|combo|reload is required, got %d", set)
+	}
+
+	return s.validateKind()
+}
+
+// validateKind checks the closed vocabulary of the one set field.
+func (s matrixStep) validateKind() error {
 	switch {
 	case s.Tap != "":
 		taps := matrixTaps()
@@ -229,18 +341,52 @@ func (s matrixStep) validate() error {
 			return fmt.Errorf("tap %q must be one of %s", s.Tap, strings.Join(taps, "|"))
 		}
 	case s.Key != "":
-		if s.Key != matrixSpaceKey {
-			if _, ok := matrixKeyNames()[s.Key]; !ok {
-				allowed := append(slices.Sorted(maps.Keys(matrixKeyNames())), matrixSpaceKey)
-
-				return fmt.Errorf("key %q must be one of %s", s.Key, strings.Join(allowed, "|"))
-			}
+		if err := s.validateKeyName(); err != nil {
+			return err
 		}
 	case s.Focus != "":
 		surfaces := matrixSurfaces()
 		if !slices.Contains(surfaces, s.Focus) {
 			return fmt.Errorf("focus %q must be one of %s", s.Focus, strings.Join(surfaces, "|"))
 		}
+	case s.Select != "", s.Combo != "":
+		if err := s.validateChordName(); err != nil {
+			return err
+		}
+	case s.Reload != nil:
+		if s.Reload.Expect != matrixReloadApplied && s.Reload.Expect != matrixReloadRejected {
+			return fmt.Errorf("reload expect %q must be %s|%s",
+				s.Reload.Expect, matrixReloadApplied, matrixReloadRejected)
+		}
+	}
+
+	return nil
+}
+
+// validateChordName checks the select/combo vocabularies: the name must be
+// a matrixKeyNames entry AND belong to the step kind's chord set (the
+// spike-proven canonical spellings, Pitfall 5).
+func (s matrixStep) validateChordName() error {
+	kind, values, name := "select", matrixSelectNames(), s.Select
+	if s.Combo != "" {
+		kind, values, name = "combo", matrixComboNames(), s.Combo
+	}
+	if _, ok := matrixKeyNames()[name]; !ok || !slices.Contains(values, name) {
+		return fmt.Errorf("%s %q must be one of %s", kind, name, strings.Join(values, "|"))
+	}
+
+	return nil
+}
+
+// validateKeyName checks the key vocabulary (space rides the typing path).
+func (s matrixStep) validateKeyName() error {
+	if s.Key == matrixSpaceKey {
+		return nil
+	}
+	if _, ok := matrixKeyNames()[s.Key]; !ok {
+		allowed := append(slices.Sorted(maps.Keys(matrixKeyNames())), matrixSpaceKey)
+
+		return fmt.Errorf("key %q must be one of %s", s.Key, strings.Join(allowed, "|"))
 	}
 
 	return nil
@@ -537,7 +683,7 @@ func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error 
 		return fmt.Errorf("stand setup: %w", err)
 	}
 	caseErr := func() error {
-		if rerr := s.waitForLog(ctx, "component registered", registrationWait); rerr != nil {
+		if rerr := s.waitForLog(ctx, componentRegisteredMark, registrationWait); rerr != nil {
 			if s.countSub("another goswitchd instance already registered") > 0 {
 				return fmt.Errorf("daemon registration: the goswitch name is taken"+
 					" (single-instance guard fired; a concurrent stand or a stale ibus"+
@@ -613,6 +759,12 @@ func stepSummary(st matrixStep) string {
 		return "tap " + st.Tap
 	case st.Focus != "":
 		return "focus " + st.Focus
+	case st.Select != "":
+		return "select " + st.Select
+	case st.Combo != "":
+		return "combo " + st.Combo
+	case st.Reload != nil:
+		return fmt.Sprintf("reload %s %v", st.Reload.Expect, st.Reload.Lines)
 	}
 
 	return "empty"
@@ -651,27 +803,99 @@ func openMatrixSurface(ctx context.Context, s *stand, name string) error {
 	return fmt.Errorf("unknown surface %q", name)
 }
 
-// runMatrixStep executes exactly one step kind.
+// runMatrixStep executes exactly one step kind (the classification's
+// single consumer: matrixStepKind).
 func runMatrixStep(ctx context.Context, s *stand, c matrixCase, st matrixStep) error {
-	switch {
-	case st.Type != "":
+	switch matrixStepKind(st) {
+	case matrixKindType:
 		return s.injectText(ctx, st.Type)
-	case st.Key != "":
+	case matrixKindKey:
 		return pressMatrixKey(ctx, s, st.Key)
-	case st.Tap != "":
+	case matrixKindTap:
 		return tapMatrix(ctx, s, st.Tap)
-	case st.Focus != "":
+	case matrixKindFocus:
 		return focusMatrixSurface(ctx, s, c, st.Focus)
+	case matrixKindSelect:
+		return selectMatrixStep(ctx, s, c, st)
+	case matrixKindCombo:
+		return comboMatrixStep(ctx, s, st)
+	case matrixKindReload:
+		return reloadMatrixStep(ctx, s, c, st)
 	}
 
 	return errors.New("empty step") // unreachable: validation rejects it
+}
+
+// superInterceptMark is the daemon's MACR interception record — the gate of
+// a super+letter chord step (the layer must be config-enabled for the
+// record to ever appear; every matrix chord case arms it through a reload
+// step first).
+const superInterceptMark = `"msg":"super intercept"`
+
+// selectMatrixStep injects the canonical selection name and — on the
+// anchor-reporting surfaces — gates on the selection push itself: the
+// anchor must be observable before the following tap means anything (D-30).
+// The zenity-class surfaces never push an anchor (03-03 spike: the
+// selection key lands, no push with anchor != cursor ever arrives), so the
+// step there only presses — the documented degradation whose field outcome
+// the case's expect_text pins.
+func selectMatrixStep(ctx context.Context, s *stand, c matrixCase, st matrixStep) error {
+	name, ok := matrixKeyNames()[st.Select]
+	if !ok {
+		return fmt.Errorf("unknown select %q", st.Select) // unreachable: validation
+	}
+	before := s.countSub(surroundingMark)
+	if err := s.pressKey(ctx, name); err != nil {
+		return err
+	}
+	if !matrixSurfaceReportsAnchor(c.Surface) {
+		return nil // D-30 degradation: no anchor push ever arrives on this surface
+	}
+	rep, ok := s.waitNewSurrounding(ctx, before)
+	if !ok || !rep.selectionActive() {
+		return fmt.Errorf("select %s: no selection anchor push after the injection"+
+			" (report %+v) — selection unobservable", st.Select, rep)
+	}
+
+	return nil
+}
+
+// matrixSurfaceReportsAnchor names the surfaces whose surrounding pushes
+// carry a selection anchor (the 03-03 spike table: GTE cursor=0/anchor=len
+// under ctrl+a; chromium cursor=len/anchor=0 — both ACTIVE).
+func matrixSurfaceReportsAnchor(surface string) bool {
+	return surface == matrixSurfaceGTE || surface == surfaceChromiumName
+}
+
+// comboMatrixStep injects the canonical combo name and gates on the two
+// log forms of the D-36 gesture — the combo record itself and the mode
+// flip that settles it (the tapMatrix-precident gate; the existing
+// action/mode shapes are untouched, matrix.go's v1 contract).
+func comboMatrixStep(ctx context.Context, s *stand, st matrixStep) error {
+	name, ok := matrixKeyNames()[st.Combo]
+	if !ok {
+		return fmt.Errorf("unknown combo %q", st.Combo) // unreachable: validation
+	}
+	if err := s.pressKey(ctx, name); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, comboLogMark, decisionWait); err != nil {
+		return fmt.Errorf("combo %s gesture: %w", st.Combo, err)
+	}
+	if err := s.waitForLog(ctx, `"msg":"mode"`, decisionWait); err != nil {
+		return fmt.Errorf("combo %s layout flip: %w", st.Combo, err)
+	}
+
+	return nil
 }
 
 // pressMatrixKey maps a schema key name onto the physical path. The space
 // separator rides the typing path (ydotool 0.1.8 resolves the NAME "space"
 // to the physical S key, live finding 02-03); the other names go through
 // the ydotool key table under their working names ("Escape"→"esc", live
-// finding 02-05).
+// finding 02-05). A super+letter chord is a MACR interception step: the
+// press is gated on the interception record (the layer is armed by a
+// preceding reload step in every chord case — the gate is the proof).
 func pressMatrixKey(ctx context.Context, s *stand, key string) error {
 	if key == matrixSpaceKey {
 		return s.injectText(ctx, " ")
@@ -680,8 +904,190 @@ func pressMatrixKey(ctx context.Context, s *stand, key string) error {
 	if !ok {
 		return fmt.Errorf("unknown key %q", key)
 	}
+	if err := s.pressKey(ctx, name); err != nil {
+		return err
+	}
+	if strings.HasPrefix(name, "super+") {
+		if err := s.waitForLog(ctx, superInterceptMark, correctionWait); err != nil {
+			return fmt.Errorf("super chord %q interception: %w", key, err)
+		}
+	}
 
-	return s.pressKey(ctx, name)
+	return nil
+}
+
+// matrixCaseConfigWindow is the tap window of the reload step's base
+// document — the ctl-smoke document shape (a COMPLETE config, the 03-02
+// no-overlay rule) reused as the case daemon's temp config.
+const matrixCaseConfigWindow = 300
+
+// matrixCaseConfigName is the reload-established temp config's base name.
+const matrixCaseConfigName = "matrix-case-config.yaml"
+
+// reloadMatrixStep applies the config fragment to the case daemon's temp
+// document and drives the application through goswitchctl (the INST-02
+// surface — reload + status, both asserted), gating on the daemon's own
+// record for the expected outcome. The FIRST reload step of a case
+// establishes the -config daemon (restart on the base document with the
+// fragment already applied); later steps only edit and re-drive. A BROKEN
+// fragment belongs on a later step never on the establishment — the
+// startup Load refusal is a visible daemon exit (03-02).
+func reloadMatrixStep(ctx context.Context, s *stand, c matrixCase, st matrixStep) error {
+	frag := st.Reload
+	if s.caseCfgPath == "" {
+		if err := establishCaseConfig(ctx, s, c, frag.Lines); err != nil {
+			return err
+		}
+	} else if err := rewriteCaseConfig(s, frag.Lines); err != nil {
+		return err
+	}
+
+	return driveCaseReload(ctx, s, frag.Expect)
+}
+
+// establishCaseConfig writes the base document with the fragment applied,
+// restarts the daemon under -config and waits out its readiness ladder
+// (config loaded, component registered, ctl listening), then re-activates
+// the engine and settles the surface's focus — the restart killed the
+// engine connection mid-case, and typing before the IM renegotiation
+// completes races it (the 03-04 live lesson).
+func establishCaseConfig(ctx context.Context, s *stand, c matrixCase, lines []string) error {
+	doc, err := applyReloadLines(ctlConfigYAML(matrixCaseConfigWindow), lines)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(s.tmpDir, matrixCaseConfigName)
+	if err := os.WriteFile(path, []byte(doc), configFilePerm); err != nil {
+		return fmt.Errorf("reload step: write case config: %w", err)
+	}
+	if err := s.restartDaemonWithArgs("-config", path); err != nil {
+		return err
+	}
+	for _, mark := range []string{`"msg":"config loaded"`, componentRegisteredMark, ctlListeningMark} {
+		if err := s.waitForLog(ctx, mark, registrationWait); err != nil {
+			return fmt.Errorf("reload step config daemon (%s): %w", mark, err)
+		}
+	}
+	s.caseCfgPath = path
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+
+	return waitMatrixFocusApp(ctx, s, c)
+}
+
+// rewriteCaseConfig applies a fragment to the already-established case
+// document on disk.
+func rewriteCaseConfig(s *stand, lines []string) error {
+	data, err := os.ReadFile(s.caseCfgPath)
+	if err != nil {
+		return fmt.Errorf("reload step: read case config: %w", err)
+	}
+	doc, err := applyReloadLines(string(data), lines)
+	if err != nil {
+		return err
+	}
+	// #nosec G703 -- the path is the stand's own temp-file join
+	// (establishCaseConfig), never case-controlled input.
+	if err := os.WriteFile(s.caseCfgPath, []byte(doc), configFilePerm); err != nil {
+		return fmt.Errorf("reload step: rewrite case config: %w", err)
+	}
+
+	return nil
+}
+
+// driveCaseReload forces the re-read through goswitchctl and gates on both
+// observable surfaces: the CLI's own exit/reply contract and the daemon's
+// log record (applied publication or WARN rejection — the watcher may also
+// produce the same record off its debounce; both write the same shapes).
+// The status string must agree with the expectation (D-32 visible from
+// outside the daemon).
+func driveCaseReload(ctx context.Context, s *stand, expect string) error {
+	ctlBin, err := s.buildCtl(ctx)
+	if err != nil {
+		return err
+	}
+	if err := assertReloadReply(ctx, ctlBin, expect); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, reloadGateMark(expect), reloadApplyWait); err != nil {
+		return fmt.Errorf("reload step %s: %w", expect, err)
+	}
+
+	return assertReloadStatus(ctx, ctlBin, expect)
+}
+
+// assertReloadReply checks goswitchctl reload's exit/reply contract against
+// the expectation.
+func assertReloadReply(ctx context.Context, ctlBin, expect string) error {
+	out, errOut, rerr := runCtl(ctx, ctlBin, "reload")
+	switch {
+	case expect == matrixReloadRejected && rerr == nil:
+		return fmt.Errorf("reload step: rejected expected, goswitchctl exited 0 (out %q)", out)
+	case expect == matrixReloadRejected:
+		return nil
+	case rerr != nil:
+		return fmt.Errorf("reload step: applied expected, goswitchctl failed: %w (%s)", rerr, out+errOut)
+	case !strings.Contains(out, "applied"):
+		return fmt.Errorf("reload step: reload reply %q missing applied", out)
+	}
+
+	return nil
+}
+
+// assertReloadStatus checks the D-32 visibility: the status string agrees
+// with the expectation.
+func assertReloadStatus(ctx context.Context, ctlBin, expect string) error {
+	sout, _, serr := runCtl(ctx, ctlBin, "status")
+	if serr != nil {
+		return fmt.Errorf("reload step status: %w", serr)
+	}
+	want := "config_valid=true"
+	if expect == matrixReloadRejected {
+		want = "config_valid=false"
+	}
+	if !strings.Contains(sout, want) {
+		return fmt.Errorf("reload step status %q missing %s", sout, want)
+	}
+
+	return nil
+}
+
+// matrixSurfaceApp maps a matrix surface onto the AT-SPI application name
+// its witness line carries (surface.go's live-verified names).
+func matrixSurfaceApp(surface string) string {
+	switch surface {
+	case surfaceChromiumName:
+		return chromiumAppName
+	case matrixSurfaceGTE:
+		return gteAppName
+	}
+
+	return matrixSurfaceZenity
+}
+
+// waitMatrixFocusApp settles the case's surface back into keyboard focus
+// after an episode that churned it (a daemon restart's engine
+// re-activation) — the waitZenityFocused idiom generalized over the
+// witness's app prefix.
+func waitMatrixFocusApp(ctx context.Context, s *stand, c matrixCase) error {
+	prefix := matrixSurfaceApp(c.Surface) + ":"
+	deadline := time.Now().Add(witnessWait)
+	for {
+		now, err := s.focusWitness(ctx)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(now, prefix) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("surface %s input not focused after the reload restart (witness %q)", c.Surface, now)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return err
+		}
+	}
 }
 
 // tapMatrix injects K Right Shift taps inside the disambiguation window and

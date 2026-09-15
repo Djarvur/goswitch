@@ -104,7 +104,7 @@ func checkPythonGI(ctx context.Context, _ *stand) error {
 // for the registration log line and then queries ListActiveEngines on the
 // private bus.
 func checkEngineRegistered(ctx context.Context, s *stand) error {
-	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+	if err := s.waitForLog(ctx, componentRegisteredMark, registrationWait); err != nil {
 		return fmt.Errorf("%w (did the daemon reach RegisterComponent?)", err)
 	}
 	found, err := listActiveEnginesContain(ctx, "goswitch-en")
@@ -121,7 +121,7 @@ func checkEngineRegistered(ctx context.Context, s *stand) error {
 // checkLogHeartbeat proves the daemon log is alive: both startup records
 // arrived, so the file is the assertion surface the cases grep.
 func checkLogHeartbeat(_ context.Context, s *stand) error {
-	for _, want := range []string{`"msg":"connected"`, "component registered"} {
+	for _, want := range []string{`"msg":"connected"`, componentRegisteredMark} {
 		if s.countSub(want) == 0 {
 			return fmt.Errorf("daemon log misses startup record %q", want)
 		}
