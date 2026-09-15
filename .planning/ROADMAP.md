@@ -95,7 +95,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 02-07-PLAN.md — Self-hosted GNOME-раннер (systemd user unit, ярлык gnome) + workflow e2e-matrix (dispatch-only, bootstrap-регистрация), первый зелёный CI-прогон — TEST-04, D-19
+- [x] 02-07-PLAN.md — Self-hosted GNOME-раннер (systemd user unit, ярлык gnome) + workflow e2e-matrix (dispatch-only, bootstrap-регистрация), первый зелёный CI-прогон — TEST-04, D-19
 
 ### Phase 3: Фразы, выделение, переключение и конфигурация
 
@@ -136,7 +136,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
-| 2. Коррекция слова EN↔RU | 6/7 | In Progress|  |
+| 2. Коррекция слова EN↔RU | 7/7 | In Progress|  |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 

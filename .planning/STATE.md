@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: Коррекция слова EN↔RU
-status: executing
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-09-15T00:23:00.308Z"
+status: verifying
+stopped_at: Completed 02-07-PLAN.md
+last_updated: "2026-09-15T00:39:44.342Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 02 execution started
-state_head: c3fe36aeb8f82130b08ff6638621924c3856aab9
+state_head: e4bc55a2f85655b59931aa889947c4dcba8fc590
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-11)
 
 Phase: 02 (Коррекция слова EN↔RU) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-12 — Phase 02 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -73,6 +73,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P04 | 15 min | 2 tasks | 10 files |
 | Phase 02 P05 | 38 min | 2 tasks | 13 files |
 | Phase 02 P06 | 109 min | 2 tasks | 12 files |
+| Phase 02 P07 | 13 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,8 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-05] ydotool 0.1.8: имя 'Escape' резолвится в физическую клавишу E (fallback первой буквы), рабочее имя — 'esc'; тот же класс ловушки, что 'space'→S (02-03); пред-существующий closeEntrySurface — в deferred-items
 - [Phase 02]: [02-06] Матрица v1 (16 кейсов D-18) зелёная в прямом и перемешанном порядке; expect_level — только фактический уровень (весь стол = 1, уровень 2 — юнит-контракт); verify-match не оракул матрицы (гонка устаревшего пуша сверки — отложенный пункт)
 - [Phase 02]: [02-06] Живые ловушки: флип только после открытия поверхности; Tab уводит фокус в омнибокс (grab-input-pid научился want-chars); оборванный прогон оставляет осиротевшее имя IBus (префлайт ловит, ibus restart лечит); серийные SIGKILL поверхностей вешают мост gnome-shell — лечится перезапуском шины a11y, стойкая форма в deferred-items
+- [Phase 02]: [02-07] Токены минта раннера (registration/remove) требуют gh api --method POST — GET отвечает 404; живая находка, обе команды в docs/ci-runner.md исправлены
+- [Phase 02]: [02-07] Заявленная bootstrap-модель подтверждена живьём: GitHub резолвит workflow_dispatch-воркфлоусы от default branch (до регистрации — HTTP 404); chore-PR с одним файлом workflow (d815e72) → dispatch --ref фаза-ветка; раннер green106 (2.337.0) в сессии через GDM-импорт окружения user-менеджера
 
 ### Pending Todos
 
@@ -140,6 +143,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T00:23:00.258Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-09-15T00:39:44.291Z
+Stopped at: Completed 02-07-PLAN.md
 Resume file: None
