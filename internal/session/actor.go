@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -111,10 +112,17 @@ type Actor struct {
 	macrIntercepted   int
 	macrConsumed      int
 	macrLettersName   string
-	appid             AppidSource
-	appidStarted      bool
-	appidWarned       bool // one WARN per degradation episode — a broken source must not spam per keystroke
-	startAppid        func() (AppidSource, error)
+	// Correction outcome counters — the goswitchctl status surface of plan
+	// 03-06 (INST-02): completed corrections (the D-24 success-without-change
+	// included) and refusals with their D-20 reason breakdown. Counts only,
+	// never content.
+	corrDone     int
+	corrSkipped  int
+	skipReasons  map[string]int
+	appid        AppidSource
+	appidStarted bool
+	appidWarned  bool // one WARN per degradation episode — a broken source must not spam per keystroke
+	startAppid   func() (AppidSource, error)
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -327,23 +335,67 @@ type Status struct {
 	ConfigError           string
 }
 
-// StatusSnapshot returns the daemon state for goswitchctl status — filled
-// under the mutex from the counters the actor already keeps, never from a
-// second FSM.
+// configStatus is the optional status surface of a config source: the
+// served document's path and the last rejected reload's error. The 03-02
+// watcher implements it; a source without it reports no config fields.
+type configStatus interface {
+	ConfigPath() string
+	LastError() error
+}
+
+// StatusSnapshot returns the daemon state for goswitchctl status (INST-02):
+// filled under the mutex from the counters the actor already keeps — never
+// a second FSM, never the buffer's contents (T-03-06-03). The config fields
+// come from the attached source's optional status surface (the watcher);
+// with no source the built-in defaults are in force and the snapshot says
+// so with an empty path.
 func (a *Actor) StatusSnapshot() Status {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	return Status{}
+	st := Status{
+		Mode:                  "en",
+		CorrectionsDone:       a.corrDone,
+		CorrectionsSkipped:    a.corrSkipped,
+		SkipReasons:           maps.Clone(a.skipReasons),
+		SuperIntercepted:      a.macrIntercepted,
+		SuperUpstreamConsumed: a.macrConsumed,
+		ConfigValid:           true, // built-in defaults, or a source without a status surface
+	}
+	if a.mode == modeRU {
+		st.Mode = "ru"
+	}
+	if cs, ok := a.cfgSrc.(configStatus); ok {
+		st.ConfigPath = cs.ConfigPath()
+		if err := cs.LastError(); err != nil {
+			st.ConfigValid = false
+			st.ConfigError = err.Error()
+		}
+	}
+
+	return st
 }
 
-// CorrectNow forces the word-correction pipeline — the ctl surface's
-// forced correction (INST-02).
+// correctStartedReply is the forced correction's immediate acknowledgment:
+// the pipeline is armed — its settlement (the ADR-004 verification, the
+// ladder execution, the D-20 refusals) is asynchronous and lands in the
+// status counters and the log records, exactly as for a tap-launched
+// correction.
+const correctStartedReply = "correction started (word pipeline armed; the outcome lands in the counters and the log)"
+
+// CorrectNow forces the word-correction pipeline — the control surface's
+// forced correction (INST-02, the Q5 word semantics): the same internal
+// point the Double decision dispatches (startCorrection), launched with no
+// tap and no FSM round trip, under the actor's mutex with one config
+// snapshot folded in. The reply is immediate (see correctStartedReply).
 func (a *Actor) CorrectNow() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	return ""
+	a.applySnapshot()
+	a.startCorrection()
+
+	return correctStartedReply
 }
 
 // HandleKey implements engine.EventHandler: the decoded event is fed into
@@ -442,7 +494,7 @@ func (a *Actor) HandleSurroundingText(text string, cursorPos, anchorPos uint32) 
 	if a.pending != nil {
 		if !a.pendingVerdict() {
 			a.resolvePending()
-			slog.Info("correction skipped", "reason", "verify-mismatch")
+			a.skipCorrection("verify-mismatch")
 			a.settleCombo() // the word half settled by refusal — the D-36 flip still fires
 
 			return
@@ -534,7 +586,7 @@ func (a *Actor) VerifyExpiry() {
 	}
 	a.resolvePending()
 	a.clearAfter()
-	slog.Info("correction skipped", "reason", "verify-timeout")
+	a.skipCorrection("verify-timeout")
 	a.settleCombo() // the round closed by timeout — the combo's flip still fires
 }
 
@@ -560,6 +612,25 @@ func (a *Actor) settleCombo() {
 	}
 	a.comboPending = false
 	a.flipScript()
+}
+
+// skipCorrection records one D-20 refusal: the INFO reason record (one
+// line, the reason slug, nothing touched) and the counters the control
+// surface reports. The caller holds the mutex.
+func (a *Actor) skipCorrection(reason string) {
+	a.corrSkipped++
+	if a.skipReasons == nil {
+		a.skipReasons = make(map[string]int)
+	}
+	a.skipReasons[reason]++
+	slog.Info("correction skipped", "reason", reason)
+}
+
+// countCorrectionDone records one completed correction — the D-24
+// success-without-change counts as done too (outcome done either way).
+// The caller holds the mutex.
+func (a *Actor) countCorrectionDone() {
+	a.corrDone++
 }
 
 // applySnapshot reads the live config source ONCE and folds the document
@@ -720,12 +791,12 @@ func (a *Actor) runClipboardRung(paste []rune) {
 	ctx := context.Background()
 	saved, had, err := a.clip.Save(ctx)
 	if err != nil {
-		slog.Info("correction skipped", "reason", "clipboard-unavailable")
+		a.skipCorrection("clipboard-unavailable")
 
 		return
 	}
 	if err := a.clip.Set(ctx, []byte(string(paste))); err != nil {
-		slog.Info("correction skipped", "reason", "clipboard-unavailable")
+		a.skipCorrection("clipboard-unavailable")
 
 		return
 	}
@@ -1127,7 +1198,7 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 	armed := time.Now()
 	converted, changed, ok := correct.ConvertRuns(runes)
 	if !ok {
-		slog.Info("correction skipped", "reason", refusalReason(runes))
+		a.skipCorrection(refusalReason(runes))
 		a.settleCombo()
 
 		return
@@ -1136,13 +1207,14 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 		// D-24: every letter of the range is already in the anchor layout —
 		// a SUCCESSFUL operation without changes; nothing to replace,
 		// nothing to verify.
+		a.countCorrectionDone()
 		slog.Info("correction", "outcome", "done")
 		a.settleCombo()
 
 		return
 	}
 	if a.eng == nil {
-		slog.Info("correction skipped", "reason", "no-engine")
+		a.skipCorrection("no-engine")
 		a.settleCombo()
 
 		return
@@ -1198,14 +1270,14 @@ func (a *Actor) startPhraseCorrection() {
 func (a *Actor) startRangeCorrection(rng correctionRange) {
 	armed := time.Now()
 	if len(rng.token) == 0 {
-		slog.Info("correction skipped", "reason", "empty-buffer")
+		a.skipCorrection("empty-buffer")
 		a.settleCombo() // no word — the flip is the combo's primary intent
 
 		return
 	}
 	converted, changed, ok := correct.ConvertRuns(rng.token)
 	if !ok {
-		slog.Info("correction skipped", "reason", refusalReason(rng.token))
+		a.skipCorrection(refusalReason(rng.token))
 		a.settleCombo()
 
 		return
@@ -1214,13 +1286,14 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 		// D-24: every letter of the range is already in the anchor layout —
 		// a SUCCESSFUL operation without changes (the owner's choice over a
 		// refusal and over a WARN); nothing to replace, nothing to verify.
+		a.countCorrectionDone()
 		slog.Info("correction", "outcome", "done")
 		a.settleCombo()
 
 		return
 	}
 	if a.eng == nil {
-		slog.Info("correction skipped", "reason", "no-engine")
+		a.skipCorrection("no-engine")
 		a.settleCombo()
 
 		return
@@ -1275,7 +1348,7 @@ func (a *Actor) executeCorrection() {
 	a.eng.DeleteSurroundingText(plan.Offset, plan.NChars)
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
-	logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
+	a.logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
 	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerify(p.converted, p.rng.tail)
 }
@@ -1298,7 +1371,7 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 	a.eng.DeleteSurroundingText(offset, nchars)
 	a.eng.CommitText(engine.NewIBusText(string(p.converted)))
 	a.buf.HardReset() // the buffer can no longer mirror the replaced field
-	logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
+	a.logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
 	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerifyRange(p.converted, sel.start)
 }
@@ -1314,7 +1387,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	if plan.Level == correct.LevelNone {
 		// D-27: the Backspace series would exceed the cap and this client
 		// has no DeleteSurroundingText — refuse silently, not one deletion.
-		slog.Info("correction skipped", "reason", "backspace-cap")
+		a.skipCorrection("backspace-cap")
 		a.settleCombo()
 
 		return
@@ -1324,15 +1397,17 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	}
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
-	logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
+	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
 	a.settleCombo()
 }
 
-// logCorrectionDone writes the completion pair of one ladder execution: the
-// INFO counter (D-20 — outcome only, never the word) and the DEBUG detail
-// record whose FIRST attribute after msg is the ladder level — the exact
-// form the e2e matrix greps to pin the ACTUAL level a client got (D-21).
-func logCorrectionDone(level correct.Level, token, converted []rune, latency time.Duration) {
+// logCorrectionDone counts and writes the completion pair of one ladder
+// execution: the INFO counter (D-20 — outcome only, never the word) and
+// the DEBUG detail record whose FIRST attribute after msg is the ladder
+// level — the exact form the e2e matrix greps to pin the ACTUAL level a
+// client got (D-21). The caller holds the mutex.
+func (a *Actor) logCorrectionDone(level correct.Level, token, converted []rune, latency time.Duration) {
+	a.corrDone++
 	slog.Info("correction", "outcome", "done")
 	slog.Debug("correction",
 		"level", int(level),

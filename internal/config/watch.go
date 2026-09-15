@@ -152,13 +152,23 @@ func (w *Watcher) LastError() error {
 	return nil
 }
 
+// ConfigPath returns the path the watcher serves and watches — the actor's
+// status snapshot lifts it into the D-32 fields (INST-02).
+func (w *Watcher) ConfigPath() string {
+	return w.path
+}
+
 // Reload forces an immediate synchronous re-parse of the config document —
 // the control surface's reload (INST-02): a valid document is published
 // (the reply names the applied change), a rejected one keeps the last-good
 // snapshot serving (D-32) with the error returned and exposed through
-// LastError.
+// LastError. Shares the parse-and-publish core with the debounce path
+// under the same mutex — no race with a pending timer-driven reload.
 func (w *Watcher) Reload() (string, error) {
-	return "", nil
+	w.reloadMu.Lock()
+	defer w.reloadMu.Unlock()
+
+	return w.reparse()
 }
 
 // loop drains the event source until ctx is done; every goroutine has an
@@ -205,26 +215,34 @@ func (w *Watcher) handle(ev fsnotify.Event) {
 	w.timer = time.AfterFunc(w.opts.debounce, w.reload)
 }
 
-// reload re-parses the config: a valid document replaces the served
+// reload is the debounce callback: the synchronous outcome is the log
+// record and LastError, both written inside the shared core.
+func (w *Watcher) reload() {
+	w.reloadMu.Lock()
+	defer w.reloadMu.Unlock()
+
+	_, _ = w.reparse() // the outcome is observable state, not a return value here
+}
+
+// reparse is the ONE reload core: a valid document replaces the served
 // snapshot atomically and logs the applied window (the reload-application
 // record the live cases gate on — the same content-free shape as the
 // startup "config loaded"); a rejected one WARNs ("config reload
 // rejected", D-32) and leaves the last-good in place with the error
 // exposed through LastError — status only, never section content
-// (T-03-02-04).
-func (w *Watcher) reload() {
-	w.reloadMu.Lock()
-	defer w.reloadMu.Unlock()
-
+// (T-03-02-04). The caller holds reloadMu.
+func (w *Watcher) reparse() (string, error) {
 	cfg, err := w.opts.load(w.path)
 	if err != nil {
 		slog.Warn("config reload rejected", "error", err)
 		w.lastErr.Store(&err)
 
-		return
+		return "", fmt.Errorf("reload config %s: %w", w.path, err)
 	}
 	w.current.Store(cfg)
 	slog.Info("config reloaded", "tap_window_ms", cfg.Timeouts.TapWindowMs)
 	var none error
 	w.lastErr.Store(&none)
+
+	return fmt.Sprintf("applied (tap_window_ms=%d)", cfg.Timeouts.TapWindowMs), nil
 }

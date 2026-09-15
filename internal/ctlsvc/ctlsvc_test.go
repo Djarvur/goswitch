@@ -172,76 +172,97 @@ func TestSvc_Status(t *testing.T) {
 	})
 }
 
-// TestSvc_ReloadConfig pins the D-32 behavior through the control surface:
-// a valid document is applied (the served snapshot moves, the reply says
-// so); a rejected one keeps the last-good serving, answers with the error
-// naming the offending key and leaves it visible through LastError — the
-// status surface's raw material.
-func TestSvc_ReloadConfig(t *testing.T) {
+// newReloadSvc returns a service over a fresh temp-config watcher — the
+// reload corpus's shared setup (the debounce never fires inside a test:
+// Reload is the synchronous driver under test, the watcher's own event
+// path has its own corpus in 03-02).
+func newReloadSvc(t *testing.T) (*ctlsvc.Svc, *config.Watcher, string) {
+	t.Helper()
+
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "ctl-reload.yaml")
 	if err := os.WriteFile(cfgPath, []byte(ctlConfigYAML(300)), configFilePerm); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	// The debounce never fires inside the test (time.Hour) — Reload is the
-	// synchronous driver under test; the watcher's own event path has its
-	// own corpus (03-02).
+	t.Cleanup(cancel)
 	w, err := config.NewWatcher(ctx, cfgPath, config.WithDebounce(time.Hour))
 	if err != nil {
 		t.Fatalf("new watcher: %v", err)
 	}
-	svc := ctlsvc.NewSvc(ctlsvc.Deps{Reload: w})
 
-	t.Run("valid reload applies", func(t *testing.T) {
-		if err := os.WriteFile(cfgPath, []byte(ctlConfigYAML(450)), configFilePerm); err != nil {
-			t.Fatalf("rewrite config: %v", err)
-		}
-		reply, rerr := svc.ReloadConfig()
-		if rerr != nil {
-			t.Fatalf("ReloadConfig error = %v, want nil", rerr)
-		}
-		if !strings.Contains(reply, "applied") {
-			t.Errorf("ReloadConfig reply %q missing applied", reply)
-		}
-		if got := w.Snapshot().Timeouts.TapWindowMs; got != 450 {
-			t.Errorf("served window after reload = %d, want 450", got)
-		}
-		if lerr := w.LastError(); lerr != nil {
-			t.Errorf("LastError after valid reload = %v, want nil", lerr)
-		}
-	})
+	return ctlsvc.NewSvc(ctlsvc.Deps{Reload: w}), w, cfgPath
+}
 
-	t.Run("invalid reload keeps last-good and surfaces the error", func(t *testing.T) {
-		if err := os.WriteFile(cfgPath, []byte(ctlBrokenYAML), configFilePerm); err != nil {
-			t.Fatalf("break config: %v", err)
-		}
-		reply, rerr := svc.ReloadConfig()
-		if rerr == nil {
-			t.Fatalf("ReloadConfig error = nil (reply %q), want the rejection", reply)
-		}
-		if !strings.Contains(rerr.Error(), "verify_wait_mss") {
-			t.Errorf("ReloadConfig error %q names no unknown key", rerr.Error())
-		}
-		if got := w.Snapshot().Timeouts.TapWindowMs; got != 450 {
-			t.Errorf("served window after rejected reload = %d, want last-good 450", got)
-		}
-		if lerr := w.LastError(); lerr == nil {
-			t.Error("LastError after rejected reload = nil, want the rejection (D-32)")
-		}
-	})
+// TestSvc_ReloadValidApplies pins the valid half of the control reload: a
+// valid document is published (the served snapshot moves), the reply says
+// applied, and LastError clears.
+func TestSvc_ReloadValidApplies(t *testing.T) {
+	svc, w, cfgPath := newReloadSvc(t)
 
-	t.Run("no config file", func(t *testing.T) {
-		svc := ctlsvc.NewSvc(ctlsvc.Deps{})
-		reply, rerr := svc.ReloadConfig()
-		if rerr == nil {
-			t.Fatalf("ReloadConfig on the no-config daemon = nil error (reply %q), want the report", reply)
-		}
-		if !strings.Contains(rerr.Error(), "no config file") {
-			t.Errorf("ReloadConfig no-config error %q missing the report", rerr.Error())
-		}
-	})
+	if err := os.WriteFile(cfgPath, []byte(ctlConfigYAML(450)), configFilePerm); err != nil {
+		t.Fatalf("rewrite config: %v", err)
+	}
+	reply, rerr := svc.ReloadConfig()
+	if rerr != nil {
+		t.Fatalf("ReloadConfig error = %v, want nil", rerr)
+	}
+	if !strings.Contains(reply, "applied") {
+		t.Errorf("ReloadConfig reply %q missing applied", reply)
+	}
+	if got := w.Snapshot().Timeouts.TapWindowMs; got != 450 {
+		t.Errorf("served window after reload = %d, want 450", got)
+	}
+	if lerr := w.LastError(); lerr != nil {
+		t.Errorf("LastError after valid reload = %v, want nil", lerr)
+	}
+}
+
+// TestSvc_ReloadInvalidKeepsLastGood pins the D-32 half: a rejected
+// document keeps the last-good serving (450 from the valid reload above),
+// answers with the error naming the offending key, and leaves it visible
+// through LastError — the status surface's raw material.
+func TestSvc_ReloadInvalidKeepsLastGood(t *testing.T) {
+	svc, w, cfgPath := newReloadSvc(t)
+
+	// Establish the last-good: one valid reload to 450.
+	if err := os.WriteFile(cfgPath, []byte(ctlConfigYAML(450)), configFilePerm); err != nil {
+		t.Fatalf("rewrite config: %v", err)
+	}
+	if _, rerr := svc.ReloadConfig(); rerr != nil {
+		t.Fatalf("valid reload precondition: %v", rerr)
+	}
+
+	if err := os.WriteFile(cfgPath, []byte(ctlBrokenYAML), configFilePerm); err != nil {
+		t.Fatalf("break config: %v", err)
+	}
+	reply, rerr := svc.ReloadConfig()
+	if rerr == nil {
+		t.Fatalf("ReloadConfig error = nil (reply %q), want the rejection", reply)
+	}
+	if !strings.Contains(rerr.Error(), "verify_wait_mss") {
+		t.Errorf("ReloadConfig error %q names no unknown key", rerr.Error())
+	}
+	if got := w.Snapshot().Timeouts.TapWindowMs; got != 450 {
+		t.Errorf("served window after rejected reload = %d, want last-good 450", got)
+	}
+	if lerr := w.LastError(); lerr == nil {
+		t.Error("LastError after rejected reload = nil, want the rejection (D-32)")
+	}
+}
+
+// TestSvc_ReloadNoConfigFile pins the no-config daemon's answer: nothing
+// to re-read — a visible report, never a silent no-op.
+func TestSvc_ReloadNoConfigFile(t *testing.T) {
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{})
+
+	reply, rerr := svc.ReloadConfig()
+	if rerr == nil {
+		t.Fatalf("ReloadConfig on the no-config daemon = nil error (reply %q), want the report", reply)
+	}
+	if !strings.Contains(rerr.Error(), "no config file") {
+		t.Errorf("ReloadConfig no-config error %q missing the report", rerr.Error())
+	}
 }
 
 // TestSvc_CorrectNow pins the forced word correction (INST-02, the Q5 word
@@ -307,8 +328,8 @@ func TestSvc_RecoverShim(t *testing.T) {
 	if err == nil {
 		t.Fatalf("panic below Status surfaced no error (reply %q) — the shim must convert it to a *dbus.Error", reply)
 	}
-	var derr dbus.Error
-	if !errors.As(err, &derr) {
+	var derr *dbus.Error
+	if !errors.As(err, &derr) || derr == nil {
 		t.Fatalf("Status error after panic = %T, want *dbus.Error", err)
 	}
 
@@ -377,6 +398,9 @@ func startTestBus(t *testing.T) {
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", strings.TrimSpace(line))
 }
 
+// errCtlOwnerTimeout is the guard corpus's static timeout (err113).
+var errCtlOwnerTimeout = errors.New("control name never gained an owner")
+
 // waitCtlOwner polls the private bus until the control name has an owner —
 // the first Run's export completed. A wait-for-condition poll, never a
 // fixed sleep.
@@ -400,7 +424,7 @@ func waitCtlOwner(t *testing.T, timeout time.Duration) error {
 			}
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout: %s never gained an owner", ctlsvc.BusName)
+			return fmt.Errorf("%w: %s", errCtlOwnerTimeout, ctlsvc.BusName)
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
