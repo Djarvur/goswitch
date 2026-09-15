@@ -24,13 +24,13 @@
 - [ ] **SWCH-01**: Right Shift переключает раскладку EN↔RU; механизм (two-engine регистрация или внутренний флип режима движка) фиксируется ADR фазы решения — прямая запись `gsettings current` рантаймом GNOME игнорируется
 - [ ] **SWCH-02**: Комбо «исправить слово и переключить раскладку» одной комбинацией (дефолт Shift+RightCtrl, переназначается)
 - [ ] **SWCH-03**: Родное GNOME-переключение Super+Space и MRU продолжают работать (goswitch зарегистрирован как input source, индикатор GNOME актуален)
-- [ ] **SWCH-04**: Конфликт тайминга single/double/triple Right Shift разрешён ADR фазы решения (Caramba-подобная схема «свитч на первый тап» — кандидат)
+- [x] **SWCH-04**: Конфликт тайминга single/double/triple Right Shift разрешён ADR фазы решения (Caramba-подобная схема «свитч на первый тап» — кандидат)
 
 ### CONF — Конфигурация
 
-- [ ] **CONF-01**: Все горячие клавиши, таймауты тапов и параметры задаются в YAML-конфиге
+- [x] **CONF-01**: Все горячие клавиши, таймауты тапов и параметры задаются в YAML-конфиге
 - [ ] **CONF-02**: Изменения конфига применяются без перезапуска демона (hot reload)
-- [ ] **CONF-03**: Схема биндингов совместима со свитчером Caramba [wish-уровень: уточняется при обсуждении фазы]
+- [x] **CONF-03**: Схема биндингов совместима со свитчером Caramba [wish-уровень: уточняется при обсуждении фазы]
 
 ### INTEG — Интеграция с окружением
 
@@ -96,10 +96,10 @@
 | SWCH-01 | Phase 3 | Pending |
 | SWCH-02 | Phase 3 | Pending |
 | SWCH-03 | Phase 3 | Pending |
-| SWCH-04 | Phase 3 | Pending |
-| CONF-01 | Phase 3 | Pending |
+| SWCH-04 | Phase 3 | Complete |
+| CONF-01 | Phase 3 | Complete |
 | CONF-02 | Phase 3 | Pending |
-| CONF-03 | Phase 3 | Pending |
+| CONF-03 | Phase 3 | Complete |
 | INTEG-01 | Phase 1 | Complete |
 | INTEG-02 | Phase 1 | Complete |
 | INTEG-03 | Phase 1 | Complete |

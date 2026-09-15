@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: Фразы, выделение, переключение и конфигурация
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-09-15T09:00:08.082Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-09-15T09:33:16.195Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 3 execution started
-state_head: b92987c45654e02eb005eb1ab316eb2838a4d522
+state_head: 04ef4a7b3242b65dab0dc244a50793e1082affa7
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 19
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 3 (Фразы, выделение, переключение и конфигурация) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 3 execution started
 
@@ -76,6 +76,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P06 | 109 min | 2 tasks | 12 files |
 | Phase 02 P07 | 13 min | 2 tasks | 4 files |
 | Phase 03 P01 | 26 min | 2 tasks | 14 files |
+| Phase 03 P02 | 30 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,8 @@ Recent decisions affecting current work:
 - [Phase 03]: [03-01] Mixed-text conversion: anchor = script of the LAST letter (neutrals shift nothing); foreign runs convert independently through Convert reused as-is; homogeneous ranges convert wholesale (уточнение D-22) so matrix v1 stays green
 - [Phase 03]: [03-01] Backspace cap D-27 lives in BuildPlan(backspaceCap): over-cap → LevelNone, actor refuses reason backspace-cap before any ForwardKeyEvent; level 1 (single DeleteSurroundingText) never capped; DefaultBackspaceCap=50 awaits YAML wiring 03-04
 - [Phase 03]: [03-01] Succession D-16→D-23 executed: mixed word converts foreign runs (gfbпривет→паипривет) instead of refusal — word-mixed oracle, matrix v1 row and live case updated; D-24 example resolved toward must-haves (homogeneous wholesale), changed=false surface reserved for selection 03-03, owner confirms at verify gate
+- [Phase 03]: [03-02] Binding.ModMask = held modifiers OR the key's own family bit — the full wire state of the bound key event (shift_r→Shift, shift+ctrl_r→Shift|Control); the plan's combo literal was unsatisfiable under one rule, resolved to wire truth
+- [Phase 03]: [03-02] Config documents must be complete (no defaults overlay in Load, matrix.go strict precedent); Defaults() is the no-flag path only; empty/missing explicit config = visible start refusal; Watcher.Snapshot() config.Config value-copy pinned as the 03-04 consumer contract
 
 ### Pending Todos
 
@@ -152,6 +155,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T09:00:08.019Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-09-15T09:33:16.134Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
