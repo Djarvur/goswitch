@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: Фразы, выделение, переключение и конфигурация
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-09-15T13:24:29.640Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-09-15T13:55:36.318Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 3 execution started
-state_head: 2a3417168def59626779b698daa27e22f3c7f7ed
+state_head: 01b5d5f6fe60b6973ec27e90365316cc5274fe09
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 3 (Фразы, выделение, переключение и конфигурация) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 3 execution started
 
@@ -80,6 +80,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P03 | 45 min | 3 tasks | 15 files |
 | Phase 03 P04 | 63 min | 2 tasks | 14 files |
 | Phase 03 P05 | 99 min | 3 tasks | 10 files |
+| Phase 03 P06 | 22 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,9 @@ Recent decisions affecting current work:
 - [Phase 3]: [03-05] MACR-01 interception per ADR-005: Super+letter delivered to the IME with Mod4 ONLY for shell-unbound letters (Super+a = toggle-application-view here: press delivered, focus stolen — the bound set is read from gsettings, never injected); the Ctrl+letter burst rides the Super RELEASE (a press-time burst reaches the client as Ctrl+Super — held-modifier pollution); consumed-upstream detect on Super-release-without-letter, armed only while enabled
 - [Phase 3]: [03-05] GTK4-Wayland does not apply IBus-forwarded key events on this desktop (GNOME 46): the wire relay demonstrably lands (dbus-monitor oracle in macr-super-letter) but the widget never acts — the same path as the never-live-driven ADR-003 level-2 replay and D-28 Ctrl+V; daemon-side contracts carry the unit corpus, the limitation is WINDOWS-tracked for the owner's verify gate
 - [Phase 3]: [03-05] Per-app identity = the bridge path namespace of the a11y StateChanged(focused) event (/org/gnome/Zenity/a11y/x → org.gnome.Zenity), pure godbus on the a11y bus (A4 closed positive); the observer starts lazily only under a non-empty macr.apps, learns only from focus GAINS of bridge-marked paths, and every failure degrades to the global rule with WARN "app identity unavailable" (errors, never panics)
+- [Phase 3]: [03-06] goswitchctl status wire canon: ONE key=value line is both the human report and the --json source (config_error last, whitespace-flattened; skip reasons dash-flattened) — no properties/signals, the FLAGGED minimal-methods assumption held live
+- [Phase 3]: [03-06] ctlsvc guard is semantic: RequestName carries ReplaceExisting WITHOUT AllowReplacement, so a second live instance answers ErrNotPrimaryOwner (exported — the errors.Is pin lives in ctlsvc_test); the dead connection's name auto-release covers restart; every method opens with recoverMethod (panic -> dbus.Error, daemon lives); a ctl failure never kills the daemon
+- [Phase 3]: [03-06] Correction outcome counters wrap every done/skipped site (skipCorrection/countCorrectionDone; D-24 counts done) — the full reason vocabulary countable from outside; D-32 config status lifts from the optional configStatus seam (Watcher.ConfigPath added)
 
 ### Pending Todos
 
@@ -167,6 +171,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T13:23:43.027Z
-Stopped at: Completed 03-05-PLAN.md
+Last session: 2026-09-15T13:55:36.251Z
+Stopped at: Completed 03-06-PLAN.md
 Resume file: None
