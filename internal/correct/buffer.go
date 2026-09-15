@@ -110,6 +110,22 @@ func (b *Buffer) ReplaceToken(repl []rune) {
 	b.recompute()
 }
 
+// Phrase returns the whole buffer phrase since the last hard reset as a
+// fresh slice — the correction range of the triple tap (CORR-02, D-25: both
+// words and the separators between them, no artificial length cap). It
+// returns nil when the buffer is empty.
+func (b *Buffer) Phrase() []rune {
+	return nil // stub — plan 03-01 tracer RED
+}
+
+// ReplacePhrase swaps the WHOLE buffer range [0, len) for repl — the phrase
+// counterpart of ReplaceToken. recompute() rederives the token coordinates
+// from the replaced contents, so the buffer keeps mirroring the field and a
+// repeated phrase correction converts it back.
+func (b *Buffer) ReplacePhrase(repl []rune) {
+	// stub — plan 03-01 tracer RED
+}
+
 // activeRange returns the [start, end) rune range of the correction target:
 // the current token when it is non-empty, else the last finished one
 // (D-13 — the last word stays correctable after a separator). ok is false

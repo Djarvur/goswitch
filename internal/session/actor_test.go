@@ -581,6 +581,129 @@ func TestActor_DebugCorrectionRecord(t *testing.T) {
 	}
 }
 
+// phraseEN is the tracer phrase of plan 03-01: two SPEC words and the
+// separator between them — the smallest phrase that is MORE than a token.
+const phraseEN = wordEN + " " + wordEN
+
+// phraseRU is the converted expectation of the same phrase: Convert passes
+// the separator identically (CORR-05).
+const phraseRU = wordRU + " " + wordRU
+
+// TestActor_TripleTapCorrectsPhrase pins the phrase tracer end to end
+// (CORR-02, D-25): printable presses feed the buffer with a whole phrase, a
+// triple tap at window expiry starts the same two-phase pipeline as the word
+// — RequireSurroundingText on the sink, nothing destructive yet — and the
+// matching SetSurroundingText resolves it over the WHOLE phrase range:
+// exactly one DeleteSurroundingText(-13,13) (both words and the separator,
+// no tail) and one CommitText("привет привет"), plus the INFO completion
+// record.
+func TestActor_TripleTapCorrectsPhrase(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	pressSpace(a)
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("RequireSurroundingText calls after triple tap = %d, want 1", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Fatalf("two-phase violation: %d deletions before surrounding text, want 0", len(calls))
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Fatalf("two-phase violation: %d commits before surrounding text, want 0", len(texts))
+	}
+
+	line := "abc " + phraseEN
+	a.HandleSurroundingText(line, runeLen(line))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -13, nchars: 13}) {
+		t.Fatalf("deletions = %+v, want exactly one (-13,13) — the whole phrase range", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != phraseRU {
+		t.Fatalf("commits = %q, want exactly one %q", texts, phraseRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_TripleTapEmptyBuffer pins the D-20/D-25 refusal of the phrase
+// path: a triple tap with an empty buffer skips with the empty-buffer reason
+// and makes zero calls of any kind on the sink — the phrase correction never
+// guesses at an empty range.
+func TestActor_TripleTapEmptyBuffer(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	tapShift(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("empty-buffer record missing; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("empty buffer asked for surrounding text %d times, want 0", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("empty buffer deleted %+v, want nothing", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("empty buffer committed %q, want nothing", texts)
+	}
+}
+
+// TestActor_PhraseVerifyMismatch pins the ADR-004 abort discipline of the
+// phrase range (T-03-01-01): a surrounding text whose head does not match the
+// phrase — the client reports a field the buffer does not mirror — skips the
+// correction with the verify-mismatch reason and touches nothing ("abort, не
+// мусорить"), and a late matching push cannot resurrect the round.
+func TestActor_PhraseVerifyMismatch(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	pressSpace(a)
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	mismatch := "abc другойтекст"
+	a.HandleSurroundingText(mismatch, runeLen(mismatch)) // does not end with the phrase
+
+	if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
+		t.Errorf("verify-mismatch record missing; log:\n%s", buf.String())
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("mismatch deleted %+v — abort, не мусорить", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("mismatch committed %q — abort, не мусорить", texts)
+	}
+
+	// A late matching push must not resurrect the correction: the pending
+	// fix is gone with the verdict.
+	line := "abc " + phraseEN
+	a.HandleSurroundingText(line, runeLen(line))
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("late surrounding text deleted %+v after the mismatch verdict", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("late surrounding text committed %q after the mismatch verdict", texts)
+	}
+}
+
 // backSpaceOp is the unified op-log entry of one level-2 Backspace replay:
 // keyval 0xff08, physical keycode 14, no modifiers (RESEARCH Pattern 1 — the
 // wire contract the actor must emit verbatim).

@@ -217,6 +217,55 @@ func TestBuffer_BackspacePop(t *testing.T) {
 	}
 }
 
+// TestBuffer_PhraseReplace pins the phrase-level API of Phase 3 (CORR-02,
+// D-25): Phrase() returns the WHOLE buffer since the last hard reset — both
+// words and the separator, not the token — and ReplacePhrase swaps the entire
+// [0, len) range, after which recompute() has rederived the token from the
+// new contents (the buffer keeps mirroring the field — the same invariant
+// ReplaceToken carries for the word range).
+func TestBuffer_PhraseReplace(t *testing.T) {
+	t.Parallel()
+
+	b := correct.NewBuffer()
+	push(b, wordEN+" "+wordEN)
+	if got := string(b.Phrase()); got != wordEN+" "+wordEN {
+		t.Fatalf("Phrase() = %q, want %q — the whole phrase, not the token", got, wordEN+" "+wordEN)
+	}
+	// The phrase and the token are different views of the same buffer.
+	if got := string(b.Token()); got != wordEN {
+		t.Errorf("Token() = %q, want %q — the token stays the last word", got, wordEN)
+	}
+
+	b.ReplacePhrase([]rune(wordRU + " " + wordRU))
+	if got := string(b.Phrase()); got != wordRU+" "+wordRU {
+		t.Fatalf("Phrase() after ReplacePhrase = %q, want %q", got, wordRU+" "+wordRU)
+	}
+	// recompute invariant: the token is rederived from the replaced phrase —
+	// the trailing word of the new contents, ready for the next correction.
+	if got := string(b.Token()); got != wordRU {
+		t.Errorf("Token() after ReplacePhrase = %q, want %q (recompute from the new runes)", got, wordRU)
+	}
+	if got := string(b.Tail()); got != "" {
+		t.Errorf("Tail() after ReplacePhrase = %q, want empty (no separator after the last word)", got)
+	}
+}
+
+// TestBuffer_PhraseEmpty pins the phrase view of an empty buffer: no phrase,
+// and ReplacePhrase on it is a no-op (the triple-tap empty-buffer refusal is
+// decided by the actor before ever reaching here).
+func TestBuffer_PhraseEmpty(t *testing.T) {
+	t.Parallel()
+
+	b := correct.NewBuffer()
+	if got := b.Phrase(); got != nil {
+		t.Fatalf("Phrase() of an empty buffer = %q, want nil", string(got))
+	}
+	b.ReplacePhrase([]rune(wordRU))
+	if got := b.Phrase(); got != nil {
+		t.Errorf("ReplacePhrase on an empty buffer left Phrase() = %q, want nil", string(got))
+	}
+}
+
 // TestBuffer_ReplaceTokenToggle pins the toggle invariant: after a
 // successful correction the buffer holds the corrected token with the tail
 // preserved, so the buffer keeps equal to the text before the cursor and a
