@@ -86,14 +86,24 @@ type Actor struct {
 	mode        scriptMode // output-script state, EN at start (ADR-001 Option B)
 }
 
-// pendingFix is the state of a correction between the Double decision and
-// the surrounding-text verdict: what to replace (token, its boundary tail),
-// what to commit (the converted token), the range the verification must see
-// at the end of the text (token+tail — exactly what the ladder deletes) and
-// the verify deadline.
+// correctionRange parameterizes the correction pipeline by its range (D-23 —
+// one pipeline, different ranges): the word path (Double) supplies the token,
+// its boundary tail and ReplaceToken; the phrase path (Triple) supplies the
+// whole phrase since the last hard reset, no tail and ReplacePhrase (D-25).
+// The selection branch of later plans joins the same seam.
+type correctionRange struct {
+	token   []rune
+	tail    []rune
+	replace func(converted []rune)
+}
+
+// pendingFix is the state of a correction between the Double/Triple decision
+// and the surrounding-text verdict: the range under correction (token, its
+// boundary tail), what to commit (the converted token), the range the
+// verification must see at the end of the text (token+tail — exactly what the
+// ladder deletes) and the verify deadline.
 type pendingFix struct {
-	token     []rune
-	tail      []rune
+	rng       correctionRange
 	converted []rune
 	match     []rune
 	armed     time.Time
@@ -246,10 +256,11 @@ func (a *Actor) Expiry() {
 
 // ExpiryAt feeds the FSM a window expiry at the given logical time, logs
 // every decision as {"msg":"action","n":N} — the e2e stand greps this exact
-// shape — and dispatches it: Double starts the correction pipeline, Single
-// flips the script mode (plan 02-04), Triple stays deferred to the phrase
-// (02-05). Tests inject the logical time directly (deterministic expiry);
-// the daemon path always goes through Expiry's real clock.
+// shape — and dispatches it: Double starts the word-correction pipeline,
+// Single flips the script mode (plan 02-04), Triple starts the same pipeline
+// over the whole phrase (plan 03-01, CORR-02). Tests inject the logical time
+// directly (deterministic expiry); the daemon path always goes through
+// Expiry's real clock.
 func (a *Actor) ExpiryAt(now time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -263,7 +274,7 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 		case hotkey.Single:
 			a.flipScript()
 		case hotkey.Triple:
-			slog.Debug("action deferred", "n", int(action)) // 02-05 phrase
+			a.startPhraseCorrection()
 		}
 	}
 }
@@ -397,11 +408,37 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 	}
 }
 
-// startCorrection launches a correction: classify the token, convert it,
-// choose the ladder level by the caps bit, then verify against the freshest
-// surrounding text (ADR-004). Every refusal logs its D-20 reason at INFO —
-// without the word's contents — and touches nothing. The caller holds the
-// mutex.
+// startCorrection launches the WORD correction of the Double decision: the
+// range is the token with its boundary tail, exactly as in Phase 2 (D-23).
+// The caller holds the mutex.
+func (a *Actor) startCorrection() {
+	a.startRangeCorrection(correctionRange{
+		token:   a.buf.Token(),
+		tail:    a.buf.Tail(),
+		replace: a.buf.ReplaceToken,
+	})
+}
+
+// startPhraseCorrection launches the PHRASE correction of the Triple
+// decision (CORR-02, D-25): the range is the whole buffer since the last
+// hard reset — words and separators alike, no tail, no artificial length
+// cap. The same pipeline runs over it (D-23). The caller holds the mutex.
+func (a *Actor) startPhraseCorrection() {
+	a.startRangeCorrection(correctionRange{
+		token:   a.buf.Phrase(),
+		replace: a.buf.ReplacePhrase,
+	})
+}
+
+// startRangeCorrection is the ONE correction pipeline of the daemon,
+// parameterized by its range (D-23): classify the range, convert it, choose
+// the ladder level by the caps bit, then verify against the freshest
+// surrounding text (ADR-004 — the verification covers the whole range,
+// token+tail, exactly what the ladder deletes). Every refusal logs its D-20
+// reason at INFO — without the range's contents — and touches nothing. The
+// tracer direction is homogeneous-script: Detect refuses a range with
+// letters of both scripts; the run-wise mixed conversion of Phase 3 Task 2
+// replaces this step for every range. The caller holds the mutex.
 //
 // Transport adaptation (live finding, 2026-09-14): neither GTK nor the
 // mutter input context answers RequireSurroundingText — clients push
@@ -410,21 +447,20 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 // The freshest spontaneous push is therefore checked first (a push after
 // the last keystroke is the freshest state the client can report); only on
 // a miss does the Require round-trip run inside the verifyWait budget.
-func (a *Actor) startCorrection() {
+func (a *Actor) startRangeCorrection(rng correctionRange) {
 	armed := time.Now()
-	token := a.buf.Token()
-	if len(token) == 0 {
+	if len(rng.token) == 0 {
 		slog.Info("correction skipped", "reason", "empty-buffer")
 
 		return
 	}
-	dir, ok := correct.Detect(token)
+	dir, ok := correct.Detect(rng.token)
 	if !ok {
-		slog.Info("correction skipped", "reason", tokenRefusal(token))
+		slog.Info("correction skipped", "reason", tokenRefusal(rng.token))
 
 		return
 	}
-	converted, ok := correct.Convert(token, dir)
+	converted, ok := correct.Convert(rng.token, dir)
 	if !ok {
 		slog.Info("correction skipped", "reason", "convert-failed")
 
@@ -435,23 +471,21 @@ func (a *Actor) startCorrection() {
 
 		return
 	}
-	tail := a.buf.Tail()
-	a.resolvePending() // a second Double supersedes the stale round
+	a.resolvePending() // a second Double/Triple supersedes the stale round
 	a.clearAfter()     // …and the previous round's verify-after with it
 	if a.caps&correct.CapSurroundingText == 0 {
 		// Ladder level 2 (ADR-003): no surrounding text, no verification —
 		// the documented ADR-004 degradation. The buffer plus the explicit
 		// CORR-09 reset triggers are the only synchronization the daemon
 		// has, so the correction executes immediately, never guessed twice.
-		a.executeLevel2(token, tail, converted, armed)
+		a.executeLevel2(rng, converted, armed)
 
 		return
 	}
 	a.pending = &pendingFix{
-		token:     token,
-		tail:      tail,
+		rng:       rng,
 		converted: converted,
-		match:     concatRunes(token, tail),
+		match:     concatRunes(rng.token, rng.tail),
 		armed:     armed,
 	}
 	if correct.MatchesSuffix(a.surr, a.pending.match) {
@@ -465,7 +499,7 @@ func (a *Actor) startCorrection() {
 
 // executeCorrection runs the level-1 ladder plan of the settled pending fix
 // — one DeleteSurroundingText exactly over the token+tail range, one commit
-// of the converted token plus the tail (CORR-07) — replaces the token in
+// of the converted token plus the tail (CORR-07) — replaces the range in
 // the buffer so a repeated correction converts back, and arms the
 // verify-after round: the deletion is ack-less on 1.5.29, so the correction
 // itself asks for the surrounding text back and checks the suffix
@@ -476,12 +510,12 @@ func (a *Actor) executeCorrection() {
 	if p.deadline != nil {
 		p.deadline.Stop()
 	}
-	plan := correct.BuildPlan(p.token, p.tail, p.converted, a.caps)
+	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps)
 	a.eng.DeleteSurroundingText(plan.Offset, plan.NChars)
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
-	a.buf.ReplaceToken(p.converted) // the buffer keeps mirroring the field — repeat converts back
-	logCorrectionDone(plan.Level, p.token, p.converted, time.Since(p.armed))
-	a.armAfterVerify(p.converted, p.tail)
+	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
+	logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
+	a.armAfterVerify(p.converted, p.rng.tail)
 }
 
 // executeLevel2 runs the ladder's Backspace level on a client without the
@@ -490,14 +524,14 @@ func (a *Actor) executeCorrection() {
 // included — followed by ONE commit of the converted token plus the tail.
 // The burst→commit order is the wire contract (research A4: the daemon
 // preserves it for every client). The caller holds the mutex.
-func (a *Actor) executeLevel2(token, tail, converted []rune, armed time.Time) {
-	plan := correct.BuildPlan(token, tail, converted, a.caps)
+func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time) {
+	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps)
 	for range plan.Backspaces {
 		a.eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
 	}
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
-	a.buf.ReplaceToken(converted)
-	logCorrectionDone(plan.Level, token, converted, time.Since(armed))
+	rng.replace(converted)
+	logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
 }
 
 // logCorrectionDone writes the completion pair of one ladder execution: the

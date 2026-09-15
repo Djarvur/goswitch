@@ -115,15 +115,22 @@ func (b *Buffer) ReplaceToken(repl []rune) {
 // words and the separators between them, no artificial length cap). It
 // returns nil when the buffer is empty.
 func (b *Buffer) Phrase() []rune {
-	return nil // stub — plan 03-01 tracer RED
+	return slices.Clone(b.runes)
 }
 
 // ReplacePhrase swaps the WHOLE buffer range [0, len) for repl — the phrase
-// counterpart of ReplaceToken. recompute() rederives the token coordinates
-// from the replaced contents, so the buffer keeps mirroring the field and a
-// repeated phrase correction converts it back.
+// counterpart of ReplaceToken (CORR-02, D-25). recompute() rederives the
+// token coordinates from the replaced contents, so the buffer keeps
+// mirroring the field and a repeated phrase correction converts it back.
+// An empty buffer is a no-op: there is no range the field mirrors.
 func (b *Buffer) ReplacePhrase(repl []rune) {
-	// stub — plan 03-01 tracer RED
+	if len(b.runes) == 0 {
+		return
+	}
+	next := make([]rune, 0, len(repl))
+	next = append(next, repl...)
+	b.runes = next
+	b.recompute()
 }
 
 // activeRange returns the [start, end) rune range of the correction target:
