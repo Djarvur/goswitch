@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: Фразы, выделение, переключение и конфигурация
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-09-15T10:21:31.669Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-09-15T11:37:55.683Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 3 execution started
-state_head: dbb5816910bb55df0a7f136796f61a651cb7f691
+state_head: 20b4f74099eb6250063351c786e9ff2058100e24
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 19
-  completed_plans: 15
+  completed_plans: 16
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 3 (Фразы, выделение, переключение и конфигурация) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 3 execution started
 
@@ -78,6 +78,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P01 | 26 min | 2 tasks | 14 files |
 | Phase 03 P02 | 30 min | 3 tasks | 12 files |
 | Phase 03 P03 | 45 min | 3 tasks | 15 files |
+| Phase 03 P04 | 63 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -138,6 +139,9 @@ Recent decisions affecting current work:
 - [Phase 03]: [03-03] Selection takes precedence over the word path at Double; the buffer HardResets after a selection replacement (a selection may span text the buffer never mirrored); ladder offset signed by the cursor's side, nchars exactly the range — CORR-03/D-30, Pitfall 6: the range lives in the client push, not the buffer; BuildPlan's token+tail arithmetic cannot express a range right of the cursor
 - [Phase 03]: [03-03] Spike verdicts (A1/A2/A5 closed live): zenity never pushes a selection anchor (D-30 degradation — word path); GTE pushes cursor=0/anchor=len under ctrl+a; chromium pushes cursor=len/anchor=0 and a commit REPLACES the active selection; canonical select-all name: ctrl+a — Input for the matrix v2 expect_sel fields (03-07); the spike pins the actual, never the assumption (02-05 ladder-chromium discipline)
 - [Phase 03]: [03-03] wl-copy gets NO pipes in the exec runner: its forked background grandchild holds piped stdout write-ends open and deadlocks cmd.Run (live finding — full-watchdog hang on the first select-clipboard run); select-clipboard runs the plan's unreachable-primary fallback form — Fork-shaped binaries need the no-pipes subprocess shape; every anchor surface on this desktop applies the primary rung, so the daemon-side rung has no live driver — the -config wiring and round-trip mechanics are pinned instead
+- [Phase 03]: [03-04] Press-side binding match: a key PRESS's IBus state word carries only the modifiers held before the key (Control_R press under Shift = mods 0x11; the own Control bit rides the release) — the combo matches Binding.ModMask with the key's family bit cleared via hotkey.FamilyMask; the plan's literal exact-mask predicate was unsatisfiable on the wire — Live trace 2026-09-15; 03-02 explicitly deferred the matching predicate to 03-04
+- [Phase 03]: [03-04] SetOptions → snapshot succession: SetOptions stays the no-config/test surface; once a config source is attached, applySnapshot overwrites options/combo per event — the attached source has priority (one Snapshot() read per event, value-folded, Pitfall-8: armed timers keep their deadline) — CONF-02 live consumption; Pattern 2 of the phase research
+- [Phase 03]: [03-04] Super+Space is NOT injectable on ydotool 0.1.8 (every name spelling falls back to its first physical letter — live finding; the D-01 log's own verdict for ydotool super+space was not-switched); super-space-alive pins the D-34 working interpretation via the bare Super key + name-owner + post-chord correction; alt+Shift_L alternate removed — it can genuinely switch the session's input source — A5/Q-marker resolution risk closed by the case's live probe
 
 ### Pending Todos
 
@@ -159,6 +163,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T10:21:22.898Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-09-15T11:37:55.616Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None
