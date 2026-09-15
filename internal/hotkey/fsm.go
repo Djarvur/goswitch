@@ -48,18 +48,22 @@ type Event = any
 // FSM is the Right Shift tap state machine: pure and deterministic — no
 // goroutines, no real clock, no channels. The adapter feeds key events with
 // injected timestamps and re-enters TimerExpired when its window timer
-// fires.
+// fires. The series key is configurable through the constructor (D-35:
+// mechanics only — the corpus of fsm_test.go is the executed ADR-002 and
+// its expectations are untouchable).
 type FSM struct {
-	window  time.Duration
-	taps    int
-	held    bool
-	sawKey  bool
-	lastTap time.Duration
+	window    time.Duration
+	tapKeyval uint32
+	taps      int
+	held      bool
+	sawKey    bool
+	lastTap   time.Duration
 }
 
-// NewFSM returns an FSM with the given tap disambiguation window.
-func NewFSM(window time.Duration) *FSM {
-	return &FSM{window: window}
+// NewFSM returns an FSM deciding tap series of the given key inside the
+// given disambiguation window.
+func NewFSM(window time.Duration, tapKeyval uint32) *FSM {
+	return &FSM{window: window, tapKeyval: tapKeyval}
 }
 
 // Feed advances the machine by one event at the given injected time and

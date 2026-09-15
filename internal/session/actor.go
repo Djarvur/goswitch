@@ -93,10 +93,13 @@ type Actor struct {
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
 // D-27 Backspace series cap and the D-28 opt-in clipboard rung switch —
-// OFF at the zero value, which is the default configuration.
+// OFF at the zero value, which is the default configuration — plus the
+// D-36 word-layout combo binding (the zero Binding selects the built-in
+// Shift+Control_R default).
 type Options struct {
-	BackspaceCap  int
-	ClipboardRung bool
+	BackspaceCap    int
+	ClipboardRung   bool
+	WordLayoutCombo hotkey.Binding
 }
 
 // selectionState is the selection half of the latest surrounding-text push
@@ -171,7 +174,7 @@ type pendingAfter struct {
 // disambiguation window (D-05). The daemon passes hotkey.DefaultWindow.
 func NewActor(window time.Duration) *Actor {
 	return &Actor{
-		fsm:    hotkey.NewFSM(window),
+		fsm:    hotkey.NewFSM(window, hotkey.KeyvalShiftR),
 		window: window,
 		start:  time.Now(),
 		buf:    correct.NewBuffer(),

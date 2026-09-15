@@ -1332,6 +1332,198 @@ func TestActor_PhraseMixedCorrects(t *testing.T) {
 	}
 }
 
+// Combo corpus (plan 03-04, SWCH-02/D-36): a press of the configured combo
+// key under its configured modifiers — the default Control_R under
+// Shift+Control (the 03-02 wire-truth ModMask: the full state word of the
+// bound key's event) — corrects the last word through the double-tap
+// pipeline and THEN flips the script mode, in that fixed order (D-36: the
+// SPEC action name is "correct the word AND switch the layout"). The combo
+// kills the tap series with a deliberate Reset (Pitfall 4: the pre-combo
+// FSM silently swallowed the gesture as modifier use) and never feeds the
+// buffer.
+
+// pressComboDefault feeds the default combo shape: Shift held (press only,
+// never released), then a Control_R press carrying Shift+Control in the
+// state word plus the NumLock latch — the latch-tolerant mask compare of
+// the 02-04 precedent.
+func pressComboDefault(a *session.Actor) {
+	const numLockLatch = 0x10 // IBUS_MOD2_MASK: latched NumLock (live-observed)
+	a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalShiftR})
+	a.HandleKey(engine.EngineEvent{
+		Keyval: hotkey.KeyvalCtrlR,
+		Mods:   engine.MaskShift | engine.MaskControl | numLockLatch,
+	})
+}
+
+// TestActor_ComboWordThenFlip pins the D-36 contract end to end on the fake
+// sink: the combo launches the word pipeline (Require, nothing destructive,
+// settle on the surrounding push: one delete over the token range and one
+// commit of the converted word), the mode flip follows AFTER the settled
+// completion record — and NO tap-series decision ever fires (the series
+// died with the deliberate Reset, Pitfall 4).
+func TestActor_ComboWordThenFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	pressComboDefault(a)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("combo require calls = %d, want 1 (the pre-correction round)", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Fatalf("two-phase violation: %d deletions before surrounding text, want 0", len(calls))
+	}
+
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
+		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the word range of the Double semantics", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"combo","kind":"word-layout"`) {
+		t.Errorf("combo entry record missing; log:\n%s", logged)
+	}
+	if got := countActions(buf); got != 0 {
+		t.Errorf("tap-series decisions after a combo = %d, want 0 — the series died with the Reset (Pitfall 4)", got)
+	}
+	// D-36 order pin: the flip's mode record lands strictly AFTER the word
+	// pipeline's settled completion record.
+	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iDone < 0 || iMode < 0 {
+		t.Fatalf("completion (%d) or mode (%d) record missing; log:\n%s", iDone, iMode, logged)
+	}
+	if iDone > iMode {
+		t.Errorf("mode flip preceded the settled word correction (done@%d > mode@%d) — D-36 order violated", iDone, iMode)
+	}
+}
+
+// TestActor_ComboEmptyBufferStillFlips pins the combo's discretion on an
+// empty buffer: the word pipeline refuses with empty-buffer, and the flip
+// STILL fires — switching is the primary intent when there is no word —
+// strictly AFTER the refusal record (the D-36 order holds on both
+// outcomes).
+func TestActor_ComboEmptyBufferStillFlips(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	pressComboDefault(a)
+
+	logged := buf.String()
+	iRefusal := strings.Index(logged, `"reason":"empty-buffer"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iRefusal < 0 || iMode < 0 {
+		t.Fatalf("empty-buffer refusal (%d) or mode flip (%d) missing; log:\n%s", iRefusal, iMode, logged)
+	}
+	if iRefusal > iMode {
+		t.Errorf("flip preceded the word refusal (refusal@%d > mode@%d) — D-36 order violated", iRefusal, iMode)
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("empty-buffer combo asked for surrounding text %d times, want 0", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("empty-buffer combo deleted %+v, want nothing", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("empty-buffer combo committed %q, want nothing", texts)
+	}
+}
+
+// TestActor_ComboConfigurableBinding pins the D-31 renavigation of the
+// combo: with word_layout_combo "alt+ctrl_l" fed through Options (the
+// config string resolved by the same hotkey.ParseBinding the schema uses),
+// the combo fires on a Ctrl_L press under Alt — and the DEFAULT
+// Shift+Control_R shape no longer does.
+func TestActor_ComboConfigurableBinding(t *testing.T) {
+	t.Run("rebound combo fires", func(t *testing.T) {
+		buf := captureLogs(t)
+		binding, err := hotkey.ParseBinding("alt+ctrl_l")
+		if err != nil {
+			t.Fatalf("parse alt+ctrl_l: %v", err)
+		}
+		a, sink := wiredActor()
+		a.SetOptions(session.Options{WordLayoutCombo: binding})
+
+		typeWord(a, wordEN)
+		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalAltL}) // Alt held
+		a.HandleKey(engine.EngineEvent{
+			Keyval: hotkey.KeyvalCtrlL,
+			Mods:   engine.MaskMod1 | engine.MaskControl,
+		})
+
+		if !strings.Contains(buf.String(), `"msg":"combo","kind":"word-layout"`) {
+			t.Errorf("rebound combo record missing; log:\n%s", buf.String())
+		}
+		if got := sink.requireCount(); got != 1 {
+			t.Fatalf("rebound combo require calls = %d, want 1", got)
+		}
+		line := "abc " + wordEN
+		a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+		if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+			t.Fatalf("rebound combo commits = %q, want one %q", texts, wordRU)
+		}
+	})
+
+	t.Run("default shape no longer fires", func(t *testing.T) {
+		buf := captureLogs(t)
+		binding, err := hotkey.ParseBinding("alt+ctrl_l")
+		if err != nil {
+			t.Fatalf("parse alt+ctrl_l: %v", err)
+		}
+		a, sink := wiredActor()
+		a.SetOptions(session.Options{WordLayoutCombo: binding})
+
+		pressComboDefault(a)
+
+		if strings.Contains(buf.String(), `"msg":"combo"`) {
+			t.Errorf("default combo fired under a rebound binding; log:\n%s", buf.String())
+		}
+		if strings.Contains(buf.String(), `"msg":"mode"`) {
+			t.Errorf("default combo flipped the mode under a rebound binding; log:\n%s", buf.String())
+		}
+		if got := sink.requireCount(); got != 0 {
+			t.Errorf("default combo started the pipeline %d times under a rebound binding, want 0", got)
+		}
+	})
+}
+
+// TestActor_ComboDoesNotFeedBuffer pins the comboMask invariant against the
+// new branch: a Super-modified letter and the combo key press itself put no
+// rune in the field, so neither may feed the buffer — a double tap after
+// them finds it empty (the combo fired on the empty buffer and flipped the
+// mode; the empty-buffer skip below is the buffer oracle either way).
+func TestActor_ComboDoesNotFeedBuffer(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4})
+	a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4, Release: true})
+	pressComboDefault(a) // the combo key press itself must not feed the buffer
+
+	if got := sink.requireCount(); got != 0 {
+		t.Fatalf("combo-key presses started verification %d times, want 0 — buffer stayed empty", got)
+	}
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("empty-buffer record missing — a combo-path key fed the buffer; log:\n%s", buf.String())
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("commits = %q, want none — combo-path keys never print", texts)
+	}
+}
+
 // Selection-correction corpus (plan 03-03, D-30): the range is the
 // selection the client reported — [min(cursor,anchor), max(cursor,anchor))
 // of the last surrounding push — in EITHER geometric direction (Pitfall 6),

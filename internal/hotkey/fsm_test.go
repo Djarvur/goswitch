@@ -51,7 +51,7 @@ func actionsEqual(got, want []hotkey.Action) bool {
 func TestFSM_SingleAtWindowExpiry(t *testing.T) {
 	t.Parallel()
 
-	f := hotkey.NewFSM(hotkey.DefaultWindow)
+	f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 	if acts := tap(f, 0); len(acts) != 0 {
 		t.Fatalf("tap at 0 returned %v, want no action until the window expires", acts)
 	}
@@ -71,7 +71,7 @@ func TestFSM_DoubleAndTriple(t *testing.T) {
 
 	t.Run("two taps gap 299ms", func(t *testing.T) {
 		t.Parallel()
-		f := hotkey.NewFSM(hotkey.DefaultWindow)
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 		tap(f, 0)
 		tap(f, gapJustInside)
 		acts := f.Feed(hotkey.TimerExpired{}, gapJustInside+hotkey.DefaultWindow)
@@ -82,7 +82,7 @@ func TestFSM_DoubleAndTriple(t *testing.T) {
 
 	t.Run("two taps gap 300ms", func(t *testing.T) {
 		t.Parallel()
-		f := hotkey.NewFSM(hotkey.DefaultWindow)
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 		tap(f, 0)
 		tap(f, gapAtEdge)
 		acts := f.Feed(hotkey.TimerExpired{}, gapAtEdge+hotkey.DefaultWindow)
@@ -93,7 +93,7 @@ func TestFSM_DoubleAndTriple(t *testing.T) {
 
 	t.Run("three taps", func(t *testing.T) {
 		t.Parallel()
-		f := hotkey.NewFSM(hotkey.DefaultWindow)
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 		tap(f, 0)
 		tap(f, letterAt)
 		tap(f, 2*letterAt)
@@ -112,7 +112,7 @@ func TestFSM_WindowEdges(t *testing.T) {
 
 	t.Run("gap 301ms starts a new series", func(t *testing.T) {
 		t.Parallel()
-		f := hotkey.NewFSM(hotkey.DefaultWindow)
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 		tap(f, 0)
 		tap(f, gapJustOutside)
 		acts := f.Feed(hotkey.TimerExpired{}, gapJustOutside+hotkey.DefaultWindow)
@@ -123,7 +123,7 @@ func TestFSM_WindowEdges(t *testing.T) {
 
 	t.Run("gap 299ms continues the series", func(t *testing.T) {
 		t.Parallel()
-		f := hotkey.NewFSM(hotkey.DefaultWindow)
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 		tap(f, 0)
 		tap(f, gapJustInside)
 		acts := f.Feed(hotkey.TimerExpired{}, gapJustInside+hotkey.DefaultWindow)
@@ -139,7 +139,7 @@ func TestFSM_WindowEdges(t *testing.T) {
 func TestFSM_ModifierUse(t *testing.T) {
 	t.Parallel()
 
-	f := hotkey.NewFSM(hotkey.DefaultWindow)
+	f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 	f.Feed(hotkey.KeyPress{Keyval: hotkey.KeyvalShiftR}, 0)
 	if acts := pressLetter(f, letterAt); len(acts) != 0 {
 		t.Fatalf("letter press returned %v, want no action", acts)
@@ -158,7 +158,7 @@ func TestFSM_ModifierUse(t *testing.T) {
 func TestFSM_InterveningKeyCancels(t *testing.T) {
 	t.Parallel()
 
-	f := hotkey.NewFSM(hotkey.DefaultWindow)
+	f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 	tap(f, 0)
 	pressLetter(f, letterAt)
 	tap(f, 2*secondTapAt)
@@ -177,7 +177,7 @@ func TestFSM_InterveningKeyCancels(t *testing.T) {
 func TestFSM_FourthTapStaysAtThree(t *testing.T) {
 	t.Parallel()
 
-	f := hotkey.NewFSM(hotkey.DefaultWindow)
+	f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 	tap(f, 0)
 	tap(f, letterAt)
 	tap(f, 2*letterAt)
@@ -200,7 +200,7 @@ func TestFSM_FocusOutDisarms(t *testing.T) {
 
 	t.Run("reset inside series", func(t *testing.T) {
 		t.Parallel()
-		f := hotkey.NewFSM(hotkey.DefaultWindow)
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 		tap(f, 0)
 		if acts := f.Feed(hotkey.Reset{}, letterAt); len(acts) != 0 {
 			t.Fatalf("Reset returned %v, want no action", acts)
@@ -212,7 +212,7 @@ func TestFSM_FocusOutDisarms(t *testing.T) {
 
 	t.Run("press held across reset", func(t *testing.T) {
 		t.Parallel()
-		f := hotkey.NewFSM(hotkey.DefaultWindow)
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 		f.Feed(hotkey.KeyPress{Keyval: hotkey.KeyvalShiftR}, 0)
 		f.Feed(hotkey.Reset{}, letterAt)
 		if acts := f.Feed(hotkey.KeyRelease{Keyval: hotkey.KeyvalShiftR}, 2*letterAt); len(acts) != 0 {
@@ -229,7 +229,7 @@ func TestFSM_FocusOutDisarms(t *testing.T) {
 func TestFSM_ReleaseWithoutPress(t *testing.T) {
 	t.Parallel()
 
-	f := hotkey.NewFSM(hotkey.DefaultWindow)
+	f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 	if acts := f.Feed(hotkey.KeyRelease{Keyval: hotkey.KeyvalShiftR}, 0); len(acts) != 0 {
 		t.Fatalf("release without press returned %v, want no action", acts)
 	}
@@ -251,7 +251,7 @@ func TestFSM_ReleaseWithoutPress(t *testing.T) {
 func TestFSM_ShiftGlitch(t *testing.T) {
 	t.Parallel()
 
-	f := hotkey.NewFSM(hotkey.DefaultWindow)
+	f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 	f.Feed(hotkey.KeyPress{Keyval: hotkey.KeyvalShiftR}, 0)
 	pressLetter(f, glitchAt)
 	if acts := f.Feed(hotkey.KeyRelease{Keyval: hotkey.KeyvalShiftR}, 2*glitchAt); len(acts) != 0 {
@@ -274,7 +274,7 @@ func TestFSM_ShiftGlitch(t *testing.T) {
 func TestFSM_BurstOfTen(t *testing.T) {
 	t.Parallel()
 
-	f := hotkey.NewFSM(hotkey.DefaultWindow)
+	f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
 	step := 30 * time.Millisecond
 	var lastTap time.Duration
 	for i := range 10 {
@@ -299,4 +299,66 @@ func TestFSM_DefaultWindow(t *testing.T) {
 	if hotkey.DefaultWindow != 300*time.Millisecond {
 		t.Errorf("DefaultWindow = %v, want 300ms", hotkey.DefaultWindow)
 	}
+}
+
+// keyvalShiftL is the IBus keyval of the left Shift key
+// (/usr/include/ibus-1.0/ibuskeysyms.h:188 — verified verbatim), the
+// alternate series key of the configurable-tap corpus.
+const keyvalShiftL = 0xffe1
+
+// tapKey feeds a full press/release pair of the given keyval at time t.
+func tapKey(f *hotkey.FSM, keyval uint32, t time.Duration) []hotkey.Action {
+	f.Feed(hotkey.KeyPress{Keyval: keyval}, t)
+
+	return f.Feed(hotkey.KeyRelease{Keyval: keyval}, t)
+}
+
+// TestFSM_ConfigurableTapKey pins the D-35 constructor seam: the series key
+// is the constructor's tapKeyval argument, not a hardcoded constant — a
+// Shift_L-configured machine decides Single/Double on Shift_L series and
+// stays silent on Shift_R, while the corpus keyval (KeyvalShiftR, the
+// documented default) keeps deciding exactly as before.
+func TestFSM_ConfigurableTapKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Shift_L series decides", func(t *testing.T) {
+		t.Parallel()
+		f := hotkey.NewFSM(hotkey.DefaultWindow, keyvalShiftL)
+		acts := tapKey(f, keyvalShiftL, 0)
+		if len(acts) != 0 {
+			t.Fatalf("first Shift_L tap returned %v, want no action until the window expires", acts)
+		}
+		tapKey(f, keyvalShiftL, gapJustInside)
+		acts = f.Feed(hotkey.TimerExpired{}, gapJustInside+hotkey.DefaultWindow)
+		if !actionsEqual(acts, []hotkey.Action{hotkey.Double}) {
+			t.Errorf("TimerExpired after two Shift_L taps = %v, want [Double]", acts)
+		}
+	})
+
+	t.Run("Shift_R series stays silent on a Shift_L machine", func(t *testing.T) {
+		t.Parallel()
+		f := hotkey.NewFSM(hotkey.DefaultWindow, keyvalShiftL)
+		tapKey(f, hotkey.KeyvalShiftR, 0)
+		tapKey(f, hotkey.KeyvalShiftR, gapJustInside)
+		acts := f.Feed(hotkey.TimerExpired{}, 2*hotkey.DefaultWindow)
+		if len(acts) != 0 {
+			t.Errorf("TimerExpired after Shift_R taps on a Shift_L machine = %v, want none", acts)
+		}
+	})
+
+	t.Run("corpus keyval keeps its semantics", func(t *testing.T) {
+		t.Parallel()
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
+		tapKey(f, hotkey.KeyvalShiftR, 0)
+		acts := f.Feed(hotkey.TimerExpired{}, hotkey.DefaultWindow)
+		if !actionsEqual(acts, []hotkey.Action{hotkey.Single}) {
+			t.Errorf("TimerExpired after one Shift_R tap = %v, want [Single]", acts)
+		}
+		tapKey(f, hotkey.KeyvalShiftR, gapJustInside)
+		tapKey(f, hotkey.KeyvalShiftR, 2*gapJustInside)
+		acts = f.Feed(hotkey.TimerExpired{}, 2*gapJustInside+hotkey.DefaultWindow)
+		if !actionsEqual(acts, []hotkey.Action{hotkey.Triple}) {
+			t.Errorf("TimerExpired after three Shift_R taps = %v, want [Triple]", acts)
+		}
+	})
 }
