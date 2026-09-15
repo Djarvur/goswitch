@@ -2561,3 +2561,175 @@ func TestActor_MACRRULayoutStillIntercepts(t *testing.T) {
 		t.Fatalf("RU mode committed %q on an intercepted chord — the branch order is violated", texts)
 	}
 }
+
+// Per-app MACR corpus (plan 03-05 Task 3, ADR-005 a): the interception
+// scope of a non-empty macr.apps list is the focused application — the
+// a11y identity source decides, and its FAILURE degrades to the global
+// rule with a WARN (the ADR-005 ladder: the observer's absence never
+// switches the layer off). The observer starts lazily — only when a
+// non-empty list is in force.
+
+// fakeAppid is the identity-source test double: a fixed answer or a fixed
+// failure.
+type fakeAppid struct {
+	app string
+	err error
+}
+
+// FocusedApp answers the double's programmed identity.
+func (f fakeAppid) FocusedApp() (string, error) {
+	return f.app, f.err
+}
+
+// TestActor_MACRPerAppMatch pins the scoping itself: with apps
+// ["org.gnome.gnome-text-editor"] in force, a focused app IN the list is
+// intercepted and one OUTSIDE it transits — the global rule is OFF while
+// the per-app list scopes the layer.
+func TestActor_MACRPerAppMatch(t *testing.T) {
+	t.Run("focused app in the list intercepts", func(t *testing.T) {
+		a, sink := wiredActor()
+		a.UseAppid(fakeAppid{app: "org.gnome.gnome-text-editor"})
+		a.SetOptions(session.Options{
+			MACREnabled: true,
+			MACRLetters: map[rune]bool{'a': true},
+			MACRApps:    []string{"org.gnome.gnome-text-editor"},
+		})
+
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
+			t.Fatalf("super+a with the focused app IN the list was not consumed")
+		}
+		releaseSuper(a)
+		if got := len(sink.forwardCalls()); got != 4 {
+			t.Errorf("in-list burst = %d events, want the 4-event shape", got)
+		}
+	})
+
+	t.Run("focused app outside the list transits", func(t *testing.T) {
+		a, sink := wiredActor()
+		a.UseAppid(fakeAppid{app: "org.gnome.Zenity"})
+		a.SetOptions(session.Options{
+			MACREnabled: true,
+			MACRLetters: map[rune]bool{'a': true},
+			MACRApps:    []string{"org.gnome.gnome-text-editor"},
+		})
+
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); consumed {
+			t.Fatalf("super+a with the focused app OUTSIDE the list was consumed — the list scopes the layer")
+		}
+		releaseSuper(a)
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Errorf("out-of-list burst = %d events, want none", got)
+		}
+	})
+}
+
+// TestActor_MACRAppidDegradation pins the ladder's key rung (ADR-005): an
+// identity source that answers with an error does NOT switch the layer
+// off — the interception falls back to the GLOBAL rule and the failure is
+// visible as the WARN "app identity unavailable" (a documented
+// degradation, never a silent one).
+func TestActor_MACRAppidDegradation(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{err: errors.New("a11y bus dead")})
+	a.SetOptions(session.Options{
+		MACREnabled: true,
+		MACRLetters: map[rune]bool{'a': true},
+		MACRApps:    []string{"org.gnome.gnome-text-editor"},
+	})
+
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+	if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
+		t.Fatalf("super+a under a failed identity source was not consumed — degradation is the GLOBAL rule, not off")
+	}
+	releaseSuper(a)
+	if got := len(sink.forwardCalls()); got != 4 {
+		t.Errorf("degraded-mode burst = %d events, want the 4-event shape (the global rule)", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"app identity unavailable"`) {
+		t.Errorf("degradation WARN missing; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_MACRGlobalWhenNoApps pins the lazy start (ADR-005 a): with no
+// per-app list the observer NEVER starts — zero a11y connections, the
+// global rule decides alone; a non-empty list starts it exactly once; a
+// start failure degrades with the WARN and keeps the global rule.
+func TestActor_MACRGlobalWhenNoApps(t *testing.T) {
+	t.Run("empty apps never start the observer", func(t *testing.T) {
+		a, sink := wiredActor()
+		starts := 0
+		a.UseAppidStarter(func() (session.AppidSource, error) {
+			starts++
+
+			return fakeAppid{app: "never"}, nil
+		})
+		a.SetOptions(session.Options{
+			MACREnabled: true,
+			MACRLetters: map[rune]bool{'a': true},
+		})
+
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
+			t.Fatalf("super+a under the global rule was not consumed")
+		}
+		releaseSuper(a)
+		if starts != 0 {
+			t.Errorf("observer started %d times with an empty app list, want 0 — the a11y bus is per-app-only", starts)
+		}
+		if got := len(sink.forwardCalls()); got != 4 {
+			t.Errorf("global burst = %d events, want the 4-event shape", got)
+		}
+	})
+
+	t.Run("non-empty apps start the observer exactly once", func(t *testing.T) {
+		a, _ := wiredActor()
+		starts := 0
+		a.UseAppidStarter(func() (session.AppidSource, error) {
+			starts++
+
+			return fakeAppid{app: "org.gnome.Zenity"}, nil
+		})
+
+		a.SetOptions(session.Options{
+			MACREnabled: true,
+			MACRLetters: map[rune]bool{'a': true},
+			MACRApps:    []string{"org.gnome.Zenity"},
+		})
+		if starts != 1 {
+			t.Fatalf("observer started %d times on the first non-empty list, want 1", starts)
+		}
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('x')})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('x'), Release: true})
+		if starts != 1 {
+			t.Errorf("observer started %d times after further events, want still 1 (one lazy start)", starts)
+		}
+	})
+
+	t.Run("start failure degrades to the global rule with a WARN", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		a.UseAppidStarter(func() (session.AppidSource, error) {
+			return nil, errors.New("no a11y bus")
+		})
+		a.SetOptions(session.Options{
+			MACREnabled: true,
+			MACRLetters: map[rune]bool{'a': true},
+			MACRApps:    []string{"org.gnome.Zenity"},
+		})
+
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
+			t.Fatalf("super+a after a failed observer start was not consumed — the global rule stays in force")
+		}
+		releaseSuper(a)
+		if got := len(sink.forwardCalls()); got != 4 {
+			t.Errorf("failed-start burst = %d events, want the 4-event shape (the global rule)", got)
+		}
+		if !strings.Contains(buf.String(), `"msg":"app identity unavailable"`) {
+			t.Errorf("failed-start WARN missing; log:\n%s", buf.String())
+		}
+	})
+}

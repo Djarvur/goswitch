@@ -101,13 +101,17 @@ type Actor struct {
 	// consumed-upstream detect (b.2) with its letter witness, the pending
 	// remap awaiting the hold's end, the layer's counters (the goswitchctl
 	// status surface of 03-06) and the letters parse cache of the snapshot
-	// consumption.
+	// consumption. The per-app identity source (ADR-005 a) starts lazily —
+	// only once a non-empty macr.apps list is in force.
 	macrSuperHeld     bool
 	macrSawLetter     bool
 	macrPendingKeyval uint32
 	macrIntercepted   int
 	macrConsumed      int
 	macrLettersName   string
+	appid             AppidSource
+	appidStarted      bool
+	startAppid        func() (AppidSource, error)
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -248,6 +252,14 @@ func (a *Actor) AttachConfig(src interface{ Snapshot() config.Config }) {
 	a.cfgSrc = src
 }
 
+// AppidSource is the per-app identity seam of the MACR layer (ADR-005 a):
+// FocusedApp returns the a11y identity of the focused application — the
+// live observer of internal/appid or a test double. Defined at the point
+// of use; the interface travels with the consumer.
+type AppidSource interface {
+	FocusedApp() (string, error)
+}
+
 // UseClipboard replaces the actor's clipboard client — the test seam of the
 // D-28 rung (the daemon keeps the production wl-clipboard client NewActor
 // wired).
@@ -256,6 +268,26 @@ func (a *Actor) UseClipboard(c *clipboard.Clipboard) {
 	defer a.mu.Unlock()
 
 	a.clip = c
+}
+
+// UseAppid installs a prepared identity source — the wiring/test seam of
+// the per-app decision (the lazy start never runs afterwards).
+func (a *Actor) UseAppid(src AppidSource) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.appid = src
+	a.appidStarted = true
+}
+
+// UseAppidStarter swaps the lazy-start seam of the per-app observer (the
+// production starter dials the a11y bus; the tests install counters and
+// failures).
+func (a *Actor) UseAppidStarter(fn func() (AppidSource, error)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.startAppid = fn
 }
 
 // MACRCounters snapshots the Super→Ctrl layer's counters — the goswitchctl
