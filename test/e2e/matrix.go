@@ -613,7 +613,12 @@ func goswitchNameOwner(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("dial ibus bus: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
-	if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Getpid()))}); err != nil {
+	// WR-03: EXTERNAL's initial response is the decimal UID of the socket
+	// peer — the same discipline as the three other dial sites
+	// (engine/conn.go, internal/appid, preflight). The PID only worked
+	// because ibus-daemon authorizes on SO_PEERCRED and tolerates the
+	// claimed identity.
+	if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Getuid()))}); err != nil {
 		return "", fmt.Errorf("dbus auth: %w", err)
 	}
 	if err := conn.Hello(); err != nil {
