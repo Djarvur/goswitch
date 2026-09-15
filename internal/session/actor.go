@@ -230,14 +230,18 @@ type pendingFix struct {
 // round a no-op: the timer callback re-checks the tag under the mutex. A
 // selection round checks the expected text AT the range position (atRange)
 // instead of at the text's end — Pitfall 6 again. paste carries the rung's
-// payload (the converted text, D-28) for the mismatch branch.
+// payload (the converted text, D-28) for the mismatch branch. mismatches
+// counts the stale answers of the WR-05 debounce: the first mismatching
+// push re-requires instead of concluding (it may be the client's
+// INTERMEDIATE post-delete pre-commit state), the second concludes.
 type pendingAfter struct {
-	expected []rune
-	paste    []rune
-	start    uint32
-	atRange  bool
-	epoch    uint64
-	deadline *time.Timer
+	expected   []rune
+	paste      []rune
+	start      uint32
+	atRange    bool
+	epoch      uint64
+	mismatches int
+	deadline   *time.Timer
 }
 
 // NewActor returns an actor deciding tap series inside the given
@@ -709,16 +713,7 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 		return nil, false
 	}
 	if a.after != nil {
-		expected := a.after.expected
-		payload := a.after.paste
-		start, atRange := a.after.start, a.after.atRange
-		a.clearAfter()
-		if !a.afterVerdict(expected, start, atRange) {
-			slog.Info("correction verify", "outcome", "mismatch")
-
-			return payload, a.opts.ClipboardRung && a.clip != nil && a.eng != nil
-		}
-		slog.Debug("correction verify", "outcome", "match")
+		return a.settleAfter()
 	}
 
 	return nil, false
@@ -749,6 +744,49 @@ func (a *Actor) afterVerdict(expected []rune, start uint32, atRange bool) bool {
 	return correct.VerifyRangeAt(a.sel.full, start, expected)
 }
 
+// settleAfter settles the open verify-after round on the fresh push (the
+// caller holds the mutex and a.after != nil). The WR-05 debounce: the
+// FIRST mismatching answer re-requires instead of concluding — a client
+// may push the INTERMEDIATE post-delete pre-commit state (the live finding
+// of the first matrix runs), so one stale answer proves nothing; the
+// second stale answer concludes, and a matching one settles quietly. This
+// is what keeps a false mismatch from routing the clipboard rung into a
+// duplicate paste of the just-applied correction. Returns the rung payload
+// and whether the mismatch verdict ARMED the rung.
+func (a *Actor) settleAfter() ([]rune, bool) {
+	round := a.after
+	if a.afterVerdict(round.expected, round.start, round.atRange) {
+		a.clearAfter()
+		slog.Debug("correction verify", "outcome", "match")
+
+		return nil, false
+	}
+	if round.mismatches == 0 {
+		round.mismatches = 1
+		a.rearmAfter(round)
+		slog.Debug("correction verify", "outcome", "stale-retry")
+		a.eng.RequireSurroundingText()
+
+		return nil, false
+	}
+	a.clearAfter()
+	slog.Info("correction verify", "outcome", "mismatch")
+
+	return round.paste, a.opts.ClipboardRung && a.clip != nil && a.eng != nil
+}
+
+// rearmAfter re-arms the round's deadline for the debounce retry (the
+// caller holds the mutex): the same verify budget and the SAME epoch — an
+// expiry from a superseded round stays a no-op, and a client that never
+// answers settles as the quiet timeout (no verdict, no rung).
+func (a *Actor) rearmAfter(round *pendingAfter) {
+	if round.deadline != nil {
+		round.deadline.Stop()
+	}
+	epoch := round.epoch
+	round.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
+}
+
 // afterExpiry is the verify-after deadline: the client never answered the
 // post-correction Require, so the check is dropped quietly — the
 // compensation is best-effort and never a repair (ADR-003 residual risk).
@@ -768,7 +806,10 @@ func (a *Actor) afterExpiry(epoch uint64) {
 // mutex): the actor itself asks for a fresh surrounding text and expects a
 // suffix of converted+tail — the replacement the ladder just wrote. A
 // client that silently ignored the deletion reports a text that no longer
-// ends with it and lands in the INFO mismatch counter (Pitfall 3).
+// ends with it and lands in the INFO mismatch counter (Pitfall 3) — but
+// only after the WR-05 debounce: the FIRST mismatching answer re-requires
+// (it may be the intermediate post-delete pre-commit state), the second
+// concludes.
 func (a *Actor) armAfterVerify(converted, tail []rune) {
 	a.verifyEpoch++
 	a.clearAfter() // never two open rounds

@@ -1317,11 +1317,11 @@ func (s *stand) waitMatrixInputPid(ctx context.Context, pid, wantChars int) erro
 // after the correction, and a client may push the INTERMEDIATE
 // post-delete pre-commit state (cursor 0), producing a false mismatch
 // while the field itself ends up correct; the race hit zenity and
-// gnome-text-editor on consecutive runs (nondeterministic). The
-// content-exact readback below is the ground truth; the match contract
-// lives in the unit corpus (TestActor_VerifyAfterLevel1) and the
-// ladder-chromium case; the stale-answer race itself is a deferred item
-// (internal/session, outside this plan's file scope).
+// gnome-text-editor on consecutive runs (nondeterministic). The daemon
+// now DEBOUNCES the stale answer (WR-05: one re-require round before the
+// verdict), but the content-exact readback below stays the ground truth;
+// the match contract lives in the unit corpus
+// (TestActor_VerifyAfterLevel1) and the ladder-chromium case.
 func verifyMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
 	if c.ExpectLevel > 0 {
 		mark := fmt.Sprintf(`"msg":"correction","level":%d`, c.ExpectLevel)

@@ -804,35 +804,37 @@ func TestActor_Level2WithTailAndRunes(t *testing.T) {
 	}
 }
 
+// verifyAfterSettled runs one complete level-1 correction and returns the
+// actor at the moment the verify-after round is pending.
+func verifyAfterSettled(t *testing.T) (*session.Actor, *fakeSink, *syncBuffer) {
+	t.Helper()
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-correction round
+
+	return a, sink, buf
+}
+
 // TestActor_VerifyAfterLevel1 pins the post-correction check of the level-1
 // ladder (ADR-003/ADR-004: DeleteSurroundingText is ack-less on 1.5.29, the
 // verify-after is the compensation): the correction itself asks for a fresh
 // surrounding text — the require counter grows past the pre-correction
 // round — and the answer decides. A field ending with the expected
-// replacement is quiet; a field that does not raises the INFO mismatch
-// counter exactly once and is NEVER followed by a second correction
-// ("abort, не мусорить" — no auto-repair, the residual risk stays
-// documented in ADR-003).
+// replacement is quiet; a field that does not is DEBOUNCED first (WR-05:
+// one re-require round, because the push may be the intermediate
+// post-delete pre-commit state) and only the second stale answer raises
+// the INFO mismatch counter exactly once, NEVER followed by a second
+// correction ("abort, не мусорить" — no auto-repair, the residual risk
+// stays documented in ADR-003).
 func TestActor_VerifyAfterLevel1(t *testing.T) {
-	// settled runs one complete level-1 correction and returns the actor at
-	// the moment the verify-after round is pending.
-	settled := func(t *testing.T) (*session.Actor, *fakeSink, *syncBuffer) {
-		t.Helper()
-		buf := captureLogs(t)
-		a, sink := wiredActor()
-
-		typeWord(a, wordEN)
-		tapShift(a)
-		tapShift(a)
-		a.ExpiryAt(expiryAfterWindow)
-		line := "abc " + wordEN
-		a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-correction round
-
-		return a, sink, buf
-	}
-
 	t.Run("match is quiet", func(t *testing.T) {
-		a, sink, buf := settled(t)
+		a, sink, buf := verifyAfterSettled(t)
 
 		if got := sink.requireCount(); got != 2 {
 			t.Fatalf("require calls after the correction = %d, want 2 (pre-correction round + verify-after)", got)
@@ -853,33 +855,85 @@ func TestActor_VerifyAfterLevel1(t *testing.T) {
 	})
 
 	t.Run("mismatch counts once without repair", func(t *testing.T) {
-		a, sink, buf := settled(t)
-
-		// The correction never landed in the field (the plan's oracle): the
-		// client reports the pre-correction text — the suffix no longer
-		// matches the expected replacement.
-		uncorrected := "abc " + wordEN
-		a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected))
-
-		if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
-			t.Fatalf("mismatch counter = %d, want exactly 1; log:\n%s", got, buf.String())
-		}
-		if calls := sink.deleteCalls(); len(calls) != 1 {
-			t.Errorf("mismatch triggered a repair: deletions = %+v, want 1 — no auto-repeat", calls)
-		}
-		if texts := sink.commitTexts(); len(texts) != 1 {
-			t.Errorf("mismatch triggered a repair: commits = %q, want 1", texts)
-		}
-
-		// pendingAfter is quenched: a further push does nothing at all.
-		a.HandleSurroundingText(wordRU, runeLen(wordRU), runeLen(wordRU))
-		if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
-			t.Errorf("quenched pendingAfter re-fired: mismatch counter = %d, want 1", got)
-		}
-		if texts := sink.commitTexts(); len(texts) != 1 {
-			t.Errorf("quenched pendingAfter re-corrected: commits = %q, want 1", texts)
-		}
+		afterMismatchDebouncedOnce(t)
 	})
+
+	t.Run("the intermediate post-delete push is debounced into a match", func(t *testing.T) {
+		afterIntermediatePushDebounced(t)
+	})
+}
+
+// afterMismatchDebouncedOnce is the concluding half of the WR-05 protocol:
+// the first stale answer re-requires (no verdict), the second concludes the
+// mismatch exactly once with no repair, and the quenched round ignores
+// everything after it.
+func afterMismatchDebouncedOnce(t *testing.T) {
+	t.Helper()
+	a, sink, buf := verifyAfterSettled(t)
+
+	// The correction never landed in the field (the plan's oracle): the
+	// client reports the pre-correction text — the suffix no longer
+	// matches the expected replacement.
+	uncorrected := "abc " + wordEN
+	a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected))
+	// WR-05: the FIRST stale answer is debounced, not concluded — the
+	// round issues one more Require instead of verdicting on a push
+	// that may predate the commit.
+	if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 0 {
+		t.Fatalf("the first stale answer concluded: mismatch counter = %d, want 0; log:\n%s", got, buf.String())
+	}
+	if got := sink.requireCount(); got != 3 {
+		t.Fatalf("require calls after the debounced answer = %d, want 3 (pre-round + verify-after + retry)", got)
+	}
+
+	// The SECOND stale answer concludes exactly once.
+	a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected))
+	if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
+		t.Fatalf("mismatch counter = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+	if calls := sink.deleteCalls(); len(calls) != 1 {
+		t.Errorf("mismatch triggered a repair: deletions = %+v, want 1 — no auto-repeat", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 {
+		t.Errorf("mismatch triggered a repair: commits = %q, want 1", texts)
+	}
+
+	// pendingAfter is quenched: a further push does nothing at all.
+	a.HandleSurroundingText(wordRU, runeLen(wordRU), runeLen(wordRU))
+	if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
+		t.Errorf("quenched pendingAfter re-fired: mismatch counter = %d, want 1", got)
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 {
+		t.Errorf("quenched pendingAfter re-corrected: commits = %q, want 1", texts)
+	}
+}
+
+// afterIntermediatePushDebounced is the race half of the WR-05 protocol:
+// the client pushes the INTERMEDIATE post-delete pre-commit state — the
+// old text — and only then the committed one; the verdict waits out the
+// stale answer (with the clipboard rung on, a false mismatch would paste a
+// duplicate of the just-applied correction into the field).
+func afterIntermediatePushDebounced(t *testing.T) {
+	t.Helper()
+	a, sink, buf := verifyAfterSettled(t)
+
+	uncorrected := "abc " + wordEN
+	a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected))
+	if strings.Contains(buf.String(), `"msg":"correction verify","outcome":"mismatch"`) {
+		t.Fatalf("the intermediate push raised a mismatch; log:\n%s", buf.String())
+	}
+
+	after := "abc " + wordRU
+	a.HandleSurroundingText(after, runeLen(after), runeLen(after))
+	if strings.Contains(buf.String(), `"msg":"correction verify","outcome":"mismatch"`) {
+		t.Errorf("the settled field still raised a mismatch; log:\n%s", buf.String())
+	}
+	if calls := sink.deleteCalls(); len(calls) != 1 {
+		t.Errorf("the debounced round re-corrected: deletions = %+v, want 1", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 {
+		t.Errorf("the debounced round re-corrected: commits = %q, want 1", texts)
+	}
 }
 
 // TestActor_HardResetKeyvals pins the keyval half of CORR-09: Enter and its
@@ -1761,9 +1815,10 @@ func (r *clipRunner) sequence() []string {
 }
 
 // settledWordCorrection drives one settled level-1 word correction and
-// delivers the verify-after MISMATCH push — the state the rung keys on (the
-// client ignored the deletion; the field still holds the pre-correction
-// text).
+// delivers the verify-after MISMATCH verdict through the WR-05 debounced
+// protocol — the state the rung keys on (the client ignored the deletion;
+// the field still holds the pre-correction text on BOTH answers, so the
+// debounce's retry also mismatches and the second push concludes).
 func settledWordCorrection(a *session.Actor) {
 	typeWord(a, wordEN)
 	tapShift(a)
@@ -1772,7 +1827,10 @@ func settledWordCorrection(a *session.Actor) {
 	line := "abc " + wordEN
 	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-round
 	uncorrected := "abc " + wordEN
-	a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected)) // verify-after mismatch
+	// Stale answer 1: the debounce re-requires instead of verdicting.
+	a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected))
+	// Stale answer 2: the mismatch verdict — and the rung.
+	a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected))
 }
 
 // TestActor_ClipboardRungDisabledByDefault pins the D-28 opt-in: at the
