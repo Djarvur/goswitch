@@ -1320,6 +1320,143 @@ func TestActor_PhraseMixedCorrects(t *testing.T) {
 	}
 }
 
+// Selection-correction corpus (plan 03-03, D-30): the range is the
+// selection the client reported — [min(cursor,anchor), max(cursor,anchor))
+// of the last surrounding push — in EITHER geometric direction (Pitfall 6),
+// converted by the same run pipeline (D-23) and deleted EXACTLY over the
+// range, never a rune more (CORR-07 precision applied to selections).
+
+// TestActor_DoubleTapSelectionCorrects pins the selection branch of the
+// Double decision (CORR-03, D-30): the field "ghbdtn привет" with the range
+// [0,6) selected RIGHT-TO-LEFT (cursor=6, anchor=0 — the anchor wire pair of
+// the ctrl+a class) corrects exactly the selected ghbdtn: one
+// DeleteSurroundingText(-6,6) — the selection geometry, signed by the
+// cursor's side — one CommitText("привет"), and the tail " привет" is NOT
+// deleted. The buffer stays empty throughout: the selection range comes
+// from the client push and takes precedence over the word path.
+func TestActor_DoubleTapSelectionCorrects(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	field := wordEN + " " + wordRU
+	a.HandleSurroundingText(field, 6, 0) // selection [0,6), right-to-left
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
+		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the selection range, tail not touched", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits = %q, want exactly one %q — only the selected range converts", texts, wordRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 1 {
+		t.Errorf("require calls = %d, want exactly 1 (the verify-after round)", got)
+	}
+}
+
+// TestActor_SelectionLeftToRight pins the positive-offset half of the
+// selection geometry (Pitfall 6): the same range [0,6) reported
+// LEFT-TO-RIGHT (cursor=0, anchor=6 — the GTE live shape of the spike)
+// deletes with offset 0 — the range sits entirely right of the cursor — and
+// nchars is still exactly the range length.
+func TestActor_SelectionLeftToRight(t *testing.T) {
+	a, sink := wiredActor()
+
+	field := wordEN + " " + wordRU
+	a.HandleSurroundingText(field, 0, 6) // selection [0,6), left-to-right
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: 0, nchars: 6}) {
+		t.Fatalf("deletions = %+v, want exactly one (0,6) — offset 0, the range is right of the cursor", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU)
+	}
+}
+
+// TestActor_NoSelectionStillWord pins the D-30 continuity: a push with
+// anchor == cursor (no selection observable) keeps the Double decision on
+// the WORD path exactly as Phase 2 — the token geometry from the buffer,
+// not the selection geometry.
+func TestActor_NoSelectionStillWord(t *testing.T) {
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // anchor == cursor
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
+		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the token geometry of Phase 2", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU)
+	}
+}
+
+// TestActor_SelectionMixedConverts pins D-23 on the selection range: the
+// selected mixed text "gfbпривет" converts by the last-letter anchor — the
+// foreign Latin run gfb→паи, the Cyrillic run recommitted unchanged —
+// through the SAME ConvertRuns the word and phrase paths use.
+func TestActor_SelectionMixedConverts(t *testing.T) {
+	a, sink := wiredActor()
+
+	field := "gfb" + wordRU
+	a.HandleSurroundingText(field, runeLen(field), 0) // whole field selected
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -9, nchars: 9}) {
+		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole selected range", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != "паи"+wordRU {
+		t.Fatalf("commits = %q, want exactly one [%s] — run conversion inside the selection", texts, "паи"+wordRU)
+	}
+}
+
+// TestActor_SelectionNoLetters pins the D-20 refusal of the selection path:
+// a selected range without Latin or Cyrillic letters has nothing to anchor
+// on — the skip carries the no-letters reason and touches nothing.
+func TestActor_SelectionNoLetters(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	a.HandleSurroundingText("2026", 4, 0) // digits only, selected
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"no-letters"`) {
+		t.Errorf("no-letters record missing; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("letterless selection started verification %d times, want 0", got)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("letterless selection deleted %+v, want nothing", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("letterless selection committed %q, want nothing", texts)
+	}
+}
+
 // TestActor_KeyEventsFeedFSM pins the single-tap path: a clean Shift_R
 // press/release pair produces exactly one decision record, n=1, at window
 // expiry — never inside HandleKey.
