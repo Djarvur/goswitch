@@ -16,6 +16,7 @@ const (
 	defCombo         = "shift+ctrl_r"
 	fieldTapWindow   = "timeouts.tap_window_ms"
 	fieldVerifyWait  = "timeouts.verify_wait_ms"
+	fieldTapKey      = "hotkeys.tap_key"
 	fieldMACRLetters = "macr.letters"
 	fieldMACRApps    = "macr.apps"
 	fieldMACRAltMod  = "macr.alt_modifier"
@@ -202,12 +203,25 @@ func TestValidate_Bindings(t *testing.T) {
 		{
 			name:      "tap key unknown",
 			mutate:    func(c *config.Config) { c.Hotkeys.TapKey = "shift_x" },
-			wantField: "hotkeys.tap_key",
+			wantField: fieldTapKey,
 		},
 		{
 			name:      "tap key empty",
 			mutate:    func(c *config.Config) { c.Hotkeys.TapKey = "" },
-			wantField: "hotkeys.tap_key",
+			wantField: fieldTapKey,
+		},
+		{
+			// WR-02: tap semantics are key-only — the FSM tracks one keyval
+			// and no modifier state, so a modifier-bearing tap_key would
+			// "apply" while its modifier tokens are silently ignored.
+			name:      "tap key combo (modifier-bearing)",
+			mutate:    func(c *config.Config) { c.Hotkeys.TapKey = "ctrl+shift_r" },
+			wantField: fieldTapKey,
+		},
+		{
+			name:      "tap key redundant family modifier",
+			mutate:    func(c *config.Config) { c.Hotkeys.TapKey = "shift+shift_r" },
+			wantField: fieldTapKey,
 		},
 		{
 			name:      "combo key unknown",

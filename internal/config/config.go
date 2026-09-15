@@ -41,6 +41,7 @@ var (
 	errTapWindowRange     = errors.New("must be in (0, 2000] ms")
 	errVerifyWaitRange    = errors.New("must be in (0, 2000] ms")
 	errBackspaceCapRange  = errors.New("must be in [1, 500]")
+	errTapKeyBare         = errors.New("must be a bare key name — modifiers belong to word_layout_combo")
 	errMACRLettersReq     = errors.New("is required when macr.enabled is true")
 	errMACRLetterToken    = errors.New("must be a single lowercase letter a-z")
 	errMACRAppsOverCeil   = errors.New("entries, at most 64 allowed")
@@ -147,8 +148,16 @@ func (c Config) Validate() error {
 }
 
 // validate resolves both bindings through the closed hotkey name tables —
-// an unknown name anywhere rejects the config (D-33).
+// an unknown name anywhere rejects the config (D-33). The tap key must
+// additionally be a BARE key (WR-02): tap semantics are key-only — the FSM
+// tracks a single keyval and no modifier state — so a modifier-bearing
+// tap_key would pass the binding grammar and "apply" while its modifier
+// tokens are silently ignored. The combo is the only binding that uses
+// modifiers.
 func (h Hotkeys) validate() error {
+	if strings.Contains(h.TapKey, "+") {
+		return fmt.Errorf("hotkeys.tap_key %q: %w", h.TapKey, errTapKeyBare)
+	}
 	if _, err := hotkey.ParseBinding(h.TapKey); err != nil {
 		return fmt.Errorf("hotkeys.tap_key %q: %w", h.TapKey, err)
 	}
