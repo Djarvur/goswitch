@@ -365,3 +365,39 @@ func TestFSM_ConfigurableTapKey(t *testing.T) {
 		}
 	})
 }
+
+// TestFSM_SetTapKey pins the reload seam of the series key: a CHANGED key
+// disarms the in-flight series (its taps belonged to the replaced key and
+// must never decide as the new key's), while setting the SAME key keeps it
+// — the no-op reload of the window precedent (Pitfall 8, adapted to the
+// key identity).
+func TestFSM_SetTapKey(t *testing.T) {
+	t.Parallel()
+
+	t.Run("changed key disarms the in-flight series", func(t *testing.T) {
+		t.Parallel()
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
+		tapKey(f, hotkey.KeyvalShiftR, 0)
+		tapKey(f, hotkey.KeyvalShiftR, gapJustInside)
+		f.SetTapKey(keyvalShiftL)
+		if acts := f.Feed(hotkey.TimerExpired{}, 2*hotkey.DefaultWindow); len(acts) != 0 {
+			t.Errorf("TimerExpired after the key swap = %v, want none — the old key's series died with it", acts)
+		}
+		tapKey(f, keyvalShiftL, 3*hotkey.DefaultWindow)
+		acts := f.Feed(hotkey.TimerExpired{}, 4*hotkey.DefaultWindow)
+		if !actionsEqual(acts, []hotkey.Action{hotkey.Single}) {
+			t.Errorf("TimerExpired after one NEW-key tap = %v, want [Single]", acts)
+		}
+	})
+
+	t.Run("same key keeps the series", func(t *testing.T) {
+		t.Parallel()
+		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
+		tapKey(f, hotkey.KeyvalShiftR, 0)
+		f.SetTapKey(hotkey.KeyvalShiftR)
+		acts := f.Feed(hotkey.TimerExpired{}, hotkey.DefaultWindow)
+		if !actionsEqual(acts, []hotkey.Action{hotkey.Single}) {
+			t.Errorf("TimerExpired after a same-key SetTapKey = %v, want [Single]", acts)
+		}
+	})
+}

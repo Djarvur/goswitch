@@ -98,8 +98,15 @@ type Actor struct {
 	// cfgSrc is the live config source (the 03-02 watcher's Snapshot
 	// contract); nil on the no-config path, where SetOptions and the
 	// built-in defaults govern.
-	cfgSrc    interface{ Snapshot() config.Config }
-	comboName string // the resolved document's combo binding name (parse cache)
+	cfgSrc interface{ Snapshot() config.Config }
+	// tapKeyval is the series key in force — the FSM's key and HandleKey's
+	// timer-arming comparison both read it (CR-01: the documented
+	// hotkeys.tap_key is wiring-live, not validation-only). tapKeyName is
+	// its parse cache, the comboName precedent; comboName is the resolved
+	// document's combo binding name.
+	tapKeyval  uint32
+	tapKeyName string
+	comboName  string
 	// MACR state (plan 03-05, ADR-005): the Super-hold window of the
 	// consumed-upstream detect (b.2) with its letter witness, the pending
 	// remap awaiting the hold's end, the layer's counters (the goswitchctl
@@ -230,13 +237,16 @@ type pendingAfter struct {
 
 // NewActor returns an actor deciding tap series inside the given
 // disambiguation window (D-05). The daemon passes hotkey.DefaultWindow.
+// The series key starts at the documented default (shift_r); an attached
+// config source re-resolves it from the first event on (CR-01).
 func NewActor(window time.Duration) *Actor {
 	return &Actor{
-		fsm:    hotkey.NewFSM(window, hotkey.KeyvalShiftR),
-		window: window,
-		start:  time.Now(),
-		buf:    correct.NewBuffer(),
-		clip:   clipboard.New(),
+		fsm:       hotkey.NewFSM(window, hotkey.KeyvalShiftR),
+		window:    window,
+		tapKeyval: hotkey.KeyvalShiftR,
+		start:     time.Now(),
+		buf:       correct.NewBuffer(),
+		clip:      clipboard.New(),
 		// The lazy per-app observer's production starter: the a11y dial of
 		// internal/appid on the daemon's lifetime (the clipboard rung's
 		// context.Background precedent — the actor owns no shutdown path).
@@ -399,8 +409,9 @@ func (a *Actor) CorrectNow() string {
 }
 
 // HandleKey implements engine.EventHandler: the decoded event is fed into
-// the FSM under the mutex and a Shift_R release re-arms the deadline timer.
-// Decisions never fire here — only at window expiry (D-04). The returned
+// the FSM under the mutex and a release of the CONFIGURED tap key re-arms
+// the deadline timer. Decisions never fire here — only at window expiry
+// (D-04). The returned
 // verdict is the consumption decision of the script mode: in RU mode a
 // clean printable press whose key maps to a different rune is consumed
 // after committing the Cyrillic rune (the owner-prototype pattern,
@@ -418,13 +429,13 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 
 	if ev.Release {
 		a.fsm.Feed(hotkey.KeyRelease{Keyval: ev.Keyval}, a.elapsed())
-		if ev.Keyval == hotkey.KeyvalShiftR {
-			// Only a Shift_R release can move the series deadline (the FSM
-			// counts taps on clean releases); re-arming on any other event
-			// would either extend the deadline from the wrong instant or
-			// arm a timer over a cancelled series. A stale expiry is a
-			// no-op in the FSM, so over-arming is harmless, under-arming
-			// would silently drop the decision.
+		if ev.Keyval == a.tapKeyval {
+			// Only a release of the CONFIGURED tap key can move the series
+			// deadline (the FSM counts taps on clean releases); re-arming
+			// on any other event would either extend the deadline from the
+			// wrong instant or arm a timer over a cancelled series. A stale
+			// expiry is a no-op in the FSM, so over-arming is harmless,
+			// under-arming would silently drop the decision.
 			a.armTimer()
 		}
 		a.macrKeyRelease(ev)
@@ -654,6 +665,17 @@ func (a *Actor) applySnapshot() {
 	if w := time.Duration(snap.Timeouts.TapWindowMs) * time.Millisecond; w != a.window {
 		a.window = w
 		a.fsm.SetWindow(w)
+	}
+	if name := snap.Hotkeys.TapKey; name != a.tapKeyName {
+		// CR-01: the tap key is wiring-live, not validation-only — a
+		// changed name re-resolves through the same last-good discipline
+		// as the combo below: a name that fails to parse (impossible from
+		// a validated document) keeps the last-good key.
+		if binding, err := hotkey.ParseBinding(name); err == nil {
+			a.tapKeyName = name
+			a.tapKeyval = binding.Keyval
+			a.fsm.SetTapKey(binding.Keyval)
+		}
 	}
 	a.opts.BackspaceCap = snap.Correction.BackspaceCap
 	a.opts.ClipboardRung = snap.Correction.ClipboardRung

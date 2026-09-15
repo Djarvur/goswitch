@@ -76,6 +76,20 @@ func (f *FSM) SetWindow(window time.Duration) {
 	f.window = window
 }
 
+// SetTapKey replaces the series key — the hot-reload seam of the config's
+// hotkeys.tap_key (CR-01/CONF-02): a CHANGED key disarms any in-flight
+// series (its taps belonged to the replaced key and must never decide as
+// the new key's), while setting the same key is a no-op that keeps the
+// series — the Pitfall-8 window precedent adapted to the key identity.
+// The adapter's already-armed timer is absorbed by expired's stale guard.
+func (f *FSM) SetTapKey(tapKeyval uint32) {
+	if tapKeyval == f.tapKeyval {
+		return
+	}
+	f.tapKeyval = tapKeyval
+	f.disarm()
+}
+
 // Feed advances the machine by one event at the given injected time and
 // returns the decision — exactly one Action — when a window expires over a
 // live series; every other event returns no actions.

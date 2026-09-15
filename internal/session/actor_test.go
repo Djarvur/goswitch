@@ -69,6 +69,13 @@ func tapShift(a *session.Actor) {
 	a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalShiftR, Release: true})
 }
 
+// tapKeySeries feeds one clean press/release pair of an arbitrary key — the
+// tap-key reload corpus drives keys other than the corpus Shift_R.
+func tapKeySeries(a *session.Actor, keyval uint32) {
+	a.HandleKey(engine.EngineEvent{Keyval: keyval})
+	a.HandleKey(engine.EngineEvent{Keyval: keyval, Release: true})
+}
+
 // countActions counts decision records in the captured log.
 func countActions(buf *syncBuffer) int {
 	return strings.Count(buf.String(), `"msg":"action"`)
@@ -2232,6 +2239,72 @@ func TestActor_HotReloadOptionsAndCombo(t *testing.T) {
 		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalCtrlR, Mods: engine.MaskShift})
 		if got := sink.requireCount(); got != 3 {
 			t.Fatalf("default-binding combo require calls = %d, want 3 — the rebind follows the snapshot", got)
+		}
+	})
+}
+
+// TestActor_HotReloadTapKey pins the CR-01 wiring: the document's
+// hotkeys.tap_key reaches every consumer that makes it live — the FSM's
+// series key, HandleKey's timer-arming release check, and the reload seam
+// (a changed name re-resolves on the next event, the comboName precedent).
+// While the document names shift_l, a Shift_L series decides through the
+// REAL timer (expiry never injected) and Shift_R is a plain modifier; a
+// reload back to shift_r swaps the shapes.
+func TestActor_HotReloadTapKey(t *testing.T) {
+	t.Run("the configured key's series decides through the real timer", func(t *testing.T) {
+		buf := captureLogs(t)
+		a := session.NewActor(farWindow)
+		cfg := reloadCfg(150, "shift+ctrl_r")
+		cfg.Hotkeys.TapKey = "shift_l"
+		src := &reloadSource{cfg: cfg}
+		a.AttachConfig(src)
+
+		t0 := time.Now()
+		tapKeySeries(a, hotkey.KeyvalShiftL)
+		tapKeySeries(a, hotkey.KeyvalShiftL)
+		// Only the release of the CONFIGURED key arming the actor timer can
+		// decide here: the constructor window is farWindow (1 h) and expiry
+		// is never injected — and the decision must land inside the old
+		// 300 ms default too, proving the snapshot's 150 ms window armed it.
+		if !waitActionsUntil(t, buf, 1, reloadWait) {
+			t.Fatalf("the configured tap key's series never decided; log:\n%s", buf.String())
+		}
+		if d := time.Since(t0); d > newWindowCeiling {
+			t.Errorf("configured-key decision took %v, want < %v — the snapshot's 150 ms window governs",
+				d, newWindowCeiling)
+		}
+		if got := countActions(buf); got != 1 {
+			t.Errorf("actions = %d, want exactly 1 (double tap)", got)
+		}
+	})
+
+	t.Run("the reload swaps the deciding key", func(t *testing.T) {
+		buf := captureLogs(t)
+		a := session.NewActor(farWindow)
+		src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")}
+		a.AttachConfig(src)
+
+		tapKeySeries(a, hotkey.KeyvalShiftL) // not the document's key
+		a.ExpiryAt(expiryAfterWindow)
+		if got := countActions(buf); got != 0 {
+			t.Fatalf("Shift_L series decided under a shift_r document; log:\n%s", buf.String())
+		}
+
+		cfgL := reloadCfg(300, "shift+ctrl_r")
+		cfgL.Hotkeys.TapKey = "shift_l"
+		src.set(cfgL) // reload: shift_l now decides
+		tapKeySeries(a, hotkey.KeyvalShiftL)
+		a.ExpiryAt(expiryAfterWindow)
+		if got := countActions(buf); got != 1 {
+			t.Fatalf("Shift_L series after the tap-key reload: actions = %d, want 1; log:\n%s", got, buf.String())
+		}
+
+		src.set(reloadCfg(300, "shift+ctrl_r")) // back to the default key
+		tapKeySeries(a, hotkey.KeyvalShiftL)
+		a.ExpiryAt(expiryAfterWindow)
+		if got := countActions(buf); got != 1 {
+			t.Fatalf("the replaced key still decides after the reload back: actions = %d, want 1; log:\n%s",
+				got, buf.String())
 		}
 	})
 }
