@@ -22,11 +22,13 @@ import (
 	"github.com/Djarvur/goswitch/layouts"
 )
 
-// verifyWait is the ADR-004 budget for a fresh SetSurroundingText to arrive
-// after RequireSurroundingText (resolved planning question 4: ~100 ms — the
-// local D-Bus RTT is 1-10 ms, a slow client gets the rest; past the budget
-// the correction is silently dropped, never guessed).
-const verifyWait = 100 * time.Millisecond
+// defaultVerifyWait is the ADR-004 verify budget the actor STARTS with
+// (resolved planning question 4: ~100 ms — the local D-Bus RTT is 1-10 ms,
+// a slow client gets the rest; past the budget the correction is silently
+// dropped, never guessed). The budget in force is actor state: the config
+// document's timeouts.verify_wait_ms feeds it through applySnapshot
+// (CR-02 — the knob is wiring-live, not validation-only).
+const defaultVerifyWait = 100 * time.Millisecond
 
 // comboMask isolates the true key combinations whose characters never
 // reach the field (Ctrl shortcuts, Alt menus, Super shell keys): a press
@@ -67,7 +69,8 @@ const (
 // starts the ADR-004 verification: the correction range (token+tail) is
 // checked against the freshest surrounding text the client reported — the
 // cached spontaneous push, or a fresh answer to RequireSurroundingText
-// within verifyWait for clients that implement the round trip. The
+// within the verify budget (timeouts.verify_wait_ms) for clients that
+// implement the round trip. The
 // ProcessKeyEvent answer never waits (ADR-004, Pitfall 4). A Single
 // decision flips the internal script mode (ADR-001 Option B, plan 02-04):
 // in RU mode clean printable presses are consumed and their Cyrillic runes
@@ -81,6 +84,7 @@ type Actor struct {
 	mu           sync.Mutex
 	fsm          *hotkey.FSM
 	window       time.Duration
+	verifyWait   time.Duration // the ADR-004 budget in force (CR-02: fed by timeouts.verify_wait_ms)
 	start        time.Time
 	timer        *time.Timer
 	buf          *correct.Buffer
@@ -241,12 +245,13 @@ type pendingAfter struct {
 // config source re-resolves it from the first event on (CR-01).
 func NewActor(window time.Duration) *Actor {
 	return &Actor{
-		fsm:       hotkey.NewFSM(window, hotkey.KeyvalShiftR),
-		window:    window,
-		tapKeyval: hotkey.KeyvalShiftR,
-		start:     time.Now(),
-		buf:       correct.NewBuffer(),
-		clip:      clipboard.New(),
+		fsm:        hotkey.NewFSM(window, hotkey.KeyvalShiftR),
+		window:     window,
+		verifyWait: defaultVerifyWait,
+		tapKeyval:  hotkey.KeyvalShiftR,
+		start:      time.Now(),
+		buf:        correct.NewBuffer(),
+		clip:       clipboard.New(),
 		// The lazy per-app observer's production starter: the a11y dial of
 		// internal/appid on the daemon's lifetime (the clipboard rung's
 		// context.Background precedent — the actor owns no shutdown path).
@@ -581,7 +586,7 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 }
 
 // VerifyExpiry is the verify-deadline timer callback of the pre-correction
-// round: the verifyWait budget for a fresh SetSurroundingText closed without
+// round: the verify budget closed without a fresh SetSurroundingText
 // an answer — the correction is dropped silently (ADR-004, Pitfall 4: the
 // wait lives in a timer, never in a handler). The timeout also retires any
 // pendingAfter: a round that never executed leaves its would-be post-check
@@ -666,6 +671,14 @@ func (a *Actor) applySnapshot() {
 		a.window = w
 		a.fsm.SetWindow(w)
 	}
+	if w := time.Duration(snap.Timeouts.VerifyWaitMs) * time.Millisecond; w != a.verifyWait && w > 0 {
+		// CR-02: the ADR-004 budget is document state — an already-armed
+		// deadline keeps its own budget (the Pitfall-8 rule), the next
+		// round arms at the new one. The >0 guard keeps a zero-value
+		// document on the last-good budget (validation already enforces
+		// (0, 2000]).
+		a.verifyWait = w
+	}
 	if name := snap.Hotkeys.TapKey; name != a.tapKeyName {
 		// CR-01: the tap key is wiring-live, not validation-only — a
 		// changed name re-resolves through the same last-good discipline
@@ -749,7 +762,7 @@ func (a *Actor) armAfterVerify(converted, tail []rune) {
 		epoch:    a.verifyEpoch,
 	}
 	epoch := a.verifyEpoch
-	a.after.deadline = time.AfterFunc(verifyWait, func() { a.afterExpiry(epoch) })
+	a.after.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
 	a.eng.RequireSurroundingText()
 }
 
@@ -769,7 +782,7 @@ func (a *Actor) armAfterVerifyRange(converted []rune, start uint32) {
 		epoch:    a.verifyEpoch,
 	}
 	epoch := a.verifyEpoch
-	a.after.deadline = time.AfterFunc(verifyWait, func() { a.afterExpiry(epoch) })
+	a.after.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
 	a.eng.RequireSurroundingText()
 }
 
@@ -1258,7 +1271,7 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 
 		return
 	}
-	a.pending.deadline = time.AfterFunc(verifyWait, a.VerifyExpiry)
+	a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
 	a.eng.RequireSurroundingText()
 }
 
@@ -1288,7 +1301,7 @@ func (a *Actor) startPhraseCorrection() {
 // cursor 1..6 during typing), exactly how the owner's prototype works.
 // The freshest spontaneous push is therefore checked first (a push after
 // the last keystroke is the freshest state the client can report); only on
-// a miss does the Require round-trip run inside the verifyWait budget.
+// a miss does the Require round-trip run inside the verify budget.
 func (a *Actor) startRangeCorrection(rng correctionRange) {
 	armed := time.Now()
 	if len(rng.token) == 0 {
@@ -1342,7 +1355,7 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 
 		return
 	}
-	a.pending.deadline = time.AfterFunc(verifyWait, a.VerifyExpiry)
+	a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
 	a.eng.RequireSurroundingText()
 }
 

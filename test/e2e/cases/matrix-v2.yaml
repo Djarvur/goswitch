@@ -241,8 +241,9 @@ name: ctl-status-reload
 surface: zenity
 mode: en
 steps:
-  - reload:            # INST-02 through the reload step: goswitchctl reload (applied reply) + status (config_valid=true)
-      lines: ["  verify_wait_ms: 100"]
+  - reload:            # INST-02 through the reload step: goswitchctl reload (applied reply) + status (config_valid=true);
+      # 250 differs from the base 100 — the reload changes the knob (CR-02), never a no-op write
+      lines: ["  verify_wait_ms: 250"]
       expect: applied
   - {type: "ghbdtn"}
   - {tap: double}      # a correction settles under the config daemon

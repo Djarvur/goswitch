@@ -2126,6 +2126,24 @@ func waitActionsUntil(t *testing.T, buf *syncBuffer, want int, timeout time.Dura
 	}
 }
 
+// waitLogUntil polls the captured log until it holds want occurrences of
+// mark or the deadline passes — waitActionsUntil generalized off the action
+// counter for the real-timer records that are not decisions.
+func waitLogUntil(t *testing.T, buf *syncBuffer, mark string, want int, timeout time.Duration) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for {
+		if strings.Count(buf.String(), mark) >= want {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 // TestActor_HotReloadWindowNewSeries pins the Pitfall-8 window rule: a
 // series armed BEFORE a reload expires by the window it was armed with
 // (the reload neither cancels nor loses the armed decision), and a series
@@ -2307,6 +2325,36 @@ func TestActor_HotReloadTapKey(t *testing.T) {
 				got, buf.String())
 		}
 	})
+}
+
+// TestActor_HotReloadVerifyWait pins the CR-02 wiring: the document's
+// timeouts.verify_wait_ms is the actor's verify budget — the pending-fix
+// deadline and both verify-after deadlines run on it, and the snapshot's
+// value changes it live. The pre-round miss arms the deadline at the
+// RELOADED budget: the verify-timeout skip must not land inside the old
+// 100 ms default, and must land by the new budget.
+func TestActor_HotReloadVerifyWait(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	cfg := reloadCfg(300, "shift+ctrl_r")
+	cfg.Timeouts.VerifyWaitMs = 1200
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	// No push ever arrives: the Double's pre-round miss armed the pending
+	// deadline, and only VerifyExpiry can close it (the real AfterFunc).
+	const timeoutMark = `"reason":"verify-timeout"`
+	if waitLogUntil(t, buf, timeoutMark, 1, 400*time.Millisecond) {
+		t.Fatalf("verify-timeout landed inside the old 100 ms budget"+
+			" — the snapshot's verify_wait_ms is not live; log:\n%s", buf.String())
+	}
+	if !waitLogUntil(t, buf, timeoutMark, 1, reloadWait) {
+		t.Fatalf("the reloaded 1200 ms budget never closed the round; log:\n%s", buf.String())
+	}
 }
 
 // TestActor_HotReloadInvalidKeepsLastGood pins the consumption side of the
