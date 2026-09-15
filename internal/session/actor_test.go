@@ -2750,3 +2750,123 @@ func TestActor_MACRAppidLazyStart(t *testing.T) {
 		}
 	})
 }
+
+// fakeCfgStatus is the config-source double of the snapshot corpus: a
+// healthy Defaults-shaped snapshot with the corpus window (so applySnapshot
+// never disturbs the farWindow timer isolation) plus the optional status
+// surface — the D-32 fields StatusSnapshot must lift into the snapshot.
+type fakeCfgStatus struct {
+	err error
+}
+
+// Snapshot returns the corpus document with the farWindow-equivalent tap
+// window — a smaller window would re-arm the actor's real AfterFunc with a
+// test-hostile deadline.
+func (f fakeCfgStatus) Snapshot() config.Config {
+	c := config.Defaults()
+	c.Timeouts.TapWindowMs = int(farWindow.Milliseconds())
+
+	return c
+}
+
+// ConfigPath names the served document.
+func (f fakeCfgStatus) ConfigPath() string { return "/tmp/goswitch-status-snapshot.yaml" }
+
+// LastError is the D-32 surface: nil while the served snapshot is valid.
+func (f fakeCfgStatus) LastError() error { return f.err }
+
+// TestActor_StatusSnapshot pins the control surface's raw material
+// (INST-02): the snapshot carries the internal mode and the correction
+// counters (done and skipped with the reason breakdown), the counters
+// increment through the real pipeline paths (a settled correction counts
+// done; a refusal counts skipped with its reason; the MACR counters ride
+// along), and the config-source status lands in the D-32 fields — the
+// rejected reload's error included. No typed or corrected text appears
+// anywhere in the snapshot (T-03-06-03).
+func TestActor_StatusSnapshot(t *testing.T) {
+	t.Run("fresh actor: EN mode, zero counters, no config", func(t *testing.T) {
+		a, _ := wiredActor()
+		st := a.StatusSnapshot()
+		if st.Mode != "en" {
+			t.Errorf("fresh mode = %q, want en", st.Mode)
+		}
+		if st.CorrectionsDone != 0 || st.CorrectionsSkipped != 0 || st.SkipReasons != nil {
+			t.Errorf("fresh correction counters = %+v, want all zero", st)
+		}
+		if st.SuperIntercepted != 0 || st.SuperUpstreamConsumed != 0 {
+			t.Errorf("fresh MACR counters = %+v, want all zero", st)
+		}
+		if st.ConfigPath != "" {
+			t.Errorf("no-config snapshot carries path %q", st.ConfigPath)
+		}
+	})
+
+	t.Run("settled correction counts done", func(t *testing.T) {
+		a, sink := wiredActor()
+		typeWord(a, wordEN)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+		a.HandleSurroundingText("abc "+wordEN, runeLen("abc "+wordEN), runeLen("abc "+wordEN))
+
+		if got := sink.commitTexts(); len(got) != 1 || got[0] != wordRU {
+			t.Fatalf("correction commits = %q, want one %q (the pipeline precondition)", got, wordRU)
+		}
+		st := a.StatusSnapshot()
+		if st.CorrectionsDone != 1 || st.CorrectionsSkipped != 0 {
+			t.Errorf("counters after one settled correction = done %d skipped %d, want 1/0",
+				st.CorrectionsDone, st.CorrectionsSkipped)
+		}
+	})
+
+	t.Run("empty-buffer refusal counts skipped with its reason", func(t *testing.T) {
+		a, _ := wiredActor()
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		st := a.StatusSnapshot()
+		if st.CorrectionsDone != 0 || st.CorrectionsSkipped != 1 {
+			t.Errorf("counters after the empty-buffer refusal = done %d skipped %d, want 0/1",
+				st.CorrectionsDone, st.CorrectionsSkipped)
+		}
+		if st.SkipReasons["empty-buffer"] != 1 {
+			t.Errorf("skip reasons = %v, want empty-buffer:1", st.SkipReasons)
+		}
+	})
+
+	t.Run("mode flip reaches the snapshot", func(t *testing.T) {
+		a, _ := wiredActor()
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+		if st := a.StatusSnapshot(); st.Mode != "ru" {
+			t.Errorf("mode after the single-tap flip = %q, want ru", st.Mode)
+		}
+	})
+
+	t.Run("config status: healthy and rejected (D-32)", func(t *testing.T) {
+		a, _ := wiredActor()
+		a.AttachConfig(fakeCfgStatus{})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('x')}) // one event folds the source in
+
+		st := a.StatusSnapshot()
+		if st.ConfigPath != "/tmp/goswitch-status-snapshot.yaml" {
+			t.Errorf("config path = %q, want the source's path", st.ConfigPath)
+		}
+		if !st.ConfigValid || st.ConfigError != "" {
+			t.Errorf("healthy config status = valid %t error %q, want true/empty", st.ConfigValid, st.ConfigError)
+		}
+
+		rejected := errors.New("decode config: field verify_wait_mss not found")
+		a.AttachConfig(fakeCfgStatus{err: rejected})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32('y')})
+
+		st = a.StatusSnapshot()
+		if st.ConfigValid {
+			t.Error("config valid after a rejected reload = true, want false")
+		}
+		if !strings.Contains(st.ConfigError, "verify_wait_mss") {
+			t.Errorf("config error = %q, want the rejection naming the key", st.ConfigError)
+		}
+	})
+}

@@ -152,6 +152,15 @@ func (w *Watcher) LastError() error {
 	return nil
 }
 
+// Reload forces an immediate synchronous re-parse of the config document —
+// the control surface's reload (INST-02): a valid document is published
+// (the reply names the applied change), a rejected one keeps the last-good
+// snapshot serving (D-32) with the error returned and exposed through
+// LastError.
+func (w *Watcher) Reload() (string, error) {
+	return "", nil
+}
+
 // loop drains the event source until ctx is done; every goroutine has an
 // exit condition (go-ultimate concurrency hygiene).
 func (w *Watcher) loop(ctx context.Context, src EventSource) {

@@ -310,6 +310,42 @@ func (a *Actor) MACRCounters() MACRStats {
 	return MACRStats{SuperIntercepted: a.macrIntercepted, ConsumedUpstream: a.macrConsumed}
 }
 
+// Status is the daemon state snapshot for the control surface (INST-02):
+// the internal mode, the correction outcome counters with their skip-reason
+// breakdown, the MACR interception counters and the config-source status
+// (D-32 last-good visibility). Counts and states ONLY — never typed or
+// corrected text (D-20, T-03-06-03).
+type Status struct {
+	Mode                  string
+	CorrectionsDone       int
+	CorrectionsSkipped    int
+	SkipReasons           map[string]int
+	SuperIntercepted      int
+	SuperUpstreamConsumed int
+	ConfigPath            string
+	ConfigValid           bool
+	ConfigError           string
+}
+
+// StatusSnapshot returns the daemon state for goswitchctl status — filled
+// under the mutex from the counters the actor already keeps, never from a
+// second FSM.
+func (a *Actor) StatusSnapshot() Status {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return Status{}
+}
+
+// CorrectNow forces the word-correction pipeline — the ctl surface's
+// forced correction (INST-02).
+func (a *Actor) CorrectNow() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return ""
+}
+
 // HandleKey implements engine.EventHandler: the decoded event is fed into
 // the FSM under the mutex and a Shift_R release re-arms the deadline timer.
 // Decisions never fire here — only at window expiry (D-04). The returned
