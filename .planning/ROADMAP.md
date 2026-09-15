@@ -111,7 +111,32 @@ Plans:
   4. Все горячие клавиши, таймауты тапов и параметры задаются в YAML-конфиге (схема биндингов Caramba-совместима по мере возможности); изменения применяются без перезапуска демона (hot reload); `goswitchctl` показывает статус, перечитывает конфиг и корректирует принудительно
   5. e2e-матрица v2 зелёная во всей широте (фразы, выделение, смешанный текст, регистры, разные приложения); MACR-01 реализован — замена Super+Буква → Ctrl+Буква по механизму ADR-005 (в v1, внутри goswitch — решение D-12)
 
-**Plans**: TBD
+**Plans**: 7/7 planned
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Трассер: тройной тап исправляет фразу (живой e2e) + run-конвейер смешанного текста D-22..D-24 с золотым корпусом + кап Backspace D-27 — CORR-02, CORR-06
+- [ ] 03-02-PLAN.md — internal/config: YAML-схема (hotkeys/timeouts/correction/macr), strict-декод D-33, fsnotify hot reload + last-good D-32, -config у демона, docs/CONFIG.md + таблица Caramba — CONF-01..03, SWCH-04
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-03-PLAN.md — Выделение: anchorPos-seam, спайк фактической ступени per-surface, геометрия в обе стороны D-30, clipboard-ступень opt-in D-28/D-29 — CORR-03
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-04-PLAN.md — Комбо Shift+RightCtrl (слово→флип D-36), живое потребление конфиг-снапшотов (hot reload CONF-02), layout-single/super-space кейсы D-34 — SWCH-01..03, CONF-02
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03-05-PLAN.md — MACR-01 по ADR-005: спайк доставки Super+Буква, перехват Super→Ctrl, consumed-upstream, per-app appid с деградацией — MACR-01
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03-06-PLAN.md — internal/ctlsvc (session bus org.djarvur.goswitch) + cmd/goswitchctl status/reload/correct, last-good видимость D-32 — INST-02
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 03-07-PLAN.md — Матрица v2 полной широты (шаги select/combo/reload, три поверхности, живой стол + раннер green106) — приёмка M3, пере-доказывает CORR-02/03/06, SWCH-01..03, CONF-02, MACR-01, INST-02
 
 ### Phase 4: Поставка и приёмка
 
@@ -137,7 +162,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
 | 2. Коррекция слова EN↔RU | 7/7 | Complete    | 2026-09-15 |
-| 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
+| 3. Фразы, выделение, переключение и конфигурация | 0/7 | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 
 ## Coverage
