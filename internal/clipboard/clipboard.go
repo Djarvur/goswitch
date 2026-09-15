@@ -69,16 +69,22 @@ func WithRunner(r Runner) func(*Clipboard) {
 }
 
 // Save reads the current clipboard byte-exactly (wl-paste --no-newline).
-// A non-zero wl-paste exit is the EMPTY clipboard — a state, not a failure:
-// had=false, no error, and the restore later clears instead of pasting
-// (Pitfall 3). Everything else (a cancelled context, a missing binary) is
-// an error the caller turns into the rung's quiet refusal.
+// A genuine non-zero wl-paste exit is the EMPTY clipboard — a state, not a
+// failure: had=false, no error, and the restore later clears instead of
+// pasting (Pitfall 3). Everything else is an error the caller turns into
+// the rung's quiet refusal — above all a subprocess KILLED by a signal
+// (CR-03: the rung's own 1500 ms deadline SIGKILLs a wedged wl-paste and
+// os/exec reports the SAME *exec.ExitError type, "signal: killed"). The
+// exit code and the caller's context separate the two: a signal kill has
+// ExitCode -1, a genuine exit is non-negative, and a done context means
+// the kill was ours — reading either as "empty" would make the restore
+// CLEAR a clipboard the subprocess merely failed to report.
 func (c *Clipboard) Save(ctx context.Context) (saved []byte, had bool, err error) {
 	out, err := c.call(ctx, binPaste, []string{flagNoNewline}, nil)
 	if err != nil {
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return nil, false, nil // wl-paste's empty-clipboard exit
+		if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 && ctx.Err() == nil {
+			return nil, false, nil // wl-paste's genuine empty-clipboard exit
 		}
 
 		return nil, false, fmt.Errorf("clipboard save: %w", err)

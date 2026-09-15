@@ -2,8 +2,11 @@ package clipboard_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -50,18 +53,34 @@ type fakeRunner struct {
 func (f *fakeRunner) run(ctx context.Context, name string, args []string, stdin []byte) ([]byte, error) {
 	_, hasDeadline := ctx.Deadline()
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, clipCall{name: name, args: args, stdin: stdin, ctxHasDeadline: hasDeadline})
-	if f.hangUntilCtx {
+	hang := f.hangUntilCtx
+	exitErr := f.exitErr
+	reply := f.reply
+	f.mu.Unlock()
+	if hang {
+		// The real deadline-kill shape (CR-03): the subprocess is RUNNING
+		// when the context's deadline fires — os/exec's Cancel SIGKILLs it
+		// and Wait reports the genuine *exec.ExitError ("signal: killed",
+		// ExitCode -1). The child must be started BEFORE the wait so the
+		// kill — never a start-time refusal — shapes the returned error.
+		cmd := exec.CommandContext(ctx, "sleep", "5")
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("subprocess start: %w", err)
+		}
 		<-ctx.Done()
+		waitErr := cmd.Wait()
+		if waitErr != nil {
+			return nil, fmt.Errorf("subprocess wait: %w", waitErr)
+		}
 
-		return nil, fmt.Errorf("subprocess canceled: %w", ctx.Err())
+		return nil, nil
 	}
-	if name == "wl-paste" && f.exitErr != nil {
-		return nil, f.exitErr
+	if name == "wl-paste" && exitErr != nil {
+		return nil, exitErr
 	}
 
-	return f.reply, nil
+	return reply, nil
 }
 
 // snapshot copies the recorded calls under the guard.
@@ -158,8 +177,10 @@ func assertRoundTripWire(t *testing.T, calls []clipCall) {
 func emptyClipboardClearsOnRestore(t *testing.T) {
 	t.Helper()
 	// The empty-buffer shape: wl-paste's non-zero exit — a genuine
-	// *exec.ExitError, the exact type Save classifies as "empty".
-	f := &fakeRunner{exitErr: &exec.ExitError{}}
+	// *exec.ExitError with a POSITIVE exit code, forged from a real child
+	// (the zero-value ExitError carries no ProcessState and cannot answer
+	// ExitCode).
+	f := &fakeRunner{exitErr: cleanPasteExitErr(t)}
 	c := newClient(f)
 
 	saved, had, err := c.Save(context.Background())
@@ -187,6 +208,97 @@ func emptyClipboardClearsOnRestore(t *testing.T) {
 	}
 	if len(clearCall.stdin) != 0 {
 		t.Errorf("Restore stdin = %q on clear, want none", clearCall.stdin)
+	}
+}
+
+// cleanPasteExitErr is wl-paste's genuine empty-clipboard exit: a real
+// subprocess exiting non-zero (exit status 1) — the state Save must keep
+// reading as EMPTY. Forged from a real child because the wire shape
+// matters: *exec.ExitError with a positive ExitCode.
+func cleanPasteExitErr(t *testing.T) error {
+	t.Helper()
+	err := exec.CommandContext(context.Background(), "false").Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() <= 0 {
+		t.Fatalf("false exit = %v, want *exec.ExitError with a positive exit code", err)
+	}
+
+	return exitErr
+}
+
+// killedPasteErr reproduces the real deadline-kill shape (CR-03): a
+// subprocess KILLED by exec.CommandContext's Cancel reports
+// *exec.ExitError "signal: killed" with ExitCode -1 — the exact type and
+// state the rung's own 1500 ms deadline produces against a wedged
+// wl-paste. Forged from a real killed child (start first, cancel after):
+// the kill must shape the error, never a start-time refusal.
+func killedPasteErr(t *testing.T) error {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, "sleep", "5")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start the kill-shape child: %v", err)
+	}
+	cancel()
+	err := cmd.Wait()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() >= 0 {
+		t.Fatalf("killed child error = %v, want *exec.ExitError with a negative exit code (signal kill)", err)
+	}
+
+	return exitErr
+}
+
+// TestClipboard_KilledNotEmpty pins the CR-03 data-loss guard: a wl-paste
+// KILLED by a signal — above all the rung's own 1500 ms deadline SIGKILL —
+// must surface as an ERROR, never as the empty clipboard. Read as empty,
+// the restore would run wl-copy --clear over a non-empty clipboard the
+// hung subprocess simply failed to report.
+func TestClipboard_KilledNotEmpty(t *testing.T) {
+	t.Parallel()
+
+	t.Run("signal-killed wl-paste is an error, not an empty read", func(t *testing.T) {
+		t.Parallel()
+		f := &fakeRunner{exitErr: killedPasteErr(t)}
+		c := newClient(f)
+
+		saved, had, err := c.Save(context.Background())
+		if err == nil {
+			t.Fatalf("Save() over a killed wl-paste = (%q, %v, nil), want an error"+
+				" — a signal kill must abort the round-trip, never read as empty", saved, had)
+		}
+		if had {
+			t.Error("Save() had = true over a killed wl-paste, want false")
+		}
+	})
+}
+
+// TestClipboard_DeadlineKillNotEmpty pins the CR-03 production path
+// end-to-end: a wl-paste that hangs past the package's own 1500 ms budget
+// is SIGKILLed by exec.CommandContext, and the kill surfaces through the
+// PRODUCTION runner as an error — the exact misclassification that would
+// clear the user's clipboard on restore. Serial: t.Setenv cannot run in
+// parallel tests, and the case spends the real cmdTimeout budget.
+func TestClipboard_DeadlineKillNotEmpty(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "wl-paste")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec /bin/sleep 5\n"), 0o755); err != nil {
+		t.Fatalf("write the hanging wl-paste: %v", err)
+	}
+	t.Setenv("PATH", dir)
+
+	c := clipboard.New()
+	saved, had, err := c.Save(context.Background())
+	if err == nil {
+		t.Fatalf("Save() over the deadline-killed wl-paste = (%q, %v, nil), want an error"+
+			" — the rung's own kill must never read as the empty clipboard", saved, had)
+	}
+	if had {
+		t.Error("Save() had = true over the deadline-killed wl-paste, want false")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Errorf("Save() error = %v, want it to carry the killed subprocess's *exec.ExitError", err)
 	}
 }
 
