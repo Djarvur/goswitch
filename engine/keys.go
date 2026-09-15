@@ -34,6 +34,9 @@ const (
 	KeyShiftR   = 0xffe2
 	KeyControlL = 0xffe3
 	KeySpace    = 0x020
+	// KeyV is the Latin-1 'v' — the paste half of the clipboard rung's
+	// Ctrl+V forward burst (plan 03-03, D-28).
+	KeyV = 0x076
 )
 
 // modsMask isolates the low modifier byte of the IBus state word; the

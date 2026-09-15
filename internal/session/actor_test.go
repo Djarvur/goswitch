@@ -2,6 +2,8 @@ package session_test
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -95,13 +98,17 @@ type forwardCall struct {
 // recorded under a mutex — the observable surface the correction pipeline
 // drives (the guarded-sink style of syncBuffer) — and the unified op log
 // pins the ORDER of the calls (the burst→commit sequence of the ladder).
+// forwardHook, when set, fires inside ForwardKeyEvent so a test can
+// interleave the sink's records with another guarded recorder (the
+// clipboard rung's subprocess log).
 type fakeSink struct {
-	mu       sync.Mutex
-	requires int
-	deletes  []deleteCall
-	commits  []string
-	forwards []forwardCall
-	ops      []string
+	mu          sync.Mutex
+	requires    int
+	deletes     []deleteCall
+	commits     []string
+	forwards    []forwardCall
+	ops         []string
+	forwardHook func(forwardCall)
 }
 
 // RequireSurroundingText records the verification request.
@@ -134,10 +141,15 @@ func (f *fakeSink) CommitText(text engine.IBusText) {
 // ForwardKeyEvent records the replayed key event with its exact arguments.
 func (f *fakeSink) ForwardKeyEvent(keyval, keycode, state uint32) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	f.forwards = append(f.forwards, forwardCall{keyval: keyval, keycode: keycode, state: state})
+	call := forwardCall{keyval: keyval, keycode: keycode, state: state}
+	f.forwards = append(f.forwards, call)
 	f.ops = append(f.ops, fmt.Sprintf("forward(%d,%d,%d)", keyval, keycode, state))
+	hook := f.forwardHook
+	f.mu.Unlock()
+
+	if hook != nil {
+		hook(call)
+	}
 }
 
 // requireCount snapshots the verification-request count.
@@ -1455,6 +1467,207 @@ func TestActor_SelectionNoLetters(t *testing.T) {
 	if texts := sink.commitTexts(); len(texts) != 0 {
 		t.Errorf("letterless selection committed %q, want nothing", texts)
 	}
+}
+
+// Clipboard-rung corpus (plan 03-03, D-28/D-29): the rung is OPT-IN (zero
+// clipboard subprocesses at the default configuration) and fires only on a
+// verify-after mismatch, in the ADR-003 rung-C order — Save → Set(converted)
+// → the Ctrl+V forward burst → best-effort Restore — with the clipboard
+// content never reaching any log record.
+
+// ownerClipBytes is the fake user clipboard the rung must save and restore
+// byte-exactly (D-29).
+var ownerClipBytes = []byte("goswitch-e2e-owner-clip")
+
+// ctrlVKeycode and ctrlLKeycode are the physical (evdev) keycodes of the
+// Ctrl+V forward burst — KEY_V=47, KEY_LEFTCTRL=29 (linux/event-codes.h),
+// the same keycode discipline as backSpaceKeycode=14.
+const (
+	ctrlVKeycode  = 47
+	ctrlLKeycode  = 29
+)
+
+// ctrlVWireCalls is the exact four-event forward sequence of the paste
+// (the owner prototype's validated order): Control_L press bare, v press
+// under Control, v release, Control_L release.
+func ctrlVWireCalls() []forwardCall {
+	return []forwardCall{
+		{keyval: engine.KeyControlL, keycode: ctrlLKeycode, state: 0},
+		{keyval: engine.KeyV, keycode: ctrlVKeycode, state: engine.MaskControl},
+		{keyval: engine.KeyV, keycode: ctrlVKeycode, state: engine.MaskControl | engine.MaskRelease},
+		{keyval: engine.KeyControlL, keycode: ctrlLKeycode, state: engine.MaskControl | engine.MaskRelease},
+	}
+}
+
+// clipRunner is the recording wl-clipboard subprocess fake of the actor
+// corpus: every invocation appends to one guarded sequence log AND fires
+// the optional hook, so a test can interleave the subprocess records with
+// the sink's forward hook and pin the rung's full order. reply is what
+// wl-paste returns (the user's clipboard).
+type clipRunner struct {
+	mu     sync.Mutex
+	seq    []string
+	reply  []byte
+	failOn string // command name whose every invocation fails
+	hook   func(line string)
+}
+
+// run records and answers one subprocess.
+func (r *clipRunner) run(_ context.Context, name string, args []string, stdin []byte) ([]byte, error) {
+	r.mu.Lock()
+	line := fmt.Sprintf("%s %s <- %q", name, strings.Join(args, " "), stdin)
+	r.seq = append(r.seq, line)
+	hook := r.hook
+	r.mu.Unlock()
+	if hook != nil {
+		hook(line)
+	}
+	if r.failOn == name {
+		return nil, errors.New(name + ": simulated failure")
+	}
+	if name == "wl-paste" {
+		return r.reply, nil
+	}
+
+	return nil, nil
+}
+
+// sequence snapshots the recorded subprocess log.
+func (r *clipRunner) sequence() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return append([]string(nil), r.seq...)
+}
+
+// settledWordCorrection drives one settled level-1 word correction and
+// delivers the verify-after MISMATCH push — the state the rung keys on (the
+// client ignored the deletion; the field still holds the pre-correction
+// text).
+func settledWordCorrection(a *session.Actor) {
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-round
+	uncorrected := "abc " + wordEN
+	a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected)) // verify-after mismatch
+}
+
+// TestActor_ClipboardRungDisabledByDefault pins the D-28 opt-in: at the
+// default configuration (ClipboardRung false — the zero Options) a
+// verify-after mismatch launches ZERO clipboard subprocesses — the rung
+// must never touch the user's clipboard unconfigured.
+func TestActor_ClipboardRungDisabledByDefault(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	runner := &clipRunner{reply: ownerClipBytes}
+	a.UseClipboard(clipboard.New(clipboard.WithRunner(runner.run)))
+
+	settledWordCorrection(a)
+
+	if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
+		t.Fatalf("mismatch counter = %d, want 1 (precondition of the pin); log:\n%s", got, buf.String())
+	}
+	if seq := runner.sequence(); len(seq) != 0 {
+		t.Errorf("clipboard subprocesses at default config = %q, want none (D-28 opt-in)", seq)
+	}
+	if got := len(sink.forwardCalls()); got != 0 {
+		t.Errorf("forward events = %d, want 0 — no paste may be replayed unconfigured", got)
+	}
+}
+
+// TestActor_ClipboardRungAfterMismatch pins the rung's full contract
+// (D-28/D-29): with ClipboardRung enabled a verify-after mismatch runs the
+// ADR-003 rung-C sequence — wl-paste save, wl-copy set of the CONVERTED
+// text, the four-event Ctrl+V forward burst, wl-copy restore of the saved
+// bytes — in exactly that order (the interleaved sequence log), with the
+// clipboard content never appearing in any INFO record. A restore failure
+// is a WARN (D-29), never an operation error: the mismatch counter stays at
+// one and the sequence completes.
+func TestActor_ClipboardRungAfterMismatch(t *testing.T) {
+	t.Run("full sequence in order, no content in INFO", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		a.SetOptions(session.Options{ClipboardRung: true})
+		runner := &clipRunner{reply: ownerClipBytes}
+		a.UseClipboard(clipboard.New(clipboard.WithRunner(runner.run)))
+
+		// One guarded sequence log across BOTH recorders pins the rung's
+		// full order: subprocesses (numbered in arrival order — the seq
+		// assertions below name which is which) and forward events,
+		// interleaved.
+		var seqMu sync.Mutex
+		full := []string{}
+		record := func(line string) {
+			seqMu.Lock()
+			defer seqMu.Unlock()
+			full = append(full, line)
+		}
+		clipCalls := 0
+		sink.forwardHook = func(forwardCall) { record("forward") }
+		runner.hook = func(string) {
+			clipCalls++
+			record(fmt.Sprintf("clip:%d", clipCalls))
+		}
+
+		settledWordCorrection(a)
+
+		want := []string{
+			"clip:1", "clip:2", "forward", "forward", "forward", "forward", "clip:3",
+		}
+		if !slices.Equal(full, want) {
+			t.Fatalf("rung sequence = %q, want %q (save → set → Ctrl+V burst → restore)", full, want)
+		}
+		seq := runner.sequence()
+		if len(seq) != 3 {
+			t.Fatalf("clipboard subprocesses = %q, want exactly 3 (save, set, restore)", seq)
+		}
+		if !strings.Contains(seq[0], "wl-paste --no-newline") {
+			t.Errorf("first subprocess = %q, want the wl-paste save", seq[0])
+		}
+		if !strings.Contains(seq[1], "wl-copy --trim-newline") || !strings.Contains(seq[1], wordRU) {
+			t.Errorf("set subprocess = %q, want wl-copy of the converted %q through stdin", seq[1], wordRU)
+		}
+		if !strings.Contains(seq[2], "wl-copy --trim-newline") || !strings.Contains(seq[2], string(ownerClipBytes)) {
+			t.Errorf("restore subprocess = %q, want wl-copy of the saved owner bytes", seq[2])
+		}
+		forwards := sink.forwardCalls()
+		if !slices.Equal(forwards, ctrlVWireCalls()) {
+			t.Fatalf("forward events = %+v, want the exact Ctrl+V burst %+v", forwards, ctrlVWireCalls())
+		}
+		// D-20/D-21: no INFO record carries clipboard content — neither the
+		// replacement nor the owner bytes.
+		for _, line := range strings.Split(buf.String(), "\n") {
+			if !strings.Contains(line, `"level":"INFO"`) {
+				continue
+			}
+			if strings.Contains(line, wordRU) || strings.Contains(line, string(ownerClipBytes)) {
+				t.Errorf("INFO record leaks clipboard content: %s", line)
+			}
+		}
+	})
+
+	t.Run("restore failure is a WARN, not an error", func(t *testing.T) {
+		buf := captureLogsLevel(t, slog.LevelWarn)
+		a, sink := wiredActor()
+		a.SetOptions(session.Options{ClipboardRung: true})
+		runner := &clipRunner{reply: ownerClipBytes, failOn: "wl-copy"}
+		a.UseClipboard(clipboard.New(clipboard.WithRunner(runner.run)))
+
+		settledWordCorrection(a)
+
+		if !strings.Contains(buf.String(), "clipboard restore failed") {
+			t.Errorf("restore-failure WARN missing; log:\n%s", buf.String())
+		}
+		if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
+			t.Errorf("mismatch counter = %d, want 1 — the rung degrades, never re-fires the verdict", got)
+		}
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Errorf("forward events after a failed Set = %d, want 0 — no paste without a clipboard", got)
+		}
+	})
 }
 
 // TestActor_KeyEventsFeedFSM pins the single-tap path: a clean Shift_R

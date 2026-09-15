@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/correct"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/layouts"
@@ -83,8 +84,18 @@ type Actor struct {
 	sel         selectionState
 	pending     *pendingFix
 	after       *pendingAfter
-	verifyEpoch uint64     // monotonic verify-after round tag (stale-timer guard)
-	mode        scriptMode // output-script state, EN at start (ADR-001 Option B)
+	verifyEpoch uint64             // monotonic verify-after round tag (stale-timer guard)
+	mode        scriptMode         // output-script state, EN at start (ADR-001 Option B)
+	opts        Options            // correction tuning (D-27 cap, D-28 rung switch)
+	clip        *clipboard.Clipboard // the rung's wl-clipboard client
+}
+
+// Options is the correction-tuning surface of the actor (plan 03-03): the
+// D-27 Backspace series cap and the D-28 opt-in clipboard rung switch —
+// OFF at the zero value, which is the default configuration.
+type Options struct {
+	BackspaceCap  int
+	ClipboardRung bool
 }
 
 // selectionState is the selection half of the latest surrounding-text push
@@ -161,7 +172,29 @@ func NewActor(window time.Duration) *Actor {
 		window: window,
 		start:  time.Now(),
 		buf:    correct.NewBuffer(),
+		clip:   clipboard.New(),
 	}
+}
+
+// SetOptions stores the correction options (the startup wiring feeds them
+// from config.Load; the snapshot consumption on hot reload is plan 03-04).
+// The caller is the daemon or a test — the actor reads the options under
+// its mutex at use time.
+func (a *Actor) SetOptions(o Options) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.opts = o
+}
+
+// UseClipboard replaces the actor's clipboard client — the test seam of the
+// D-28 rung (the daemon keeps the production wl-clipboard client NewActor
+// wired).
+func (a *Actor) UseClipboard(c *clipboard.Clipboard) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.clip = c
 }
 
 // HandleKey implements engine.EventHandler: the decoded event is fed into

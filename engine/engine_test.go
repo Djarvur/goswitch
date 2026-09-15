@@ -300,6 +300,7 @@ func TestEngine_KeyConstants(t *testing.T) {
 		"KeyShiftR":    engine.KeyShiftR,
 		"KeyControlL":  engine.KeyControlL,
 		"KeySpace":     engine.KeySpace,
+		"KeyV":         engine.KeyV,
 	}
 	wantKeyvals := map[string]uint32{
 		"KeyBackSpace": 0xff08,
@@ -311,6 +312,7 @@ func TestEngine_KeyConstants(t *testing.T) {
 		"KeyShiftR":    0xffe2,
 		"KeyControlL":  0xffe3,
 		"KeySpace":     0x020,
+		"KeyV":         0x076,
 	}
 	for name, want := range wantKeyvals {
 		if got := keyvals[name]; got != want {
