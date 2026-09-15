@@ -82,6 +82,7 @@ const (
 // race between concurrent ProcessKeyEvent calls.
 type Actor struct {
 	mu           sync.Mutex
+	rungMu       sync.Mutex // serializes the clipboard rung (WR-01: the rung runs off the actor mutex)
 	fsm          *hotkey.FSM
 	window       time.Duration
 	verifyWait   time.Duration // the ADR-004 budget in force (CR-02: fed by timeouts.verify_wait_ms)
@@ -498,39 +499,13 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 // (ADR-003/ADR-004 post-check) compares the suffix against the replacement
 // the correction left behind: a mismatch — the client ignored the deletion,
 // Chromium ibus#2354, Pitfall 3 — counts as an INFO record and is NEVER
-// followed by an automatic repair.
+// followed by an automatic repair. The mismatch verdict arms the clipboard
+// rung OUTSIDE the mutex (WR-01): the rung's three 1.5 s subprocesses must
+// never stall the keystroke path, so the locked core below only hands the
+// rung payload to the caller.
 func (a *Actor) HandleSurroundingText(text string, cursorPos, anchorPos uint32) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
-
-	a.surr = beforeCursor(text, cursorPos)
-	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
-	if a.pending != nil {
-		if !a.pendingVerdict() {
-			a.resolvePending()
-			a.skipCorrection("verify-mismatch")
-			a.settleCombo() // the word half settled by refusal — the D-36 flip still fires
-
-			return
-		}
-		a.executeCorrection()
-
-		return
-	}
-	if a.after != nil {
-		expected := a.after.expected
-		paste := a.after.paste
-		start, atRange := a.after.start, a.after.atRange
-		a.clearAfter()
-		if !a.afterVerdict(expected, start, atRange) {
-			slog.Info("correction verify", "outcome", "mismatch")
-			a.runClipboardRung(paste)
-
-			return
-		}
-		slog.Debug("correction verify", "outcome", "match")
+	if paste, armed := a.handleSurroundingLocked(text, cursorPos, anchorPos); armed {
+		a.runClipboardRung(paste)
 	}
 }
 
@@ -708,6 +683,47 @@ func (a *Actor) applySnapshot() {
 	a.ensureAppid() // the per-app list may have appeared with this document
 }
 
+// handleSurroundingLocked is the mutex-held core of HandleSurroundingText.
+// It returns the rung payload and whether the mismatch verdict ARMED the
+// rung (ClipboardRung on, a client and an engine present) — the caller then
+// runs the subprocess sequence outside the mutex (WR-01), against its own
+// snapshots.
+func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32) ([]rune, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
+
+	a.surr = beforeCursor(text, cursorPos)
+	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
+	if a.pending != nil {
+		if !a.pendingVerdict() {
+			a.resolvePending()
+			a.skipCorrection("verify-mismatch")
+			a.settleCombo() // the word half settled by refusal — the D-36 flip still fires
+
+			return nil, false
+		}
+		a.executeCorrection()
+
+		return nil, false
+	}
+	if a.after != nil {
+		expected := a.after.expected
+		payload := a.after.paste
+		start, atRange := a.after.start, a.after.atRange
+		a.clearAfter()
+		if !a.afterVerdict(expected, start, atRange) {
+			slog.Info("correction verify", "outcome", "mismatch")
+
+			return payload, a.opts.ClipboardRung && a.clip != nil && a.eng != nil
+		}
+		slog.Debug("correction verify", "outcome", "match")
+	}
+
+	return nil, false
+}
+
 // pendingVerdict checks the pending fix's range against the fresh push: the
 // word and phrase paths need the text before the cursor to END with their
 // range (token+tail), the selection path needs its runes AT the reported
@@ -815,32 +831,64 @@ const (
 // client still holds selected, and restore the saved state best-effort — a
 // restore failure is a WARN (D-29), never an operation error. Clipboard
 // CONTENT is never logged at any level (D-20/D-21 extension), and the rung
-// is OFF unless Options.ClipboardRung armed it (the default configuration
-// never touches the user's clipboard). The caller holds the mutex.
+// only runs armed (the caller checked ClipboardRung and the snapshots).
+//
+// WR-01: the rung runs WITHOUT the actor mutex — up to three 1.5 s
+// subprocesses must never stall the <50 ms keystroke path that serializes
+// on it. The rung touches no FSM/buffer state: it works on the payload and
+// its own emitter/clipboard snapshots, and takes a.mu only for the brief
+// counter updates (recordSkip). The emitter calls are wire-safe off-mutex
+// (godbus Emit is goroutine-safe). rungMu serializes the rungs themselves:
+// a second mismatch concluding while one rung is mid-flight skips with the
+// busy reason — never blocks, never interleaves a second wl-copy/wl-paste
+// pair into the first round-trip.
 func (a *Actor) runClipboardRung(paste []rune) {
-	if !a.opts.ClipboardRung || a.clip == nil {
+	// The rung's own snapshots, read under a brief lock (the verdict armed
+	// it under the same guard one call earlier; a mid-window engine swap
+	// only retargets the burst to the live sink).
+	a.mu.Lock()
+	eng, clip := a.eng, a.clip
+	a.mu.Unlock()
+	if eng == nil || clip == nil {
 		return
 	}
+	if !a.rungMu.TryLock() {
+		a.recordSkip("clipboard-rung-busy")
+
+		return
+	}
+	defer a.rungMu.Unlock()
+
 	// The clipboard client bounds every subprocess with its own deadline
 	// (T-03-03-05) — a background context is the rung's lifetime.
 	ctx := context.Background()
-	saved, had, err := a.clip.Save(ctx)
+	saved, had, err := clip.Save(ctx)
 	if err != nil {
-		a.skipCorrection("clipboard-unavailable")
+		a.recordSkip("clipboard-unavailable")
 
 		return
 	}
-	if err := a.clip.Set(ctx, []byte(string(paste))); err != nil {
-		a.skipCorrection("clipboard-unavailable")
+	if err := clip.Set(ctx, []byte(string(paste))); err != nil {
+		a.recordSkip("clipboard-unavailable")
 
 		return
 	}
-	forwardCtrlV(a.eng)
-	if err := a.clip.Restore(ctx, saved, had); err != nil {
+	forwardCtrlV(eng)
+	if err := clip.Restore(ctx, saved, had); err != nil {
 		// D-29: best-effort — the replacement already landed in the field;
 		// a failed restore is logged (error only, never content), not raised.
 		slog.Warn("clipboard restore failed", "error", err)
 	}
+}
+
+// recordSkip records one D-20 refusal from the mutex-free rung: a brief
+// re-acquisition of the actor mutex around the counter (skipCorrection's
+// contract — the caller holds the mutex).
+func (a *Actor) recordSkip(reason string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.skipCorrection(reason)
 }
 
 // forwardCtrlV replays the paste over the active selection: the owner

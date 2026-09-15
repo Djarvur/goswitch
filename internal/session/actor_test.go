@@ -1911,6 +1911,85 @@ func assertNoClipContentInINFO(t *testing.T, logged string) {
 	}
 }
 
+// TestActor_ClipboardRungOffKeyPath pins WR-01: the rung's subprocess
+// sequence NEVER holds the actor mutex — while a wedged wl-paste parks the
+// rung, keystrokes keep deciding through the FSM, and a SECOND mismatch
+// concluding in that window skips with a busy reason instead of blocking
+// or interleaving a second wl-copy/wl-paste pair into the first round-trip.
+func TestActor_ClipboardRungOffKeyPath(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(session.Options{ClipboardRung: true})
+	release := make(chan struct{})
+	saveStarted := make(chan struct{})
+	var saveOnce sync.Once
+	a.UseClipboard(clipboard.New(clipboard.WithRunner(
+		func(_ context.Context, name string, _ []string, _ []byte) ([]byte, error) {
+			if name != "wl-paste" {
+				return nil, nil
+			}
+			saveOnce.Do(func() { close(saveStarted) })
+			<-release // the wedged wl-paste: parks until the test frees it
+
+			return []byte(ownerClipStr), nil
+		})))
+
+	rungDone := make(chan struct{})
+	go func() {
+		defer close(rungDone)
+		settledWordCorrection(a) // ends in the mismatch push → the rung parks in Save
+	}()
+	select {
+	case <-saveStarted:
+	case <-time.After(reloadWait):
+		t.Fatalf("the rung never started its save; log:\n%s", buf.String())
+	}
+
+	// A key event must complete while the rung is parked — the daemon's
+	// <50 ms key contract cannot queue behind three 1.5 s subprocesses.
+	// (A modifier pair: the same HandleKey → mutex → FSM path as any
+	// keystroke, without polluting the buffer the next round settles.)
+	keyDone := make(chan struct{})
+	go func() {
+		defer close(keyDone)
+		tapKeySeries(a, hotkey.KeyvalAltL)
+	}()
+	select {
+	case <-keyDone:
+	case <-time.After(reloadWait):
+		t.Fatalf("a key event blocked behind the parked rung — the rung must not hold the actor mutex; log:\n%s",
+			buf.String())
+	}
+
+	// A SECOND full correction settling into a mismatch while the first
+	// rung is parked must conclude with the busy skip — never block, never
+	// paste a second payload. A Reset first: the executed round replaced
+	// the buffer's token, and the fresh round needs a fresh word.
+	a.HandleLifecycle(engine.LifecycleReset)
+	settledWordCorrection(a)
+	if !strings.Contains(buf.String(), `"reason":"clipboard-rung-busy"`) {
+		t.Errorf("the concurrent rung attempt did not skip busy; log:\n%s", buf.String())
+	}
+	if got := len(sink.forwardCalls()); got != 0 {
+		t.Errorf("forward events while parked = %d, want 0 — the busy rung must not paste", got)
+	}
+
+	close(release)
+	select {
+	case <-rungDone:
+	case <-time.After(reloadWait):
+		t.Fatalf("the parked rung never completed after the release; log:\n%s", buf.String())
+	}
+	// The one live rung finished its full contract: exactly one Ctrl+V
+	// burst and the mismatch verdict counted once.
+	if got := len(sink.forwardCalls()); got != len(ctrlVWireCalls()) {
+		t.Errorf("forward events after the release = %d, want the single full burst %d", got, len(ctrlVWireCalls()))
+	}
+	if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 2 {
+		t.Errorf("mismatch verdicts = %d, want 2 (one per settled round); log:\n%s", got, buf.String())
+	}
+}
+
 // TestActor_KeyEventsFeedFSM pins the single-tap path: a clean Shift_R
 // press/release pair produces exactly one decision record, n=1, at window
 // expiry — never inside HandleKey.
