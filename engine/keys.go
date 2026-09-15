@@ -39,7 +39,13 @@ const (
 	// memory, the 02-05 class trap). The resolved binding itself lives in
 	// the pure hotkey package as KeyvalCtrlR.
 	KeyControlR = 0xffe4
-	KeySpace    = 0x020
+	// KeySuperL/KeySuperR are the Super/Windows modifier keysyms
+	// (ibuskeysyms.h "#define IBUS_KEY_Super_L 0xffeb" / Super_R 0xffec,
+	// verified verbatim) — the press/release pair the MACR layer tracks for
+	// its consumed-upstream detect (ADR-005 b.1/b.2).
+	KeySuperL = 0xffeb
+	KeySuperR = 0xffec
+	KeySpace  = 0x020
 	// KeyV is the Latin-1 'v' — the paste half of the clipboard rung's
 	// Ctrl+V forward burst (plan 03-03, D-28).
 	KeyV = 0x076

@@ -2264,3 +2264,268 @@ func TestActor_HotReloadInvalidKeepsLastGood(t *testing.T) {
 		t.Fatalf("commits = %q, want one %q — the served document is the behavior", texts, wordRU)
 	}
 }
+
+// MACR corpus (plan 03-05 Task 2, MACR-01/ADR-005): the Super→Ctrl remap
+// layer. The interception branch sits in feedKey ABOVE every mode branch
+// (Pattern 6): a configured letter press carrying Mod4 is consumed and
+// replayed as the owner prototype's Ctrl+letter forward burst — in ANY
+// internal mode, feeding no rune to the buffer, printing nothing. The
+// consumed-upstream detect (ADR-005 b.2) keys on the live-proven wire
+// shape: the Super press arrives bare, its release still carries Mod4, and
+// a shell-consumed chord delivers NO letter press at all between them.
+
+// The physical keycodes of the MACR burst's modifier and letter halves
+// (/usr/include/linux/input-event-codes.h — KEY_LEFTCTRL, KEY_RIGHTCTRL,
+// KEY_A, KEY_B; the same keycode discipline as backSpaceKeycode).
+const (
+	macrCtrlLKeycode = 29
+	macrCtrlRKeycode = 97
+	macrKeyAKeycode  = 30
+)
+
+// enableMACR feeds the MACR options surface with the given letter set —
+// the config document's macr section (03-02 schema) through the same
+// SetOptions path the combo corpus uses.
+func enableMACR(a *session.Actor, letters string) {
+	set := make(map[rune]bool)
+	for _, r := range letters {
+		set[r] = true
+	}
+	a.SetOptions(session.Options{MACREnabled: true, MACRLetters: set})
+}
+
+// TestActor_MACRIntercepts pins the interception itself (MACR-01, ADR-005):
+// super+a (a press carrying Mod4 — the press-side wire truth of the live
+// trace) is CONSUMED and replayed as exactly the prototype's four-event
+// Ctrl+letter burst; nothing prints (the branch sits above the mode
+// branches); the INFO record names the config letter only (D-20); the
+// counter grows. The alt_modifier subtest pins the b.3 mechanics (empty
+// default = Control_L; a configured name swaps the modifier key only).
+func TestActor_MACRIntercepts(t *testing.T) {
+	t.Run("super+a consumed as the Ctrl+a burst, no commit", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		enableMACR(a, "a")
+
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4})
+		if !consumed {
+			t.Fatalf("super+a press was not consumed — the MACR branch must own it (MACR-01)")
+		}
+
+		want := []forwardCall{
+			{keyval: engine.KeyControlL, keycode: macrCtrlLKeycode, state: 0},
+			{keyval: uint32('a'), keycode: macrKeyAKeycode, state: engine.MaskControl},
+			{keyval: uint32('a'), keycode: macrKeyAKeycode, state: engine.MaskControl | engine.MaskRelease},
+			{keyval: engine.KeyControlL, keycode: macrCtrlLKeycode, state: engine.MaskControl | engine.MaskRelease},
+		}
+		if got := sink.forwardCalls(); !slices.Equal(got, want) {
+			t.Fatalf("forward burst = %+v, want exactly the prototype Ctrl+letter sequence %+v", got, want)
+		}
+		if texts := sink.commitTexts(); len(texts) != 0 {
+			t.Fatalf("MACR interception committed %q — the branch sits ABOVE the mode branches, nothing may print", texts)
+		}
+		if !strings.Contains(buf.String(), `"msg":"super intercept","key":"a"`) {
+			t.Errorf("interception INFO record missing (config letter + counters only, D-20); log:\n%s", buf.String())
+		}
+		if got := a.MACRCounters(); got.SuperIntercepted != 1 || got.ConsumedUpstream != 0 {
+			t.Errorf("counters = %+v, want {SuperIntercepted:1 ConsumedUpstream:0}", got)
+		}
+	})
+
+	t.Run("alt_modifier ctrl_r swaps the burst's modifier key (ADR-005 b.3; empty default keeps Control_L)", func(t *testing.T) {
+		a, sink := wiredActor()
+		a.SetOptions(session.Options{
+			MACREnabled:     true,
+			MACRLetters:     map[rune]bool{'a': true},
+			MACRAltModifier: "ctrl_r",
+		})
+
+		_ = a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4})
+
+		calls := sink.forwardCalls()
+		if len(calls) != 4 {
+			t.Fatalf("alt-modifier burst = %d events, want the 4-event shape", len(calls))
+		}
+		if calls[0].keyval != engine.KeyControlR || calls[3].keyval != engine.KeyControlR {
+			t.Fatalf("alt-modifier burst ends = %x/%x, want Control_R (0xffe4) at both ends",
+				calls[0].keyval, calls[3].keyval)
+		}
+		if calls[0].keycode != macrCtrlRKeycode {
+			t.Errorf("Control_R keycode = %d, want %d (KEY_RIGHTCTRL)", calls[0].keycode, macrCtrlRKeycode)
+		}
+	})
+
+	t.Run("letters arrive through the config snapshot (CONF-02 consumption)", func(t *testing.T) {
+		a, sink := wiredActor()
+		cfg := config.Defaults()
+		cfg.MACR.Enabled = true
+		cfg.MACR.Letters = "a"
+		a.AttachConfig(&reloadSource{cfg: cfg})
+
+		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
+			t.Fatalf("super+a under a config snapshot was not consumed — the macr section must fold like the rest")
+		}
+		if got := len(sink.forwardCalls()); got != 4 {
+			t.Fatalf("snapshot-fed interception forwarded %d events, want the 4-event burst", got)
+		}
+	})
+}
+
+// TestActor_MACRDisabledByDefault pins the off-by-default contract: the
+// zero Options (the no-config daemon) never touches a Super chord — no
+// burst, no consumed-upstream WARN (the native Super use must not spam),
+// and even under an enabled layer only the configured letter set is
+// intercepted.
+func TestActor_MACRDisabledByDefault(t *testing.T) {
+	t.Run("off: super+a transits, no burst, no warn", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); consumed {
+			t.Fatalf("super+a consumed with MACR off — the default layer must never touch the keyboard")
+		}
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL, Mods: engine.MaskMod4, Release: true})
+
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Errorf("MACR-off daemon forwarded %+v, want none", got)
+		}
+		if strings.Contains(buf.String(), `"msg":"super combo skipped"`) {
+			t.Errorf("consumed-upstream WARN with MACR off — spam on every native Super use; log:\n%s", buf.String())
+		}
+		if got := a.MACRCounters(); got.SuperIntercepted != 0 || got.ConsumedUpstream != 0 {
+			t.Errorf("counters = %+v, want the zero value with the layer off", got)
+		}
+	})
+
+	t.Run("letter outside the set transits under enabled", func(t *testing.T) {
+		a, sink := wiredActor()
+		enableMACR(a, "a")
+
+		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('b'), Mods: engine.MaskMod4}); consumed {
+			t.Fatalf("super+b consumed with letters \"a\" — only the configured set is intercepted (ADR-005 b)")
+		}
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Errorf("out-of-set letter forwarded %+v, want none", got)
+		}
+	})
+}
+
+// TestActor_MACRBufferNotFed pins the comboMask invariant against the MACR
+// branch: the intercepted chord puts no rune in the field, so the buffer
+// must stay empty — a double tap after it finds nothing and refuses with
+// empty-buffer (the same buffer oracle as the combo corpus).
+func TestActor_MACRBufferNotFed(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	enableMACR(a, "a")
+
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+	_ = a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4})
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL, Mods: engine.MaskMod4, Release: true})
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Fatalf("empty-buffer record missing — the intercepted letter fed the buffer; log:\n%s", buf.String())
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("commits = %q, want none — the interception puts no rune in the field", texts)
+	}
+}
+
+// TestActor_MACRConsumedUpstream pins the b.2 detect: a Super press/release
+// pair with NO letter press in between (the shell consumed the chord before
+// the IME) WARNs with the grep-stable reason and counts; a letter that DID
+// arrive — intercepted or transited — means nothing was consumed upstream,
+// so no WARN; the two counters grow independently.
+func TestActor_MACRConsumedUpstream(t *testing.T) {
+	t.Run("bare super press/release warns and counts", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		enableMACR(a, "a")
+
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL, Mods: engine.MaskMod4, Release: true})
+
+		if !strings.Contains(buf.String(), `"msg":"super combo skipped","reason":"consumed-upstream"`) {
+			t.Fatalf("consumed-upstream WARN missing after a bare Super press/release; log:\n%s", buf.String())
+		}
+		if got := a.MACRCounters(); got.ConsumedUpstream != 1 || got.SuperIntercepted != 0 {
+			t.Errorf("counters = %+v, want {SuperIntercepted:0 ConsumedUpstream:1}", got)
+		}
+	})
+
+	t.Run("a seen letter during the hold is not consumed-upstream", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		enableMACR(a, "a")
+
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		_ = a.HandleKey(engine.EngineEvent{Keyval: uint32('x'), Mods: engine.MaskMod4}) // transits: not in the set
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL, Mods: engine.MaskMod4, Release: true})
+
+		if strings.Contains(buf.String(), `"msg":"super combo skipped"`) {
+			t.Errorf("a transited super+x misreported as consumed-upstream; log:\n%s", buf.String())
+		}
+		if got := a.MACRCounters(); got.ConsumedUpstream != 0 {
+			t.Errorf("ConsumedUpstream = %d, want 0 — the letter reached the IME", got.ConsumedUpstream)
+		}
+	})
+
+	t.Run("an intercepted hold does not warn; the counters grow separately", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		enableMACR(a, "a")
+
+		// First the solo pair: one legitimate warn.
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL, Mods: engine.MaskMod4, Release: true})
+		// Then a hold that intercepts: the release must NOT warn again.
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+		_ = a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4})
+		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL, Mods: engine.MaskMod4, Release: true})
+
+		if got := strings.Count(buf.String(), `"msg":"super combo skipped"`); got != 1 {
+			t.Errorf("super-combo-skipped records = %d, want exactly 1 (the intercepted hold must not warn); log:\n%s",
+				got, buf.String())
+		}
+		if got := a.MACRCounters(); got.SuperIntercepted != 1 || got.ConsumedUpstream != 1 {
+			t.Errorf("counters = %+v, want {SuperIntercepted:1 ConsumedUpstream:1} — the counters grow separately", got)
+		}
+	})
+}
+
+// TestActor_MACRRULayoutStillIntercepts pins the branch ORDER (Pattern 6):
+// with the internal mode flipped to RU — where a plain 'a' press would be
+// consumed and committed as 'ф' — super+a is still intercepted FIRST: the
+// burst carries the LATIN keyval and the RU branch never fires (the plan's
+// live trace proved the interception input is layout-independent).
+func TestActor_MACRRULayoutStillIntercepts(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	if !strings.Contains(buf.String(), `"msg":"mode","to":"ru"`) {
+		t.Fatalf("RU flip missing before the interception round; log:\n%s", buf.String())
+	}
+
+	enableMACR(a, "a")
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+	consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4})
+	if !consumed {
+		t.Fatalf("super+a in RU mode was not consumed — the MACR branch sits above the mode branches")
+	}
+
+	calls := sink.forwardCalls()
+	if len(calls) != 4 || calls[1].keyval != uint32('a') {
+		t.Fatalf("burst = %+v, want the Ctrl+LATIN-a shape — the RU translation must never reach it", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Fatalf("RU mode committed %q on an intercepted chord — the branch order is violated", texts)
+	}
+}

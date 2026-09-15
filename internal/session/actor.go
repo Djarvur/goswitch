@@ -102,11 +102,24 @@ type Actor struct {
 // D-27 Backspace series cap and the D-28 opt-in clipboard rung switch —
 // OFF at the zero value, which is the default configuration — plus the
 // D-36 word-layout combo binding (the zero Binding selects the built-in
-// Shift+Control_R default).
+// Shift+Control_R default) and the MACR-01 Super→Ctrl layer of ADR-005
+// (plan 03-05): OFF at the zero value, with an empty letter set, no per-app
+// list and NO alternative modifier (b.3 — not introduced by default).
 type Options struct {
 	BackspaceCap    int
 	ClipboardRung   bool
 	WordLayoutCombo hotkey.Binding
+	MACREnabled     bool
+	MACRLetters     map[rune]bool
+	MACRApps        []string
+	MACRAltModifier string
+}
+
+// MACRStats are the Super→Ctrl layer's counters (ADR-005 b.2) — the status
+// surface the 03-06 goswitchctl reads; the field names are the contract.
+type MACRStats struct {
+	SuperIntercepted int
+	ConsumedUpstream int
 }
 
 // defaultComboBinding is the built-in word-layout combo (D-36/SPEC §4.1
@@ -231,6 +244,16 @@ func (a *Actor) UseClipboard(c *clipboard.Clipboard) {
 	defer a.mu.Unlock()
 
 	a.clip = c
+}
+
+// MACRCounters snapshots the Super→Ctrl layer's counters — the goswitchctl
+// status surface of plan 03-06 (ADR-005 b.2: every intercepted combination
+// and every upstream-consumed one is countable, never silent).
+func (a *Actor) MACRCounters() MACRStats {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return MACRStats{}
 }
 
 // HandleKey implements engine.EventHandler: the decoded event is fed into
