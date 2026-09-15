@@ -7,6 +7,8 @@ package main
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -241,6 +243,253 @@ func TestMatrixStepValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// matrixCorpusV2Steps is the phase-3 step vocabulary corpus: one case per
+// new step kind shape (plan 03-07). The select value is the canonical
+// injection name the 03-03 spike pinned live (ctrl+a); the combo value is
+// the canonical spelling the 03-04 probe canonicalized (SHIFT_R+CTRL_R);
+// the reload payload is a config fragment (lines applied against the case
+// daemon's temp document) plus the expected outcome.
+const matrixCorpusV2Steps = `name: select-shape
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {select: "ctrl+a"}
+expect_text: "ghbdtn"
+---
+name: combo-shape
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {combo: "SHIFT_R+CTRL_R"}
+expect_text: "привет"
+---
+name: reload-applied-shape
+surface: zenity
+mode: en
+steps:
+  - reload:
+      lines: ["  tap_window_ms: 200"]
+      expect: applied
+expect_text: "ф"
+---
+name: reload-rejected-shape
+surface: zenity
+mode: en
+steps:
+  - reload:
+      lines: ["  tap_window_mss: 100"]
+      expect: rejected
+expect_text: "ф"
+`
+
+// TestMatrixDecode_SelectComboReload pins the phase-3 step kinds' happy
+// path: the three new shapes decode into exact field values and pass
+// validation (the counter accepts each new kind as the one set field).
+func TestMatrixDecode_SelectComboReload(t *testing.T) {
+	t.Parallel()
+
+	cases, err := loadMatrixCases([]byte(matrixCorpusV2Steps))
+	if err != nil {
+		t.Fatalf("loadMatrixCases: %v", err)
+	}
+	if len(cases) != 4 {
+		t.Fatalf("decoded %d cases, want 4", len(cases))
+	}
+
+	t.Run("select", func(t *testing.T) {
+		t.Parallel()
+
+		st := cases[0].Steps[1]
+		if st.Select != "ctrl+a" {
+			t.Errorf("Steps[1].Select = %q, want %q", st.Select, "ctrl+a")
+		}
+	})
+	t.Run("combo", func(t *testing.T) {
+		t.Parallel()
+
+		st := cases[1].Steps[1]
+		if st.Combo != "SHIFT_R+CTRL_R" {
+			t.Errorf("Steps[1].Combo = %q, want %q", st.Combo, "SHIFT_R+CTRL_R")
+		}
+	})
+	t.Run("reload applied and rejected", func(t *testing.T) {
+		t.Parallel()
+
+		applied := cases[2].Steps[0].Reload
+		if applied == nil {
+			t.Fatal("applied reload step decoded a nil payload")
+		}
+		if len(applied.Lines) != 1 || applied.Lines[0] != "  tap_window_ms: 200" {
+			t.Errorf("applied reload Lines = %#v, want [\"  tap_window_ms: 200\"]", applied.Lines)
+		}
+		if applied.Expect != "applied" {
+			t.Errorf("applied reload Expect = %q, want %q", applied.Expect, "applied")
+		}
+		rejected := cases[3].Steps[0].Reload
+		if rejected == nil || rejected.Expect != "rejected" {
+			t.Errorf("rejected reload payload = %#v, want Expect %q", rejected, "rejected")
+		}
+	})
+}
+
+// TestMatrixDecode_RejectsNew extends the strict-schema line (T-02-06-01)
+// to the phase-3 kinds: an unknown field inside the reload payload, a step
+// carrying two kinds, a bad expect value, and unknown select/combo names
+// are ALL decode/validation errors — never silently executable.
+func TestMatrixDecode_RejectsNew(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		corpus string
+	}{
+		{
+			name: "reload unknown field",
+			corpus: "{name: v, surface: zenity, mode: en," +
+				` steps: [reload: {lines: [], expect: applied, frag: x}], expect_text: ф}`,
+		},
+		{
+			name: "select and combo in one step",
+			corpus: "{name: v, surface: zenity, mode: en," +
+				` steps: [{select: "ctrl+a", combo: "SHIFT_R+CTRL_R"}], expect_text: ф}`,
+		},
+		{
+			name: "reload bad expect",
+			corpus: "{name: v, surface: zenity, mode: en," +
+				` steps: [reload: {lines: [], expect: maybe}], expect_text: ф}`,
+		},
+		{
+			name: "select unknown name",
+			corpus: `{name: v, surface: zenity, mode: en, steps: [{select: "ctrl+z"}], expect_text: ф}`,
+		},
+		{
+			name: "combo unknown name",
+			corpus: `{name: v, surface: zenity, mode: en, steps: [{combo: "alt+x"}], expect_text: ф}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := loadMatrixCases([]byte(tc.corpus)); err == nil {
+				t.Fatalf("decode of %q succeeded, want an error", tc.name)
+			}
+		})
+	}
+}
+
+// TestMatrixKeyNames_Canonical pins the canonicalization table (Pitfall 5):
+// the select/combo injection names the phase-3 spikes pinned LIVE resolve
+// through matrixKeyNames — and an unproven spelling is not in the table, so
+// a case carrying it dies at validation, never at stand runtime.
+func TestMatrixKeyNames_Canonical(t *testing.T) {
+	t.Parallel()
+
+	names := matrixKeyNames()
+	for _, canonical := range []string{"ctrl+a", "SHIFT_R+CTRL_R", "super+x"} {
+		phys, ok := names[canonical]
+		if !ok {
+			t.Errorf("matrixKeyNames lacks the spike-pinned canonical name %q", canonical)
+
+			continue
+		}
+		if phys != canonical {
+			t.Errorf("matrixKeyNames[%q] = %q, want the identity mapping (the pinned spelling)", canonical, phys)
+		}
+	}
+	if _, ok := names["Ctrl+A"]; ok {
+		t.Error(`matrixKeyNames accepts "Ctrl+A" — the unproven spelling must not be in the table`)
+	}
+	if !slices.Contains(matrixSelectNames(), "ctrl+a") {
+		t.Error("matrixSelectNames lacks the spike-pinned select-all name")
+	}
+	if !slices.Contains(matrixComboNames(), "SHIFT_R+CTRL_R") {
+		t.Error("matrixComboNames lacks the probe-pinned combo name")
+	}
+}
+
+// reloadBaseDoc is the complete document the reload fragment applies
+// against (the stand's case-config base, 03-02 complete-document rule).
+const reloadBaseDoc = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+`
+
+// TestMatrixStep_RunDispatch pins the dispatchable halves of the new step
+// kinds headlessly: the reload fragment application (key-line replace or
+// append — the append of an unknown key is exactly how a broken edit is
+// manufactured), the BOTH-forms log gate (applied vs the WARN rejection),
+// the step-kind classification, and the summary arms — the live halves
+// (pressKey, watcher, goswitchctl) run under `mise run e2e-matrix-v2`.
+func TestMatrixStep_RunDispatch(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reload fragment replaces by key", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := applyReloadLines(reloadBaseDoc, []string{"  tap_window_ms: 200"})
+		if err != nil {
+			t.Fatalf("applyReloadLines: %v", err)
+		}
+		if strings.Contains(got, "tap_window_ms: 300") || !strings.Contains(got, "tap_window_ms: 200") {
+			t.Errorf("fragment application = %q, want the tap_window_ms line replaced", got)
+		}
+	})
+	t.Run("reload fragment appends unknown keys", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := applyReloadLines(reloadBaseDoc, []string{"  tap_window_mss: 100"})
+		if err != nil {
+			t.Fatalf("applyReloadLines: %v", err)
+		}
+		if !strings.Contains(got, "tap_window_mss: 100") {
+			t.Errorf("fragment application = %q, want the unknown key appended (the broken edit)", got)
+		}
+	})
+	t.Run("reload fragment rejects malformed lines", func(t *testing.T) {
+		t.Parallel()
+
+		if _, err := applyReloadLines(reloadBaseDoc, []string{"no-colon-line"}); err == nil {
+			t.Fatal("applyReloadLines accepted a colon-less line, want an error")
+		}
+	})
+	t.Run("reload gate distinguishes both log forms", func(t *testing.T) {
+		t.Parallel()
+
+		if got := reloadGateMark("applied"); got != `"msg":"config reloaded"` {
+			t.Errorf("reloadGateMark(applied) = %q, want the applied record", got)
+		}
+		if got := reloadGateMark("rejected"); got != `"msg":"config reload rejected"` {
+			t.Errorf("reloadGateMark(rejected) = %q, want the WARN rejection record", got)
+		}
+	})
+	t.Run("step kinds classify and summarize", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tc := range []struct {
+			step matrixStep
+			kind string
+			want string
+		}{
+			{matrixStep{Select: "ctrl+a"}, "select", "select ctrl+a"},
+			{matrixStep{Combo: "SHIFT_R+CTRL_R"}, "combo", "combo SHIFT_R+CTRL_R"},
+			{matrixStep{Reload: &matrixReload{Expect: "applied"}}, "reload", `reload applied []`},
+			{matrixStep{Type: "ghbdtn"}, "type", "type ghbdtn"},
+		} {
+			if got := matrixStepKind(tc.step); got != tc.kind {
+				t.Errorf("matrixStepKind(%+v) = %q, want %q", tc.step, got, tc.kind)
+			}
+			if got := stepSummary(tc.step); got != tc.want {
+				t.Errorf("stepSummary(%+v) = %q, want %q", tc.step, got, tc.want)
+			}
+		}
+	})
 }
 
 // TestMatrixReport_ExitCode pins the TEST-04 exit contract without a live

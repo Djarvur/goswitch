@@ -85,13 +85,57 @@ const goswitchComponentName = "org.freedesktop.IBus.goswitch"
 // (CI evidence, plan 02-07); gitignored.
 const matrixReportPath = "e2e-report.txt"
 
-// matrixStep is one step of a case: exactly one of the four fields is set
+// matrixSelectNames returns the closed vocabulary of selection-forming
+// injection names (the select step's values).
+func matrixSelectNames() []string {
+	return nil // RED stub
+}
+
+// matrixComboNames returns the closed vocabulary of combo injection names
+// (the combo step's values).
+func matrixComboNames() []string {
+	return nil // RED stub
+}
+
+// matrixStepKind names the one set field of a step — the dispatch's single
+// source of classification.
+func matrixStepKind(matrixStep) string {
+	return "" // RED stub
+}
+
+// applyReloadLines applies a reload fragment to a complete config
+// document: a line replaces the document line with the same key, an
+// unknown key appends (the broken-edit mechanics), a colon-less line is an
+// error.
+func applyReloadLines(doc string, _ []string) (string, error) {
+	return doc, nil // RED stub
+}
+
+// reloadGateMark maps a reload expectation onto the daemon log record that
+// proves it: the applied publication or the WARN rejection (both forms are
+// valid matrix oracles — D-32 last-good cases gate on the rejection).
+func reloadGateMark(string) string {
+	return "" // RED stub
+}
+
+// matrixStep is one step of a case: exactly one of the seven fields is set
 // (validated), the step kind it names decides the runner's action.
 type matrixStep struct {
-	Type  string `yaml:"type"`
-	Key   string `yaml:"key"`
-	Tap   string `yaml:"tap"`
-	Focus string `yaml:"focus"`
+	Type   string        `yaml:"type"`
+	Key    string        `yaml:"key"`
+	Tap    string        `yaml:"tap"`
+	Focus  string        `yaml:"focus"`
+	Select string        `yaml:"select"`
+	Combo  string        `yaml:"combo"`
+	Reload *matrixReload `yaml:"reload"`
+}
+
+// matrixReload is the reload step's payload (plan 03-07): a config
+// fragment — lines applied against the case daemon's temp document by
+// key — plus the expected outcome of the application.
+type matrixReload struct {
+	Lines  []string `yaml:"lines"`
+	Expect string   `yaml:"expect"`
 }
 
 // matrixCase is one "typing → expectation" case of the YAML matrix
