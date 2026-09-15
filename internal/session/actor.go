@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 	"unicode"
@@ -96,6 +97,17 @@ type Actor struct {
 	// built-in defaults govern.
 	cfgSrc    interface{ Snapshot() config.Config }
 	comboName string // the resolved document's combo binding name (parse cache)
+	// MACR state (plan 03-05, ADR-005): the Super-hold window of the
+	// consumed-upstream detect (b.2) with its letter witness, the pending
+	// remap awaiting the hold's end, the layer's counters (the goswitchctl
+	// status surface of 03-06) and the letters parse cache of the snapshot
+	// consumption.
+	macrSuperHeld     bool
+	macrSawLetter     bool
+	macrPendingKeyval uint32
+	macrIntercepted   int
+	macrConsumed      int
+	macrLettersName   string
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -253,7 +265,7 @@ func (a *Actor) MACRCounters() MACRStats {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	return MACRStats{}
+	return MACRStats{SuperIntercepted: a.macrIntercepted, ConsumedUpstream: a.macrConsumed}
 }
 
 // HandleKey implements engine.EventHandler: the decoded event is fed into
@@ -285,6 +297,7 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 			// would silently drop the decision.
 			a.armTimer()
 		}
+		a.macrKeyRelease(ev)
 
 		return false
 	}
@@ -315,6 +328,10 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// half — the flip is dropped with it (cleared WITHOUT settleCombo:
 		// the gesture belonged to the input context that just left).
 		a.comboPending = false
+		// A pending MACR remap dies with its context the same way: the
+		// deferred burst belongs to the input context that held the chord.
+		a.macrSuperHeld = false
+		a.macrPendingKeyval = 0
 		if a.timer != nil {
 			a.timer.Stop()
 			a.timer = nil
@@ -497,6 +514,13 @@ func (a *Actor) applySnapshot() {
 			a.comboName = name
 		}
 	}
+	a.opts.MACREnabled = snap.MACR.Enabled
+	a.opts.MACRApps = snap.MACR.Apps
+	a.opts.MACRAltModifier = snap.MACR.AltModifier
+	if snap.MACR.Letters != a.macrLettersName {
+		a.macrLettersName = snap.MACR.Letters
+		a.opts.MACRLetters = parseMACRLetters(snap.MACR.Letters)
+	}
 }
 
 // pendingVerdict checks the pending fix's range against the fresh push: the
@@ -591,10 +615,12 @@ func (a *Actor) clearAfter() {
 
 // ctrlVKeycodes are the physical (evdev) keycodes of the Ctrl+V forward
 // burst — KEY_LEFTCTRL=29, KEY_V=47 (linux/event-codes.h), the same keycode
-// discipline as backSpaceKeycode=14.
+// discipline as backSpaceKeycode=14; ctrlRKeycode is the right-Ctrl half
+// of the MACR alt_modifier burst — KEY_RIGHTCTRL=97.
 const (
 	ctrlLKeycode = 29
 	ctrlVKeycode = 47
+	ctrlRKeycode = 97
 )
 
 // runClipboardRung runs the D-28 opt-in clipboard rung after a verify-after
@@ -642,6 +668,157 @@ func forwardCtrlV(eng engine.Emitter) {
 	eng.ForwardKeyEvent(engine.KeyControlL, ctrlLKeycode, engine.MaskControl|engine.MaskRelease)
 }
 
+// macrIntercept is the MACR-01 branch (ADR-005, Pattern 6): a configured
+// letter press carrying Mod4 — the wire truth of the live probe
+// (2026-09-15: super+b arrives as keyval 0x62 with Mod4|NumLock, in EVERY
+// internal mode) — is consumed and its remap deferred to the hold's end:
+// the Ctrl+letter burst is emitted by macrKeyRelease when the Super key
+// itself is released (the live truth of the first implementation: a burst
+// forwarded while the physical Super is still held reaches the client as a
+// Ctrl+Super chord — the client's own modifier tracking pollutes the
+// synthetic event, the binding never matches; the proven forwardCtrlV of
+// the clipboard rung fires with clean state for exactly this reason). The
+// Super press itself opens the hold window of the consumed-upstream detect
+// and any letter press under Mod4 marks the hold as witnessed (the chord's
+// letter reached the IME — nothing was swallowed upstream, intercepted or
+// not). The INFO record names the CONFIG letter only (D-20: config letters
+// are not user data; keystroke content never enters the log). The caller
+// holds the mutex; releases never reach this branch (HandleKey routes them
+// to macrKeyRelease).
+func (a *Actor) macrIntercept(ev engine.EngineEvent) bool {
+	if isSuperKeyval(ev.Keyval) {
+		a.macrSuperHeld = true
+		a.macrSawLetter = false
+
+		return false
+	}
+	if ev.Mods&engine.MaskMod4 == 0 {
+		return false
+	}
+	if isLetterKeyval(ev.Keyval) {
+		a.macrSawLetter = true
+	}
+	if !a.opts.MACREnabled || !a.macrTargetActive() || a.eng == nil {
+		return false
+	}
+	// #nosec G115 -- isLetterKeyval bounds the keyval to 'a'..'z', so the
+	// uint32→rune conversion cannot overflow.
+	if !a.opts.MACRLetters[rune(ev.Keyval)] {
+		return false
+	}
+	a.macrIntercepted++
+	a.macrPendingKeyval = ev.Keyval
+	// #nosec G115 -- same bound: the letter grammar of the config schema.
+	slog.Info("super intercept", "key", string(rune(ev.Keyval)))
+
+	return true
+}
+
+// macrKeyRelease closes the Super hold (ADR-005 b.2) and delivers the
+// pending remap: the Ctrl+letter burst is replayed HERE, after the
+// physical Super left the keyboard, so the client receives it with clean
+// modifier state. A Super release with NO letter press seen while held
+// means the chord was consumed before the IME — a mutter keybinding took
+// it (the live probe's Super+a/toggle-application-view shape: the press
+// reached the engine, the shell surface then swallowed the rest) — and
+// WARNs with the grep-stable reason; the detect is armed only while the
+// layer is enabled, so a MACR-off desktop never warns on its native Super
+// use (the overview toggle among them). The caller holds the mutex.
+func (a *Actor) macrKeyRelease(ev engine.EngineEvent) {
+	if !isSuperKeyval(ev.Keyval) || !a.macrSuperHeld {
+		return
+	}
+	a.macrSuperHeld = false
+	if a.macrPendingKeyval != 0 && a.eng != nil {
+		pending := a.macrPendingKeyval
+		a.macrPendingKeyval = 0
+		forwardCtrlLetter(a.eng, pending, a.opts.MACRAltModifier)
+
+		return
+	}
+	if !a.opts.MACREnabled || a.macrSawLetter {
+		return
+	}
+	a.macrConsumed++
+	slog.Warn("super combo skipped", "reason", "consumed-upstream")
+}
+
+// macrTargetActive reports whether the MACR rule governs the current
+// focus: with an empty per-app list the rule is global (ADR-005 a); a
+// non-empty list defers to the app-identity observer (plan 03-05 Task 3) —
+// an unavailable observer degrades to the global rule, never to silence
+// (the ADR-005 ladder). The caller holds the mutex.
+func (a *Actor) macrTargetActive() bool {
+	return len(a.opts.MACRApps) == 0
+}
+
+// isSuperKeyval reports whether keyval is one of the Super modifier
+// keysyms (the press/release pair the consumed-upstream detect tracks).
+func isSuperKeyval(keyval uint32) bool {
+	return keyval == engine.KeySuperL || keyval == engine.KeySuperR
+}
+
+// isLetterKeyval reports whether the keyval is a lowercase Latin letter —
+// the MACR letter grammar of the config schema (single a-z tokens, 03-02).
+func isLetterKeyval(keyval uint32) bool {
+	return keyval >= 'a' && keyval <= 'z'
+}
+
+// parseMACRLetters resolves the config's comma-joined letter tokens into
+// the interception set. The schema validated every token already
+// (03-02) — anything else is defensively skipped, never a failure: an
+// empty set simply intercepts nothing.
+func parseMACRLetters(letters string) map[rune]bool {
+	set := make(map[rune]bool)
+	for _, tok := range strings.Split(letters, ",") {
+		if len(tok) == 1 {
+			set[rune(tok[0])] = true
+		}
+	}
+
+	return set
+}
+
+// forwardCtrlLetter replays the Super→Ctrl remap (MACR-01): the owner
+// prototype's four-event shape (forwardCtrlV's discipline) with the letter
+// in place of v and the modifier key from the config — Control_L by
+// default; a configured alt_modifier (ADR-005 b.3) swaps the modifier key
+// only, the burst shape never changes and the default stays empty.
+func forwardCtrlLetter(eng engine.Emitter, keyval uint32, altModifier string) {
+	modKeyval, modKeycode := uint32(engine.KeyControlL), uint32(ctrlLKeycode)
+	if altModifier == "ctrl_r" {
+		modKeyval, modKeycode = engine.KeyControlR, ctrlRKeycode
+	}
+	letterCode := letterKeycode(keyval)
+	eng.ForwardKeyEvent(modKeyval, modKeycode, 0)
+	eng.ForwardKeyEvent(keyval, letterCode, engine.MaskControl)
+	eng.ForwardKeyEvent(keyval, letterCode, engine.MaskControl|engine.MaskRelease)
+	eng.ForwardKeyEvent(modKeyval, modKeycode, engine.MaskControl|engine.MaskRelease)
+}
+
+// letterKeycode returns the evdev keycode of a Latin letter — the keycode
+// half of the Ctrl+letter forward burst. Zero for anything else (the
+// interception set is schema-validated a-z, so unreachable in practice).
+func letterKeycode(keyval uint32) uint32 {
+	if keyval < 'a' || keyval > 'z' {
+		return 0
+	}
+
+	return macrLetterKeycodes()[keyval-'a']
+}
+
+// macrLetterKeycodes returns the evdev keycode table of the Latin letters
+// indexed by position ('a'=0): KEY_A..KEY_Z of
+// /usr/include/linux/input-event-codes.h, verified verbatim — never from
+// memory, the 02-05 class trap; the live probe of 2026-09-15 confirmed
+// a=30 and b=48 on the wire.
+func macrLetterKeycodes() [26]uint32 {
+	return [26]uint32{
+		30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50,
+		49, 24, 25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44,
+	}
+}
+
 // backspaceCap resolves the effective D-27 cap: the configured value, or
 // the documented default when no options were fed (the zero Options of a
 // bare NewActor — the no-config path and the unit corpus). The caller holds
@@ -675,22 +852,32 @@ func (a *Actor) flipScript() {
 // feedKey decides one press: whether the engine consumes the key and which
 // rune the buffer takes — the script-true invariant made branch-local (a
 // rune that reaches the field also reaches the buffer, whatever delivered
-// it). The word-layout combo (D-36) is recognized FIRST, above every mode
-// branch: a press of the bound combo key under its bound HELD modifiers —
-// the press's state word carries only the modifiers held before the key
-// (live finding 2026-09-15: a Control_R press under Shift arrives with
-// Shift|NumLock, its own Control bit rides only on the release), so the
-// match compares Binding.ModMask with the key's own family bit cleared —
-// latch-tolerant through &, the NumLock precedent of 02-04 — kills the tap
-// series with a deliberate Reset (Pitfall 4: left to the FSM the Control_R
-// press would silently die as modifier use) and launches the word pipeline
-// of the Double semantics with the flip deferred to its settlement
+// it). The MACR interception (MACR-01, ADR-005, Pattern 6) is recognized
+// FIRST of all, above the combo and every mode branch: a configured letter
+// press carrying Mod4 — the press-side wire truth of the live probe: the
+// letter arrives Latin with Mod4 in EVERY internal mode — is consumed and
+// replayed as the Ctrl+letter forward burst, so the RU commit can never
+// fire on a Super chord and the buffer is never fed. The word-layout combo
+// (D-36) is recognized next, above every mode branch: a press of the bound
+// combo key under its bound HELD modifiers — the press's state word
+// carries only the modifiers held before the key (live finding
+// 2026-09-15: a Control_R press under Shift arrives with Shift|NumLock,
+// its own Control bit rides only on the release), so the match compares
+// Binding.ModMask with the key's own family bit cleared — latch-tolerant
+// through &, the NumLock precedent of 02-04 — kills the tap series with a
+// deliberate Reset (Pitfall 4: left to the FSM the Control_R press would
+// silently die as modifier use) and launches the word pipeline of the
+// Double semantics with the flip deferred to its settlement
 // (comboPending/settleCombo). The combo press itself transits: a bare
 // modifier chord puts no rune in the field, and the transit keeps the
 // client's press/release pairing intact. The CORR-09 reset keyvals (Enter
 // and its keypad variant, Tab, Escape) end the phrase instead of feeding
 // it. The caller holds the mutex.
 func (a *Actor) feedKey(ev engine.EngineEvent) bool {
+	if a.macrIntercept(ev) {
+		return true
+	}
+
 	if c := a.effectiveCombo(); ev.Keyval == c.Keyval {
 		// The HELD subset of the binding: a press never carries the key's
 		// own family bit, so it is cleared from the required mask.

@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Djarvur/goswitch/engine"
@@ -28,6 +32,11 @@ import (
 const (
 	macrProbeWait  = 3 * time.Second
 	macrQuiescence = 400 * time.Millisecond
+	// macrMonitorSettle lets the dbus-monitor attach before the observed
+	// traffic flows; macrRelayArgs is the argument-block depth scanned
+	// under one relay header (three uint32 args, plus slack).
+	macrMonitorSettle = 1500 * time.Millisecond
+	macrRelayArgs     = 5
 )
 
 // macrProbeLetters are the candidate letters of the delivery scan (A7), in
@@ -435,4 +444,246 @@ func keyRecordsSince(recs []keyRecord, from int) []keyRecord {
 	}
 
 	return recs[from:]
+}
+
+// Task-2 live case (plan 03-05): the interception itself, driven through a
+// -config daemon, with the IBus WIRE as the oracle. The live lessons that
+// shaped this case: (1) the interception's Ctrl+letter burst cannot fire
+// while the physical Super is held — the client still tracks the held
+// modifier, so the remap rides the Super RELEASE; (2) even a correctly
+// relayed forward does not reach the widget on this GTK4-Wayland desktop:
+// the dbus-monitor capture shows ibus-daemon forwarding the burst to the
+// focused InputContext (mutter's IM client), and the widget never applies
+// it (no cut, no cursor move — the same never-live-driven family as the
+// ADR-003 level-2 replay and the D-28 Ctrl+V burst; the unit corpus owns
+// the behavioral contract). The case therefore pins everything up to the
+// client boundary — consume + INFO record + the on-bus relay — and pins
+// the field's unchanged state as the documented actual.
+const (
+	macrSuperLetter = "x"
+	macrText        = "hello"
+)
+
+// macrConfigTmpl is the case's complete config document (no defaults
+// overlay — the 03-02 strict-parse decision): the layer ON with the
+// interception set 'x' (free of shell bindings on this desktop; the Task-1
+// spike).
+const macrConfigTmpl = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+macr:
+  enabled: true
+  letters: "x"
+  apps: []
+  alt_modifier: ""
+`
+
+// macrIbusCapture is a bounded dbus-monitor capture of the live IBus bus,
+// filtered to ForwardKeyEvent blocks — the ground truth of the remap's
+// RELAY (the engine's emissions and ibus-daemon's forwarding to the
+// focused input context both ride this bus).
+type macrIbusCapture struct {
+	cmd  *exec.Cmd
+	path string
+}
+
+// shq single-quotes s for the monitoring command line.
+func shq(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// startMacrIbusCapture resolves the live IBus address and starts the
+// filtered monitor in its own process group (stop() reaps the whole
+// group — the pipe keeps dbus-monitor and grep alive past the shell).
+func startMacrIbusCapture(ctx context.Context) (*macrIbusCapture, error) {
+	addr, err := runCmd(ctx, "ibus", "address")
+	if err != nil {
+		return nil, fmt.Errorf("ibus address: %w", err)
+	}
+	if addr == "" || !strings.HasPrefix(addr, "unix:") {
+		return nil, fmt.Errorf("ibus address output %q is not a unix address", addr)
+	}
+	tmpDir, err := os.MkdirTemp("", "goswitch-macr-monitor-*")
+	if err != nil {
+		return nil, fmt.Errorf("create monitor temp dir: %w", err)
+	}
+	path := filepath.Join(tmpDir, "forwards.txt")
+	//nolint:noctx // diagnostics-only capture; the stand owns the lifetime (stop kills the group)
+	cmd := exec.Command("sh", "-c",
+		fmt.Sprintf("dbus-monitor --address %s 2>/dev/null | grep --line-buffered -A6 ForwardKeyEvent >> %s",
+			shq(addr), shq(path)))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start dbus-monitor: %w", err)
+	}
+	// The monitor needs a beat to attach before the observed traffic flows
+	// (it lost the injection race on this bus in the first runs).
+	if err := sleepCtx(ctx, macrMonitorSettle); err != nil {
+		return nil, err
+	}
+
+	return &macrIbusCapture{cmd: cmd, path: path}, nil
+}
+
+// stop kills the capture's whole process group and waits it out
+// (idempotent — a nil Process marks a stopped capture).
+func (c *macrIbusCapture) stop() {
+	if c.cmd.Process == nil {
+		return
+	}
+	_ = syscall.Kill(-c.cmd.Process.Pid, syscall.SIGTERM)
+	_ = c.cmd.Wait()
+	c.cmd.Process = nil
+}
+
+// relayedCount counts the capture lines where ibus-daemon FORWARDED a
+// ForwardKeyEvent carrying keyval to the focused input context — the relay
+// header carries the InputContext path; the engine's own emissions (the
+// other half of the capture) do not. The keyval is looked up in the header
+// line's argument block (the next few lines), line-based so the grep
+// grouping never matters.
+func (c *macrIbusCapture) relayedCount(keyval uint32) int {
+	data, err := os.ReadFile(c.path)
+	if err != nil {
+		return 0
+	}
+	lines := strings.Split(string(data), "\n")
+	want := fmt.Sprintf("uint32 %d", keyval)
+	count := 0
+	for i, line := range lines {
+		if !strings.Contains(line, "org.freedesktop.IBus.InputContext") ||
+			!strings.Contains(line, "member=ForwardKeyEvent") {
+			continue
+		}
+		for _, arg := range lines[i:min(i+macrRelayArgs, len(lines))] {
+			if strings.Contains(arg, want) {
+				count++
+
+				break
+			}
+		}
+	}
+
+	return count
+}
+
+// waitForRelay polls until the daemon relayed want keyval events (the
+// wait-for-condition idiom, never a fixed sleep).
+func (c *macrIbusCapture) waitForRelay(ctx context.Context, keyval uint32, want int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		got := c.relayedCount(keyval)
+		if got >= want {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout after %v: ibus relay of keyval %d seen %d times, want >= %d",
+				timeout, keyval, got, want)
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return err
+		}
+	}
+}
+
+// macrRelayHalves is the wire oracle's count: both letter halves (press
+// and release) of the remap relayed by ibus-daemon.
+const macrRelayHalves = 2
+
+// startMacrConfigDaemon writes the case's config document, restarts the
+// daemon on it and re-activates the engine — the -config spawn ladder the
+// combo case established.
+func startMacrConfigDaemon(ctx context.Context, s *stand) error {
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+	cfgPath := filepath.Join(s.tmpDir, "macr-super-letter.yaml")
+	if err := os.WriteFile(cfgPath, []byte(macrConfigTmpl), configFilePerm); err != nil {
+		return fmt.Errorf("macr-super-letter: write temp config: %w", err)
+	}
+	if err := s.restartDaemonWithArgs("-config", cfgPath); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"config loaded"`, registrationWait); err != nil {
+		return fmt.Errorf("macr-super-letter daemon -config spawn: %w", err)
+	}
+	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+		return fmt.Errorf("macr-super-letter daemon re-registration: %w", err)
+	}
+
+	return s.activateGoswitch(ctx)
+}
+
+// runMacrSuperLetter proves the interception live (MACR-01) up to the
+// client boundary: a daemon on a config document with the layer on
+// intercepts super+x (the INFO record names the config letter; the press
+// is consumed — the chord's letter never reaches the client raw) and the
+// remap burst rides the Super release onto the IBus bus, where
+// ibus-daemon relays both letter halves to the focused input context. The
+// field's unchanged content is PINNED as the documented GTK4-Wayland
+// actual (the widget does not apply forwarded chords on this desktop).
+func runMacrSuperLetter(ctx context.Context, s *stand) error {
+	if err := startMacrConfigDaemon(ctx, s); err != nil {
+		return err
+	}
+
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("macr-super-letter needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+
+	keyBase := s.countSub(`"msg":"key"`)
+	if err := s.injectText(ctx, macrText); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, `"msg":"key"`, keyBase+minKeyEvents, keyWait); err != nil {
+		return fmt.Errorf("macr-super-letter key visibility: %w", err)
+	}
+	// The word must settle before the chord — the same early-flake gate as
+	// the combo round.
+	if err := s.waitZenityText(ctx, macrText); err != nil {
+		return fmt.Errorf("macr-super-letter typed text: %w", err)
+	}
+
+	capture, err := startMacrIbusCapture(ctx)
+	if err != nil {
+		return err
+	}
+	defer capture.stop()
+
+	// The chord: super+x through the same injection-name class the Task-1
+	// probe proved for unbound letters; the remap rides the release.
+	if err := s.pressKey(ctx, "super+"+macrSuperLetter); err != nil {
+		return fmt.Errorf("macr-super-letter inject super+%s: %w", macrSuperLetter, err)
+	}
+	if err := s.waitForNew(ctx, `"msg":"super intercept","key":"`+macrSuperLetter+`"`, 1, correctionWait); err != nil {
+		return fmt.Errorf("macr-super-letter interception record: %w", err)
+	}
+	// The wire oracle: both letter halves relayed by ibus-daemon to the
+	// focused input context (keyval 'x' = 0x78 = 120).
+	if err := capture.waitForRelay(ctx, uint32(macrSuperLetter[0]), macrRelayHalves, correctionWait); err != nil {
+		return fmt.Errorf("macr-super-letter wire relay: %w", err)
+	}
+
+	out, err := s.closeZenity(ctx)
+	if err != nil {
+		return err
+	}
+	if out != macrText {
+		return fmt.Errorf(
+			"macr-super-letter oracle: entry printed %q, want %q — the GTK4-Wayland non-action is the actual",
+			out, macrText)
+	}
+
+	return nil
 }

@@ -2294,15 +2294,26 @@ func enableMACR(a *session.Actor, letters string) {
 	a.SetOptions(session.Options{MACREnabled: true, MACRLetters: set})
 }
 
-// TestActor_MACRIntercepts pins the interception itself (MACR-01, ADR-005):
-// super+a (a press carrying Mod4 — the press-side wire truth of the live
-// trace) is CONSUMED and replayed as exactly the prototype's four-event
-// Ctrl+letter burst; nothing prints (the branch sits above the mode
-// branches); the INFO record names the config letter only (D-20); the
-// counter grows. The alt_modifier subtest pins the b.3 mechanics (empty
-// default = Control_L; a configured name swaps the modifier key only).
+// releaseSuper feeds the Super release the wire delivers: still carrying
+// Mod4 — the family-bit truth of the modifiers (live trace 2026-09-15:
+// 0xffeb release with mods 0x50). The pending remap rides this event.
+func releaseSuper(a *session.Actor) {
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL, Mods: engine.MaskMod4, Release: true})
+}
+
+// TestActor_MACRIntercepts pins the interception itself (MACR-01,
+// ADR-005): super+a (a press carrying Mod4 — the press-side wire truth of
+// the live trace) is CONSUMED and its remap rides the SUPER RELEASE: the
+// Ctrl+letter burst fires only once the physical Super left the keyboard,
+// because a client still holding Super reads the synthetic chord as
+// Ctrl+Super and drops the binding (live finding 2026-09-15 — the first
+// implementation burst at the press and the live cut never landed).
+// Nothing prints (the branch sits above the mode branches); the INFO
+// record names the config letter only (D-20); the counter grows at the
+// press. The alt_modifier subtest pins the b.3 mechanics (empty default =
+// Control_L; a configured name swaps the modifier key only).
 func TestActor_MACRIntercepts(t *testing.T) {
-	t.Run("super+a consumed as the Ctrl+a burst, no commit", func(t *testing.T) {
+	t.Run("super+a consumed, the Ctrl+a burst rides the Super release", func(t *testing.T) {
 		buf := captureLogs(t)
 		a, sink := wiredActor()
 		enableMACR(a, "a")
@@ -2312,6 +2323,13 @@ func TestActor_MACRIntercepts(t *testing.T) {
 		if !consumed {
 			t.Fatalf("super+a press was not consumed — the MACR branch must own it (MACR-01)")
 		}
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Fatalf("burst before the Super release = %d events, want 0 — the client still holds Super", got)
+		}
+		if got := a.MACRCounters(); got.SuperIntercepted != 1 {
+			t.Errorf("SuperIntercepted at the press = %d, want 1 (the counter is the press's)", got.SuperIntercepted)
+		}
+		releaseSuper(a)
 
 		want := []forwardCall{
 			{keyval: engine.KeyControlL, keycode: macrCtrlLKeycode, state: 0},
@@ -2323,7 +2341,8 @@ func TestActor_MACRIntercepts(t *testing.T) {
 			t.Fatalf("forward burst = %+v, want exactly the prototype Ctrl+letter sequence %+v", got, want)
 		}
 		if texts := sink.commitTexts(); len(texts) != 0 {
-			t.Fatalf("MACR interception committed %q — the branch sits ABOVE the mode branches, nothing may print", texts)
+			t.Fatalf("MACR interception committed %q — the branch sits ABOVE the mode branches, nothing may print",
+				texts)
 		}
 		if !strings.Contains(buf.String(), `"msg":"super intercept","key":"a"`) {
 			t.Errorf("interception INFO record missing (config letter + counters only, D-20); log:\n%s", buf.String())
@@ -2332,44 +2351,56 @@ func TestActor_MACRIntercepts(t *testing.T) {
 			t.Errorf("counters = %+v, want {SuperIntercepted:1 ConsumedUpstream:0}", got)
 		}
 	})
+}
 
-	t.Run("alt_modifier ctrl_r swaps the burst's modifier key (ADR-005 b.3; empty default keeps Control_L)", func(t *testing.T) {
-		a, sink := wiredActor()
-		a.SetOptions(session.Options{
-			MACREnabled:     true,
-			MACRLetters:     map[rune]bool{'a': true},
-			MACRAltModifier: "ctrl_r",
-		})
-
-		_ = a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4})
-
-		calls := sink.forwardCalls()
-		if len(calls) != 4 {
-			t.Fatalf("alt-modifier burst = %d events, want the 4-event shape", len(calls))
-		}
-		if calls[0].keyval != engine.KeyControlR || calls[3].keyval != engine.KeyControlR {
-			t.Fatalf("alt-modifier burst ends = %x/%x, want Control_R (0xffe4) at both ends",
-				calls[0].keyval, calls[3].keyval)
-		}
-		if calls[0].keycode != macrCtrlRKeycode {
-			t.Errorf("Control_R keycode = %d, want %d (KEY_RIGHTCTRL)", calls[0].keycode, macrCtrlRKeycode)
-		}
+// TestActor_MACRAltModifier pins the b.3 mechanics (ADR-005): the
+// alternative modifier is NOT introduced by default (empty = Control_L,
+// pinned by TestActor_MACRIntercepts' plain burst); a configured name
+// swaps the burst's modifier key only — the four-event shape never
+// changes.
+func TestActor_MACRAltModifier(t *testing.T) {
+	a, sink := wiredActor()
+	a.SetOptions(session.Options{
+		MACREnabled:     true,
+		MACRLetters:     map[rune]bool{'a': true},
+		MACRAltModifier: "ctrl_r",
 	})
 
-	t.Run("letters arrive through the config snapshot (CONF-02 consumption)", func(t *testing.T) {
-		a, sink := wiredActor()
-		cfg := config.Defaults()
-		cfg.MACR.Enabled = true
-		cfg.MACR.Letters = "a"
-		a.AttachConfig(&reloadSource{cfg: cfg})
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+	_ = a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4})
+	releaseSuper(a)
 
-		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
-			t.Fatalf("super+a under a config snapshot was not consumed — the macr section must fold like the rest")
-		}
-		if got := len(sink.forwardCalls()); got != 4 {
-			t.Fatalf("snapshot-fed interception forwarded %d events, want the 4-event burst", got)
-		}
-	})
+	calls := sink.forwardCalls()
+	if len(calls) != 4 {
+		t.Fatalf("alt-modifier burst = %d events, want the 4-event shape", len(calls))
+	}
+	if calls[0].keyval != engine.KeyControlR || calls[3].keyval != engine.KeyControlR {
+		t.Fatalf("alt-modifier burst ends = %x/%x, want Control_R (0xffe4) at both ends",
+			calls[0].keyval, calls[3].keyval)
+	}
+	if calls[0].keycode != macrCtrlRKeycode {
+		t.Errorf("Control_R keycode = %d, want %d (KEY_RIGHTCTRL)", calls[0].keycode, macrCtrlRKeycode)
+	}
+}
+
+// TestActor_MACRConfigSnapshot pins the CONF-02 consumption of the macr
+// section: an attached source folds enabled/letters into the options —
+// the same one-snapshot-per-event rule as the combo and the caps.
+func TestActor_MACRConfigSnapshot(t *testing.T) {
+	a, sink := wiredActor()
+	cfg := config.Defaults()
+	cfg.MACR.Enabled = true
+	cfg.MACR.Letters = "a"
+	a.AttachConfig(&reloadSource{cfg: cfg})
+
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+	if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
+		t.Fatalf("super+a under a config snapshot was not consumed — the macr section must fold like the rest")
+	}
+	releaseSuper(a)
+	if got := len(sink.forwardCalls()); got != 4 {
+		t.Fatalf("snapshot-fed interception forwarded %d events, want the 4-event burst", got)
+	}
 }
 
 // TestActor_MACRDisabledByDefault pins the off-by-default contract: the
@@ -2520,6 +2551,7 @@ func TestActor_MACRRULayoutStillIntercepts(t *testing.T) {
 	if !consumed {
 		t.Fatalf("super+a in RU mode was not consumed — the MACR branch sits above the mode branches")
 	}
+	releaseSuper(a)
 
 	calls := sink.forwardCalls()
 	if len(calls) != 4 || calls[1].keyval != uint32('a') {

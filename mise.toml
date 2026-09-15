@@ -121,3 +121,7 @@ run = "go run ./test/e2e -case super-space-alive"
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"
+
+[tasks.e2e-macr-super-letter]
+description = "e2e: 03-05 MACR-01 — super+b intercepted live as the Ctrl+b burst under -config, cursor semantics pinned from the surrounding-text trace (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case macr-super-letter"
