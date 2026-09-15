@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Djarvur/goswitch/internal/config"
@@ -47,17 +48,17 @@ func TestLoad_ValidDoc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Hotkeys.TapKey != "shift_r" {
-		t.Errorf("hotkeys.tap_key = %q, want shift_r", cfg.Hotkeys.TapKey)
+	if cfg.Hotkeys.TapKey != defTapKey {
+		t.Errorf("hotkeys.tap_key = %q, want %q", cfg.Hotkeys.TapKey, defTapKey)
 	}
-	if cfg.Hotkeys.WordLayoutCombo != "shift+ctrl_r" {
-		t.Errorf("hotkeys.word_layout_combo = %q, want shift+ctrl_r", cfg.Hotkeys.WordLayoutCombo)
+	if cfg.Hotkeys.WordLayoutCombo != defCombo {
+		t.Errorf("hotkeys.word_layout_combo = %q, want %q", cfg.Hotkeys.WordLayoutCombo, defCombo)
 	}
 	if cfg.Timeouts.TapWindowMs != 300 {
-		t.Errorf("timeouts.tap_window_ms = %d, want 300", cfg.Timeouts.TapWindowMs)
+		t.Errorf("%s = %d, want 300", fieldTapWindow, cfg.Timeouts.TapWindowMs)
 	}
 	if cfg.Timeouts.VerifyWaitMs != 100 {
-		t.Errorf("timeouts.verify_wait_ms = %d, want 100", cfg.Timeouts.VerifyWaitMs)
+		t.Errorf("%s = %d, want 100", fieldVerifyWait, cfg.Timeouts.VerifyWaitMs)
 	}
 	if cfg.Correction.BackspaceCap != 50 {
 		t.Errorf("correction.backspace_cap = %d, want 50", cfg.Correction.BackspaceCap)
@@ -88,51 +89,16 @@ func TestLoad_UnknownKeyRejected(t *testing.T) {
 		corpus string
 	}{
 		{
-			name: "typo'd section",
-			corpus: `hotkeys:
-  tap_key: shift_r
-  word_layout_combo: shift+ctrl_r
-timeots:
-  tap_window_ms: 300
-  verify_wait_ms: 100
-correction:
-  backspace_cap: 50
-  clipboard_rung: false
-macr:
-  enabled: false
-`,
+			name:   "typo'd section",
+			corpus: strings.Replace(fullDocYAML, "timeouts:", "timeots:", 1),
 		},
 		{
-			name: "typo'd field",
-			corpus: `hotkeys:
-  tap_key: shift_r
-  word_layout_combo: shift+ctrl_r
-timeouts:
-  tap_window_ms: 300
-  verify_wait_ms: 100
-correction:
-  backspace_capp: 50
-  clipboard_rung: false
-macr:
-  enabled: false
-`,
+			name:   "typo'd field",
+			corpus: strings.Replace(fullDocYAML, "backspace_cap:", "backspace_capp:", 1),
 		},
 		{
-			name: "unknown top-level section",
-			corpus: `hotkeys:
-  tap_key: shift_r
-  word_layout_combo: shift+ctrl_r
-timeouts:
-  tap_window_ms: 300
-  verify_wait_ms: 100
-correction:
-  backspace_cap: 50
-  clipboard_rung: false
-macr:
-  enabled: false
-extra:
-  key: value
-`,
+			name:   "unknown top-level section",
+			corpus: fullDocYAML + "extra:\n  key: value\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -184,18 +150,7 @@ func TestLoad_EmptyDocumentRejected(t *testing.T) {
 func TestLoad_RangeViolationRejected(t *testing.T) {
 	t.Parallel()
 
-	corpus := `hotkeys:
-  tap_key: shift_r
-  word_layout_combo: shift+ctrl_r
-timeouts:
-  tap_window_ms: 100000000
-  verify_wait_ms: 100
-correction:
-  backspace_cap: 50
-  clipboard_rung: false
-macr:
-  enabled: false
-`
+	corpus := strings.Replace(fullDocYAML, "tap_window_ms: 300", "tap_window_ms: 100000000", 1)
 	if _, err := config.Load(writeConfig(t, corpus)); err == nil {
 		t.Fatal("giant tap_window_ms accepted at load, want range rejection")
 	}

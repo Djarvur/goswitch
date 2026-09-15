@@ -6,12 +6,9 @@ import (
 	"github.com/Djarvur/goswitch/internal/hotkey"
 )
 
-// TestParseBinding pins the closed binding tables (D-31/D-33): names come
-// from the fixed keyval/mask sets, a combo is "+"-joined with the KEY as
-// the LAST token, and ModMask is the full modifier state of the bound key
-// event — the bound key contributes its own family bit (a Shift_R press
-// carries MaskShift on the wire; a held Control_R adds MaskControl on top
-// of the explicitly held Shift).
+// TestParseBinding pins the closed key tables (D-31/D-33): single-key names
+// resolve to their keyval with the key's own family bit in ModMask (a
+// Shift_R press carries MaskShift on the wire).
 func TestParseBinding(t *testing.T) {
 	t.Parallel()
 
@@ -24,11 +21,6 @@ func TestParseBinding(t *testing.T) {
 			name: "default tap key",
 			in:   "shift_r",
 			want: hotkey.Binding{Keyval: hotkey.KeyvalShiftR, ModMask: hotkey.MaskShift},
-		},
-		{
-			name: "word+layout combo",
-			in:   "shift+ctrl_r",
-			want: hotkey.Binding{Keyval: hotkey.KeyvalCtrlR, ModMask: hotkey.MaskShift | hotkey.MaskControl},
 		},
 		{
 			name: "left control",
@@ -54,6 +46,37 @@ func TestParseBinding(t *testing.T) {
 			name: "right super",
 			in:   "super_r",
 			want: hotkey.Binding{Keyval: hotkey.KeyvalSuperR, ModMask: hotkey.MaskMod4},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := hotkey.ParseBinding(tc.in)
+			if err != nil {
+				t.Fatalf("ParseBinding(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("ParseBinding(%q) = %+v, want %+v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestParseBinding_Combos pins the combo grammar: "+"-joined tokens with
+// the KEY last, every held modifier's bit OR the key's own family bit —
+// the full modifier state of the bound key's event.
+func TestParseBinding_Combos(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		in   string
+		want hotkey.Binding
+	}{
+		{
+			name: "word+layout combo (D-36 default)",
+			in:   "shift+ctrl_r",
+			want: hotkey.Binding{Keyval: hotkey.KeyvalCtrlR, ModMask: hotkey.MaskShift | hotkey.MaskControl},
 		},
 		{
 			name: "two explicit modifiers",
