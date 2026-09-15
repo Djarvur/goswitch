@@ -103,33 +103,52 @@ type selectionState struct {
 // one pipeline, different ranges): the word path (Double) supplies the token,
 // its boundary tail and ReplaceToken; the phrase path (Triple) supplies the
 // whole phrase since the last hard reset, no tail and ReplacePhrase (D-25).
-// The selection branch of later plans joins the same seam.
+// The selection path (03-03) supplies the client-reported selection — the
+// range lives in the surrounding text, not the buffer, so its replace half
+// is the buffer's honest death (HardReset) instead of an edit.
 type correctionRange struct {
 	token   []rune
 	tail    []rune
 	replace func(converted []rune)
 }
 
+// selectionSpec is the wire geometry of a selection correction (D-30,
+// Pitfall 6): the selected half-open range [start,end) inside the
+// client-reported text and the cursor position the deletion offset is
+// signed against — a selection left of the cursor deletes with a negative
+// offset, one right of the cursor with a positive one.
+type selectionSpec struct {
+	start  uint32
+	end    uint32
+	cursor uint32
+}
+
 // pendingFix is the state of a correction between the Double/Triple decision
 // and the surrounding-text verdict: the range under correction (token, its
 // boundary tail), what to commit (the converted token), the range the
 // verification must see at the end of the text (token+tail — exactly what the
-// ladder deletes) and the verify deadline.
+// ladder deletes) and the verify deadline. A selection correction carries
+// its geometry in sel instead of the buffer's replace bookkeeping.
 type pendingFix struct {
 	rng       correctionRange
 	converted []rune
 	match     []rune
 	armed     time.Time
 	deadline  *time.Timer
+	sel       *selectionSpec
 }
 
 // pendingAfter is the state of the verify-after round — the post-correction
 // check that compensates the ack-less DeleteSurroundingText (ADR-003): the
 // suffix the client's fresh surrounding text must END with (converted+tail)
 // and the round's epoch. The epoch makes a stale deadline from a superseded
-// round a no-op: the timer callback re-checks the tag under the mutex.
+// round a no-op: the timer callback re-checks the tag under the mutex. A
+// selection round checks the expected text AT the range position (atRange)
+// instead of at the text's end — Pitfall 6 again.
 type pendingAfter struct {
 	expected []rune
+	start    uint32
+	atRange  bool
 	epoch    uint64
 	deadline *time.Timer
 }
@@ -226,7 +245,7 @@ func (a *Actor) HandleSurroundingText(text string, cursorPos, anchorPos uint32) 
 	a.surr = beforeCursor(text, cursorPos)
 	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
 	if a.pending != nil {
-		if !correct.MatchesSuffix(a.surr, a.pending.match) {
+		if !a.pendingVerdict() {
 			a.resolvePending()
 			slog.Info("correction skipped", "reason", "verify-mismatch")
 
@@ -238,8 +257,9 @@ func (a *Actor) HandleSurroundingText(text string, cursorPos, anchorPos uint32) 
 	}
 	if a.after != nil {
 		expected := a.after.expected
+		start, atRange := a.after.start, a.after.atRange
 		a.clearAfter()
-		if !correct.MatchesSuffix(a.surr, expected) {
+		if !a.afterVerdict(expected, start, atRange) {
 			slog.Info("correction verify", "outcome", "mismatch")
 
 			return
@@ -315,6 +335,31 @@ func (a *Actor) VerifyExpiry() {
 	slog.Info("correction skipped", "reason", "verify-timeout")
 }
 
+// pendingVerdict checks the pending fix's range against the fresh push: the
+// word and phrase paths need the text before the cursor to END with their
+// range (token+tail), the selection path needs its runes AT the reported
+// position — the selection may sit on either side of the cursor (Pitfall 6).
+// The caller holds the mutex and pending != nil.
+func (a *Actor) pendingVerdict() bool {
+	if a.pending.sel == nil {
+		return correct.MatchesSuffix(a.surr, a.pending.match)
+	}
+
+	return correct.VerifyRangeAt(a.sel.full, a.pending.sel.start, a.pending.match)
+}
+
+// afterVerdict checks the verify-after expectation against the fresh push:
+// the suffix rule for word/phrase corrections, the range rule for selection
+// corrections. The caller holds the mutex (and has already retired the
+// round — the arguments carry its state).
+func (a *Actor) afterVerdict(expected []rune, start uint32, atRange bool) bool {
+	if !atRange {
+		return correct.MatchesSuffix(a.surr, expected)
+	}
+
+	return correct.VerifyRangeAt(a.sel.full, start, expected)
+}
+
 // afterExpiry is the verify-after deadline: the client never answered the
 // post-correction Require, so the check is dropped quietly — the
 // compensation is best-effort and never a repair (ADR-003 residual risk).
@@ -340,6 +385,25 @@ func (a *Actor) armAfterVerify(converted, tail []rune) {
 	a.clearAfter() // never two open rounds
 	a.after = &pendingAfter{
 		expected: concatRunes(converted, tail),
+		epoch:    a.verifyEpoch,
+	}
+	epoch := a.verifyEpoch
+	a.after.deadline = time.AfterFunc(verifyWait, func() { a.afterExpiry(epoch) })
+	a.eng.RequireSurroundingText()
+}
+
+// armAfterVerifyRange starts the range-anchored verify-after round of a
+// selection correction (the caller holds the mutex): the client's fresh
+// push must hold the converted text AT the selection position — the range
+// may sit on either side of the cursor, so the suffix rule of the word path
+// would look at the wrong end of the text (Pitfall 6).
+func (a *Actor) armAfterVerifyRange(converted []rune, start uint32) {
+	a.verifyEpoch++
+	a.clearAfter() // never two open rounds
+	a.after = &pendingAfter{
+		expected: converted,
+		start:    start,
+		atRange:  true,
 		epoch:    a.verifyEpoch,
 	}
 	epoch := a.verifyEpoch
@@ -426,15 +490,97 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 	}
 }
 
-// startCorrection launches the WORD correction of the Double decision: the
-// range is the token with its boundary tail, exactly as in Phase 2 (D-23).
+// startCorrection launches the correction of the Double decision: with an
+// active selection in the last surrounding push the range is that selection
+// (CORR-03, D-30 — the selection takes precedence over the buffer, whatever
+// the buffer holds); otherwise the WORD path of Phase 2, exactly as before.
 // The caller holds the mutex.
 func (a *Actor) startCorrection() {
+	if sel, runes, ok := a.activeSelection(); ok {
+		a.startSelectionCorrection(sel, runes)
+
+		return
+	}
 	a.startRangeCorrection(correctionRange{
 		token:   a.buf.Token(),
 		tail:    a.buf.Tail(),
 		replace: a.buf.ReplaceToken,
 	})
+}
+
+// activeSelection resolves the selection half of the last surrounding push
+// into a correction range (D-30): active exactly when the client reported
+// cursor != anchor, clamped to the text it positions into — a pair the text
+// cannot hold describes no selection, and the word path keeps the decision
+// (T-03-03-03: client positions are untrusted input). The caller holds the
+// mutex.
+func (a *Actor) activeSelection() (selectionSpec, []rune, bool) {
+	start, end, active := correct.SelectionRange(a.sel.cursor, a.sel.anchor)
+	if !active {
+		return selectionSpec{}, nil, false
+	}
+	runes := a.sel.full
+	if int(end) > len(runes) {
+		// #nosec G115 -- len(runes) is bounded by a real input field, far
+		// below 2^31 runes; on the 64-bit target an int always holds a uint32.
+		end = uint32(len(runes)) // clamp to the reported text (beforeCursor idiom)
+	}
+	// #nosec G115 -- both index a real input field, far below 2^31 runes.
+	if int(start) >= int(end) {
+		return selectionSpec{}, nil, false // collapsed against the text — no range
+	}
+
+	return selectionSpec{start: start, end: end, cursor: a.sel.cursor}, runes[start:end], true
+}
+
+// startSelectionCorrection launches the SELECTION correction (CORR-03,
+// D-30): the range is the client-reported selection, converted by the same
+// run pipeline as the word and the phrase (D-23 — ConvertRuns over the
+// range), with the same refusal vocabulary and the same two-phase
+// verification; the pre-check is range-anchored (VerifyRangeAt — the
+// selection may sit on either side of the cursor, Pitfall 6), and the
+// freshest spontaneous push is checked first, exactly as for the word. The
+// caller holds the mutex.
+func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
+	armed := time.Now()
+	converted, changed, ok := correct.ConvertRuns(runes)
+	if !ok {
+		slog.Info("correction skipped", "reason", refusalReason(runes))
+
+		return
+	}
+	if !changed {
+		// D-24: every letter of the range is already in the anchor layout —
+		// a SUCCESSFUL operation without changes; nothing to replace,
+		// nothing to verify.
+		slog.Info("correction", "outcome", "done")
+
+		return
+	}
+	if a.eng == nil {
+		slog.Info("correction skipped", "reason", "no-engine")
+
+		return
+	}
+	a.resolvePending() // a second Double supersedes the stale round
+	a.clearAfter()     // …and the previous round's verify-after with it
+	// A selection exists only because a surrounding push carried it — the
+	// client has the capability bit by construction; the caps branch of the
+	// word path (level 2 without verification) cannot apply here.
+	a.pending = &pendingFix{
+		rng:       correctionRange{token: runes},
+		converted: converted,
+		match:     runes,
+		armed:     armed,
+		sel:       &sel,
+	}
+	if correct.VerifyRangeAt(a.sel.full, sel.start, runes) {
+		a.executeCorrection() // cached push is the freshest report
+
+		return
+	}
+	a.pending.deadline = time.AfterFunc(verifyWait, a.VerifyExpiry)
+	a.eng.RequireSurroundingText()
 }
 
 // startPhraseCorrection launches the PHRASE correction of the Triple
@@ -522,12 +668,19 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 // the buffer so a repeated correction converts back, and arms the
 // verify-after round: the deletion is ack-less on 1.5.29, so the correction
 // itself asks for the surrounding text back and checks the suffix
-// (ADR-003/ADR-004). The caller holds the mutex and pending != nil.
+// (ADR-003/ADR-004). A selection fix runs its own geometry instead
+// (executeSelectionCorrection). The caller holds the mutex and pending !=
+// nil.
 func (a *Actor) executeCorrection() {
 	p := a.pending
 	a.pending = nil
 	if p.deadline != nil {
 		p.deadline.Stop()
+	}
+	if p.sel != nil {
+		a.executeSelectionCorrection(p)
+
+		return
 	}
 	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, correct.DefaultBackspaceCap)
 	a.eng.DeleteSurroundingText(plan.Offset, plan.NChars)
@@ -535,6 +688,28 @@ func (a *Actor) executeCorrection() {
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
 	logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
 	a.armAfterVerify(p.converted, p.rng.tail)
+}
+
+// executeSelectionCorrection runs the ladder over the selection range: one
+// DeleteSurroundingText whose offset is SIGNED by the cursor's side of the
+// selection (Pitfall 6: start−cursor — negative when the range sits left of
+// the cursor, zero-or-positive when right of it) and whose nchars is exactly
+// the range length — not a rune more (CORR-07 precision applied to the
+// selection) — one commit of the converted range. The buffer dies instead
+// of being edited: a selection may span text the buffer never mirrored, so
+// from here on it cannot stand in for the field. The verify-after round is
+// range-anchored. The caller holds the mutex and pending != nil.
+func (a *Actor) executeSelectionCorrection(p *pendingFix) {
+	sel := p.sel
+	// #nosec G115 -- both positions index a real input field, far below
+	// 2^31 runes; on the 64-bit target an int always holds a uint32.
+	offset := int32(sel.start) - int32(sel.cursor)
+	nchars := sel.end - sel.start
+	a.eng.DeleteSurroundingText(offset, nchars)
+	a.eng.CommitText(engine.NewIBusText(string(p.converted)))
+	a.buf.HardReset() // the buffer can no longer mirror the replaced field
+	logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
+	a.armAfterVerifyRange(p.converted, sel.start)
 }
 
 // executeLevel2 runs the ladder's Backspace level on a client without the

@@ -17,21 +17,36 @@ func MatchesSuffix(textBeforeCursor, token []rune) bool {
 
 // SelectionRange resolves the wire pair of a surrounding-text push into the
 // selection's half-open rune range (D-30): the interval between cursor and
-// anchor in either order, active exactly when the positions differ.
-//
-// RED stub (plan 03-03 task 2): returns the inactive shape so the corpus
-// fails on assertions.
+// anchor in either order — the client reports the pair from its own
+// selection direction, so right-to-left and left-to-right describe the SAME
+// range — active exactly when the positions differ (no selection
+// observable → the caller keeps the word path, Phase 2 behavior).
 func SelectionRange(cursorPos, anchorPos uint32) (start, end uint32, active bool) {
-	return 0, 0, false
+	if cursorPos == anchorPos {
+		return 0, 0, false
+	}
+	start, end = cursorPos, anchorPos
+	if start > end {
+		start, end = end, start
+	}
+
+	return start, end, true
 }
 
 // VerifyRangeAt is the range-anchored verify rule of the selection
 // correction (Pitfall 6): the converted text must sit AT the selection
 // position — MatchesSuffix only checks the prefix before the cursor, which a
-// selection right of the cursor escapes.
-//
-// RED stub (plan 03-03 task 2): always false so the corpus fails on
-// assertions.
-func VerifyRangeAt(_ []rune, _ uint32, _ []rune) bool {
-	return false
+// selection right of the cursor escapes. Out-of-range positions and an
+// overlong want are mismatches, never panics.
+func VerifyRangeAt(text []rune, start uint32, want []rune) bool {
+	// #nosec G115 -- start indexes a real input field, far below 2^31 runes;
+	// on the 64-bit target an int always holds a uint32.
+	if int(start) >= len(text) {
+		return false
+	}
+	if len(text)-int(start) < len(want) {
+		return false
+	}
+
+	return slices.Equal(text[int(start):int(start)+len(want)], want)
 }

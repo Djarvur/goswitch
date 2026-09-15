@@ -42,12 +42,12 @@ func TestSelectionRange(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name         string
-		cursor       uint32
-		anchor       uint32
-		wantStart    uint32
-		wantEnd      uint32
-		wantActive   bool
+		name       string
+		cursor     uint32
+		anchor     uint32
+		wantStart  uint32
+		wantEnd    uint32
+		wantActive bool
 	}{
 		{name: "left to right", cursor: 0, anchor: 6, wantStart: 0, wantEnd: 6, wantActive: true},
 		{name: "right to left", cursor: 6, anchor: 0, wantStart: 0, wantEnd: 6, wantActive: true},
@@ -86,10 +86,10 @@ func TestVerifyRangeAt(t *testing.T) {
 		want  string
 		ok    bool
 	}{
-		{name: "range at start", text: "привет мир", start: 0, want: "привет", ok: true},
-		{name: "shifted range", text: "привет мир", start: 1, want: "привет", ok: false},
-		{name: "range past the text", text: "привет", start: 2, want: "привет", ok: false},
-		{name: "want longer than text", text: "привет", start: 0, want: "привет мир", ok: false},
+		{name: "range at start", text: wordRU + " мир", start: 0, want: wordRU, ok: true},
+		{name: "shifted range", text: wordRU + " мир", start: 1, want: wordRU, ok: false},
+		{name: "range past the text", text: wordRU, start: 2, want: wordRU, ok: false},
+		{name: "want longer than text", text: wordRU, start: 0, want: wordRU + " мир", ok: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -97,3 +97,7 @@ run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v1.yaml"
 [tasks.e2e-select-smoke]
 description = "e2e: 03-03 selection spike — anchor push + actual replacement rung pinned per surface (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case select-smoke"
+
+[tasks.e2e-select-correct]
+description = "e2e: 03-03 selection correction — double Right Shift under ctrl+a selection converts the selected range in gnome-text-editor (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case select-correct"

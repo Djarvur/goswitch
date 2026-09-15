@@ -50,6 +50,19 @@ const selectFieldEN = wordProbeEN + " " + wordProbeEN
 // was transparent to: the last ghbdtn replaced by привет, head untouched.
 const selectExpectSuffixApplied = wordProbeEN + " " + wordResultRU
 
+// selectAllCanonical is the select-all injection name proven live by the
+// Task-1 spike on every anchor-reporting surface of the stand (GTE:
+// cursor=0/anchor=len; chromium: cursor=len/anchor=0 — ydotool 0.1.8
+// resolves the combo correctly; "Control+a" types a literal "ca" through the
+// first-letter fallback, Pitfall 5).
+const selectAllCanonical = "ctrl+a"
+
+// selectCorrectResult is the select-correct oracle: the whole selected mixed
+// field converts by the run rule — the foreign EN word to привет, the
+// engine-committed Cyrillic word re-committed unchanged (D-23 inside the
+// selection).
+const selectCorrectResult = wordResultRU + " " + wordResultRU
+
 // surroundingReport is one parsed surrounding_text debug record: both wire
 // positions of the client's push.
 type surroundingReport struct {
@@ -213,6 +226,107 @@ func runSelectSmoke(ctx context.Context, s *stand) error {
 		waitChars: s.waitChromiumInput,
 		readback:  s.readChromiumText,
 	})
+}
+
+// runSelectCorrect proves the selection branch live (CORR-03, D-30, plan
+// 03-03 task 2) on the surface the spike table gave a working anchor:
+// gnome-text-editor. The mixed field "ghbdtn привет" is assembled through
+// both real printing branches (EN transit, RU engine commits after the
+// flip), ctrl+a selects it all (the canonical spike name; GTE pushes
+// cursor=0/anchor=len — the positive-offset geometry of Pitfall 6), and the
+// double Right Shift corrects exactly the SELECTION: the field settles at
+// "привет привет" — the foreign EN word converted, the Cyrillic word
+// untouched, nothing outside the range modified.
+func runSelectCorrect(ctx context.Context, s *stand) error {
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+	if err := s.startGTE(ctx); err != nil {
+		return err
+	}
+	defer s.closeGTE()
+
+	if err := s.waitGTEInput(ctx, 0); err != nil {
+		return fmt.Errorf("select-correct surface: %w", err)
+	}
+	if err := s.assembleMixedField(ctx, "select-correct"); err != nil {
+		return err
+	}
+	mixed := wordProbeEN + " " + wordResultRU
+	if err := s.waitGTEInput(ctx, len([]rune(mixed))); err != nil {
+		return fmt.Errorf("select-correct mixed field assembled: %w", err)
+	}
+
+	// Select all and gate on the anchor push itself: the selection must be
+	// observable before the tap means anything (D-30 — a surface without
+	// the anchor cannot carry this case).
+	before := s.countSub(surroundingMark)
+	if err := s.pressKey(ctx, selectAllCanonical); err != nil {
+		return err
+	}
+	rep, ok := s.waitNewSurrounding(ctx, before)
+	if !ok || !rep.selectionActive() {
+		return fmt.Errorf("select-correct: no selection anchor after %s (report %+v)"+
+			" — selection unobservable", selectAllCanonical, rep)
+	}
+
+	if err := s.injectKeys(ctx, "Shift_R", "Shift_R"); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"action","n":2`, decisionWait); err != nil {
+		return fmt.Errorf("select-correct double-tap decision: %w", err)
+	}
+	if err := s.waitForLog(ctx, `"msg":"correction","outcome":"done"`, correctionWait); err != nil {
+		return fmt.Errorf("select-correct selection correction: %w", err)
+	}
+
+	return s.waitGTEText(ctx, selectCorrectResult)
+}
+
+// assembleMixedField types "ghbdtn привет" into the focused surface through
+// both real printing branches: the EN word transits, the single-tap flip
+// switches the engine to RU, the second word is committed by the engine as
+// Cyrillic — the mixed-selection input of the select cases.
+func (s *stand) assembleMixedField(ctx context.Context, caseName string) error {
+	if err := s.injectText(ctx, wordProbeEN); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, `"msg":"key"`, minKeyEvents, keyWait); err != nil {
+		return fmt.Errorf("%s key visibility: %w", caseName, err)
+	}
+	// The separator rides the typing path (ydotool "space" resolves to the
+	// physical S key — the 02-03 live trap).
+	if err := s.injectText(ctx, " "); err != nil {
+		return err
+	}
+	if err := s.flipToRU(ctx, caseName); err != nil {
+		return err
+	}
+
+	return s.injectText(ctx, wordProbeEN)
+}
+
+// waitGTEText polls the pid-keyed GTE readback until the document holds
+// exactly want — the AT-SPI bridge can lag the field update, so the oracle
+// rides the lag out instead of reading once (the waitZenityText idiom).
+func (s *stand) waitGTEText(ctx context.Context, want string) error {
+	deadline := time.Now().Add(witnessWait)
+	var last string
+	for {
+		out, err := s.readGTEText(ctx)
+		if err == nil {
+			last = out
+			if out == want {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("select-correct: document did not settle to %q (readback %q)", want, last)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return err
+		}
+	}
 }
 
 // selectSpikeZenity runs the selection probe on the zenity GTK entry — the
