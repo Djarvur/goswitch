@@ -4,6 +4,7 @@
 package session
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"time"
@@ -84,9 +85,9 @@ type Actor struct {
 	sel         selectionState
 	pending     *pendingFix
 	after       *pendingAfter
-	verifyEpoch uint64             // monotonic verify-after round tag (stale-timer guard)
-	mode        scriptMode         // output-script state, EN at start (ADR-001 Option B)
-	opts        Options            // correction tuning (D-27 cap, D-28 rung switch)
+	verifyEpoch uint64               // monotonic verify-after round tag (stale-timer guard)
+	mode        scriptMode           // output-script state, EN at start (ADR-001 Option B)
+	opts        Options              // correction tuning (D-27 cap, D-28 rung switch)
 	clip        *clipboard.Clipboard // the rung's wl-clipboard client
 }
 
@@ -155,9 +156,11 @@ type pendingFix struct {
 // and the round's epoch. The epoch makes a stale deadline from a superseded
 // round a no-op: the timer callback re-checks the tag under the mutex. A
 // selection round checks the expected text AT the range position (atRange)
-// instead of at the text's end — Pitfall 6 again.
+// instead of at the text's end — Pitfall 6 again. paste carries the rung's
+// payload (the converted text, D-28) for the mismatch branch.
 type pendingAfter struct {
 	expected []rune
+	paste    []rune
 	start    uint32
 	atRange  bool
 	epoch    uint64
@@ -290,10 +293,12 @@ func (a *Actor) HandleSurroundingText(text string, cursorPos, anchorPos uint32) 
 	}
 	if a.after != nil {
 		expected := a.after.expected
+		paste := a.after.paste
 		start, atRange := a.after.start, a.after.atRange
 		a.clearAfter()
 		if !a.afterVerdict(expected, start, atRange) {
 			slog.Info("correction verify", "outcome", "mismatch")
+			a.runClipboardRung(paste)
 
 			return
 		}
@@ -418,6 +423,7 @@ func (a *Actor) armAfterVerify(converted, tail []rune) {
 	a.clearAfter() // never two open rounds
 	a.after = &pendingAfter{
 		expected: concatRunes(converted, tail),
+		paste:    converted,
 		epoch:    a.verifyEpoch,
 	}
 	epoch := a.verifyEpoch
@@ -435,6 +441,7 @@ func (a *Actor) armAfterVerifyRange(converted []rune, start uint32) {
 	a.clearAfter() // never two open rounds
 	a.after = &pendingAfter{
 		expected: converted,
+		paste:    converted,
 		start:    start,
 		atRange:  true,
 		epoch:    a.verifyEpoch,
@@ -454,6 +461,71 @@ func (a *Actor) clearAfter() {
 		a.after.deadline.Stop()
 	}
 	a.after = nil
+}
+
+// ctrlVKeycodes are the physical (evdev) keycodes of the Ctrl+V forward
+// burst — KEY_LEFTCTRL=29, KEY_V=47 (linux/event-codes.h), the same keycode
+// discipline as backSpaceKeycode=14.
+const (
+	ctrlLKeycode = 29
+	ctrlVKeycode = 47
+)
+
+// runClipboardRung runs the D-28 opt-in clipboard rung after a verify-after
+// mismatch (ADR-003 rung C, ordered after the commit/delete rungs): save
+// the user's clipboard byte-exactly, put the converted replacement in
+// through the stdin-only wl-copy, replay the Ctrl+V burst over whatever the
+// client still holds selected, and restore the saved state best-effort — a
+// restore failure is a WARN (D-29), never an operation error. Clipboard
+// CONTENT is never logged at any level (D-20/D-21 extension), and the rung
+// is OFF unless Options.ClipboardRung armed it (the default configuration
+// never touches the user's clipboard). The caller holds the mutex.
+func (a *Actor) runClipboardRung(paste []rune) {
+	if !a.opts.ClipboardRung || a.clip == nil {
+		return
+	}
+	// The clipboard client bounds every subprocess with its own deadline
+	// (T-03-03-05) — a background context is the rung's lifetime.
+	ctx := context.Background()
+	saved, had, err := a.clip.Save(ctx)
+	if err != nil {
+		slog.Info("correction skipped", "reason", "clipboard-unavailable")
+
+		return
+	}
+	if err := a.clip.Set(ctx, []byte(string(paste))); err != nil {
+		slog.Info("correction skipped", "reason", "clipboard-unavailable")
+
+		return
+	}
+	forwardCtrlV(a.eng)
+	if err := a.clip.Restore(ctx, saved, had); err != nil {
+		// D-29: best-effort — the replacement already landed in the field;
+		// a failed restore is logged (error only, never content), not raised.
+		slog.Warn("clipboard restore failed", "error", err)
+	}
+}
+
+// forwardCtrlV replays the paste over the active selection: the owner
+// prototype's validated four-event sequence — Control_L press bare, v press
+// under Control, v release, Control_L release (punto_engine.py:301-304).
+func forwardCtrlV(eng engine.Emitter) {
+	eng.ForwardKeyEvent(engine.KeyControlL, ctrlLKeycode, 0)
+	eng.ForwardKeyEvent(engine.KeyV, ctrlVKeycode, engine.MaskControl)
+	eng.ForwardKeyEvent(engine.KeyV, ctrlVKeycode, engine.MaskControl|engine.MaskRelease)
+	eng.ForwardKeyEvent(engine.KeyControlL, ctrlLKeycode, engine.MaskControl|engine.MaskRelease)
+}
+
+// backspaceCap resolves the effective D-27 cap: the configured value, or
+// the documented default when no options were fed (the zero Options of a
+// bare NewActor — the no-config path and the unit corpus). The caller holds
+// the mutex.
+func (a *Actor) backspaceCap() int {
+	if a.opts.BackspaceCap > 0 {
+		return a.opts.BackspaceCap
+	}
+
+	return correct.DefaultBackspaceCap
 }
 
 // flipScript toggles the internal output-script mode (ADR-001 Option B):
@@ -715,7 +787,7 @@ func (a *Actor) executeCorrection() {
 
 		return
 	}
-	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, correct.DefaultBackspaceCap)
+	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, a.backspaceCap())
 	a.eng.DeleteSurroundingText(plan.Offset, plan.NChars)
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
@@ -752,7 +824,7 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 // The burst→commit order is the wire contract (research A4: the daemon
 // preserves it for every client). The caller holds the mutex.
 func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time) {
-	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps, correct.DefaultBackspaceCap)
+	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps, a.backspaceCap())
 	if plan.Level == correct.LevelNone {
 		// D-27: the Backspace series would exceed the cap and this client
 		// has no DeleteSurroundingText — refuse silently, not one deletion.

@@ -2,7 +2,8 @@ package clipboard_test
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -19,13 +20,16 @@ const ownerClip = "goswitch-e2e-owner-clip"
 // correction would paste).
 const replacement = "привет"
 
+// binCopyName is the recorded name of the copy binary (goconst).
+const binCopyName = "wl-copy"
+
 // clipCall is one recorded subprocess invocation of the fake runner: the
 // argv and the stdin bytes are the observable surface (T-03-03-01: the
 // content must ride stdin, never argv).
 type clipCall struct {
-	name string
-	args []string
-	stdin []byte
+	name           string
+	args           []string
+	stdin          []byte
 	ctxHasDeadline bool
 }
 
@@ -51,7 +55,7 @@ func (f *fakeRunner) run(ctx context.Context, name string, args []string, stdin 
 	if f.hangUntilCtx {
 		<-ctx.Done()
 
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("subprocess canceled: %w", ctx.Err())
 	}
 	if name == "wl-paste" && f.exitErr != nil {
 		return nil, f.exitErr
@@ -85,82 +89,105 @@ func TestClipboard_SaveSetRestore(t *testing.T) {
 
 	t.Run("round trip restores the owner bytes", func(t *testing.T) {
 		t.Parallel()
-		f := &fakeRunner{reply: []byte(ownerClip)}
-		c := newClient(f)
-
-		saved, had, err := c.Save(context.Background())
-		if err != nil {
-			t.Fatalf("Save() err = %v, want nil", err)
-		}
-		if !had {
-			t.Fatal("Save() had = false over a non-empty clipboard, want true")
-		}
-		if string(saved) != ownerClip {
-			t.Fatalf("Save() = %q, want the byte-exact %q", saved, ownerClip)
-		}
-		if err := c.Set(context.Background(), []byte(replacement)); err != nil {
-			t.Fatalf("Set() err = %v, want nil", err)
-		}
-		if err := c.Restore(context.Background(), saved, had); err != nil {
-			t.Fatalf("Restore() err = %v, want nil", err)
-		}
-
-		calls := f.snapshot()
-		if len(calls) != 3 {
-			t.Fatalf("subprocess calls = %d, want 3 (paste, copy, copy); got %+v", len(calls), calls)
-		}
-		paste, set, restore := calls[0], calls[1], calls[2]
-		if paste.name != "wl-paste" || !slices.Equal(paste.args, []string{"--no-newline"}) {
-			t.Errorf("Save ran %s %v, want wl-paste [--no-newline] (byte-exact read, Pitfall 3)", paste.name, paste.args)
-		}
-		if set.name != "wl-copy" || !slices.Equal(set.args, []string{"--trim-newline"}) {
-			t.Errorf("Set ran %s %v, want wl-copy [--trim-newline]", set.name, set.args)
-		}
-		if string(set.stdin) != replacement {
-			t.Errorf("Set stdin = %q, want the replacement there", set.stdin)
-		}
-		if slices.Contains(set.args, replacement) {
-			t.Errorf("Set argv %q contains the clipboard content — stdin only, never argv (T-03-03-01)", set.args)
-		}
-		if restore.name != "wl-copy" || !slices.Equal(restore.args, []string{"--trim-newline"}) {
-			t.Errorf("Restore ran %s %v, want wl-copy [--trim-newline]", restore.name, restore.args)
-		}
-		if string(restore.stdin) != ownerClip {
-			t.Errorf("Restore stdin = %q, want the saved owner bytes", restore.stdin)
-		}
+		roundTripRestoresOwnerBytes(t)
 	})
 
 	t.Run("empty clipboard clears on restore", func(t *testing.T) {
 		t.Parallel()
-		f := &fakeRunner{exitErr: errors.New("wl-paste: exit status 1")} // the empty-buffer shape
-		c := newClient(f)
-
-		saved, had, err := c.Save(context.Background())
-		if err != nil {
-			t.Fatalf("Save() over an empty clipboard err = %v, want nil (empty is a state, not a failure)", err)
-		}
-		if had {
-			t.Fatal("Save() had = true over an empty clipboard, want false")
-		}
-		if len(saved) != 0 {
-			t.Fatalf("Save() = %q over an empty clipboard, want no bytes", saved)
-		}
-		if err := c.Restore(context.Background(), saved, had); err != nil {
-			t.Fatalf("Restore() err = %v, want nil", err)
-		}
-
-		calls := f.snapshot()
-		if len(calls) != 2 {
-			t.Fatalf("subprocess calls = %d, want 2 (paste, clear); got %+v", len(calls), calls)
-		}
-		clear := calls[1]
-		if clear.name != "wl-copy" || !slices.Equal(clear.args, []string{"--clear"}) {
-			t.Errorf("Restore ran %s %v over an empty original, want wl-copy [--clear] (Pitfall 3)", clear.name, clear.args)
-		}
-		if len(clear.stdin) != 0 {
-			t.Errorf("Restore stdin = %q on clear, want none", clear.stdin)
-		}
+		emptyClipboardClearsOnRestore(t)
 	})
+}
+
+// roundTripRestoresOwnerBytes is the non-empty round-trip body: the three
+// subprocesses in order with the exact flags, the content riding stdin.
+func roundTripRestoresOwnerBytes(t *testing.T) {
+	t.Helper()
+	f := &fakeRunner{reply: []byte(ownerClip)}
+	c := newClient(f)
+
+	saved, had, err := c.Save(context.Background())
+	if err != nil {
+		t.Fatalf("Save() err = %v, want nil", err)
+	}
+	if !had {
+		t.Fatal("Save() had = false over a non-empty clipboard, want true")
+	}
+	if string(saved) != ownerClip {
+		t.Fatalf("Save() = %q, want the byte-exact %q", saved, ownerClip)
+	}
+	if err := c.Set(context.Background(), []byte(replacement)); err != nil {
+		t.Fatalf("Set() err = %v, want nil", err)
+	}
+	if err := c.Restore(context.Background(), saved, had); err != nil {
+		t.Fatalf("Restore() err = %v, want nil", err)
+	}
+
+	assertRoundTripWire(t, f.snapshot())
+}
+
+// assertRoundTripWire pins the three recorded subprocesses: exact names and
+// flags, the content in stdin and never in argv (T-03-03-01).
+func assertRoundTripWire(t *testing.T, calls []clipCall) {
+	t.Helper()
+	if len(calls) != 3 {
+		t.Fatalf("subprocess calls = %d, want 3 (paste, copy, copy); got %+v", len(calls), calls)
+	}
+	paste, set, restore := calls[0], calls[1], calls[2]
+	if paste.name != "wl-paste" || !slices.Equal(paste.args, []string{"--no-newline"}) {
+		t.Errorf("Save ran %s %v, want wl-paste [--no-newline] (byte-exact read, Pitfall 3)", paste.name, paste.args)
+	}
+	if set.name != binCopyName || !slices.Equal(set.args, []string{"--trim-newline"}) {
+		t.Errorf("Set ran %s %v, want wl-copy [--trim-newline]", set.name, set.args)
+	}
+	if string(set.stdin) != replacement {
+		t.Errorf("Set stdin = %q, want the replacement there", set.stdin)
+	}
+	if slices.Contains(set.args, replacement) {
+		t.Errorf("Set argv %q contains the clipboard content — stdin only, never argv (T-03-03-01)", set.args)
+	}
+	if restore.name != binCopyName || !slices.Equal(restore.args, []string{"--trim-newline"}) {
+		t.Errorf("Restore ran %s %v, want wl-copy [--trim-newline]", restore.name, restore.args)
+	}
+	if string(restore.stdin) != ownerClip {
+		t.Errorf("Restore stdin = %q, want the saved owner bytes", restore.stdin)
+	}
+}
+
+// emptyClipboardClearsOnRestore is the empty-original body: wl-paste's
+// non-zero exit reads as an empty state (no error), and the restore CLEARS.
+func emptyClipboardClearsOnRestore(t *testing.T) {
+	t.Helper()
+	// The empty-buffer shape: wl-paste's non-zero exit — a genuine
+	// *exec.ExitError, the exact type Save classifies as "empty".
+	f := &fakeRunner{exitErr: &exec.ExitError{}}
+	c := newClient(f)
+
+	saved, had, err := c.Save(context.Background())
+	if err != nil {
+		t.Fatalf("Save() over an empty clipboard err = %v, want nil (empty is a state, not a failure)", err)
+	}
+	if had {
+		t.Fatal("Save() had = true over an empty clipboard, want false")
+	}
+	if len(saved) != 0 {
+		t.Fatalf("Save() = %q over an empty clipboard, want no bytes", saved)
+	}
+	if err := c.Restore(context.Background(), saved, had); err != nil {
+		t.Fatalf("Restore() err = %v, want nil", err)
+	}
+
+	calls := f.snapshot()
+	if len(calls) != 2 {
+		t.Fatalf("subprocess calls = %d, want 2 (paste, clear); got %+v", len(calls), calls)
+	}
+	clearCall := calls[1]
+	if clearCall.name != binCopyName || !slices.Equal(clearCall.args, []string{"--clear"}) {
+		t.Errorf("Restore ran %s %v over an empty original, want wl-copy [--clear] (Pitfall 3)",
+			clearCall.name, clearCall.args)
+	}
+	if len(clearCall.stdin) != 0 {
+		t.Errorf("Restore stdin = %q on clear, want none", clearCall.stdin)
+	}
 }
 
 // TestClipboard_Timeouts pins the DoS guard of the rung (T-03-03-05): every

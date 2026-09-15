@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Djarvur/goswitch/internal/clipboard"
 )
 
 // Selection-spike artifacts of plan 03-03 (CORR-03, A1/A2/A5): the spike
@@ -62,6 +66,106 @@ const selectAllCanonical = "ctrl+a"
 // engine-committed Cyrillic word re-committed unchanged (D-23 inside the
 // selection).
 const selectCorrectResult = wordResultRU + " " + wordResultRU
+
+// selectClipboardProbe is the replacement the clipboard case puts into the
+// clipboard — no edge whitespace, so runCmd's trimming cannot eat a byte of
+// the compared content.
+const selectClipboardProbe = "goswitch-e2e-clip-probe"
+
+// clipboardConfigYAML is the COMPLETE config document of the rung case (a
+// config must be complete — no defaults overlay, the 03-02 strict-parse
+// decision) with the D-28 switch ON.
+const clipboardConfigYAML = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+`
+
+// configFilePerm is the temp config's mode (mnd).
+const configFilePerm = 0o600
+
+// runSelectClipboard proves the D-28 rung's live mechanics
+// (unreachable-primary form, exactly the plan's fallback): on this desktop
+// every anchor-reporting surface applies the primary rung under a selection
+// (spike table: GTE delete+commit, chromium commit-replaces-selection), so
+// no live correction can reach a verify-after mismatch — the daemon-side
+// rung has no live driver yet. The case therefore pins what CAN be driven
+// live: (a) the daemon spawns with -config and arms the rung (the config
+// loaded record — the flag wiring of D-28), and (b) the round-trip
+// mechanics themselves run through the daemon's own clipboard package on
+// the live session — Save byte-exactly, Set through stdin-only wl-copy
+// (verified by wl-paste), best-effort Restore of the owner's bytes. The
+// matrix v2 decision (03-07) carries the unreachability note.
+func runSelectClipboard(ctx context.Context, s *stand) error {
+	// (a) the daemon-side wiring: a complete temp config with the rung on,
+	// a fresh daemon on -config, the config-loaded record in the log.
+	cfgPath := filepath.Join(s.tmpDir, "clipboard-rung.yaml")
+	if err := os.WriteFile(cfgPath, []byte(clipboardConfigYAML), configFilePerm); err != nil {
+		return fmt.Errorf("select-clipboard: write temp config: %w", err)
+	}
+	if err := s.restartDaemonWithArgs("-config", cfgPath); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"config loaded"`, registrationWait); err != nil {
+		return fmt.Errorf("select-clipboard daemon -config spawn: %w", err)
+	}
+	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+		return fmt.Errorf("select-clipboard daemon re-registration: %w", err)
+	}
+
+	return clipboardRoundTripLive(ctx)
+}
+
+// clipboardRoundTripLive drives the daemon's own clipboard client over the
+// live session: save the owner's clipboard, put the probe in, verify the
+// paste source holds it, restore, verify the owner's bytes came back
+// (whitespace-trimmed comparison — wl-copy --trim-newline may strip one
+// trailing newline of the original, the pinned-flag nuance).
+func clipboardRoundTripLive(ctx context.Context) error {
+	c := clipboard.New()
+	saved, had, err := c.Save(ctx)
+	if err != nil {
+		return fmt.Errorf("select-clipboard save: %w", err)
+	}
+	if err := c.Set(ctx, []byte(selectClipboardProbe)); err != nil {
+		return fmt.Errorf("select-clipboard set: %w", err)
+	}
+	got, err := runCmd(ctx, "wl-paste", "--no-newline")
+	if err != nil {
+		return fmt.Errorf("select-clipboard paste readback: %w", err)
+	}
+	if got != selectClipboardProbe {
+		return fmt.Errorf("select-clipboard: clipboard holds %q after Set, want the probe %q",
+			got, selectClipboardProbe)
+	}
+	if err := c.Restore(ctx, saved, had); err != nil {
+		return fmt.Errorf("select-clipboard restore: %w", err)
+	}
+	after, afterErr := runCmd(ctx, "wl-paste", "--no-newline")
+	if had {
+		if afterErr != nil || strings.TrimSpace(after) != strings.TrimSpace(string(saved)) {
+			return fmt.Errorf("select-clipboard: owner clipboard not restored (readback %q, err %w, saved %q)",
+				after, afterErr, string(saved))
+		}
+
+		return nil
+	}
+	if afterErr == nil && strings.TrimSpace(after) != "" && after != selectClipboardProbe {
+		return fmt.Errorf("select-clipboard: empty original came back as %q", after)
+	}
+
+	return nil
+}
 
 // surroundingReport is one parsed surrounding_text debug record: both wire
 // positions of the client's push.

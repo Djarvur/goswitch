@@ -101,3 +101,7 @@ run = "go run ./test/e2e -case select-smoke"
 [tasks.e2e-select-correct]
 description = "e2e: 03-03 selection correction — double Right Shift under ctrl+a selection converts the selected range in gnome-text-editor (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case select-correct"
+
+[tasks.e2e-select-clipboard]
+description = "e2e: 03-03 clipboard rung — daemon -config spawn with clipboard_rung on + live wl-copy/wl-paste round-trip through the daemon's client (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case select-clipboard"

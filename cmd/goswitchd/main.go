@@ -99,7 +99,9 @@ func watchConfig(ctx context.Context, path string) error {
 // engines — the D-01 experiment needs both from day one. The FSM's tap
 // window flows from the config (SWCH-04/D-35): without -config the
 // built-in default equals hotkey.DefaultWindow (pinned by
-// config.TestDefaults).
+// config.TestDefaults). The correction options — the D-27 Backspace cap
+// and the D-28 clipboard rung switch — are fed at startup the same way
+// (the snapshot consumption on hot reload is plan 03-04).
 func engineConfig(cfg config.Config) engine.Config {
 	engines := []engine.EngineDesc{
 		engine.NewEngineDesc("goswitch-en", "goswitch English (US)", "en", "us", "en"),
@@ -107,6 +109,10 @@ func engineConfig(cfg config.Config) engine.Config {
 	}
 	window := time.Duration(cfg.Timeouts.TapWindowMs) * time.Millisecond
 	actor := session.NewActor(window)
+	actor.SetOptions(session.Options{
+		BackspaceCap:  cfg.Correction.BackspaceCap,
+		ClipboardRung: cfg.Correction.ClipboardRung,
+	})
 
 	return engine.Config{
 		Component: engine.NewComponent(engines),

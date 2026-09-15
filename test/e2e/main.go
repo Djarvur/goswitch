@@ -91,7 +91,7 @@ func run() (exit int) {
 	flag.StringVar(&cfg.caseName, "case", "",
 		"case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke"+
 			" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed"+
-			" | ladder-chromium | reset-escape | select-smoke | select-correct")
+			" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard")
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
@@ -198,12 +198,14 @@ func pickCase(name string) (func(context.Context, *stand) error, error) {
 		"reset-escape":     runResetEscape,
 		"select-smoke":     runSelectSmoke,
 		"select-correct":   runSelectCorrect,
+		"select-clipboard": runSelectClipboard,
 	}
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
 			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed,"+
-			" phrase-en-ru, phrase-mixed, ladder-chromium, reset-escape, select-smoke, select-correct)", name)
+			" phrase-en-ru, phrase-mixed, ladder-chromium, reset-escape, select-smoke, select-correct,"+
+			" select-clipboard)", name)
 	}
 
 	return fn, nil
@@ -298,10 +300,17 @@ func buildDaemon(ctx context.Context, bin string) error {
 //
 // it only AFTER the desktop state is restored — a CommandContext kill would
 // fire on Ctrl-C before that restore runs.
+func (s *stand) startDaemon() error {
+	return s.startDaemonArgs()
+}
+
+// startDaemonArgs spawns the daemon with -debug plus extra arguments — the
+// config-dependent cases append their -config after writing it.
 //
 //nolint:noctx // the daemon must outlive the run context: teardown SIGTERMs
-func (s *stand) startDaemon() error {
-	cmd := exec.Command(s.daemonBin, "-debug")
+func (s *stand) startDaemonArgs(args ...string) error {
+	argv := append([]string{"-debug"}, args...)
+	cmd := exec.Command(s.daemonBin, argv...)
 	cmd.Stdout = s.logFile
 	cmd.Stderr = s.logFile
 	if err := cmd.Start(); err != nil {
@@ -310,6 +319,15 @@ func (s *stand) startDaemon() error {
 	s.daemon = cmd
 
 	return nil
+}
+
+// restartDaemonWithArgs stops the running daemon and spawns a fresh one
+// with extra arguments: the config cases build their command line after
+// setup has already started the default daemon.
+func (s *stand) restartDaemonWithArgs(args ...string) error {
+	s.stopDaemon()
+
+	return s.startDaemonArgs(args...)
 }
 
 // stopDaemon terminates the daemon with a bounded graceful wait.
