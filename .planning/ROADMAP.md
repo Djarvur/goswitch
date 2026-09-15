@@ -151,7 +151,26 @@ Plans:
   3. Производительность подтверждена измерением: p95 реакции на горячую клавишу < 50 мс (таймстемпы ydotool→AT-SPI в e2e-отчёте), потребление памяти демона < 50 МБ
   4. Ручная приёмка владельца пройдена (одна сессия по §7.2 спеки); README и инструкция установки опубликованы
 
-**Plans**: TBD
+**Plans**: 7/7 planned
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Трассер: internal/install + goswitchctl install/uninstall («один хозяин», env-cache, полный откат) + живой install-cycle — INST-01, D-39/D-40/D-42
+- [ ] 04-05-PLAN.md — Матрица v3: спайки + драйверы gedit (GTK3) и chromium-x11, словарь/префлайт, matrix-v3.yaml (superset v2, v2 заморожена) — D-47, критерий №2
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-02-PLAN.md — goswitchctl selfcheck (шесть шагов D-41, ремонт env-cache) + прошивка версии (var version, -version, status version=) — INST-01, D-37/D-41
+- [ ] 04-04-PLAN.md — Perf-приёмка: резидентный событийный свидетель AT-SPI, perf-кейс N=40 комбо-аккорда, p50/p95/p99 + VmHWM, бюджет-гейт exit≠0 — INST-03, D-43/D-44/D-45
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04-03-PLAN.md — Релизный конвейер: .goreleaser.yaml (дефолтная прошивка), release.yml (тег v*, contents:write только здесь), goreleaser-пин mise — INST-01, D-37/D-38
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04-06-PLAN.md — Двойной прогон D-48: mise e2e-matrix-v3 + workflow (два прогона подряд, fresh_session-префлайт loginctl) + процедура в docs/ci-runner.md — критерий №2
+- [ ] 04-07-PLAN.md — Двуязычный README + perf-таблица (D-50/D-46), docs/ACCEPTANCE.md (D-49), сверка WINDOWS-ledger, релиз v1.0.0 (тег → ассеты → каналы) — INST-01, критерий №4
 
 ## Progress
 
