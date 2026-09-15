@@ -17,6 +17,7 @@ import (
 
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/config"
+	"github.com/Djarvur/goswitch/internal/ctlsvc"
 	"github.com/Djarvur/goswitch/internal/logging"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -60,11 +61,31 @@ func run(ctx context.Context, debug bool, configPath string) error {
 		watcher = w
 	}
 
-	if err := engine.Run(ctx, engineConfig(cfg, watcher)); err != nil {
+	actor := newActor(cfg, watcher)
+	startCtl(ctx, actor, watcher)
+	if err := engine.Run(ctx, engineConfig(actor)); err != nil {
 		return fmt.Errorf("engine run: %w", err)
 	}
 
 	return nil
+}
+
+// startCtl runs the control service on the session bus — the daemon's
+// SECOND godbus connection (the engine rides the private IBus socket,
+// this one the session bus), started and stopped on the daemon's signal
+// context. A ctl failure NEVER kills the daemon: the desktop's input rides
+// this process, so the error is logged and the daemon keeps serving
+// without the control surface (the appid degradation precedent).
+func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher) {
+	var reload ctlsvc.Reloader
+	if watcher != nil {
+		reload = watcher // nil without -config: ReloadConfig answers "no config file"
+	}
+	go func() {
+		if err := ctlsvc.Run(ctx, ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}); err != nil {
+			slog.Error("ctl service stopped", "error", err)
+		}
+	}()
 }
 
 // loadConfig resolves the startup configuration: an explicit -config must
@@ -84,20 +105,13 @@ func loadConfig(path string) (config.Config, error) {
 	return *cfg, nil
 }
 
-// engineConfig builds the registration payload: one component, two
-// engines — the D-01 experiment needs both from day one. The FSM's tap
-// window flows from the config (SWCH-04/D-35): without -config the
-// built-in default equals hotkey.DefaultWindow (pinned by
-// config.TestDefaults). The correction options — the D-27 Backspace cap
-// and the D-28 clipboard rung switch — are fed at startup through
-// SetOptions; an attached watcher has PRIORITY per event (the succession
+// newActor builds the session actor with the startup config applied (the
+// FSM's tap window from the config, the correction options through
+// SetOptions; an attached watcher has PRIORITY per event — the succession
 // of plan 03-04: SetOptions remains the no-config surface, the snapshot
-// wins once a source exists).
-func engineConfig(cfg config.Config, watcher *config.Watcher) engine.Config {
-	engines := []engine.EngineDesc{
-		engine.NewEngineDesc("goswitch-en", "goswitch English (US)", "en", "us", "en"),
-		engine.NewEngineDesc("goswitch-ru", "goswitch Русская", "ru", "ru", "ru"),
-	}
+// wins once a source exists). The actor is built here so the control
+// service can hold it from the start (INST-02).
+func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 	window := time.Duration(cfg.Timeouts.TapWindowMs) * time.Millisecond
 	actor := session.NewActor(window)
 	actor.SetOptions(session.Options{
@@ -106,6 +120,20 @@ func engineConfig(cfg config.Config, watcher *config.Watcher) engine.Config {
 	})
 	if watcher != nil {
 		actor.AttachConfig(watcher)
+	}
+
+	return actor
+}
+
+// engineConfig builds the registration payload: one component, two
+// engines — the D-01 experiment needs both from day one. The FSM's tap
+// window flows from the actor's startup wiring above (SWCH-04/D-35):
+// without -config the built-in default equals hotkey.DefaultWindow
+// (pinned by config.TestDefaults).
+func engineConfig(actor *session.Actor) engine.Config {
+	engines := []engine.EngineDesc{
+		engine.NewEngineDesc("goswitch-en", "goswitch English (US)", "en", "us", "en"),
+		engine.NewEngineDesc("goswitch-ru", "goswitch Русская", "ru", "ru", "ru"),
 	}
 
 	return engine.Config{

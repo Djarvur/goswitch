@@ -129,3 +129,7 @@ run = "go run ./test/e2e -case macr-super-letter"
 [tasks.e2e-macr-per-app]
 description = "e2e: 03-05 per-app MACR — live a11y observer (A4) feeds macr.apps, interception under the matched focus; unavailable observer = documented degradation verdict (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-per-app"
+
+[tasks.e2e-ctl]
+description = "e2e: 03-06 INST-02 — goswitchctl status/reload/correct against a live -config daemon, last-good error visible in status (D-32) (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case ctl-smoke"
