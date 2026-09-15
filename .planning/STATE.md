@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: Фразы, выделение, переключение и конфигурация
-status: executing
-stopped_at: Completed 03-06-PLAN.md
-last_updated: "2026-09-15T13:55:36.318Z"
+status: verifying
+stopped_at: Completed 03-07-PLAN.md
+last_updated: "2026-09-15T15:01:20.427Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 3 execution started
-state_head: 01b5d5f6fe60b6973ec27e90365316cc5274fe09
+state_head: 21df37c71e5b62b7bcdcfc416e6d800341840704
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 3 (Фразы, выделение, переключение и конфигурация) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-15 — Phase 3 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -81,6 +81,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P04 | 63 min | 2 tasks | 14 files |
 | Phase 03 P05 | 99 min | 3 tasks | 10 files |
 | Phase 03 P06 | 22 min | 2 tasks | 11 files |
+| Phase 03 P07 | 48 min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -150,6 +151,11 @@ Recent decisions affecting current work:
 - [Phase 3]: [03-06] goswitchctl status wire canon: ONE key=value line is both the human report and the --json source (config_error last, whitespace-flattened; skip reasons dash-flattened) — no properties/signals, the FLAGGED minimal-methods assumption held live
 - [Phase 3]: [03-06] ctlsvc guard is semantic: RequestName carries ReplaceExisting WITHOUT AllowReplacement, so a second live instance answers ErrNotPrimaryOwner (exported — the errors.Is pin lives in ctlsvc_test); the dead connection's name auto-release covers restart; every method opens with recoverMethod (panic -> dbus.Error, daemon lives); a ctl failure never kills the daemon
 - [Phase 3]: [03-06] Correction outcome counters wrap every done/skipped site (skipCorrection/countCorrectionDone; D-24 counts done) — the full reason vocabulary countable from outside; D-32 config status lifts from the optional configStatus seam (Watcher.ConfigPath added)
+- [Phase 3]: [03-07] Matrix v2 (21 cases) is the phase acceptance base — green on the live desktop AND green106 (run 34984814995); the select gate waits for an ACTIVE new push (pure caret moves push too) and expect_sel_step verifies only the PRE-correction window (the correction itself pushes transient active states)
+- [Phase 3]: [03-07] 03-03 zenity verdict CORRECTED live: a surviving ctrl+a selection makes the CommitText REPLACE the selected residue (field settles at the converted word alone); the spike saw transparency only because its failed probe candidates destroyed the selection first — daemon-side degradation stands (no anchor push, word path decides)
+- [Phase 3]: [03-07] GTE's surrounding-push map is operation-specific: typing/ctrl+a/shift+right push, Home/shift+end NEVER — the reverse geometry is proven via gated shift+right extensions from the home caret (cursor=N/anchor=0, chromium's native shape); probed names: home/shift+right/shift+end lowercase (KEY_-prefixed forms fall back to first letters)
+- [Phase 3]: [03-07] The reload step drives config application THROUGH goswitchctl (INST-02+CONF-02 in one step): CLI exit/reply + BOTH log forms (config reloaded / WARN config reload rejected) + D-32 status validity; fragments apply by key-line replace/append — the appended unknown key IS the broken-edit mechanics
+- [Phase 3]: [03-07] The overview episode's FocusOut hard-resets the daemon buffer — the super-space row retypes over a select-all after the focus recovery; workflow_dispatch executes the REF's workflow definition (the v2 step name shows in the green106 run)
 
 ### Pending Todos
 
@@ -171,6 +177,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T13:55:36.251Z
-Stopped at: Completed 03-06-PLAN.md
+Last session: 2026-09-15T15:01:20.359Z
+Stopped at: Completed 03-07-PLAN.md
 Resume file: None

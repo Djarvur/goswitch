@@ -10,26 +10,26 @@
 ### CORR — Коррекция текста
 
 - [x] **CORR-01**: По двойному нажатию Right Shift исправить последнее слово в другой раскладке (EN↔RU по позиции клавиш)
-- [ ] **CORR-02**: По тройному нажатию Right Shift исправить всю фразу, набранную в буфере
-- [ ] **CORR-03**: При активном выделении двойной Right Shift исправляет выделенный текст
+- [x] **CORR-02**: По тройному нажатию Right Shift исправить всю фразу, набранную в буфере
+- [x] **CORR-03**: При активном выделении двойной Right Shift исправляет выделенный текст
 - [x] **CORR-04**: Направление EN→RU / RU→EN определяется автоматически по составу буфера (букв какой раскладки больше)
 - [x] **CORR-05**: Регистр сохраняется посимвольно: `GHBDTN`→`ПРИВЕТ`, `Ghbdtn`→`Привет`, `ghbdtn`→`привет`
-- [ ] **CORR-06**: Смешанный текст: корректируется только часть, набранная не той раскладкой (точная семантика — ADR фазы решения)
+- [x] **CORR-06**: Смешанный текст: корректируется только часть, набранная не той раскладкой (точная семантика — ADR фазы решения)
 - [x] **CORR-07**: Замена применяется ровно к диапазону неверного текста без визуального «прыжка» (surrounding-text; fallback Backspace×N / буфер обмена — по capability ladder)
 - [x] **CORR-08**: Таблицы ЙЦУКЕН↔QWERTY включают знаки `[ ] ; ' , . /` и генерируются `go:generate` из xkb symbols
 - [x] **CORR-09**: Буфер очищается по Enter, Tab, Escape, смене фокуса окна; клик мыши — по результатам ADR (на уровне IME ненаблюдаем)
 
 ### SWCH — Переключение раскладки
 
-- [ ] **SWCH-01**: Right Shift переключает раскладку EN↔RU; механизм (two-engine регистрация или внутренний флип режима движка) фиксируется ADR фазы решения — прямая запись `gsettings current` рантаймом GNOME игнорируется
-- [ ] **SWCH-02**: Комбо «исправить слово и переключить раскладку» одной комбинацией (дефолт Shift+RightCtrl, переназначается)
-- [ ] **SWCH-03**: Родное GNOME-переключение Super+Space и MRU продолжают работать (goswitch зарегистрирован как input source, индикатор GNOME актуален)
+- [x] **SWCH-01**: Right Shift переключает раскладку EN↔RU; механизм (two-engine регистрация или внутренний флип режима движка) фиксируется ADR фазы решения — прямая запись `gsettings current` рантаймом GNOME игнорируется
+- [x] **SWCH-02**: Комбо «исправить слово и переключить раскладку» одной комбинацией (дефолт Shift+RightCtrl, переназначается)
+- [x] **SWCH-03**: Родное GNOME-переключение Super+Space и MRU продолжают работать (goswitch зарегистрирован как input source, индикатор GNOME актуален)
 - [x] **SWCH-04**: Конфликт тайминга single/double/triple Right Shift разрешён ADR фазы решения (Caramba-подобная схема «свитч на первый тап» — кандидат)
 
 ### CONF — Конфигурация
 
 - [x] **CONF-01**: Все горячие клавиши, таймауты тапов и параметры задаются в YAML-конфиге
-- [ ] **CONF-02**: Изменения конфига применяются без перезапуска демона (hot reload)
+- [x] **CONF-02**: Изменения конфига применяются без перезапуска демона (hot reload)
 - [x] **CONF-03**: Схема биндингов совместима со свитчером Caramba [wish-уровень: уточняется при обсуждении фазы]
 
 ### INTEG — Интеграция с окружением
@@ -54,7 +54,7 @@
 ### INST — Поставка и эксплуатация
 
 - [ ] **INST-01**: Установка без root: systemd user unit, регистрация engine в IBus, `go install` + бинарник из GitHub releases
-- [ ] **INST-02**: CLI `goswitchctl`: статус, перечитать конфиг, принудительно скорректировать
+- [x] **INST-02**: CLI `goswitchctl`: статус, перечитать конфиг, принудительно скорректировать
 - [ ] **INST-03**: Реакция на горячую клавишу < 50 мс; потребление памяти < 50 МБ
 - [x] **INST-04**: Структурные логи с уровнями; debug-режим с трассировкой клавиш
 
@@ -85,20 +85,20 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | CORR-01 | Phase 2 | Complete |
-| CORR-02 | Phase 3 | Pending |
-| CORR-03 | Phase 3 | Pending |
+| CORR-02 | Phase 3 | Complete |
+| CORR-03 | Phase 3 | Complete |
 | CORR-04 | Phase 2 | Complete |
 | CORR-05 | Phase 2 | Complete |
-| CORR-06 | Phase 3 | Pending |
+| CORR-06 | Phase 3 | Complete |
 | CORR-07 | Phase 2 | Complete |
 | CORR-08 | Phase 1 | Complete |
 | CORR-09 | Phase 2 | Complete |
-| SWCH-01 | Phase 3 | Pending |
-| SWCH-02 | Phase 3 | Pending |
-| SWCH-03 | Phase 3 | Pending |
+| SWCH-01 | Phase 3 | Complete |
+| SWCH-02 | Phase 3 | Complete |
+| SWCH-03 | Phase 3 | Complete |
 | SWCH-04 | Phase 3 | Complete |
 | CONF-01 | Phase 3 | Complete |
-| CONF-02 | Phase 3 | Pending |
+| CONF-02 | Phase 3 | Complete |
 | CONF-03 | Phase 3 | Complete |
 | INTEG-01 | Phase 1 | Complete |
 | INTEG-02 | Phase 1 | Complete |
@@ -111,7 +111,7 @@
 | TEST-03 | Phase 1 | Complete |
 | TEST-04 | Phase 2 | Complete |
 | INST-01 | Phase 4 | Pending |
-| INST-02 | Phase 3 | Pending |
+| INST-02 | Phase 3 | Complete |
 | INST-03 | Phase 4 | Pending |
 | INST-04 | Phase 1 | Complete |
 
