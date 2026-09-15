@@ -42,7 +42,7 @@
 
 ### MACR — Клавиатурные макросы
 
-- [ ] **MACR-01**: Замена Super+Буква → Ctrl+Буква на лету в определённых приложениях — реализуется внутри goswitch (решение владельца D-12: keyd отвергнут — сложен и ненадёжен, goswitch сам упрощает конфигурацию); механизм идентификации приложений выбирает ADR-005 фазы 1
+- [x] **MACR-01**: Замена Super+Буква → Ctrl+Буква на лету в определённых приложениях — реализуется внутри goswitch (решение владельца D-12: keyd отвергнут — сложен и ненадёжен, goswitch сам упрощает конфигурацию); механизм идентификации приложений выбирает ADR-005 фазы 1 — Complete с оговоркой (владелец, UAT 2026-09-15): механизм реализован по ADR-005 и проводка доказана (burst движка + релей ibus-daemon, dbus-monitor); конечный эффект применяется Chromium-семейством, GTK4-виджеты GNOME 46 forwarded-события игнорируют — документированное платформенное ограничение (WINDOWS ledger #4 закрыт)
 
 ### TEST — Автоматизированное тестирование
 
@@ -105,7 +105,7 @@
 | INTEG-03 | Phase 1 | Complete |
 | INTEG-04 | Phase 1 | Complete |
 | INTEG-05 | Phase 1 | Complete |
-| MACR-01 | Phase 3 | Pending (в v1, внутри goswitch — решение D-12; механизм — ADR-005 фазы 1) |
+| MACR-01 | Phase 3 | Complete (проводка доказана; эффект — Chromium-семейство, GTK4-Wayland GNOME 46 не применяет forwarded-события — документированное платформенное ограничение, WINDOWS #4 закрыт владельцем 2026-09-15) |
 | TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 1 | Complete |
 | TEST-03 | Phase 1 | Complete |
@@ -123,4 +123,4 @@
 
 ---
 *Requirements defined: 2026-09-10*
-*Last updated: 2026-09-10 after initial definition (auto mode, from docs/SPEC.md + research)*
+*Last updated: 2026-09-15 — MACR-01 flipped Complete with GTK4-Wayland forwarded-events platform caveat (owner decision, Phase 3 UAT item 3)*
