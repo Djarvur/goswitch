@@ -83,9 +83,10 @@ type EventHandler interface {
 	HandleKey(ev EngineEvent) (consume bool)
 	HandleLifecycle(kind LifecycleKind)
 	// HandleSurroundingText delivers the surrounding text the client
-	// reported (the runes before the anchor at cursorPos) — the input of
-	// the ADR-004 pre-correction verification.
-	HandleSurroundingText(text string, cursorPos uint32)
+	// reported with both positions (D-30: a selection is active exactly when
+	// anchorPos != cursorPos) — the input of the ADR-004 pre-correction
+	// verification and of the selection-range detection.
+	HandleSurroundingText(text string, cursorPos, anchorPos uint32)
 	// HandleCapabilities delivers the per-input-context capability bitmap
 	// (SetCapabilities), the input of the ADR-003 ladder-level choice.
 	HandleCapabilities(caps uint32)
@@ -180,16 +181,18 @@ func (e *Engine) SetCursorLocation(x, y, width, height int32) (err *dbus.Error) 
 // SetSurroundingText implements
 // org.freedesktop.IBus.Engine.SetSurroundingText (v text, u cursor_pos,
 // u anchor_pos): the variant-wrapped IBusText is decoded once here and the
-// text with its cursor position is funneled to the handler — the input of
-// the ADR-004 pre-correction verification. Logged at DEBUG, contents never
-// recorded at INFO (D-20). A payload that does not decode as IBusText is
-// dropped: the correction waiting on it then times out silently.
+// text with BOTH positions is funneled to the handler — the input of the
+// ADR-004 pre-correction verification and of the selection detection (D-30:
+// anchor_pos is the selection anchor, ibusengine.h:430). Logged at DEBUG
+// with both fields, contents never recorded at INFO (D-20). A payload that
+// does not decode as IBusText is dropped: the correction waiting on it then
+// times out silently.
 func (e *Engine) SetSurroundingText(text dbus.Variant, cursorPos, anchorPos uint32) (err *dbus.Error) {
 	defer recoverHandler("SetSurroundingText", &err)
 	slog.Debug("surrounding_text", "cursor_pos", cursorPos, "anchor_pos", anchorPos)
 	if e.handler != nil {
 		if t, ok := decodeIBusText(text); ok {
-			e.handler.HandleSurroundingText(t.Text, cursorPos)
+			e.handler.HandleSurroundingText(t.Text, cursorPos, anchorPos)
 		}
 	}
 

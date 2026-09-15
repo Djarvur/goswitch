@@ -93,3 +93,7 @@ run = "go run ./test/e2e -case reset-escape"
 [tasks.e2e-matrix]
 description = "e2e: 02-06 YAML case matrix v1 — per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v1.yaml"
+
+[tasks.e2e-select-smoke]
+description = "e2e: 03-03 selection spike — anchor push + actual replacement rung pinned per surface (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case select-smoke"

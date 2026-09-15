@@ -20,6 +20,7 @@ type recordingHandler struct {
 	kinds    []engine.LifecycleKind
 	texts    []string
 	cursors  []uint32
+	anchors  []uint32
 	caps     []uint32
 	attached []engine.Emitter
 }
@@ -34,9 +35,10 @@ func (h *recordingHandler) HandleLifecycle(kind engine.LifecycleKind) {
 	h.kinds = append(h.kinds, kind)
 }
 
-func (h *recordingHandler) HandleSurroundingText(text string, cursorPos uint32) {
+func (h *recordingHandler) HandleSurroundingText(text string, cursorPos, anchorPos uint32) {
 	h.texts = append(h.texts, text)
 	h.cursors = append(h.cursors, cursorPos)
+	h.anchors = append(h.anchors, anchorPos)
 }
 
 func (h *recordingHandler) HandleCapabilities(caps uint32) {
@@ -58,7 +60,7 @@ func (panicHandler) HandleLifecycle(engine.LifecycleKind) {
 	panic("injected handler panic")
 }
 
-func (panicHandler) HandleSurroundingText(string, uint32) {}
+func (panicHandler) HandleSurroundingText(string, uint32, uint32) {}
 
 func (panicHandler) HandleCapabilities(uint32) {}
 
@@ -142,7 +144,7 @@ func (h *consumeStubHandler) HandleKey(engine.EngineEvent) bool { return h.consu
 
 func (h *consumeStubHandler) HandleLifecycle(engine.LifecycleKind) {}
 
-func (h *consumeStubHandler) HandleSurroundingText(string, uint32) {}
+func (h *consumeStubHandler) HandleSurroundingText(string, uint32, uint32) {}
 
 func (h *consumeStubHandler) HandleCapabilities(uint32) {}
 
@@ -208,16 +210,18 @@ func ibusTextVariant(t *testing.T, text string) dbus.Variant {
 }
 
 // TestEngine_SurroundingTextForward pins the incoming decode of the
-// surrounding text (plan 02-03): a struct-shaped payload is decoded and
-// forwarded with text and cursor position; every other shape is dropped
-// without a call. Capabilities forward likewise.
+// surrounding text (plan 02-03) and the anchorPos seam widening (plan 03-03,
+// Pitfall 1): a struct-shaped payload is decoded and forwarded with text and
+// BOTH positions — cursor_pos and anchor_pos reach the handler verbatim, the
+// selection anchor no longer dies at the seam (D-30); every other shape is
+// dropped without a call. Capabilities forward likewise.
 func TestEngine_SurroundingTextForward(t *testing.T) {
 	t.Parallel()
 
 	rec := &recordingHandler{}
 	eng := engine.NewEngine(rec, "goswitch-en")
 
-	if err := eng.SetSurroundingText(ibusTextVariant(t, "ghbdtn"), 6, 6); err != nil {
+	if err := eng.SetSurroundingText(ibusTextVariant(t, "ghbdtn"), 6, 0); err != nil {
 		t.Fatalf("SetSurroundingText() err = %v, want nil", err)
 	}
 	if err := eng.SetSurroundingText(dbus.MakeVariant("not a struct"), 1, 1); err != nil {
@@ -229,6 +233,10 @@ func TestEngine_SurroundingTextForward(t *testing.T) {
 	}
 	if len(rec.cursors) != 1 || rec.cursors[0] != 6 {
 		t.Errorf("forwarded cursors = %v, want exactly [6]", rec.cursors)
+	}
+	if len(rec.anchors) != 1 || rec.anchors[0] != 0 {
+		t.Errorf("forwarded anchors = %v, want exactly [0] — the selection anchor"+
+			" must survive the seam (D-30)", rec.anchors)
 	}
 
 	if err := eng.SetCapabilities(engine.CapSurroundingText); err != nil {

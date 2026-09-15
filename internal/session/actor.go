@@ -80,10 +80,23 @@ type Actor struct {
 	caps        uint32
 	eng         engine.Emitter
 	surr        []rune // cached text-before-cursor from the latest client push
+	sel         selectionState
 	pending     *pendingFix
 	after       *pendingAfter
 	verifyEpoch uint64     // monotonic verify-after round tag (stale-timer guard)
 	mode        scriptMode // output-script state, EN at start (ADR-001 Option B)
+}
+
+// selectionState is the selection half of the latest surrounding-text push
+// (D-30): the full text the client reported plus BOTH wire positions. A
+// selection is active exactly when cursor != anchor — the anchor is the
+// selection boundary the client pushes with every text change (GTK's
+// IMContext, ibusengine.h:430); a selection may sit on either side of the
+// cursor, hence the full text, not just the before-cursor prefix.
+type selectionState struct {
+	full   []rune
+	cursor uint32
+	anchor uint32
 }
 
 // correctionRange parameterizes the correction pipeline by its range (D-23 —
@@ -180,7 +193,9 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 	case engine.LifecycleFocusOut, engine.LifecycleReset:
 		a.fsm.Feed(hotkey.Reset{}, a.elapsed())
 		a.buf.HardReset()
-		a.surr = nil // the cache belongs to the input context that just left
+		// the caches belong to the input context that just left
+		a.surr = nil
+		a.sel = selectionState{}
 		a.resolvePending()
 		a.clearAfter()
 		if a.timer != nil {
@@ -193,20 +208,23 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 }
 
 // HandleSurroundingText implements engine.EventHandler: the arriving text
-// updates the surrounding cache and settles whichever round is open. A
-// pending correction (ADR-004 pre-check) executes only when the runes before
-// the cursor END with the correction range (token+tail — exactly what the
+// updates the surrounding cache — the before-cursor prefix for the suffix
+// verification and the full text with BOTH positions for the selection
+// detection (D-30) — and settles whichever round is open. A pending
+// correction (ADR-004 pre-check) executes only when the runes before the
+// cursor END with the correction range (token+tail — exactly what the
 // ladder deletes, CORR-07); otherwise it aborts silently ("abort, не
 // мусорить": not one character is touched). A pending verify-after
 // (ADR-003/ADR-004 post-check) compares the suffix against the replacement
 // the correction left behind: a mismatch — the client ignored the deletion,
 // Chromium ibus#2354, Pitfall 3 — counts as an INFO record and is NEVER
 // followed by an automatic repair.
-func (a *Actor) HandleSurroundingText(text string, cursorPos uint32) {
+func (a *Actor) HandleSurroundingText(text string, cursorPos, anchorPos uint32) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.surr = beforeCursor(text, cursorPos)
+	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
 	if a.pending != nil {
 		if !correct.MatchesSuffix(a.surr, a.pending.match) {
 			a.resolvePending()

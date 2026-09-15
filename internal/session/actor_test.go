@@ -243,7 +243,7 @@ func TestActor_DoubleTapCorrects(t *testing.T) {
 	}
 
 	// The cursor at the end of the line sees the whole text.
-	a.HandleSurroundingText("abc "+wordEN, runeLen("abc "+wordEN))
+	a.HandleSurroundingText("abc "+wordEN, runeLen("abc "+wordEN), runeLen("abc "+wordEN))
 
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
@@ -277,7 +277,7 @@ func TestActor_CachedSurroundingCorrects(t *testing.T) {
 
 	for i, r := range wordEN {
 		a.HandleKey(engine.EngineEvent{Keyval: uint32(r)})
-		a.HandleSurroundingText(wordEN[:i+1], uint32(i+1)) // the client's spontaneous push
+		a.HandleSurroundingText(wordEN[:i+1], uint32(i+1), uint32(i+1)) // the client's spontaneous push
 		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Release: true})
 	}
 	tapShift(a)
@@ -315,7 +315,7 @@ func TestActor_LatchedModsStillFeed(t *testing.T) {
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	a.HandleSurroundingText(wordEN, runeLen(wordEN))
+	a.HandleSurroundingText(wordEN, runeLen(wordEN), runeLen(wordEN))
 
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU {
@@ -349,7 +349,7 @@ func TestActor_VerifyPaths(t *testing.T) {
 		tapShift(a)
 		a.ExpiryAt(expiryAfterWindow)
 		mismatch := "abc другойтекст"
-		a.HandleSurroundingText(mismatch, runeLen(mismatch)) // does not end with the token
+		a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch)) // does not end with the token
 
 		if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
 			t.Errorf("verify-mismatch record missing; log:\n%s", buf.String())
@@ -363,7 +363,7 @@ func TestActor_VerifyPaths(t *testing.T) {
 
 		// A late surrounding text (the client answering after the verdict)
 		// must not resurrect the correction: the pending fix is gone.
-		a.HandleSurroundingText("abc "+wordEN, runeLen("abc "+wordEN))
+		a.HandleSurroundingText("abc "+wordEN, runeLen("abc "+wordEN), runeLen("abc "+wordEN))
 		if calls := sink.deleteCalls(); len(calls) != 0 {
 			t.Errorf("late surrounding text deleted %+v after the mismatch verdict", calls)
 		}
@@ -471,7 +471,7 @@ func TestActor_AfterSpaceCorrects(t *testing.T) {
 	}
 
 	line := "abc " + wordEN + " "
-	a.HandleSurroundingText(line, runeLen(line))
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -7, nchars: 7}) {
@@ -498,13 +498,13 @@ func TestActor_ToggleRepeat(t *testing.T) {
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	a.HandleSurroundingText(wordEN, runeLen(wordEN))
+	a.HandleSurroundingText(wordEN, runeLen(wordEN), runeLen(wordEN))
 
 	// Repeat: the buffer holds привет, the field too.
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	a.HandleSurroundingText(wordRU, runeLen(wordRU))
+	a.HandleSurroundingText(wordRU, runeLen(wordRU), runeLen(wordRU))
 
 	texts := sink.commitTexts()
 	if len(texts) != 2 || texts[0] != wordRU || texts[1] != wordEN {
@@ -534,7 +534,7 @@ func TestActor_DebugCorrectionRecord(t *testing.T) {
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	a.HandleSurroundingText(wordEN, runeLen(wordEN))
+	a.HandleSurroundingText(wordEN, runeLen(wordEN), runeLen(wordEN))
 
 	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
 		t.Fatalf("commits = %q, want one %q (precondition of the log pin)", texts, wordRU)
@@ -604,7 +604,7 @@ func TestActor_TripleTapCorrectsPhrase(t *testing.T) {
 	}
 
 	line := "abc " + phraseEN
-	a.HandleSurroundingText(line, runeLen(line))
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -13, nchars: 13}) {
@@ -664,7 +664,7 @@ func TestActor_PhraseVerifyMismatch(t *testing.T) {
 	a.ExpiryAt(expiryAfterWindow)
 
 	mismatch := "abc другойтекст"
-	a.HandleSurroundingText(mismatch, runeLen(mismatch)) // does not end with the phrase
+	a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch)) // does not end with the phrase
 
 	if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
 		t.Errorf("verify-mismatch record missing; log:\n%s", buf.String())
@@ -679,7 +679,7 @@ func TestActor_PhraseVerifyMismatch(t *testing.T) {
 	// A late matching push must not resurrect the correction: the pending
 	// fix is gone with the verdict.
 	line := "abc " + phraseEN
-	a.HandleSurroundingText(line, runeLen(line))
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 	if calls := sink.deleteCalls(); len(calls) != 0 {
 		t.Errorf("late surrounding text deleted %+v after the mismatch verdict", calls)
 	}
@@ -806,7 +806,7 @@ func TestActor_VerifyAfterLevel1(t *testing.T) {
 		tapShift(a)
 		a.ExpiryAt(expiryAfterWindow)
 		line := "abc " + wordEN
-		a.HandleSurroundingText(line, runeLen(line)) // settles the pre-correction round
+		a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-correction round
 
 		return a, sink, buf
 	}
@@ -819,7 +819,7 @@ func TestActor_VerifyAfterLevel1(t *testing.T) {
 		}
 		// The fresh verify answer: the field holds the replacement.
 		after := "abc " + wordRU
-		a.HandleSurroundingText(after, runeLen(after))
+		a.HandleSurroundingText(after, runeLen(after), runeLen(after))
 
 		if strings.Contains(buf.String(), `"msg":"correction verify","outcome":"mismatch"`) {
 			t.Errorf("a matching field raised a mismatch; log:\n%s", buf.String())
@@ -839,7 +839,7 @@ func TestActor_VerifyAfterLevel1(t *testing.T) {
 		// client reports the pre-correction text — the suffix no longer
 		// matches the expected replacement.
 		uncorrected := "abc " + wordEN
-		a.HandleSurroundingText(uncorrected, runeLen(uncorrected))
+		a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected))
 
 		if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
 			t.Fatalf("mismatch counter = %d, want exactly 1; log:\n%s", got, buf.String())
@@ -852,7 +852,7 @@ func TestActor_VerifyAfterLevel1(t *testing.T) {
 		}
 
 		// pendingAfter is quenched: a further push does nothing at all.
-		a.HandleSurroundingText(wordRU, runeLen(wordRU))
+		a.HandleSurroundingText(wordRU, runeLen(wordRU), runeLen(wordRU))
 		if got := strings.Count(buf.String(), `"msg":"correction verify","outcome":"mismatch"`); got != 1 {
 			t.Errorf("quenched pendingAfter re-fired: mismatch counter = %d, want 1", got)
 		}
@@ -1129,7 +1129,7 @@ func TestActor_ENTransitUnchanged(t *testing.T) {
 	if got := sink.requireCount(); got != 1 {
 		t.Fatalf("RequireSurroundingText calls = %d, want 1 (transit must feed the buffer)", got)
 	}
-	a.HandleSurroundingText("g", runeLen("g"))
+	a.HandleSurroundingText("g", runeLen("g"), runeLen("g"))
 	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != "п" {
 		t.Fatalf("EN-transit correction commits = %q, want one [п]", texts)
 	}
@@ -1159,7 +1159,7 @@ func TestActor_RUScriptTrueAllBranches(t *testing.T) {
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	a.HandleSurroundingText("п2х", runeLen("п2х"))
+	a.HandleSurroundingText("п2х", runeLen("п2х"), runeLen("п2х"))
 
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -3, nchars: 3}) {
@@ -1190,7 +1190,7 @@ func TestActor_RUDigitsFullPipeline(t *testing.T) {
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	a.HandleSurroundingText(wordRU+"2026", runeLen(wordRU+"2026"))
+	a.HandleSurroundingText(wordRU+"2026", runeLen(wordRU+"2026"), runeLen(wordRU+"2026"))
 
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -10, nchars: 10}) {
@@ -1218,7 +1218,7 @@ func TestActor_ScriptTrueBuffer(t *testing.T) {
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	a.HandleSurroundingText(wordRU, runeLen(wordRU))
+	a.HandleSurroundingText(wordRU, runeLen(wordRU), runeLen(wordRU))
 
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
@@ -1265,7 +1265,7 @@ func TestActor_MixedWordConvertsForeignRuns(t *testing.T) {
 	// The verification sees the whole mixed token — exactly what the ladder
 	// deletes — and the settle commits the run-converted replacement.
 	field := "gfb" + wordRU
-	a.HandleSurroundingText(field, runeLen(field))
+	a.HandleSurroundingText(field, runeLen(field), runeLen(field))
 
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -9, nchars: 9}) {
@@ -1305,7 +1305,7 @@ func TestActor_PhraseMixedCorrects(t *testing.T) {
 	}
 
 	field := wordEN + " " + wordRU
-	a.HandleSurroundingText(field, runeLen(field))
+	a.HandleSurroundingText(field, runeLen(field), runeLen(field))
 
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -13, nchars: 13}) {
