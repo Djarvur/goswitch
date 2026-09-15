@@ -23,7 +23,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/godbus/dbus/v5"
 	"gopkg.in/yaml.v3"
+
+	"github.com/Djarvur/goswitch/engine"
 )
 
 // signalProbe is the POSIX liveness probe (signal 0 delivers nothing).
@@ -72,6 +75,11 @@ func matrixKeyNames() map[string]string {
 // matrixSpaceKey rides the typing path instead of the key table (see
 // matrixKeyNames).
 const matrixSpaceKey = "space"
+
+// goswitchComponentName mirrors engine/types.go's DefaultConfig literal
+// (the IBus name every stand daemon registers under; not an exported
+// engine constant).
+const goswitchComponentName = "org.freedesktop.IBus.goswitch"
 
 // matrixReportPath is the file artifact the run duplicates its report into
 // (CI evidence, plan 02-07); gitignored.
@@ -310,6 +318,13 @@ func runMatrixFile(ctx context.Context, cfg config, path string) int {
 // matrixPreflight runs the stand-independent environment checks once per
 // matrix run (the surface drivers themselves prove their binaries inside
 // the cases that use them). Same table shape as preflight.go.
+//
+// The goswitch-slot checks exist because a 16-cycle run multiplies any
+// leftover: a live goswitchd process or a stale ibus-side name entry (LIVE
+// FINDING 2026-09-15: ibus-daemon 1.5.29 keeps the name of an abruptly
+// killed engine connection — an interrupted matrix run leaves one, and
+// every following daemon loses the single-instance guard with reply 2)
+// would fail all sixteen cases with a message that never names the cause.
 func matrixPreflight(ctx context.Context, cfg config) error {
 	checks := []struct {
 		name string
@@ -319,6 +334,8 @@ func matrixPreflight(ctx context.Context, cfg config) error {
 		{"ibus-address", checkIbusAddress},
 		{"uinput-writable", checkUinputWritable},
 		{"python-gi", checkPythonGI},
+		{"goswitch-process-absent", checkNoGoswitchProcess},
+		{"goswitch-name-free", checkGoswitchNameFree},
 	}
 	s := &stand{cfg: cfg}
 	for _, check := range checks {
@@ -329,6 +346,80 @@ func matrixPreflight(ctx context.Context, cfg config) error {
 	}
 
 	return nil
+}
+
+// checkNoGoswitchProcess refuses to start when a goswitchd process is
+// already running: with a daemon alive, every matrix case would lose the
+// single-instance guard — and a second live stand would inject into the
+// same desktop (two parallel stands are forbidden, plan prohibition).
+func checkNoGoswitchProcess(ctx context.Context, _ *stand) error {
+	out, err := runCmd(ctx, "pgrep", "-x", "goswitchd")
+	if err == nil && out != "" {
+		return fmt.Errorf("a goswitchd process is already running (pid(s) %s)"+
+			" — another stand or an installed daemon; stop it first", out)
+	}
+
+	return nil
+}
+
+// checkGoswitchNameFree refuses to start when the IBus bus already has an
+// owner for the goswitch component name while NO goswitchd process exists
+// — the stale-registration state an interrupted run leaves behind (the
+// owner connection is gone, ibus-daemon still hands out reply 2). The
+// remedy is the ibus-native `ibus restart` (the stand's own ibus-restart
+// case proves the desktop survives it).
+func checkGoswitchNameFree(ctx context.Context, _ *stand) error {
+	owner, err := goswitchNameOwner(ctx)
+	if err != nil {
+		return fmt.Errorf("probe name ownership: %w", err)
+	}
+	if owner == "" {
+		return nil
+	}
+
+	return errors.New("ibus-daemon reports an owner of " + goswitchComponentName +
+		" but checkNoGoswitchProcess found no live process — a stale registration" +
+		" from an interrupted run; run `ibus restart` to reap it, then rerun")
+}
+
+// goswitchNameOwner asks the IBus bus who owns the goswitch component
+// name: "" when the name is free, the owner's unique name when held, an
+// error only when the probe itself cannot run.
+func goswitchNameOwner(ctx context.Context) (string, error) {
+	addr, err := engine.Discover()
+	if err != nil {
+		return "", fmt.Errorf("discover ibus address: %w", err)
+	}
+	conn, err := dbus.Dial(addr)
+	if err != nil {
+		return "", fmt.Errorf("dial ibus bus: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Getpid()))}); err != nil {
+		return "", fmt.Errorf("dbus auth: %w", err)
+	}
+	if err := conn.Hello(); err != nil {
+		return "", fmt.Errorf("dbus hello: %w", err)
+	}
+	var owner string
+	call := conn.Object("org.freedesktop.DBus", "/org/freedesktop/DBus").
+		CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, goswitchComponentName)
+	if call.Err != nil {
+		// ibus-daemon words the free-name answer its own way (live-probed:
+		// "Can not get name owner of …: no such name"); match both the
+		// standard error name and the observed text.
+		msg := strings.ToLower(call.Err.Error())
+		if strings.Contains(call.Err.Error(), "NameHasNoOwner") || strings.Contains(msg, "no such name") {
+			return "", nil // free — the expected state before any case runs
+		}
+
+		return "", fmt.Errorf("GetNameOwner: %w", call.Err)
+	}
+	if err := call.Store(&owner); err != nil {
+		return "", fmt.Errorf("store GetNameOwner reply: %w", err)
+	}
+
+	return owner, nil
 }
 
 // matrixReportMode is the report file's permission (owner-only: the report
@@ -350,6 +441,46 @@ func writeMatrixReport(path string, report *matrixReport) {
 	}
 }
 
+// witnessProbeTimeout bounds a single desktop-tree probe: a wedged AT-SPI
+// walk must cost seconds, not the whole cmdTimeout budget (live finding
+// 02-06: right after a case's teardown killed its surfaces, the registry
+// briefly lists their app entries and a walk into one blocks until the
+// registry reaps it).
+const witnessProbeTimeout = 4 * time.Second
+
+// witnessQuieceAttempts caps how many probe windows the quiesce gate waits
+// for the a11y registry to finish reaping killed surfaces.
+const witnessQuieceAttempts = 2
+
+// matrixQuiesce waits until the desktop's AT-SPI tree answers a witness
+// probe promptly again. Killed surfaces (the per-case teardown SIGKILLs
+// chromium/GTE/zenity) leave app entries the at-spi registry reaps
+// asynchronously; a tree walk started in that window blocks far past any
+// sane poll and surfaces as "signal: killed" under the command deadline —
+// failing healthy cases that merely opened a surface at the wrong moment
+// (live finding 02-06, shuffled-order run). Waiting for the heal is
+// correct: the wedge always clears on its own.
+func matrixQuiesce(ctx context.Context, cfg config) error {
+	overall := time.Now().Add(witnessQuieceAttempts * surfaceFocusWait)
+	var lastErr error
+	for {
+		probe, cancel := context.WithTimeout(ctx, witnessProbeTimeout)
+		_, err := runCmd(probe, "/usr/bin/python3", cfg.helper, "witness")
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if time.Now().After(overall) {
+			return fmt.Errorf("a11y witness not answering within %v: %w",
+				witnessQuieceAttempts*surfaceFocusWait, lastErr)
+		}
+		if serr := sleepCtx(ctx, witnessPoll); serr != nil {
+			return serr
+		}
+	}
+}
+
 // runMatrixCaseIsolated is the CASE ISOLATION step of the matrix (02-06
 // must-have): the case runs inside a complete stand cycle — fresh daemon,
 // fresh log, fresh desktop snapshot — so daemon-carried state (scriptMode,
@@ -363,7 +494,19 @@ func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error 
 	}
 	caseErr := func() error {
 		if rerr := s.waitForLog(ctx, "component registered", registrationWait); rerr != nil {
+			if s.countSub("another goswitchd instance already registered") > 0 {
+				return fmt.Errorf("daemon registration: the goswitch name is taken"+
+					" (single-instance guard fired; a concurrent stand or a stale ibus"+
+					" registration — `ibus restart` reaps the latter): %w", rerr)
+			}
+
 			return fmt.Errorf("daemon registration: %w", rerr)
+		}
+		// The previous case's teardown may have left the a11y registry
+		// mid-reap: gate on the desktop tree answering again before the
+		// case's witness polls start.
+		if qerr := matrixQuiesce(ctx, s.cfg); qerr != nil {
+			return fmt.Errorf("desktop a11y quiesce: %w", qerr)
 		}
 
 		return runCaseWatchdog(ctx, c.Name, func(ctx context.Context, s *stand) error {
@@ -387,10 +530,16 @@ func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error 
 }
 
 // runMatrixCase drives one case on a live stand: engine activation, the
-// optional RU-mode pre-step, the primary surface with its witness gate,
-// every step in file order, then the expectation checks.
+// primary surface with its witness gate, the optional RU-mode flip (AFTER
+// the surface — the flip tap must land in the stand's own focused context,
+// the proven 02-04 order; before the surface the tap reaches no engine
+// context at all, live finding 02-06), every step in file order, then the
+// expectation checks.
 func runMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
 	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+	if err := openMatrixSurface(ctx, s, c.Surface); err != nil {
 		return err
 	}
 	if c.Mode == "ru" {
@@ -400,11 +549,8 @@ func runMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
 			return err
 		}
 	}
-	if err := openMatrixSurface(ctx, s, c.Surface); err != nil {
-		return err
-	}
 	for i, st := range c.Steps {
-		if err := runMatrixStep(ctx, s, st); err != nil {
+		if err := runMatrixStep(ctx, s, c, st); err != nil {
 			return fmt.Errorf("step %d (%s): %w", i+1, stepSummary(st), err)
 		}
 	}
@@ -462,7 +608,7 @@ func openMatrixSurface(ctx context.Context, s *stand, name string) error {
 }
 
 // runMatrixStep executes exactly one step kind.
-func runMatrixStep(ctx context.Context, s *stand, st matrixStep) error {
+func runMatrixStep(ctx context.Context, s *stand, c matrixCase, st matrixStep) error {
 	switch {
 	case st.Type != "":
 		return s.injectText(ctx, st.Type)
@@ -471,7 +617,7 @@ func runMatrixStep(ctx context.Context, s *stand, st matrixStep) error {
 	case st.Tap != "":
 		return tapMatrix(ctx, s, st.Tap)
 	case st.Focus != "":
-		return focusMatrixSurface(ctx, s, st.Focus)
+		return focusMatrixSurface(ctx, s, c, st.Focus)
 	}
 
 	return errors.New("empty step") // unreachable: validation rejects it
@@ -531,12 +677,67 @@ func tapMatrix(ctx context.Context, s *stand, tap string) error {
 // surfaces. A surface not yet open is spawned fresh (a freshly mapped
 // window takes focus, phase-01 finding); an already-open one is re-focused
 // through the pid-keyed grabFocus poke.
-func focusMatrixSurface(ctx context.Context, s *stand, name string) error {
+//
+// The zenity spawn path gates on `focused-inputs` ENUMERATION, not the
+// single-witness poll: the surface being left (e.g. the stand's chromium)
+// can keep a stale AT-SPI FOCUSED bit for beats after losing compositor
+// focus (live finding 02-06, reset-focus run), and the witness would keep
+// naming it while zenity already owns the real keyboard focus. The
+// already-open path gates on the case's expected rune count: the v1 focus
+// steps always return to a field that holds the typed word, and the count
+// is what distinguishes the page input from the browser's own focused
+// chrome (an omnibox that took the Tab sits at 0 chars and must not pass).
+func focusMatrixSurface(ctx context.Context, s *stand, c matrixCase, name string) error {
 	if pid := matrixSurfacePID(s, name); pid != 0 {
-		return s.waitMatrixInputPid(ctx, pid, -1)
+		return s.waitMatrixInputPid(ctx, pid, utf8.RuneCountInString(c.ExpectText))
+	}
+	if name == matrixSurfaceZenity {
+		return openZenityFocused(ctx, s)
 	}
 
 	return openMatrixSurface(ctx, s, name)
+}
+
+// openZenityFocused spawns a zenity entry and gates on it appearing among
+// the focused input candidates, poking its input node past the grace —
+// the focus-flip variant of the zenity driver for cases that already have
+// another surface open.
+func openZenityFocused(ctx context.Context, s *stand) error {
+	if err := s.startZenity(ctx); err != nil {
+		return err
+	}
+	pid := strconv.Itoa(s.zenity.Process.Pid)
+	deadline := time.Now().Add(surfaceFocusWait)
+	nextGrab := time.Now().Add(zenityGrabGrace)
+	for {
+		out, err := runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "focused-inputs")
+		if err != nil {
+			s.reapZenity()
+
+			return fmt.Errorf("focused-inputs gate: %w", err)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(line, matrixSurfaceZenity+":") {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			s.reapZenity()
+
+			return fmt.Errorf("zenity entry did not take focus (focused inputs %q)", out)
+		}
+		if time.Now().After(nextGrab) {
+			// Best-effort poke: the refused grab still re-issues the
+			// activation request (02-02 finding).
+			_, _ = runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "grab-input-pid", pid)
+			nextGrab = time.Now().Add(zenityGrabEvery)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			s.reapZenity()
+
+			return err
+		}
+	}
 }
 
 // matrixSurfacePID returns the stand's spawned process id of a surface
@@ -561,20 +762,19 @@ func matrixSurfacePID(s *stand, name string) int {
 }
 
 // waitMatrixInputPid polls until the pid's input surface holds focus with
-// exactly wantChars runes (wantChars < 0: focused with any count) — the
-// waitGTEInput recovery pattern generalized for the matrix, where a case's
-// own keys (Tab) or focus steps can move focus off the field mid-case.
-// Past the grace the loop pokes the input node with the pid-keyed grabFocus:
-// the call's refusal still re-issues the window activation (02-02 finding).
+// exactly wantChars runes — the waitGTEInput recovery pattern generalized
+// for the matrix, where a case's own keys (Tab) or focus steps can move
+// focus off the field mid-case. Past the grace the loop pokes the input
+// node with the pid-keyed grabFocus: the call's refusal still re-issues
+// the window activation (02-02 finding). The char count is load-bearing
+// on chromium: an omnibox that swallowed the Tab holds 0 chars and must
+// not pass for the page input.
 func (s *stand) waitMatrixInputPid(ctx context.Context, pid, wantChars int) error {
 	if pid == 0 {
 		return errors.New("no surface process to witness")
 	}
 	pidStr := strconv.Itoa(pid)
-	want := "any"
-	if wantChars >= 0 {
-		want = ":chars=" + strconv.Itoa(wantChars)
-	}
+	want := ":chars=" + strconv.Itoa(wantChars)
 	deadline := time.Now().Add(surfaceFocusWait)
 	nextGrab := time.Now().Add(gteGrabGrace)
 	var last string
@@ -584,16 +784,18 @@ func (s *stand) waitMatrixInputPid(ctx context.Context, pid, wantChars int) erro
 			return fmt.Errorf("focused-input-pid gate: %w", err)
 		}
 		last = out
-		focused := wantChars < 0 && out != "(none)"
-		if focused || strings.HasSuffix(out, want) {
+		if strings.HasSuffix(out, want) {
 			return nil
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("surface pid %s input not focused with %s (witness %q)", pidStr, want, last)
 		}
 		if time.Now().After(nextGrab) {
-			// Best-effort poke: a no-op while the app tree is not up.
-			_, _ = runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "grab-input-pid", pidStr)
+			// Best-effort poke: a no-op while the app tree is not up. The
+			// char filter is what aims the grab at the page input on
+			// chromium (the post-Tab omnibox is the app's first focusable
+			// input and would otherwise swallow every poke).
+			_, _ = runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "grab-input-pid", pidStr, strconv.Itoa(wantChars))
 			nextGrab = time.Now().Add(gteGrabEvery)
 		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {

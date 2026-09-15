@@ -1,4 +1,4 @@
-# goswitch e2e matrix v1 (TEST-04, D-18).
+# goswitch e2e matrix v1 (TEST-04, D-18) — the full word corpus.
 #
 # One case per `---`-separated document, strict schema (unknown fields are
 # decode errors): name / surface (zenity|chromium|gnome-text-editor) /
@@ -7,8 +7,17 @@
 # oracle) / expect_level (0 = skip; otherwise the ACTUAL ladder level the
 # daemon chose — ADR-003, never the caps-bit assumption).
 #
-# Smoke set of plan 02-06 Task 1 (three cases, all three surfaces); the
-# full D-18 corpus arrives in Task 2.
+# Actual levels on this desktop (live-pinned, 02-05/02-06): every matrix
+# surface — zenity (GTK4), google-chrome 153, gnome-text-editor 46.3 —
+# reports CapSurroundingText (caps 0x29) and applies DeleteSurroundingText,
+# so corrections run at ladder level 1. The plan's original
+# expect_level:2 wording for chromium (ibus#2354 lore) was falsified live:
+# chrome 153 APPLIES the deletion; the level-2 contract is carried by the
+# unit corpus (TestActor_Level2NoCaps) — no level-2 witness exists on this
+# desktop.
+#
+# Every case runs in its own full stand cycle (fresh daemon per case):
+# scriptMode and the buffer never leak, file order cannot matter.
 ---
 name: word-en-ru
 surface: zenity
@@ -19,14 +28,73 @@ steps:
 expect_text: "привет"
 expect_level: 1  # actual GTK-class level (check A1): caps bit set, deletion applied
 ---
-name: word-gte
-surface: gnome-text-editor
+name: word-upper
+surface: zenity
+mode: en
+steps:
+  - {type: "GHBDTN"}
+  - {tap: double}
+expect_text: "ПРИВЕТ"  # CORR-05: register preserved per rune
+---
+name: word-capitalized
+surface: zenity
+mode: en
+steps:
+  - {type: "Ghbdtn"}
+  - {tap: double}
+expect_text: "Привет"  # CORR-05: capitalized register preserved
+---
+name: word-after-space
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: space}      # separator through the typing path (ydotool "space" = physical S)
+  - {tap: double}
+expect_text: "привет "  # D-13: the word is corrected WITH its separator — the trailing space is load-bearing
+---
+name: word-punct
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn,"}
+  - {tap: double}
+expect_text: "привет,"  # D-14: adjacent punctuation is inside the replacement range, rides along identically
+---
+name: word-digits
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn2026"}
+  - {tap: double}
+expect_text: "привет2026"  # D-15: digits inside the token, direction from letters only
+---
+name: word-ru-en
+surface: zenity
+mode: ru               # the runner flips the engine to RU before the steps (single-tap + mode record)
+steps:
+  - {type: "ghbdtn"}   # physical Latin keys — the RU-mode engine commits Cyrillic per key position
+  - {tap: double}
+expect_text: "ghbdtn"  # the double tap corrects привет BACK — both directions of the loop
+---
+name: word-mixed-untouched
+surface: zenity
+mode: en
+steps:
+  - {type: "gfb"}
+  - {tap: single}      # script flip EN→RU; the runner waits for the mode record (Pitfall 5)
+  - {type: "ghbdtn"}   # committed as привет through the engine
+  - {tap: double}
+expect_text: "gfbпривет"  # D-16: letters of both scripts — the word is left exactly as assembled
+---
+name: fallback-chromium
+surface: chromium
 mode: en
 steps:
   - {type: "ghbdtn"}
   - {tap: double}
 expect_text: "привет"
-expect_level: 1  # pinned live 02-06: GTE reports CapSurroundingText (0x29) like every matrix surface on this desktop
+expect_level: 1  # ACTUAL level on this target (02-05 live finding): chrome 153 reports caps 0x29 and APPLIES the deletion — the plan's level-2 assumption (ibus#2354) is obsolete here; level-2 contract lives in the unit corpus
 ---
 name: reset-escape
 surface: chromium
@@ -36,3 +104,57 @@ steps:
   - {key: Escape}
   - {tap: double}
 expect_text: "ghbdtn"  # CORR-09: Escape reset the buffer — the refused correction leaves the field untouched
+---
+name: reset-enter
+surface: chromium
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: Enter}
+  - {tap: double}
+expect_text: "ghbdtn"  # CORR-09: Enter resets the buffer; the chromium field survives Enter (Pitfall 6 — why this class is NOT on zenity)
+---
+name: reset-tab
+surface: chromium
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: Tab}
+  - {focus: chromium}  # Tab moves focus to the browser chrome (whose context delivers no keys to the engine, live finding 02-06) — back to the page input for the tap
+  - {tap: double}
+expect_text: "ghbdtn"  # CORR-09: Tab — same reset keyval table as Enter/Escape; the FocusOut already killed the buffer, the tap finds it empty
+---
+name: reset-focus
+surface: chromium
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {focus: zenity}    # a fresh zenity window takes focus — chromium's context gets FocusOut
+  - {focus: chromium}  # focus returns to the stand's chromium page input
+  - {tap: double}
+expect_text: "ghbdtn"  # CORR-09: the focus flip killed the buffer — the refused correction leaves the word as typed
+---
+name: word-gte
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {tap: double}
+expect_text: "привет"
+expect_level: 1  # live-pinned 02-06: GTE reports CapSurroundingText like every matrix surface on this desktop
+---
+name: word-gte-upper
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "GHBDTN"}
+  - {tap: double}
+expect_text: "ПРИВЕТ"  # phase success criterion 1, register 2/3
+---
+name: word-gte-capitalized
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "Ghbdtn"}
+  - {tap: double}
+expect_text: "Привет"  # phase success criterion 1, register 3/3

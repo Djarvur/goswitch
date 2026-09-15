@@ -33,12 +33,17 @@ Subcommands:
               to the application with the given process id, else (none).
               Instance-exact witness for stand-spawned apps whose AT-SPI
               name is shared with the owner's own instances.
-  grab-input-pid <pid>
-              grabFocus on the pid's first focusable input node. GTK4
-              answers the call with an error and STILL services the
-              widget grab as a fresh activation request whose timestamp
-              outranks a focus-stealing denial (live-verified 2026-09-14)
-              — the error is swallowed on purpose.
+  grab-input-pid <pid> [want-chars]
+              grabFocus on the pid's first focusable input node — or, when
+              want-chars is given, on the first focusable input node whose
+              character count equals it (the e2e matrix re-focus: after a
+              Tab, Chromium's omnibox (ENTRY, the URL's ~60 chars) is the
+              app's first focusable input and would win every grab while
+              the probe word sits in the page input). GTK4 answers the
+              call with an error and STILL services the widget grab as a
+              fresh activation request whose timestamp outranks a
+              focus-stealing denial (live-verified 2026-09-14) — the error
+              is swallowed on purpose.
   focus <app> best-effort Component.grabFocus on the app's newest window
               frame. Under GNOME Wayland focus-stealing prevention a
               background grab is refused (GTK4 errors, GTK3 returns false —
@@ -300,13 +305,15 @@ def cmd_focused_input_pid(pid_str):
     return None
 
 
-def cmd_grab_input_pid(pid_str):
+def cmd_grab_input_pid(pid_str, want_chars=None):
     """GrabFocus the pid's first focusable input node, swallowing the error.
 
     GTK4 refuses the AT-SPI call ("This method is deprecated..."-class
     atspi_error) and still services the underlying widget grab as a fresh
     window-activation request — the refusal is expected, the grab works
-    (live-verified 2026-09-14, plan 02-02).
+    (live-verified 2026-09-14, plan 02-02). With want_chars, only nodes
+    holding exactly that character count qualify (see the usage note: the
+    post-Tab omnibox must not shadow the page input).
     """
     try:
         pid = int(pid_str)
@@ -315,14 +322,24 @@ def cmd_grab_input_pid(pid_str):
     app = app_by_pid(pid)
     if app is None:
         return f"no application with pid {pid} in the AT-SPI tree (still starting?)"
-    node = first_input_node(app)
-    if node is None:
-        return f"application {pid} has no focusable input node yet"
-    try:
-        node.grab_focus()
-    except Exception:
-        pass  # the refused call still triggers the fresh activation request
-    return None
+    for node in walk(app):
+        try:
+            if role_name(node) not in INPUT_ROLES:
+                continue
+            if not node.get_state_set().contains(Atspi.StateType.FOCUSABLE):
+                continue
+            if want_chars is not None and char_count(node) != want_chars:
+                continue
+        except Exception:
+            continue
+        try:
+            node.grab_focus()
+        except Exception:
+            pass  # the refused call still triggers the fresh activation request
+        return None
+    if want_chars is not None:
+        return f"application {pid} has no focusable input node with {want_chars} chars yet"
+    return f"application {pid} has no focusable input node yet"
 
 
 def cmd_focus(app_name):
@@ -360,11 +377,17 @@ def main(argv):
         problem = cmd_focused_input_pid(argv[2])
     elif len(argv) == 3 and argv[1] == "grab-input-pid":
         problem = cmd_grab_input_pid(argv[2])
+    elif len(argv) == 4 and argv[1] == "grab-input-pid":
+        try:
+            want_chars = int(argv[3])
+        except ValueError:
+            return 2
+        problem = cmd_grab_input_pid(argv[2], want_chars)
     elif len(argv) == 3 and argv[1] == "focus":
         problem = cmd_focus(argv[2])
     else:
         print("usage: focus_helper.py witness | text <app> | focused-text | focused-text-pid <pid>"
-              " | focused-inputs | focused-input-pid <pid> | grab-input-pid <pid>"
+              " | focused-inputs | focused-input-pid <pid> | grab-input-pid <pid> [want-chars]"
               " | focus <app-name>", file=sys.stderr)
         return 2
     if problem is not None:
