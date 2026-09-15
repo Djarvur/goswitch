@@ -91,7 +91,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02-06-PLAN.md — YAML-матрица v1: полный словесный набор D-18 (16 кейсов, изоляция кейса свежим демоном, три регистра на gnome-text-editor) — TEST-04
+- [x] 02-06-PLAN.md — YAML-матрица v1: полный словесный набор D-18 (16 кейсов, изоляция кейса свежим демоном, три регистра на gnome-text-editor) — TEST-04
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -136,7 +136,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
-| 2. Коррекция слова EN↔RU | 5/7 | In Progress|  |
+| 2. Коррекция слова EN↔RU | 6/7 | In Progress|  |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 

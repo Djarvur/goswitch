@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: Коррекция слова EN↔RU
 status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-09-14T22:29:16.386Z"
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-09-15T00:23:00.308Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 02 execution started
-state_head: 4de8155f0ed03c22bb189813007aab04ab57819a
+state_head: c3fe36aeb8f82130b08ff6638621924c3856aab9
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 11
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-11)
 ## Current Position
 
 Phase: 02 (Коррекция слова EN↔RU) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 02 execution started
 
@@ -72,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P03 | 86 min | 2 tasks | 13 files |
 | Phase 02 P04 | 15 min | 2 tasks | 10 files |
 | Phase 02 P05 | 38 min | 2 tasks | 13 files |
+| Phase 02 P06 | 109 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,8 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-04] TestActor_MixedWordUntouched зелёный сразу (Detect 02-01 уже отказывал) — по распоряжению плана RED-коммит не нужен; движок потребляет по вердикту EventHandler, observer-false контракт Фазы 1 заменён
 - [Phase 02]: [02-05] Живая находка: google-chrome 153 сообщает caps 0x29 (CapSurroundingText) и ПРИМЕНЯЕТ DeleteSurroundingText — фактический уровень лестницы в chromium = 1, ibus#2354 (Pitfall 3) на цели устарел; кейс пинирует фактический уровень; живого level-2 свидетеля на столе нет (zenity/chromium/GTE — все с битом), контракт уровня 2 несёт юнит-корпус
 - [Phase 02]: [02-05] ydotool 0.1.8: имя 'Escape' резолвится в физическую клавишу E (fallback первой буквы), рабочее имя — 'esc'; тот же класс ловушки, что 'space'→S (02-03); пред-существующий closeEntrySurface — в deferred-items
+- [Phase 02]: [02-06] Матрица v1 (16 кейсов D-18) зелёная в прямом и перемешанном порядке; expect_level — только фактический уровень (весь стол = 1, уровень 2 — юнит-контракт); verify-match не оракул матрицы (гонка устаревшего пуша сверки — отложенный пункт)
+- [Phase 02]: [02-06] Живые ловушки: флип только после открытия поверхности; Tab уводит фокус в омнибокс (grab-input-pid научился want-chars); оборванный прогон оставляет осиротевшее имя IBus (префлайт ловит, ibus restart лечит); серийные SIGKILL поверхностей вешают мост gnome-shell — лечится перезапуском шины a11y, стойкая форма в deferred-items
 
 ### Pending Todos
 
@@ -137,6 +140,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-14T22:29:08.288Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-09-15T00:23:00.258Z
+Stopped at: Completed 02-06-PLAN.md
 Resume file: None

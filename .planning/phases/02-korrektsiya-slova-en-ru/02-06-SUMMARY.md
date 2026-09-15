@@ -231,3 +231,7 @@ None - no external service configuration required.
 ---
 *Phase: 02-korrektsiya-slova-en-ru*
 *Completed: 2026-09-15*
+
+## Self-Check: PASSED
+
+All created files exist on disk; all four commits (61adf95, 3b7051d, bdcb069, c3fe36a) present in git log.
