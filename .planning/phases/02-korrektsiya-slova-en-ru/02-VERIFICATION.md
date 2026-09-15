@@ -59,7 +59,7 @@ covered_files:
   - test/e2e/matrix_test.go
   - test/e2e/preflight.go
   - test/e2e/surface.go
-covered_digest: "v1:sha256:a8a243cd1b6f2bc5fa0a050e776b43236a493bf674f50855a025f0d4aaf23ca0"
+covered_digest: "v1:sha256:3a713d479d6c3a850c7e3d72cc83f93441a3aecc582bb0d461a240b7cdc07e2f"
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
@@ -77,6 +77,19 @@ human_verification:
 **Verified:** 2026-09-15T00:55:00Z
 **Status:** human_needed
 **Re-verification:** No — initial verification
+
+## Fingerprint Correction (2026-09-15, manager verify-work)
+
+The originally recorded `covered_digest` did not match the tree of this
+report's own commit (af26aad) — it was computed by the verifier over a
+pre-final intermediate state and never corresponded to any committed tree
+(verified: `git diff af26aad -- <covered files>` is empty; digest over the
+af26aad tree equals the digest over the current tree). No covered file
+changed since the verification substance below was performed; the stale
+routing was a fingerprint bookkeeping defect only. The digest above was
+recomputed with the canonical verb
+`gsd-tools query verification.fingerprint` over the same 55-entry
+`covered_files` list. No verification content was altered.
 
 ## Verification Approach Note (MVP mode discrepancy)
 
