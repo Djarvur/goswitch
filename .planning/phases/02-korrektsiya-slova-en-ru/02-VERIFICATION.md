@@ -1,6 +1,6 @@
 ---
 phase: 02-korrektsiya-slova-en-ru
-verified: 2026-09-15T00:55:00Z
+verified: 2026-09-15T17:59:16Z
 status: passed
 score: 23/23 must-haves verified
 covered_files:
@@ -39,8 +39,12 @@ covered_files:
   - internal/correct/direction_test.go
   - internal/correct/plan.go
   - internal/correct/plan_test.go
+  - internal/correct/runs.go
+  - internal/correct/runs_test.go
   - internal/correct/verify.go
   - internal/correct/verify_test.go
+  - internal/hotkey/fsm.go
+  - internal/hotkey/fsm_test.go
   - internal/session/actor.go
   - internal/session/actor_test.go
   - mise.toml
@@ -52,6 +56,7 @@ covered_files:
   - test/e2e/case_surface.go
   - test/e2e/case_word.go
   - test/e2e/cases/matrix-v1.yaml
+  - test/e2e/cases/matrix-v2.yaml
   - test/e2e/fixtures/input.html
   - test/e2e/focus_helper.py
   - test/e2e/main.go
@@ -59,279 +64,281 @@ covered_files:
   - test/e2e/matrix_test.go
   - test/e2e/preflight.go
   - test/e2e/surface.go
-covered_digest: "v1:sha256:3a713d479d6c3a850c7e3d72cc83f93441a3aecc582bb0d461a240b7cdc07e2f"
+covered_digest: "v1:sha256:4a9afc75dccc0daaa1a646afa4cc72c30f3f02ba6338d07363af81f51d54d605"
 behavior_unverified: 0
 overrides_applied: 0
-human_verification:
-  - test: "Owner decision on the live ladder finding (WINDOWS ledger #1, open): google-chrome 153 reports caps 0x29 (CapSurroundingText set) and APPLIES DeleteSurroundingText — the actual level on this target is 1 for every matrix surface (zenity, chromium, GTE); the plan/ADR-003 assumption of a Chromium level-2 fallback witness (ibus#2354 lore) is falsified on this desktop and no live level-2 witness exists (level-2 contract is carried by TestActor_Level2NoCaps/Level2WithTailAndRunes). ADR-003 was deliberately left unedited (Accepted, owner gate)."
-    expected: "Owner reviews the finding and either annotates ADR-003/ROADMAP SC-3 wording («fallback-уровень» → «фактический уровень») or accepts the deviation as recorded; WINDOWS ledger entry #1 moves from open to resolved."
-    why_human: "Accepted-ADR text and roadmap wording are owner-gated documents; the executor explicitly deferred this edit to verify-work. Nothing in code needs to change — this is a documentation-acceptance decision."
-  - test: "Visual no-jump confirmation (phase goal clause «без визуального прыжка»): with goswitch-en active, type ghbdtn in a real GNOME input field (e.g. gedit or a browser box), double-tap Right Shift and watch the replacement."
-    expected: "The word becomes привет in place — one atomic replacement over exactly the wrong-word range, no visible cursor jump, flicker or transient doubled text."
-    why_human: "e2e proves content-exactness of the field after the gesture (rune-exact AT-SPI readback, no doubling) and the range arithmetic is unit-pinned, but the perceptual «no visual jump» property of the DeleteSurroundingText+CommitText transaction is inherently visual and cannot be asserted through AT-SPI."
+re_verification:
+  previous_status: passed
+  previous_score: 23/23
+  previous_verified: 2026-09-15T05:40:42Z
+  reason: "fingerprint refresh after Phase 3 execution (commits 6fafa98..c23e98c) reworked shared covered files"
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
+  closed_deferred_items:
+    - "deferred-items #2 (verify-after settles on stale first push → false mismatch INFO) — CLOSED by WR-05 (d94a3ce): first stale answer re-requires, only the second concludes; pinned by TestActor_VerifyAfterLevel1 subtests, re-run PASS"
+  still_open_deferred_items:
+    - "deferred-items #1 (persistent AT-SPI shell-bridge wedge) — environmental, unchanged"
+    - "deferred-items #3 (case_m1.go:135 ydotool \"Escape\" name trap in the unexercised shell-surface fallback) — unchanged, warning stands"
+human_verification: [] # both prior owner items resolved 2026-09-15 in 02-UAT.md (2/2 pass, owner-accepted) — final, not re-opened
 ---
 
 # Phase 2: Коррекция слова EN↔RU — Verification Report
 
 **Phase Goal (ROADMAP.md):** «Пользователь двойным нажатием Right Shift исправляет последнее слово, набранное не в той раскладке, в любом поле ввода GNOME — направление определяется автоматически, регистр сохраняется, замена происходит ровно по диапазону неверного текста без визуального прыжка; это подтверждает зелёная e2e-матрица v1.»
-**Verified:** 2026-09-15T00:55:00Z
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-15T17:59:16Z
+**Status:** passed
+**Re-verification:** Yes — fingerprint-refresh after Phase 3 (prior pass: 2026-09-15T05:40:42Z, UAT 2/2 owner-accepted; no prior gaps)
 
-## Fingerprint Correction (2026-09-15, manager verify-work)
+## Re-verification Approach
 
-The originally recorded `covered_digest` did not match the tree of this
-report's own commit (af26aad) — it was computed by the verifier over a
-pre-final intermediate state and never corresponded to any committed tree
-(verified: `git diff af26aad -- <covered files>` is empty; digest over the
-af26aad tree equals the digest over the current tree). No covered file
-changed since the verification substance below was performed; the stale
-routing was a fingerprint bookkeeping defect only. The digest above was
-recomputed with the canonical verb
-`gsd-tools query verification.fingerprint` over the same 55-entry
-`covered_files` list. No verification content was altered.
+Phase 3 (7 plans + 8 code-review fix commits CR-01..03 / WR-01..05,
+d715937..c23e98c) reworked files this phase covers. Every covered file was
+classified with `git diff b52e85c..HEAD` (b52e85c = the commit that recorded
+the prior `passed` verdict):
 
-## Verification Approach Note (MVP mode discrepancy)
+- **Reworked → deep re-check** (SC-level contracts re-proven at HEAD):
+  `internal/session/actor.go` (+1295/-rework: tap_key wiring CR-01,
+  verify_wait_ms CR-02, clipboard rung off-mutex WR-01, verify-after
+  debounce WR-05, D-23 run pipeline, selection/combo/MACR branches),
+  `internal/correct/{plan,verify,buffer}.go` (D-27 cap, VerifyRangeAt,
+  SelectionRange), `test/e2e/{matrix,main}.go`,
+  `test/e2e/cases/matrix-v1.yaml` (one row successed, see below),
+  `case_word.go`, `engine/{engine,keys}.go`, `cmd/goswitchd/main.go`,
+  `mise.toml`, `.github/workflows/e2e-matrix.yml`, `go.mod/go.sum`.
+- **Untouched → regression check** (existence + sanity): all 14 PLAN/SUMMARY
+  files, `internal/correct/{convert,direction}.go`, `engine/{factory,types}.go`,
+  `test/e2e/{case_d01,case_ladder,case_surface}.go`, `surface.go`,
+  `focus_helper.py`, fixtures, docs — all present and unchanged.
 
-ROADMAP.md declares `**Mode:** mvp` for Phase 2, but the goal is a
-Russian user-capability statement, not a canonical User Story
-(`As a …, I want to …, so that …`) — confirmed via
-`gsd_run query user-story.validate` → `valid: false`. Per
-`gsd-core/references/verify-mvp-mode.md` the MVP user-flow framing fires
-only when BOTH `mode: mvp` AND a user-story goal are present, and a
-non-story goal must be surfaced as a discrepancy — the same resolution
-Phase 1's 01-VERIFICATION.md applied. Standard goal-backward verification
-against the 5 Success Criteria + plan must_haves was therefore applied.
-Because the goal is still user-action-shaped, a User Flow Coverage table
-is included below as evidence framing. **Discrepancy surfaced for the
-owner:** run `/gsd mvp-phase 2` if a User-Story goal is wanted; no action
-required otherwise.
+## Designed Successions Touching Phase 2 Truths (roadmap-sanctioned, not deviations)
 
-## Live-gate evidence policy
+Phase 3's ROADMAP SC-2/SC-3 (mixed text, D-27) and STATE.md decisions
+D-16→D-23 sanctioned four changes on Phase 2 contract surface:
 
-Live e2e (`mise run e2e-matrix` and the per-case tasks) drives the owner's
-live desktop and was NOT re-run by the verifier (Phase 1 precedent).
-Instead, the live matrix claim was verified against **machine-generated,
-GitHub-side evidence independently re-fetched by the verifier**:
+1. **D-16 → D-23 (mixed word):** the mixed word now CONVERTS its foreign
+   run (`gfbпривет`→`паипривет`) instead of refusal. Matrix v1 row renamed
+   `word-mixed-untouched`→`word-mixed`, oracle updated; pure single-script
+   words still convert WHOLESALE through the same `Convert` (runs.go:84 —
+   «уточнение D-22 … keeps matrix v1 green»), so register/direction/exact-range
+   invariants of every other v1 row are untouched. Live-green in v2 run
+   34984814995 (`word-mixed` PASS).
+2. **Direction mechanism: `correct.Detect` → `ConvertRuns` anchor scan.**
+   SC-2's contract (direction by buffer composition) now holds via the
+   last-letter anchor in `ConvertRuns` (runs.go:63); `Detect` remains as the
+   corpus-pinned reference (its unit corpus still green) but is
+   production-orphaned — see Anti-Patterns.
+3. **WR-05 verify-after debounce:** the first mismatching post-correction
+   push now re-requires (`stale-retry`); only the SECOND stale answer
+   concludes the INFO mismatch. The SC-level invariant (mismatch counts
+   exactly once, NEVER auto-repairs) is preserved and re-pinned; a GENUINE
+   mismatch (client ignored the deletion) still concludes — delayed by one
+   re-require round, never masked. Deferred item #2 is thereby CLOSED.
+4. **Config-driven tap key / verify budget (CR-01/CR-02):** defaults are
+   pinned in `NewActor` (`hotkey.KeyvalShiftR` into BOTH the FSM and the
+   actor's `tapKeyval`; `defaultVerifyWait`); `applySnapshot` re-resolves
+   only a CHANGED, parseable name (last-good discipline), and config
+   validation rejects modifier-bearing tap keys (WR-02, `errTapKeyBare`).
+   The default double-Right-Shift FSM semantics are unchanged.
 
-- `gh run view 34913812782` → `conclusion: success`, `event:
-  workflow_dispatch`, `headBranch: gsd/phase-02-korrektsiya-slova-en-ru`
-  (the phase branch), workflow `e2e-matrix`, created 2026-09-15T00:35:29Z.
-- The run's `e2e-report` artifact was **re-downloaded from GitHub** by the
-  verifier (`gh run download` → fresh dir) and matches byte-for-byte the
-  executor-cited copy: **16/16 PASS** including all three gnome-text-editor
-  registers, both directions, the untouched mixed word, all four reset
-  cases and the chromium case.
-- Evidence currency: the run's headSha `419799d` differs from HEAD
-  `6fad577` by **docs/planning files only** (`git diff --stat` verified —
-  REQUIREMENTS/ROADMAP/STATE/02-07-SUMMARY/ci-runner.md); zero Go/YAML
-  code changed between the green CI run and the verified HEAD.
-- Headless gates (test corpus under -race, full `mise run ci`, purity
-  greps, `go mod tidy` drift) WERE re-run by the verifier and are green.
+## Live-gate evidence policy (unchanged)
+
+Live e2e (`mise run e2e-matrix` / `e2e-matrix-v2`) drives the owner's
+desktop — NOT re-run by the verifier (Phase 1/2 precedent). Machine-generated
+GitHub-side evidence, independently re-fetched:
+
+| Run | Workflow | headSha | Result | Relevance |
+|-----|----------|---------|--------|-----------|
+| 34984814995 | e2e-matrix (dispatch) | **21df37c** (12 commits before HEAD; the 8 code-fix commits CR-01..03/WR-01..05 intervene) | success, **21/21 PASS** (log re-fetched: phrase-en-ru/ru-en/registers/after-space, long-phrase, phrase-gte/phrase-chromium, word-mixed, 5 select rows, layout-single, combo-word-layout, super-space-alive, 3 reload rows, macr) | Live proof of the successed `word-mixed` row + phrase-width analogs of every v1 word semantic (registers, both directions, tail separator, 3 surfaces) + live FocusOut buffer reset (super-space-alive) + single-tap flip (layout-single). Recency caveat: the 8 fix commits after 21df37c are default-path-neutral (defaults pinned in NewActor; rung opt-in OFF by default; debounce touches only the verdict observability) and are unit-pinned under -race at HEAD — but no live-desktop matrix run exists after them. |
+| 34913812782 | e2e-matrix (dispatch) | 419799d (Phase 2 code state) | success, 16/16 PASS incl. three GTE registers, reset-* rows, fallback-chromium | The literal v1 row set live-green at the Phase 2 state. Since then exactly ONE v1 row changed (the D-23 succession); no post-succession v1 CI dispatch exists — noted honestly. |
+| pr-sanity | — | latest 34914315850 @ 6fad577 (Phase 2 era) | — | **No pr-sanity run exists for the phase-3 branch or HEAD** (workflow triggers: push to main / PR / dispatch; the branch was pushed without a PR). Compensated by the verifier re-running the identical gate set locally (below). |
+| runner | — | — | green106 online, labels self-hosted,Linux,X64,gnome | CI circuit alive. |
+
+Headless gates re-run by the verifier at HEAD c23e98c — all green:
+`go build ./...` OK; `go vet ./...` OK; `go test -race ./...` all 11 packages
+ok (engine, appid, clipboard, config, correct, ctlsvc, hotkey, logging,
+session, layouts, test/e2e); `mise run lint` 0 issues; `go mod tidy` +
+`git diff` — no drift.
 
 ## User Flow Coverage
 
-User capability (goal, non-story form): «Пользователь двойным нажатием
-Right Shift исправляет последнее слово, набранное не в той раскладке, в
-любом поле ввода GNOME».
+User capability (goal, non-story form — MVP user-flow framing discrepancy
+recorded in the initial pass, unchanged).
 
 | Step | Expected | Evidence | Status |
 |------|----------|----------|--------|
-| Type a word in the wrong layout | `ghbdtn` (and `GHBDTN`/`Ghbdtn`/`привет`/`ghbdtn2026`/`ghbdtn,`) lands in the field | matrix-v1.yaml cases; AT-SPI readback path test/e2e/matrix.go:835 verifyMatrixText | ✓ |
-| Double-tap Right Shift | FSM Double → two-phase correction pipeline | actor.go:261 startCorrection; live log `{"msg":"action","n":2}` gated in every case | ✓ |
-| Word is corrected, direction automatic | EN→RU and RU→EN both work; mixed word untouched | CI artifact: word-en-ru, word-ru-en, word-mixed-untouched PASS; Detect corpus direction_test.go | ✓ |
-| Register preserved | three registers on gnome-text-editor (criterion 1 verbatim) | CI artifact: word-gte / word-gte-upper / word-gte-capitalized PASS | ✓ |
-| Replacement exactly over the wrong range | token+tail deleted and recommitted, one transaction | BuildPlan formulas + TestActor_AfterSpaceCorrects; live word-after-space PASS with rune-exact «привет » | ✓ |
-| Works in any GNOME input field | GTK (zenity), Chromium, GtkSourceView (gnome-text-editor) | CI artifact 16/16 across three surfaces | ✓ |
-| Green matrix proves it | 16/16 PASS, exit≠0 contract | Re-downloaded CI artifact + matrix_test.go exit-code pin | ✓ |
-| Outcome: no visual jump | replacement perceived as in-place | content-exactness proven; perceptual check → Human Verification item 2 | ⚠ human |
+| Type a word in the wrong layout | `ghbdtn` (registers/mixed/digits variants) lands in the field | matrix-v1.yaml cases intact; case_word.go registry wired (main.go:204+) | ✓ |
+| Double-tap Right Shift | FSM Double → correction pipeline | TestActor_DoubleTapCorrects **re-run PASS at HEAD**; NewActor default KeyvalShiftR; live `action n:2` in both CI matrix runs | ✓ |
+| Word corrected, direction automatic | EN→RU and RU→EN; mixed → foreign run (D-23 succession) | TestActor_MixedWordConvertsForeignRuns PASS; v2 live word-mixed + phrase-en-ru/phrase-ru-en PASS; ConvertRuns anchor | ✓ |
+| Register preserved | three registers | TestConvert_CasePreserved green; v2 live phrase-registers («Привет ПРИВЕТ») PASS; v1 GTE registers live-green @419799d | ✓ |
+| Exact-range replacement, no jump | delete+commit over the range, one transaction | BuildPlan rune arithmetic + TestActor_AfterSpaceCorrects re-run PASS; v2 live phrase-after-space (rune-exact trailing space) PASS; perceptual check owner-accepted (UAT 2) | ✓ |
+| Works in any GNOME input field | GTK/Chromium/GtkSourceView | v1 16/16 @419799d; v2 phrase-gte/phrase-chromium/select-* live @21df37c | ✓ |
+| Green matrix proves it | 16/16 v1; exit≠0 | infra green at HEAD (matrix_test.go under -race); live artifacts cited above | ✓ |
 
 ## Goal Achievement
 
 ### Observable Truths
 
-Consolidated from the 5 ROADMAP Success Criteria (primary contract) merged
-with the seven plans' must_haves (≈40 plan-level truths deduplicate into
-these).
+Same 23 consolidated truths as the accepted prior pass; evidence refreshed
+to the HEAD tree (R = regression-checked, untouched file; D = deep-checked,
+reworked file; succession wording where Phase 3 superseded a mechanism).
 
-| # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | SC-1: gnome-text-editor double Right Shift corrects `ghbdtn`→`привет`, `GHBDTN`→`ПРИВЕТ`, `Ghbdtn`→`Привет` | ✓ VERIFIED | matrix-v1.yaml cases word-gte/-upper/-capitalized; **re-downloaded CI artifact: all three PASS** (AT-SPI readback, per-case fresh daemon) |
-| 2 | SC-2: direction auto-detected from buffer script both ways + unit word corpus | ✓ VERIFIED | correct.Detect (direction.go:22) Latin/Cyrillic counts; TestDetect_* green under -race; live word-en-ru + word-ru-en + word-mixed-untouched PASS in CI artifact |
-| 3 | SC-3: replacement exactly over the wrong-word range, no jump; both ladder levels; abort-not-litter; Chromium matrix case pins the level | ✓ VERIFIED (see Human item 1) | Level 1 live on all 3 surfaces (CI artifact, exact-range `DeleteSurroundingText(-n,n)+CommitText`); level 2 unit-pinned (TestActor_Level2NoCaps/Level2WithTailAndRunes **re-run PASS**; wire pin TestEmitters_ForwardKeyEvent); abort discipline TestActor_VerifyPaths/EmptyBufferNoDestructive; Chromium case pins ACTUAL level — plan's level-2 assumption falsified live (chrome 153 applies the deletion), deviation documented + WINDOWS ledger #1 open for owner |
-| 4 | SC-4: buffer cleared on Enter, Tab, Escape, focus change — e2e-proven on client classes | ✓ VERIFIED | isResetKeyval table (actor.go:554) + HandleLifecycle FocusOut/Reset→HardReset; TestActor_HardResetKeyvals/TestBuffer_ResetByFocusOut **re-run PASS**; live reset-escape/reset-enter/reset-tab/reset-focus all PASS in CI artifact |
-| 5 | SC-5: e2e-matrix v1 green — YAML cases, PASS/FAIL report, exit≠0 | ✓ VERIFIED | matrix.go strict KnownFields loader + per-case setupStand/teardown isolation + exitCode(); matrix_test.go (6 tests) green; **CI run success + artifact 16/16**; corrupted-expectation → FAIL/exit 1 proven live by executor (02-06 D4) |
-| 6 | Token semantics D-13/D-14/D-15 + toggle invariant (02-01) | ✓ VERIFIED | buffer.go Push/Token/Tail/ReplaceToken/Backspace + corpus (7 buffer tests) green under -race |
-| 7 | Mixed-word refusal D-16; digits/punctuation neutral (CORR-04) | ✓ VERIFIED | Detect single-foreign-letter refusal; TestDetect_MixedRefused/NeutralNotMixed green; live word-mixed-untouched PASS («gfbпривет» unchanged) |
-| 8 | Conversion preserves register per rune; non-letters identical (CORR-05) | ✓ VERIFIED | convert.go table lookup; TestConvert_CasePreserved green; live word-upper/word-capitalized PASS |
-| 9 | Suffix verification ADR-004 (token+tail range) | ✓ VERIFIED | verify.go MatchesSuffix; TestMatchesSuffix green; wired at actor.go:201/214/457 |
-| 10 | BuildPlan both levels, all counts in runes (CORR-07, Pitfall 2) | ✓ VERIFIED | plan.go:43 len([]rune) arithmetic; TestBuildPlan_BothLevels/RunesNotBytes green |
-| 11 | internal/correct purity: no godbus/time/goroutines | ✓ VERIFIED | grep gate re-run: PURE-PACKAGE; corpus headless green under -race |
-| 12 | Surface drivers: fresh chromium (temp --user-data-dir) + standalone GTE (XDG_DATA_HOME isolation), witness-gated | ✓ VERIFIED | surface.go:71 (--user-data-dir), :131 (--standalone --ignore-session), :132 (XDG_DATA_HOME temp); witness/pid-keyed focus paths; smoke cases in registry |
-| 13 | Preflight rejects missing binaries with one-line diagnostics | ✓ VERIFIED | preflight.go chromium-launch / gnome-text-editor-launch checks present |
-| 14 | Tracer: double tap runs buffer→direction→convert→verify→delete+commit end-to-end (CORR-01) | ✓ VERIFIED | TestActor_DoubleTapCorrects **re-run PASS**; live word-en-ru PASS (CI artifact) |
-| 15 | Word after space corrected with separator (D-13, Pitfall 1) | ✓ VERIFIED | TestActor_AfterSpaceCorrects (-7,7 + «привет ») PASS; live word-after-space PASS, rune-exact trailing space |
-| 16 | Log discipline D-20/D-21: INFO outcome/reason without words; DEBUG level-first | ✓ VERIFIED | logCorrectionDone (actor.go:507); TestActor_DebugCorrectionRecord scans INFO records — green |
-| 17 | Flip on Single: mode EN↔RU, INFO mode record, XKB untouched (02-04) | ✓ VERIFIED | flipScript (actor.go:340); TestActor_FlipOnSingle PASS; live word-ru-en gated on `{"msg":"mode","to":"ru"}` |
-| 18 | RU consumption commits Cyrillic via ENToRU; script-true buffer in ALL printing branches incl. digits | ✓ VERIFIED | feedKey (actor.go:356-398); TestActor_RUConsumesPrintable/RUScriptTrueAllBranches/RUDigitsFullPipeline (10-rune range, not 14 bytes) **re-run PASS** |
-| 19 | Level 2: ForwardKeyEvent(BackSpace)×(token+tail runes) burst → one commit, in order (CORR-07) | ✓ VERIFIED | executeLevel2 (actor.go:493) + engine.ForwardKeyEvent emitter + wire pin; TestActor_Level2NoCaps/WithTailAndRunes **re-run PASS** (op-log order) |
-| 20 | Verify-after with epoch: mismatch → INFO counter, never auto-repair; stale timers no-op | ✓ VERIFIED | armAfterVerify/pendingAfter/verifyEpoch (actor.go:309-331); TestActor_VerifyAfterLevel1 **re-run PASS** (match quiet / mismatch counts once) |
-| 21 | Reset triggers wired live (CORR-09): Escape/Enter/Tab/focus cases green | ✓ VERIFIED | CI artifact reset-escape/reset-enter/reset-tab/reset-focus PASS; ydotool name traps (space→S, Escape→E) fixed via typing path / `esc` |
-| 22 | Matrix infrastructure: strict decoder, per-case fresh-daemon isolation, expect_level = actual level, order-independence | ✓ VERIFIED | matrix.go KnownFields(true), runMatrixCaseIsolated (setupStand per case), closed vocabularies; matrix_test.go 6/6; shuffled-order 16/16 (executor, documented) |
-| 23 | CI circuit D-19: dispatch-only workflow on self-hosted gnome runner, first green dispatch | ✓ VERIFIED | e2e-matrix.yml (workflow_dispatch only, [self-hosted, gnome], concurrency e2e-gnome no-cancel, contents: read, mise run e2e-matrix, artifact if:always()); runner unit active + exactly 1 gnome-labeled runner online (re-checked); run 34913812782 success from the phase branch; bootstrap commit d815e72 on main |
+| # | Truth | Status | Evidence at HEAD c23e98c |
+|---|-------|--------|--------------------------|
+| 1 | SC-1: gnome-text-editor double Right Shift corrects `ghbdtn`→`привет`, `GHBDTN`→`ПРИВЕТ`, `Ghbdtn`→`Привет` | ✓ VERIFIED | v1 rows intact (matrix-v1.yaml); live 16/16 @419799d; register semantics re-proven live at phrase width (v2 phrase-registers @21df37c) + unit TestActor_DoubleTapCorrects/TestConvert_CasePreserved at HEAD |
+| 2 | SC-2: direction auto-detected from buffer composition both ways + unit corpus | ✓ VERIFIED (mechanism succession) | direction now via ConvertRuns last-letter anchor (runs.go:63-91); single-script → wholesale Convert — TestActor_DoubleTapCorrects/word cases re-run PASS; TestDetect_* corpus green (Detect now corpus-reference, see Anti-Patterns) |
+| 3 | SC-3: replacement exactly over the wrong range, both ladder levels, abort-not-litter | ✓ VERIFIED | BuildPlan rune arithmetic intact (plan.go); D-27 added LevelNone cap for level 2 ONLY (level 1 uncapped — comment pinned); level-1 live on 3 surfaces (both CI runs); level 2 unit-pinned re-run PASS; abort discipline TestActor_VerifyPaths green; Chromium actual level recorded (owner-accepted UAT 1) |
+| 4 | SC-4: buffer cleared on Enter, Tab, Escape, focus change | ✓ VERIFIED | isResetKeyval table + HandleLifecycle HardReset unchanged semantics; TestActor_HardResetKeyvals / TestBuffer_ResetByFocusOut **re-run PASS**; live reset-* @419799d + live FocusOut reset in v2 super-space-alive @21df37c |
+| 5 | SC-5: e2e-matrix v1 green — YAML cases, PASS/FAIL report, exit≠0 | ✓ VERIFIED | matrix.go strict loader + per-case isolation + exitCode green at HEAD (matrix_test.go under -race); v1 file 16 cases intact; live v1 16/16 @419799d; successed row live-green in v2 @21df37c (no post-succession v1 dispatch — recency noted) |
+| 6 | Token semantics D-13/D-14/D-15 + toggle invariant | ✓ VERIFIED | buffer.go Push/Token/Tail/ReplaceToken (+ Phase 3 backspace/phrase helpers, additive); buffer corpus green under -race (D) |
+| 7 | Mixed word (CORR-04) — WAS D-16 refusal | ✓ VERIFIED (D-23 succession) | mixed word now converts foreign runs (паипривет); oracle updated in case_word.go + matrix v1 row + live v2 word-mixed PASS; digits/punctuation neutral (runs.go D-15 continuation); homogeneous words keep Phase 2 wholesale conversion — matrix v1 stays green by design |
+| 8 | Conversion preserves register per rune; non-letters identical (CORR-05) | ✓ VERIFIED | convert.go untouched (R); ConvertRuns reuses Convert as-is (never forked); TestConvert_CasePreserved green; live registers @21df37c |
+| 9 | Suffix verification ADR-004 (token+tail range) | ✓ VERIFIED | MatchesSuffix intact; VerifyRangeAt added for selection (additive); wired at pendingVerdict/afterVerdict; corpus green |
+| 10 | BuildPlan both levels, all counts in runes (CORR-07) | ✓ VERIFIED | len([]rune) arithmetic intact; +backspaceCap param (D-27); TestBuildPlan corpus (extended) green |
+| 11 | internal/correct purity: no godbus/time/goroutines | ✓ VERIFIED | purity grep re-run: 0 hits in production files |
+| 12 | Surface drivers: fresh chromium + standalone GTE, witness-gated | ✓ VERIFIED | surface.go untouched (R); smoke cases in registry |
+| 13 | Preflight rejects missing binaries | ✓ VERIFIED | preflight.go (mark-constant refactor only); package green |
+| 14 | Tracer: double tap runs buffer→direction→convert→verify→delete+commit (CORR-01) | ✓ VERIFIED | TestActor_DoubleTapCorrects **re-run PASS**; live word/phrase cases in both CI runs |
+| 15 | Word after space corrected with separator (D-13) | ✓ VERIFIED | TestActor_AfterSpaceCorrects **re-run PASS**; v2 phrase-after-space live PASS (rune-exact trailing space) |
+| 16 | Log discipline D-20/D-21 | ✓ VERIFIED | logCorrectionDone; TestActor_DebugCorrectionRecord green in full -race run |
+| 17 | Flip on Single: mode EN↔RU, INFO mode record, XKB untouched | ✓ VERIFIED | flipScript; TestActor_FlipOnSingle **re-run PASS**; live layout-single (both directions, D-34 mode oracle) @21df37c |
+| 18 | RU consumption commits Cyrillic; script-true buffer in ALL printing branches incl. digits | ✓ VERIFIED | feedKey unchanged invariants; TestActor_RUDigitsFullPipeline **re-run PASS** |
+| 19 | Level 2: ForwardKeyEvent(BackSpace)×(token+tail runes) burst → one commit, in order (CORR-07) | ✓ VERIFIED | executeLevel2 + emitter wire pin; TestActor_Level2NoCaps/WithTailAndRunes **re-run PASS**; over-cap range now refuses (D-27, LevelNone) instead of an unbounded burst |
+| 20 | Verify-after with epoch: mismatch → INFO counter, never auto-repair; stale timers no-op | ✓ VERIFIED (WR-05 semantics) | settleAfter: first stale → `stale-retry` + re-Require (same epoch, re-armed deadline), second stale → mismatch once; genuine mismatch NOT masked; epoch guard retained; TestActor_VerifyAfterLevel1 3 subtests **re-run PASS** (match quiet / mismatch-once-no-repair / intermediate-push race); deferred item #2 CLOSED |
+| 21 | Reset triggers wired live (CORR-09) | ✓ VERIFIED | reset-* live @419799d; FocusOut reset live @21df37c; unit re-run PASS |
+| 22 | Matrix infrastructure: strict decoder, per-case isolation, closed vocabularies | ✓ VERIFIED | matrix.go KnownFields + v2 step kinds (select/combo/reload) added additively; matrix_test.go green at HEAD under -race |
+| 23 | CI circuit D-19: dispatch-only workflow on self-hosted gnome runner | ✓ VERIFIED | e2e-matrix.yml (WR-04: matrix input via env, never shell-interpolated); run 34984814995 success from the phase-3 branch; runner green106 online (gnome label); pr-sanity: no branch run exists — local gate re-run compensates |
 
 **Score:** 23/23 truths verified (0 present-but-behavior-unverified)
 
-Behavior-dependent truths note: every state-transition/invariant truth in
-this phase (correction pipeline, verify abort paths, level-2 burst order,
-verify-after epoch, reset table, flip, script-true feeding, toggle) is
-covered by a named behavioral test **re-run by the verifier under -race**
-(all PASS); the live-desktop dimension is covered by the independently
-re-fetched CI matrix artifact at the exact code state of HEAD.
+Behavior-dependent truths note: every state-transition/invariant truth is
+covered by a named behavioral test re-run by the verifier under -race at
+HEAD (all PASS — spot-check table below); the live-desktop dimension rests
+on the two independently re-fetched CI artifacts with the recency caveats
+recorded in the evidence table.
 
 ### Decision Coverage
 
-`gsd_run query check.decision-coverage-verify` (02-CONTEXT.md): **9/9
-decisions honored** by shipped artifacts, none missing (non-blocking gate).
+9/9 decisions honored at the initial pass (02-CONTEXT.md); Phase 3 did not
+touch Phase 2 decisions. Non-blocking gate, unchanged.
 
 ### Required Artifacts
 
-`gsd_run query verify.artifacts` per plan: **27/28 passed** — 02-01 5/5,
-02-02 4/4, 02-03 4/4, 02-04 3/3, 02-05 4/4, 02-06 4/4, 02-07 3/4. The
-single "miss" is a **verifier-tool false negative**: the 02-07 artifact
-`~/.config/systemd/user/goswitch-ci-runner.service` exists at
-`/home/nil/.config/systemd/user/goswitch-ci-runner.service` (750 bytes,
-verified) — gsd-tools does not expand `~`; the plan itself declares the
-unit "вне git". All artifacts are substantive (no stub markers; internal/
-correct 882 LOC, actor 603, matrix runner 910, corpus 46k+ LOC tests).
+`verify.artifacts` re-run per plan at HEAD: **27/28** — 02-01 5/5, 02-02 4/4,
+02-03 4/4, 02-04 3/3, 02-05 4/4, 02-06 4/4, 02-07 3/4. The single "miss" is
+the same verifier-tool `~` false negative as the prior pass —
+`~/.config/systemd/user/goswitch-ci-runner.service` exists (750 bytes,
+re-checked). All artifacts substantive.
 
 ### Key Link Verification
 
-`gsd_run query verify.key-links` per plan: **15/16 verified**. The one
-unverified link (02-01 buffer.go→direction.go, pattern `\.Token\(\)`) is a
-**plan-spec false negative**: the declared from/to are both inside the pure
-package, but the actual consumer is the actor —
-`internal/session/actor.go:415` (`a.buf.Token()`) feeding
-`correct.Detect(token)` at :421, with `ReplaceToken` at :482/:499. Wiring
-exists and is behavior-tested. All other links verified by the tool,
-including actor→engine emitters (AttachEngine), matrix→stand primitives,
-workflow→mise task, ci-runner doc→systemd precedent.
+`verify.key-links` re-run per plan at HEAD: **15/16**. The one unverified
+link is the same plan-spec false negative as the prior pass (02-01
+buffer.go→direction.go, pattern `\.Token\(\)`); the actual consumer wiring
+is `actor.go:1282` (`a.buf.Token()` → `startRangeCorrection` → ConvertRuns)
+— present, wired, behavior-tested.
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| internal/session/actor.go | token/tail | buf.Token()/Tail() fed by HandleKey from live ProcessKeyEvent | ✓ live key events (CI matrix: corrections fired on injected input) | ✓ FLOWING |
-| internal/session/actor.go | surr | HandleSurroundingText from real client pushes (cache) + Require round | ✓ live pushes observed (word cases correct through verification) | ✓ FLOWING |
-| internal/correct/plan.go | Plan | BuildPlan from token/tail/converted + caps bit from HandleCapabilities | ✓ real caps 0x29 observed live; level dispatch exercised | ✓ FLOWING |
-| test/e2e/matrix.go | report | per-case runMatrixCaseIsolated results | ✓ 16 PASS lines in re-downloaded CI artifact | ✓ FLOWING |
-| layouts/tables.go | ENToRU/RUToEN | xkb-generated (Phase 1, byte-identical regeneration) | ✓ RU-commit path live (word-ru-en) | ✓ FLOWING |
+| internal/session/actor.go | token/tail | buf.Token()/Tail() fed by HandleKey from live ProcessKeyEvent | ✓ live corrections in both CI matrix runs | ✓ FLOWING |
+| internal/session/actor.go | surr/sel | HandleSurroundingText live pushes + Require rounds | ✓ live word/phrase/selection corrections verified | ✓ FLOWING |
+| internal/correct/runs.go | out/changed | ConvertRuns anchor scan over the live range | ✓ word-mixed live PASS (паипривет) @21df37c | ✓ FLOWING |
+| internal/correct/plan.go | Plan | BuildPlan from token/tail/converted + caps bit | ✓ real caps 0x29 live; level dispatch exercised | ✓ FLOWING |
+| test/e2e/matrix.go | report | per-case runMatrixCaseIsolated results | ✓ 16/16 + 21/21 PASS lines in re-fetched CI logs | ✓ FLOWING |
+| layouts/tables.go | ENToRU/RUToEN | xkb-generated (Phase 1) | ✓ RU-commit path live (phrase-ru-en) | ✓ FLOWING |
 
-### Behavioral Spot-Checks
+### Behavioral Spot-Checks (re-run at HEAD c23e98c, all -race -count=1)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Headless corpus (4 pkgs) | `go test ./internal/correct/ ./internal/session/ ./engine/ ./test/e2e/ -race -count=1` | all ok | ✓ PASS |
-| Full CI gate (build+vet+lint+race) | `mise run ci` | exit 0, lint 0 issues, 7 pkgs ok | ✓ PASS |
-| Level-2 ladder + verify-after | `go test ./internal/session/ -run 'TestActor_Level2NoCaps\|Level2WithTailAndRunes\|VerifyAfterLevel1' -race -v` | 3/3 PASS (5 subtests) | ✓ PASS |
-| Tracer/flip/reset/mixed/digits/toggle | `go test ./internal/session/ -run 'DoubleTapCorrects\|AfterSpaceCorrects\|HardResetKeyvals\|RUDigitsFullPipeline\|MixedWordUntouched\|FlipOnSingle\|ToggleRepeat' -race -v` | 7/7 PASS | ✓ PASS |
-| Package purity | `! grep godbus && ! grep '"time"' internal/correct/` | PURE-PACKAGE | ✓ PASS |
-| Module tidy (no drift beyond yaml.v3) | `go mod tidy && git diff --exit-code -- go.mod go.sum` | clean | ✓ PASS |
-| CI matrix run (live) | `gh run view 34913812782` + `gh run download` (re-fetched) | conclusion success; artifact 16/16 PASS, byte-identical to executor copy | ✓ PASS |
-| Runner live state | `systemctl --user is-active` + `gh api runners` | active; exactly 1 gnome-labeled | ✓ PASS |
-| Commits exist | `git cat-file -t` × 24 hashes from SUMMARYs | all present | ✓ PASS |
-| Live e2e re-run (16 cases) | not re-run (drives owner's desktop) | CI artifact at HEAD-equivalent code cited instead | ? SKIP (by policy) |
+| Full corpus, all packages | `go test -race ./...` | 11 pkgs ok | ✓ PASS |
+| Default double-tap pipeline | `TestActor_DoubleTapCorrects` | PASS | ✓ PASS |
+| WR-05 verify-after debounce (match / mismatch-once / intermediate-push race) | `TestActor_VerifyAfterLevel1` (3 subtests) | PASS | ✓ PASS |
+| Exact range + tail separator | `TestActor_AfterSpaceCorrects` | PASS | ✓ PASS |
+| Level-2 ladder | `TestActor_Level2NoCaps` / `Level2WithTailAndRunes` | PASS | ✓ PASS |
+| Reset keyvals + FocusOut | `TestActor_HardResetKeyvals` / `TestBuffer_ResetByFocusOut` | PASS | ✓ PASS |
+| Flip / RU consumption | `TestActor_FlipOnSingle` / `RUDigitsFullPipeline` | PASS | ✓ PASS |
+| D-23 mixed word | `TestActor_MixedWordConvertsForeignRuns` | PASS | ✓ PASS |
+| CR-01 tap key (default + hot swap) | `TestActor_HotReloadTapKey` (real-timer subtest) | PASS | ✓ PASS |
+| CR-02 verify budget | `TestActor_HotReloadVerifyWait` | PASS | ✓ PASS |
+| WR-01 rung off key path + after mismatch | `TestActor_ClipboardRungOffKeyPath` / `ClipboardRungAfterMismatch` | PASS | ✓ PASS |
+| Gates | build / vet / lint / tidy | OK / OK / 0 issues / no drift | ✓ PASS |
+| Live e2e re-run | not re-run (drives owner's desktop) | CI artifacts cited | ? SKIP (by policy) |
 
 ### Probe Execution
 
-Step 7c: no `scripts/*/tests/probe-*.sh` convention in this repo. The
-phase's runnable probes are the mise e2e tasks (live-session; covered by
-the CI-artifact policy above) and the CI gate (re-run, PASS). Not
-applicable beyond that.
+No `scripts/*/tests/probe-*.sh` convention; the phase's runnable probes are
+the mise e2e tasks (live-session; covered by the CI-artifact policy) and the
+CI gate (re-run, PASS). Not applicable beyond that.
 
 ### Test Quality Audit
 
-| Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
-|-----------|-----------|--------|---------|----------|-----------------|---------|
-| internal/correct/*_test.go (5 files, 16 tests) | CORR-04/05/07 | 16 | 0 | 0 | value (rune-exact) | OK |
-| internal/session/actor_test.go (29 tests) | CORR-01/04/07/09 | 29 | 0 | 0 | behavioral (op-log order, log-shape scans) | OK |
-| engine/{engine,emitter_wire}_test.go | CORR-07 | 9 | 0 | 0 | value + wire-signature | OK |
-| test/e2e/matrix_test.go (6 tests) | TEST-04 | 6 | 0 | 0 | value (decode errors, exit code) | OK |
-
-- Disabled tests on requirements: **0** (grep for skip patterns clean).
-- Circular patterns: **0** — expected values are hand-authored literals
-  (ghbdtn/привет…) independent of the system; layout tables regenerate
-  byte-identically from system xkb (external source).
-- Assertion strength: matrix oracles are rune-exact UTF-8 equality; actor
-  corpus pins exact emitter argument sequences and log shapes. No
-  existence-only assertions found on requirement-linked tests.
-- 81 test functions across 7 packages; 16 matrix cases ≥ the D-18 corpus
-  list (6+1+1+5+3).
+Disabled tests on Phase 2 requirement-linked files: **0** (the only
+`t.Skipf` in the tree is ctlsvc_test.go:374 — a Phase 3 file, an
+environmental dbus-daemon guard, not requirement-linked here). Circular
+patterns: **0** (hand-authored oracles; layout tables regenerate from system
+xkb). Assertion strength: rune-exact equality / op-log order / log-shape
+scans — no existence-only assertions on requirement-linked tests.
 
 ### Requirements Coverage
 
-| Requirement | Source Plan | Description | Status | Evidence |
-|-------------|------------|-------------|--------|----------|
-| CORR-01 | 02-03, 02-04 | Double Right Shift corrects last word EN↔RU | ✓ SATISFIED | truths 14, 17; live word-en-ru + word-ru-en PASS |
-| CORR-04 | 02-01, 02-04 | Auto direction by buffer composition | ✓ SATISFIED | truths 2, 7, 18; no dictionaries (grep clean) |
-| CORR-05 | 02-01 | Register preserved per rune | ✓ SATISFIED | truth 8; three registers live on zenity + GTE |
-| CORR-07 | 02-01, 02-03, 02-05 | Exact range, both ladder levels, no jump | ✓ SATISFIED | truths 3, 9, 10, 15, 19, 20 (wording deviation → Human item 1) |
-| CORR-09 | 02-05 | Buffer reset Enter/Tab/Escape/focus | ✓ SATISFIED | truth 4, 21 |
-| TEST-04 | 02-02, 02-06, 02-07 | YAML matrix, report, exit≠0, multiple apps | ✓ SATISFIED | truths 5, 12, 22, 23 |
+| Requirement | Source Plan | Status | Evidence |
+|-------------|------------|--------|----------|
+| CORR-01 | 02-03, 02-04 | ✓ SATISFIED | truths 14, 17; live word/phrase both directions |
+| CORR-04 | 02-01, 02-04 | ✓ SATISFIED | truths 2, 7, 18; direction by composition via ConvertRuns anchor |
+| CORR-05 | 02-01 | ✓ SATISFIED | truth 8; registers live at phrase width + v1 GTE registers @419799d |
+| CORR-07 | 02-01, 02-03, 02-05 | ✓ SATISFIED | truths 3, 9, 10, 15, 19, 20 |
+| CORR-09 | 02-05 | ✓ SATISFIED | truths 4, 21 |
+| TEST-04 | 02-02, 02-06, 02-07 | ✓ SATISFIED | truths 5, 12, 22, 23; REQUIREMENTS.md already records «широта наращивается в Фазе 3» |
 
-Orphaned requirements: **none** — REQUIREMENTS.md traceability maps exactly
-these 6 IDs to Phase 2 (all marked Complete, updated at HEAD); every plan
-requirement field resolves to them.
+Orphaned requirements: **none** (REQUIREMENTS.md maps exactly these 6 IDs,
+all Complete).
 
 ### Anti-Patterns Found
 
-Debt-marker gate: **ZERO** TBD/FIXME/XXX and zero TODO/HACK/PLACEHOLDER
-across all phase Go/Python/YAML/TOML/workflow/doc files (re-grepped).
+Debt-marker gate re-run at HEAD: **ZERO** TBD/FIXME/XXX and zero
+TODO/HACK/PLACEHOLDER across all phase-covered Go/Python/YAML/TOML/workflow
+files.
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| internal/session/actor.go | 195-220 | Verify-after settles on the FIRST post-correction push — clients can push the intermediate post-delete pre-commit state → false `correction verify outcome:mismatch` INFO on a healthy correction (deferred-items #2, open) | ⚠️ Warning | Log-noise only: no repair, no field damage; matrix deliberately does not pin the match record; candidate daemon-side fix (settled-answer grace) needs its own plan |
-| test/e2e/case_m1.go | closeEntrySurface | `pressKey(ctx, "Escape")` — ydotool 0.1.8 resolves "Escape" to physical E; locked-session shell fallback would type 'e' instead of dismissing (deferred-items #3, open) | ⚠️ Warning | Stand tooling fallback path only, not exercised by any phase case; one-word fix ("esc") queued for next touch of the shell surface |
-| desktop environment | — | Persistent AT-SPI shell-bridge wedge after repeated surface SIGKILLs (deferred-items #1, open) | ℹ️ Info | Environmental, not code; remedy (a11y bus restart) documented in the runner book; matrix carries a between-cases quiesce gate |
-| .planning/.../02-VALIDATION.md | — | Left as unfilled draft template (status: draft, nyquist_compliant: false) while the phase's actual validation ran through PLAN verify-blocks + SUMMARY coverage records | ℹ️ Info | Process-artifact gap only; no plan claims it and the ROADMAP does not gate on it |
-| test/e2e/case_ladder.go | 23 | `actualLevelMark = "level":1` — no live level-2 witness exists on this desktop (all surfaces report the caps bit) | ⚠️ Warning (owner decision) | Level-2 correctness rests on the unit corpus + wire pin (adequate for the contract); live witness would need a no-caps client — see Human item 1 |
+| internal/correct/direction.go | — | `Detect` production-orphaned by the D-23 succession (no production caller; runs.go:19 cites it as the classifyRune reference; its corpus stays green) | ⚠️ Warning | Dead code carried by its own tests; SC-2 contract unaffected (anchor scan proves it live). Candidate: annotate as corpus-reference or fold into the run scanner — owner cleanup decision, no defect |
+| test/e2e/case_m1.go | 135 | ydotool "Escape" name trap in the shell-surface fallback (deferred-items #3, unchanged) | ⚠️ Warning | Unexercised fallback path only; one-word fix queued for next touch |
+| desktop environment | — | persistent AT-SPI shell-bridge wedge (deferred-items #1, unchanged) | ℹ️ Info | Environmental; remedy documented in the runner book |
+| .planning/.../02-VALIDATION.md | — | unfilled draft template (unchanged) | ℹ️ Info | Process artifact; not gated |
 
-Judgment: none of the warnings invalidates a phase must-have. The
-verify-after race degrades an observability counter (documented,
-matrix-decoupled); the ydotool/AT-SPI items are stand/environment tooling
-with documented remedies; the level-witness question is the owner decision
-already flagged. No gaps.
+Judgment: no blocker. The Detect orphaning is the only new observation this
+pass; it has no failing test and no reproducible defect (evidence gate: not
+a blocker), and the succession that caused it is roadmap-sanctioned.
 
-### Human Verification Required — RESOLVED 2026-09-15
+### Advisory (New Scope, Unevidenced)
 
-1. **Owner decision — live ladder finding vs ADR-003/ROADMAP wording**
-   **Resolution:** owner accepted the recorded deviation as-is (ADR-003
-   wording left unedited, Option B); WINDOWS ledger entry #1 resolved
-   (`windows fixed 1`). Recorded in 02-UAT.md test 1 — pass.
+None — no finding was downgraded from blocker this pass (re-verification
+gate applied; the one new observation, Detect orphaning, was classified a
+warning on its own merits, not an unevidenced blocker).
 
-2. **Visual no-jump confirmation (goal clause «без визуального прыжка»)**
-   **Resolution:** initial attempt reported no-op — environmental: no daemon
-   running on the live desktop and active engine was `xkb:us::eng`, so the
-   test precondition (goswitch-en active) was unmet; not a code defect.
-   Retest with live setup (daemon + `ibus engine goswitch-en`): owner
-   confirmed in-place replacement with no visual jump. Daemon log
-   independently confirms the transaction: `action n:2` → `correction done
-   source:ghbdtn result:привет level:1 runes:6 latency_ms:0` →
-   `correction verify outcome:match`. Recorded in 02-UAT.md test 2 — pass
-   (gap G-02-2 resolved: environmental root cause).
+### Human Verification Required
+
+None — both prior owner items were resolved 2026-09-15 (ADR-003 wording
+deviation accepted; visual no-jump confirmed with live daemon log evidence),
+recorded in 02-UAT.md (2/2 pass, owner-accepted). Final; not re-opened.
 
 ### Gaps Summary
 
-**No gaps.** All 23 consolidated must-have truths verified; 27/28
-artifacts pass (1 verifier-tool `~` false negative, file present); 15/16
-key links wired (1 plan-spec false negative, wiring proven in actor.go);
-6/6 requirements satisfied with zero orphans; decision coverage 9/9; zero
-debt markers; zero disabled/circular tests; `mise run ci` green and the
-16/16 matrix evidence independently re-fetched from GitHub at the exact
-code state of HEAD. The `human_needed` status comes solely from the two
-owner items above (ADR-003 wording acceptance + perceptual no-jump check).
+**No gaps.** All 23 consolidated truths verified at HEAD c23e98c: reworked
+files deep-checked (the four code-review fixes on Phase 2 contract surface —
+WR-05 debounce, CR-01 tap key, CR-02 verify budget, WR-01 rung — each
+default-path-neutral and behavior-pinned by tests re-run under -race), all
+untouched files regression-checked, all headless gates green, both live CI
+artifacts independently re-fetched with honest recency caveats (v2 21/21 on
+21df37c, 12 commits / 8 code fixes before HEAD; literal v1 rows last
+live-green on 419799d with exactly one row successed since). Four
+roadmap-sanctioned successions documented; deferred item #2 closed by WR-05;
+deferred items #1/#3 unchanged warnings. UAT 2/2 final.
 
 ---
 
-_Verified: 2026-09-15T00:55:00Z_
-_Verifier: Claude (gsd-verifier)_
+_Verified: 2026-09-15T17:59:16Z_
+_Verifier: Claude (gsd-verifier) — fingerprint-refresh re-verification post-Phase-3_
