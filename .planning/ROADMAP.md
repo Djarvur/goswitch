@@ -115,7 +115,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Трассер: тройной тап исправляет фразу (живой e2e) + run-конвейер смешанного текста D-22..D-24 с золотым корпусом + кап Backspace D-27 — CORR-02, CORR-06
+- [x] 03-01-PLAN.md — Трассер: тройной тап исправляет фразу (живой e2e) + run-конвейер смешанного текста D-22..D-24 с золотым корпусом + кап Backspace D-27 — CORR-02, CORR-06
 - [ ] 03-02-PLAN.md — internal/config: YAML-схема (hotkeys/timeouts/correction/macr), strict-декод D-33, fsnotify hot reload + last-good D-32, -config у демона, docs/CONFIG.md + таблица Caramba — CONF-01..03, SWCH-04
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -162,7 +162,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
 | 2. Коррекция слова EN↔RU | 7/7 | Complete    | 2026-09-15 |
-| 3. Фразы, выделение, переключение и конфигурация | 0/7 | Not started | - |
+| 3. Фразы, выделение, переключение и конфигурация | 1/7 | In Progress|  |
 | 4. Поставка и приёмка | 0/? | Not started | - |
 
 ## Coverage

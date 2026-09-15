@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 current_phase: 3
 current_phase_name: Фразы, выделение, переключение и конфигурация
 status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-09-15T08:24:51.478Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-09-15T09:00:08.082Z"
 last_activity: 2026-09-15
-last_activity_desc: Phase 2 complete, transitioned to Phase 3
-state_head: d14de2dba8420918ee1f63e92abb22aeb7cff194
+last_activity_desc: Phase 3 execution started
+state_head: b92987c45654e02eb005eb1ab316eb2838a4d522
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 0
   total_plans: 19
-  completed_plans: 12
-  percent: 50
+  completed_plans: 13
+  percent: 0
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 03 — Фразы, выделение, переключение и конфигурация
+**Current focus:** Phase 3 — Фразы, выделение, переключение и конфигурация
 
 ## Current Position
 
-Phase: 3 (Фразы, выделение, переключение и конфигурация) — READY TO EXECUTE
-Plan: Not started
+Phase: 3 (Фразы, выделение, переключение и конфигурация) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-09-15 — Phase 2 complete, transitioned to Phase 3
+Last activity: 2026-09-15 — Phase 3 execution started
 
-Progress: [█████░░░░░] 50%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [█████░░░░░] 50%
 | Phase 02 P05 | 38 min | 2 tasks | 13 files |
 | Phase 02 P06 | 109 min | 2 tasks | 12 files |
 | Phase 02 P07 | 13 min | 2 tasks | 4 files |
+| Phase 03 P01 | 26 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -127,6 +128,9 @@ Recent decisions affecting current work:
 - [Phase 02]: verify-work 2026-09-15: первоначальный no-op-отчёт UAT-2 был средовым (демон не запущен, активный движок xkb:us::eng — предусловие теста не выполнено), не дефектом кода; G-02-2 закрыт по повторному тесту с live-настройкой
 - [Phase 02]: verify-work 2026-09-15: covered_digest отчёта 02-VERIFICATION был посчитан верификатором по промежуточному состоянию (не соответствовал дереву собственного коммита) — stale-маршрут; отпечаток пересчитан каноническим verification.fingerprint, контент не менялся. Урок: digest всегда через verb, никогда вручную
 - [Phase 01]: re-verify 2026-09-15 (post-Phase-2 tree): 20/20 passed — must-haves Фазы 1 держатся на дереве с кодом Фазы 2 (две запланированные сукцессии: потребление делегировано EventHandler; yaml.v3 в go.mod); fingerprint обновлён
+- [Phase 03]: [03-01] Mixed-text conversion: anchor = script of the LAST letter (neutrals shift nothing); foreign runs convert independently through Convert reused as-is; homogeneous ranges convert wholesale (уточнение D-22) so matrix v1 stays green
+- [Phase 03]: [03-01] Backspace cap D-27 lives in BuildPlan(backspaceCap): over-cap → LevelNone, actor refuses reason backspace-cap before any ForwardKeyEvent; level 1 (single DeleteSurroundingText) never capped; DefaultBackspaceCap=50 awaits YAML wiring 03-04
+- [Phase 03]: [03-01] Succession D-16→D-23 executed: mixed word converts foreign runs (gfbпривет→паипривет) instead of refusal — word-mixed oracle, matrix v1 row and live case updated; D-24 example resolved toward must-haves (homogeneous wholesale), changed=false surface reserved for selection 03-03, owner confirms at verify gate
 
 ### Pending Todos
 
@@ -148,6 +152,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T06:26:29.963Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-frazy-vydelenie-pereklyuchenie-i-konfiguratsiya/03-CONTEXT.md
+Last session: 2026-09-15T09:00:08.019Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None
