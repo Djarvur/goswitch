@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/goswitch/internal/appid"
 	"github.com/godbus/dbus/v5"
+
+	"github.com/Djarvur/goswitch/internal/appid"
 )
 
 // appidObserverWait budgets one synthetic event's propagation through the

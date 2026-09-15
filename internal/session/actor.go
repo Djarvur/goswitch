@@ -6,12 +6,14 @@ package session
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
 	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/appid"
 	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/correct"
@@ -111,6 +113,7 @@ type Actor struct {
 	macrLettersName   string
 	appid             AppidSource
 	appidStarted      bool
+	appidWarned       bool // one WARN per degradation episode — a broken source must not spam per keystroke
 	startAppid        func() (AppidSource, error)
 }
 
@@ -226,6 +229,12 @@ func NewActor(window time.Duration) *Actor {
 		start:  time.Now(),
 		buf:    correct.NewBuffer(),
 		clip:   clipboard.New(),
+		// The lazy per-app observer's production starter: the a11y dial of
+		// internal/appid on the daemon's lifetime (the clipboard rung's
+		// context.Background precedent — the actor owns no shutdown path).
+		startAppid: func() (AppidSource, error) {
+			return appid.Start(context.Background())
+		},
 	}
 }
 
@@ -238,6 +247,7 @@ func (a *Actor) SetOptions(o Options) {
 	defer a.mu.Unlock()
 
 	a.opts = o
+	a.ensureAppid() // a non-empty app list arrives through this surface too
 }
 
 // AttachConfig connects the live config source (the 03-02 watcher's
@@ -553,6 +563,7 @@ func (a *Actor) applySnapshot() {
 		a.macrLettersName = snap.MACR.Letters
 		a.opts.MACRLetters = parseMACRLetters(snap.MACR.Letters)
 	}
+	a.ensureAppid() // the per-app list may have appeared with this document
 }
 
 // pendingVerdict checks the pending fix's range against the fresh push: the
@@ -776,12 +787,71 @@ func (a *Actor) macrKeyRelease(ev engine.EngineEvent) {
 }
 
 // macrTargetActive reports whether the MACR rule governs the current
-// focus: with an empty per-app list the rule is global (ADR-005 a); a
-// non-empty list defers to the app-identity observer (plan 03-05 Task 3) —
-// an unavailable observer degrades to the global rule, never to silence
-// (the ADR-005 ladder). The caller holds the mutex.
+// focus: an empty app list is the GLOBAL rule (ADR-005 a); a non-empty
+// list needs the focused application to be IN it — the identity source
+// decides, and its unavailability (never started, or erroring) degrades
+// to the GLOBAL rule with the WARN "app identity unavailable" (the
+// ADR-005 ladder: the observer's failure never switches the layer off).
+// A source that has not yet seen a focus event answers "" — the per-app
+// scope stays conservative (transit) until an identity is known. The
+// caller holds the mutex.
 func (a *Actor) macrTargetActive() bool {
-	return len(a.opts.MACRApps) == 0
+	if len(a.opts.MACRApps) == 0 {
+		return true
+	}
+	if a.appid == nil {
+		a.warnAppid(nil)
+
+		return true // the degradation rung: the global rule stays in force
+	}
+	app, err := a.appid.FocusedApp()
+	if err != nil {
+		a.warnAppid(err)
+
+		return true // the degradation rung (ADR-005 ladder)
+	}
+	a.appidWarned = false // a healthy answer closes the degradation episode
+	if app == "" {
+		return false // identity not observed yet — the per-app scope is conservative
+	}
+
+	return slices.Contains(a.opts.MACRApps, app)
+}
+
+// warnAppid records one identity-source failure: the WARN fires once per
+// degradation episode (per keystroke would spam the log of a broken
+// source). The caller holds the mutex.
+func (a *Actor) warnAppid(err error) {
+	if a.appidWarned {
+		return
+	}
+	a.appidWarned = true
+	if err == nil {
+		slog.Warn("app identity unavailable")
+
+		return
+	}
+	slog.Warn("app identity unavailable", "error", err)
+}
+
+// ensureAppid lazily starts the per-app identity source: only once a
+// NON-EMPTY app list is in force, only once per actor (ADR-005 a: the
+// a11y bus is connected IFF per-app lists exist). A failed start WARNs
+// and leaves the source nil — the global rule covers the gap for good
+// (one documented degradation, not a retry loop). The caller holds the
+// mutex.
+func (a *Actor) ensureAppid() {
+	if a.appidStarted || len(a.opts.MACRApps) == 0 {
+		return
+	}
+	a.appidStarted = true
+	src, err := a.startAppid()
+	if err != nil {
+		slog.Warn("app identity unavailable", "error", err)
+
+		return
+	}
+	a.appid = src
 }
 
 // isSuperKeyval reports whether keyval is one of the Super modifier

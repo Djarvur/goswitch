@@ -87,7 +87,8 @@ func caseListUsage() string {
 	return "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke" +
 		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
-		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter"
+		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
+		" | macr-per-app"
 }
 
 // parseFlags fills the stand's CLI surface from os.Args.
@@ -215,6 +216,7 @@ func pickCase(name string) (func(context.Context, *stand) error, error) {
 		"super-space-alive": runSuperSpaceAlive,
 		"macr-probe":        runMacrProbe,
 		"macr-super-letter": runMacrSuperLetter,
+		"macr-per-app":      runMacrPerApp,
 	}
 	fn, ok := registry[name]
 	if !ok {
@@ -222,7 +224,7 @@ func pickCase(name string) (func(context.Context, *stand) error, error) {
 			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed,"+
 			" phrase-en-ru, phrase-mixed, ladder-chromium, reset-escape, select-smoke, select-correct,"+
 			" select-clipboard, combo-word-layout, layout-single, super-space-alive, macr-probe,"+
-			" macr-super-letter)", name)
+			" macr-super-letter, macr-per-app)", name)
 	}
 
 	return fn, nil

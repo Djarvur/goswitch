@@ -2569,6 +2569,20 @@ func TestActor_MACRRULayoutStillIntercepts(t *testing.T) {
 // switches the layer off). The observer starts lazily — only when a
 // non-empty list is in force.
 
+// macrListedApp is the per-app corpus's list entry (goconst: one name,
+// four uses).
+const macrListedApp = "org.gnome.gnome-text-editor"
+
+// macrZenityApp is the corpus's unlisted focused app (the out-of-list
+// side and the lazy-start rounds' list entry).
+const macrZenityApp = "org.gnome.Zenity"
+
+// The per-app corpus's failure sentinels (err113: static, not dynamic).
+var (
+	errAppidBusDead = errors.New("a11y bus dead")
+	errAppidNoBus   = errors.New("no a11y bus")
+)
+
 // fakeAppid is the identity-source test double: a fixed answer or a fixed
 // failure.
 type fakeAppid struct {
@@ -2588,11 +2602,11 @@ func (f fakeAppid) FocusedApp() (string, error) {
 func TestActor_MACRPerAppMatch(t *testing.T) {
 	t.Run("focused app in the list intercepts", func(t *testing.T) {
 		a, sink := wiredActor()
-		a.UseAppid(fakeAppid{app: "org.gnome.gnome-text-editor"})
+		a.UseAppid(fakeAppid{app: macrListedApp})
 		a.SetOptions(session.Options{
 			MACREnabled: true,
 			MACRLetters: map[rune]bool{'a': true},
-			MACRApps:    []string{"org.gnome.gnome-text-editor"},
+			MACRApps:    []string{macrListedApp},
 		})
 
 		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
@@ -2607,11 +2621,11 @@ func TestActor_MACRPerAppMatch(t *testing.T) {
 
 	t.Run("focused app outside the list transits", func(t *testing.T) {
 		a, sink := wiredActor()
-		a.UseAppid(fakeAppid{app: "org.gnome.Zenity"})
+		a.UseAppid(fakeAppid{app: macrZenityApp})
 		a.SetOptions(session.Options{
 			MACREnabled: true,
 			MACRLetters: map[rune]bool{'a': true},
-			MACRApps:    []string{"org.gnome.gnome-text-editor"},
+			MACRApps:    []string{macrListedApp},
 		})
 
 		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
@@ -2633,11 +2647,11 @@ func TestActor_MACRPerAppMatch(t *testing.T) {
 func TestActor_MACRAppidDegradation(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
-	a.UseAppid(fakeAppid{err: errors.New("a11y bus dead")})
+	a.UseAppid(fakeAppid{err: errAppidBusDead})
 	a.SetOptions(session.Options{
 		MACREnabled: true,
 		MACRLetters: map[rune]bool{'a': true},
-		MACRApps:    []string{"org.gnome.gnome-text-editor"},
+		MACRApps:    []string{macrListedApp},
 	})
 
 	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
@@ -2653,50 +2667,53 @@ func TestActor_MACRAppidDegradation(t *testing.T) {
 	}
 }
 
-// TestActor_MACRGlobalWhenNoApps pins the lazy start (ADR-005 a): with no
-// per-app list the observer NEVER starts — zero a11y connections, the
-// global rule decides alone; a non-empty list starts it exactly once; a
-// start failure degrades with the WARN and keeps the global rule.
+// TestActor_MACRGlobalWhenNoApps pins the zero-connection rung of the
+// lazy start (ADR-005 a): with no per-app list the observer NEVER starts
+// and the global rule decides alone.
 func TestActor_MACRGlobalWhenNoApps(t *testing.T) {
-	t.Run("empty apps never start the observer", func(t *testing.T) {
-		a, sink := wiredActor()
-		starts := 0
-		a.UseAppidStarter(func() (session.AppidSource, error) {
-			starts++
+	a, sink := wiredActor()
+	starts := 0
+	a.UseAppidStarter(func() (session.AppidSource, error) {
+		starts++
 
-			return fakeAppid{app: "never"}, nil
-		})
-		a.SetOptions(session.Options{
-			MACREnabled: true,
-			MACRLetters: map[rune]bool{'a': true},
-		})
-
-		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
-		if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
-			t.Fatalf("super+a under the global rule was not consumed")
-		}
-		releaseSuper(a)
-		if starts != 0 {
-			t.Errorf("observer started %d times with an empty app list, want 0 — the a11y bus is per-app-only", starts)
-		}
-		if got := len(sink.forwardCalls()); got != 4 {
-			t.Errorf("global burst = %d events, want the 4-event shape", got)
-		}
+		return fakeAppid{app: "never"}, nil
+	})
+	a.SetOptions(session.Options{
+		MACREnabled: true,
+		MACRLetters: map[rune]bool{'a': true},
 	})
 
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})
+	if consumed := a.HandleKey(engine.EngineEvent{Keyval: uint32('a'), Mods: engine.MaskMod4}); !consumed {
+		t.Fatalf("super+a under the global rule was not consumed")
+	}
+	releaseSuper(a)
+	if starts != 0 {
+		t.Errorf("observer started %d times with an empty app list, want 0 — the a11y bus is per-app-only", starts)
+	}
+	if got := len(sink.forwardCalls()); got != 4 {
+		t.Errorf("global burst = %d events, want the 4-event shape", got)
+	}
+}
+
+// TestActor_MACRAppidLazyStart pins the lazy start itself (ADR-005 a): a
+// non-empty list starts the observer exactly once (no per-event restarts),
+// and a failed start degrades with the WARN while the global rule stays
+// in force.
+func TestActor_MACRAppidLazyStart(t *testing.T) {
 	t.Run("non-empty apps start the observer exactly once", func(t *testing.T) {
 		a, _ := wiredActor()
 		starts := 0
 		a.UseAppidStarter(func() (session.AppidSource, error) {
 			starts++
 
-			return fakeAppid{app: "org.gnome.Zenity"}, nil
+			return fakeAppid{app: macrZenityApp}, nil
 		})
 
 		a.SetOptions(session.Options{
 			MACREnabled: true,
 			MACRLetters: map[rune]bool{'a': true},
-			MACRApps:    []string{"org.gnome.Zenity"},
+			MACRApps:    []string{macrZenityApp},
 		})
 		if starts != 1 {
 			t.Fatalf("observer started %d times on the first non-empty list, want 1", starts)
@@ -2712,12 +2729,12 @@ func TestActor_MACRGlobalWhenNoApps(t *testing.T) {
 		buf := captureLogs(t)
 		a, sink := wiredActor()
 		a.UseAppidStarter(func() (session.AppidSource, error) {
-			return nil, errors.New("no a11y bus")
+			return nil, errAppidNoBus
 		})
 		a.SetOptions(session.Options{
 			MACREnabled: true,
 			MACRLetters: map[rune]bool{'a': true},
-			MACRApps:    []string{"org.gnome.Zenity"},
+			MACRApps:    []string{macrZenityApp},
 		})
 
 		a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL})

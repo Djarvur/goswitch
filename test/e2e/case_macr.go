@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/appid"
 )
 
 // MACR spike artifacts of plan 03-05 (MACR-01/A7, ADR-005, Pitfall 7): the
@@ -684,6 +685,223 @@ func runMacrSuperLetter(ctx context.Context, s *stand) error {
 			"macr-super-letter oracle: entry printed %q, want %q — the GTK4-Wayland non-action is the actual",
 			out, macrText)
 	}
+
+	return nil
+}
+
+// Task-3 live case (plan 03-05, ADR-005 a): the per-app list scoped by the
+// LIVE a11y observer (the A4 spike). The observer only learns from a
+// focus GAIN — a freshly mapped window emits one (an already-focused
+// window does not; the poke proved useless live) — so every observer
+// boundary in the case is crossed by a FRESH zenity: the case's own
+// observer starts first and reads the identity from surface A's map, and
+// the daemon's LAZY observer (started by the first key event, which
+// always postdates its surface's focus gain) is fed by surface C's map.
+// The observed identity becomes the config's macr.apps entry — the
+// vocabulary the daemon's own observer reports — and the interception
+// fires under that matched focus. An unavailable observer is a VALID A4
+// verdict: the case prints it and passes (the documented degradation —
+// the unit corpus owns the ladder).
+const (
+	macrPerAppIdentWait = 10 * time.Second    // the observer's first identity budget
+	macrPerAppProbeText = "hello"             // the typed probe of the interception round
+	macrPerAppStarter   = "starter-hello-too" // surface B only starts the daemon's observer
+)
+
+// macrPerAppConfigTmpl parameterizes the layer's document by the observed
+// app identity (the list entry the daemon's observer must match).
+const macrPerAppConfigTmpl = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+macr:
+  enabled: true
+  letters: "x"
+  apps: ["%s"]
+  alt_modifier: ""
+`
+
+// waitFocusedApp polls the observer until it holds an identity.
+func waitFocusedApp(ctx context.Context, obs *appid.Observer) (string, error) {
+	deadline := time.Now().Add(macrPerAppIdentWait)
+	for {
+		if app, err := obs.FocusedApp(); err == nil && app != "" {
+			return app, nil
+		}
+		if time.Now().After(deadline) {
+			app, err := obs.FocusedApp()
+			if err != nil {
+				return app, fmt.Errorf("app identity poll: %w", err)
+			}
+
+			return app, nil
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return "", err
+		}
+	}
+}
+
+// startPerAppDaemon writes the per-app document (the observed identity as
+// the list entry), restarts the daemon on it and re-activates the engine.
+func startPerAppDaemon(ctx context.Context, s *stand, app string) error {
+	cfgPath := filepath.Join(s.tmpDir, "macr-per-app.yaml")
+	doc := fmt.Sprintf(macrPerAppConfigTmpl, app)
+	if err := os.WriteFile(cfgPath, []byte(doc), configFilePerm); err != nil {
+		return fmt.Errorf("macr-per-app: write temp config: %w", err)
+	}
+	if err := s.restartDaemonWithArgs("-config", cfgPath); err != nil {
+		return err
+	}
+	if err := s.waitForLog(ctx, `"msg":"config loaded"`, registrationWait); err != nil {
+		return fmt.Errorf("macr-per-app daemon -config spawn: %w", err)
+	}
+	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+		return fmt.Errorf("macr-per-app daemon re-registration: %w", err)
+	}
+
+	return s.activateGoswitch(ctx)
+}
+
+// runMacrPerApp proves the per-app scoping live: the observed a11y
+// identity of the stand's own surface becomes the macr.apps entry, and
+// the daemon intercepts super+x only under that focus. Prints the
+// per-app verdict lines; an unavailable observer degrades to the
+// documented A4 verdict (still a PASS — the ladder is the design).
+func runMacrPerApp(ctx context.Context, s *stand) error {
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+
+	// The case-side observer probe (A4) starts BEFORE the surface: A's
+	// own map-focus event is its first meal.
+	obs, obsErr := appid.Start(ctx)
+	if obsErr != nil {
+		fmt.Printf("per-app-observer: unavailable (%v) — the documented A4 degradation\n", obsErr)
+
+		return nil
+	}
+
+	app, err := s.macrObserveZenity(ctx, obs)
+	if err != nil {
+		return err
+	}
+	if app == "" {
+		return nil // the A4 degradation verdict, already printed
+	}
+	if err := startPerAppDaemon(ctx, s, app); err != nil {
+		return err
+	}
+
+	// Surface B only starts the daemon's lazy observer (its key events
+	// carry the first applySnapshot); its own focus gain predates the
+	// start, so it cannot feed the cache — surface C's map does.
+	if err := s.macrStarterRound(ctx); err != nil {
+		return err
+	}
+
+	return s.macrInterceptRound(ctx)
+}
+
+// macrObserveZenity opens a fresh zenity and reads the identity the
+// observer gleans from its map-focus event — "" (after printing the
+// verdict) when the live observer produced none.
+func (s *stand) macrObserveZenity(ctx context.Context, obs *appid.Observer) (string, error) {
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return "", err
+	}
+	if kind != surfaceZenity {
+		_ = s.closeEntrySurface(ctx, kind)
+
+		return "", errors.New("macr-per-app needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+	app, appErr := waitFocusedApp(ctx, obs)
+	if appErr != nil || app == "" {
+		fmt.Printf("per-app-observer: no identity observed (%v) — the documented A4 degradation\n", appErr)
+		_ = s.closeEntrySurface(ctx, kind)
+
+		return "", nil
+	}
+	fmt.Printf("per-app-observer: focused identity %q\n", app)
+	if !strings.Contains(strings.ToLower(app), "zenity") {
+		_ = s.closeEntrySurface(ctx, kind)
+
+		return "", fmt.Errorf("macr-per-app: observed identity %q does not look like the stand's zenity surface", app)
+	}
+
+	return app, s.closeEntrySurface(ctx, kind)
+}
+
+// macrStarterRound runs the short typing round that lands the daemon's
+// first key events — the applySnapshot that starts its lazy observer.
+func (s *stand) macrStarterRound(ctx context.Context) error {
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	if kind != surfaceZenity {
+		_ = s.closeEntrySurface(ctx, kind)
+
+		return errors.New("macr-per-app needs the starter zenity surface (locked-session fallback engaged?)")
+	}
+	if err := s.injectText(ctx, macrPerAppStarter); err != nil {
+		return err
+	}
+	if err := s.waitZenityText(ctx, macrPerAppStarter); err != nil {
+		return fmt.Errorf("macr-per-app starter round: %w", err)
+	}
+
+	return s.closeEntrySurface(ctx, kind)
+}
+
+// macrInterceptRound opens the TARGET surface (its fresh map-focus event
+// feeds the daemon's observer), types the probe, fires the chord and
+// gates the interception record; the unchanged readback closes the round.
+func (s *stand) macrInterceptRound(ctx context.Context) error {
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("macr-per-app needs the target zenity surface (locked-session fallback engaged?)")
+	}
+
+	keyBase := s.countSub(`"msg":"key"`)
+	if err := s.injectText(ctx, macrPerAppProbeText); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, `"msg":"key"`, keyBase+minKeyEvents, keyWait); err != nil {
+		return fmt.Errorf("macr-per-app key visibility: %w", err)
+	}
+	if err := s.waitZenityText(ctx, macrPerAppProbeText); err != nil {
+		return fmt.Errorf("macr-per-app typed text: %w", err)
+	}
+
+	interceptBase := s.countSub(`"msg":"super intercept"`)
+	if err := s.pressKey(ctx, "super+"+macrSuperLetter); err != nil {
+		return fmt.Errorf("macr-per-app inject super+%s: %w", macrSuperLetter, err)
+	}
+	if err := s.waitForNew(ctx, `"msg":"super intercept"`, interceptBase+1, correctionWait); err != nil {
+		return fmt.Errorf("macr-per-app interception under the matched focus: %w", err)
+	}
+
+	out, err := s.closeZenity(ctx)
+	if err != nil {
+		return err
+	}
+	if out != macrPerAppProbeText {
+		return fmt.Errorf(
+			"macr-per-app oracle: entry printed %q, want %q (the GTK4-Wayland non-action)",
+			out, macrPerAppProbeText)
+	}
+	fmt.Println("per-app-observer: interception fired under the matched focus")
 
 	return nil
 }
