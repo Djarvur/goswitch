@@ -14,6 +14,7 @@ import (
 
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/clipboard"
+	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -2030,5 +2031,232 @@ func TestActor_WindowTimerFiresAutomatically(t *testing.T) {
 	}
 	if !strings.Contains(logged, `"n":2`) {
 		t.Errorf("timer-fired decision n=2 missing; log:\n%s", logged)
+	}
+}
+
+// Hot-reload timing constants: the corpus drives the actor's REAL AfterFunc
+// wiring (the reload lands between armings), so budgets are wall-clock.
+const (
+	// reloadWait budgets one real-timer window decision.
+	reloadWait = 2 * time.Second
+	// newWindowWait budgets the new-window series decision.
+	newWindowWait = 2 * time.Second
+	// newWindowCeiling sits below the OLD 300 ms window: a decision inside
+	// it proves the 150 ms reload window armed the new series.
+	newWindowCeiling = 250 * time.Millisecond
+)
+
+// Hot-reload corpus (plan 03-04, CONF-02/Pitfall 8): the actor consumes
+// config snapshots live — ONE Snapshot() read per event, the window
+// reaching the ARMING of new series (an already-armed timer keeps its own
+// deadline; a reload never re-arms or cancels it), the options and the
+// combo binding picked up by the next event after a change.
+
+// reloadSource is the fake config source of the hot-reload corpus: a
+// guarded config.Config standing in for the watcher's Snapshot() contract
+// (03-02 pinned the production last-good behavior; what is under test here
+// is the CONSUMPTION). calls counts Snapshot() invocations — the
+// one-read-per-event pin.
+type reloadSource struct {
+	mu    sync.Mutex
+	cfg   config.Config
+	calls int
+}
+
+// Snapshot records the read and returns the current document.
+func (s *reloadSource) Snapshot() config.Config {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.calls++
+
+	return s.cfg
+}
+
+// set replaces the served document (the watcher's valid-reload step).
+func (s *reloadSource) set(cfg config.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.cfg = cfg
+}
+
+// count snapshots the read counter.
+func (s *reloadSource) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.calls
+}
+
+// reloadCfg builds a complete valid document with the given window and
+// combo name over Defaults() — the same shape a validated -config file
+// yields.
+func reloadCfg(tapWindowMs int, combo string) config.Config {
+	cfg := config.Defaults()
+	cfg.Timeouts.TapWindowMs = tapWindowMs
+	cfg.Hotkeys.WordLayoutCombo = combo
+
+	return cfg
+}
+
+// waitActionsUntil polls the captured log until it holds want action
+// records or the deadline passes (the real-timer polling idiom of
+// TestActor_WindowTimerFiresAutomatically — the reload corpus drives the
+// actor's own AfterFunc wiring, so expiry is NOT injected).
+func waitActionsUntil(t *testing.T, buf *syncBuffer, want int, timeout time.Duration) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for {
+		if countActions(buf) >= want {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// TestActor_HotReloadWindowNewSeries pins the Pitfall-8 window rule: a
+// series armed BEFORE a reload expires by the window it was armed with
+// (the reload neither cancels nor loses the armed decision), and a series
+// armed AFTER the reload expires by the NEW window — the snapshot's
+// tap_window_ms reaches both the actor's timer arming and the FSM's gap
+// and expiry checks.
+func TestActor_HotReloadWindowNewSeries(t *testing.T) {
+	t.Run("armed series survives the reload, exactly one decision", func(t *testing.T) {
+		buf := captureLogs(t)
+		a := session.NewActor(farWindow)
+		src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")}
+		a.AttachConfig(src)
+
+		tapShift(a)
+		src.set(reloadCfg(150, "shift+ctrl_r")) // reload lands mid-window
+
+		if !waitActionsUntil(t, buf, 1, reloadWait) {
+			t.Fatalf("the armed series never decided after the reload; log:\n%s", buf.String())
+		}
+		if got := countActions(buf); got != 1 {
+			t.Errorf("actions after reload = %d, want exactly 1 (no re-arm, no loss)", got)
+		}
+	})
+
+	t.Run("new series uses the new window", func(t *testing.T) {
+		buf := captureLogs(t)
+		a := session.NewActor(farWindow)
+		src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")}
+		a.AttachConfig(src)
+
+		tapShift(a)
+		if !waitActionsUntil(t, buf, 1, reloadWait) {
+			t.Fatalf("first series (old window) never decided; log:\n%s", buf.String())
+		}
+
+		src.set(reloadCfg(150, "shift+ctrl_r"))
+		t0 := time.Now()
+		tapShift(a)
+		// The constructor window is farWindow (1h): only the per-event
+		// snapshot consumption can arm the 150 ms decision — and it must
+		// arrive well inside the old 300 ms window.
+		if !waitActionsUntil(t, buf, 2, newWindowWait) {
+			t.Fatalf("new series never decided; log:\n%s", buf.String())
+		}
+		if d := time.Since(t0); d > newWindowCeiling {
+			t.Errorf("new-series decision took %v, want < %v — the 150 ms window governs new series", d, newWindowCeiling)
+		}
+	})
+}
+
+// TestActor_HotReloadOptionsAndCombo pins the non-window consumption: the
+// Backspace cap, the clipboard-rung switch and the combo binding of a
+// changed snapshot are picked up by the NEXT event — SetOptions remains
+// the no-source surface, but an attached source has priority.
+func TestActor_HotReloadOptionsAndCombo(t *testing.T) {
+	t.Run("backspace cap reaches the next BuildPlan", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActorCaps(engine.CapPreeditText) // level 2: the cap bites
+		src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")}
+		src.cfg.Correction.BackspaceCap = 3
+		a.AttachConfig(src)
+
+		typeWord(a, wordEN) // 6 runes > cap 3
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+		if !strings.Contains(buf.String(), `"reason":"backspace-cap"`) {
+			t.Fatalf("over-cap burst was not refused; log:\n%s", buf.String())
+		}
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Errorf("over-cap burst replayed %d Backspaces, want 0", got)
+		}
+
+		over := config.Defaults()
+		over.Timeouts.TapWindowMs = 300
+		over.Correction.BackspaceCap = 50
+		src.set(over)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+		if got := len(sink.forwardCalls()); got != len([]rune(wordEN)) {
+			t.Errorf("post-reload burst replayed %d Backspaces, want %d — the new cap governs", got, len([]rune(wordEN)))
+		}
+	})
+
+	t.Run("combo binding follows the snapshot", func(t *testing.T) {
+		a, sink := wiredActor()
+		src := &reloadSource{cfg: reloadCfg(300, "alt+ctrl_l")}
+		a.AttachConfig(src)
+
+		typeWord(a, wordEN)
+		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalAltL}) // Alt held
+		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalCtrlL, Mods: engine.MaskMod1})
+		if got := sink.requireCount(); got != 1 {
+			t.Fatalf("rebound combo require calls = %d, want 1", got)
+		}
+		line := "abc " + wordEN
+		a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+		if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+			t.Fatalf("rebound combo commits = %q, want one %q", texts, wordRU)
+		}
+
+		// Reload back to the default binding: the alt shape must die with
+		// the old snapshot, the default Shift+Control_R shape must fire.
+		src.set(reloadCfg(300, "shift+ctrl_r"))
+		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalShiftR})
+		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalCtrlR, Mods: engine.MaskShift})
+		if got := sink.requireCount(); got != 2 {
+			t.Fatalf("default-binding combo require calls = %d, want 2 — the rebind follows the snapshot", got)
+		}
+	})
+}
+
+// TestActor_HotReloadInvalidKeepsLastGood pins the consumption side of the
+// D-32 last-good contract: while the source keeps serving the last valid
+// document (the watcher's invalid-reload behavior, pinned in 03-02), the
+// actor's behavior is unchanged — and every EVENT reads the snapshot
+// exactly once (the Pattern-2 rule: a value per event, never a pointer
+// held across the mutex).
+func TestActor_HotReloadInvalidKeepsLastGood(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")}
+	a.AttachConfig(src)
+
+	typeWord(a, wordEN)
+	if got, want := src.count(), 2*len(wordEN); got != want {
+		t.Errorf("Snapshot() reads after typing %d runes = %d, want %d (one per key event)", len(wordEN), got, want)
+	}
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText(wordEN, runeLen(wordEN), runeLen(wordEN))
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("correction under a last-good source did not complete; log:\n%s", buf.String())
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits = %q, want one %q — the served document is the behavior", texts, wordRU)
 	}
 }

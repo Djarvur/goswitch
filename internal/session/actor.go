@@ -12,6 +12,7 @@ import (
 
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/clipboard"
+	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/correct"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/layouts"
@@ -90,6 +91,10 @@ type Actor struct {
 	opts         Options              // correction tuning (D-27 cap, D-28 rung switch, D-36 combo)
 	clip         *clipboard.Clipboard // the rung's wl-clipboard client
 	comboPending bool                 // a word-layout combo awaits its word pipeline's settlement (D-36)
+	// cfgSrc is the live config source (the 03-02 watcher's Snapshot
+	// contract); nil on the no-config path, where SetOptions and the
+	// built-in defaults govern.
+	cfgSrc interface{ Snapshot() config.Config }
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -203,6 +208,18 @@ func (a *Actor) SetOptions(o Options) {
 	defer a.mu.Unlock()
 
 	a.opts = o
+}
+
+// AttachConfig connects the live config source (the 03-02 watcher's
+// Snapshot contract). The actor reads one snapshot per event — the window
+// for arming NEW series, the options and the combo binding — while an
+// already-armed timer keeps its own deadline (Pitfall 8: a reload never
+// re-arms a live timer).
+func (a *Actor) AttachConfig(src interface{ Snapshot() config.Config }) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.cfgSrc = src
 }
 
 // UseClipboard replaces the actor's clipboard client — the test seam of the
