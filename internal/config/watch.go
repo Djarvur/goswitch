@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -31,8 +32,22 @@ type inotifySource struct{ w *fsnotify.Watcher }
 
 func (s inotifySource) Events() <-chan fsnotify.Event { return s.w.Events }
 func (s inotifySource) Errors() <-chan error          { return s.w.Errors }
-func (s inotifySource) Add(dir string) error          { return s.w.Add(dir) }
-func (s inotifySource) Close() error                  { return s.w.Close() }
+
+func (s inotifySource) Add(dir string) error {
+	if err := s.w.Add(dir); err != nil {
+		return fmt.Errorf("fsnotify add %s: %w", dir, err)
+	}
+
+	return nil
+}
+
+func (s inotifySource) Close() error {
+	if err := s.w.Close(); err != nil {
+		return fmt.Errorf("fsnotify close: %w", err)
+	}
+
+	return nil
+}
 
 // watchOpts carry the constructor's knobs; the zero value is filled with
 // the daemon defaults (real inotify source, Load parser, 200 ms debounce).
@@ -120,47 +135,6 @@ func NewWatcher(ctx context.Context, path string, opts ...Option) (*Watcher, err
 	return w, nil
 }
 
-// loop drains the event source until ctx is done; every goroutine has an
-// exit condition (go-ultimate concurrency hygiene).
-func (w *Watcher) loop(ctx context.Context, src EventSource) {
-	defer src.Close()
-
-	for {
-		select {
-		case <-ctx.Done():
-			if w.timer != nil {
-				w.timer.Stop()
-			}
-
-			return
-		case _, ok := <-src.Errors():
-			if !ok {
-				return
-			}
-		case ev, ok := <-src.Events():
-			if !ok {
-				return
-			}
-			w.handle(ev)
-		}
-	}
-}
-
-// handle re-arms the debounce timer for events of the watched file only —
-// RED stub: the corpus pins the filtering and re-arm behavior.
-func (w *Watcher) handle(ev fsnotify.Event) {
-	_ = ev
-}
-
-// reload re-parses the config: a valid document replaces the served
-// snapshot atomically; a rejected one WARNs and leaves the last-good in
-// place (D-32) with the error exposed through LastError — RED stub: the
-// corpus pins the publish/last-good contract.
-func (w *Watcher) reload() {
-	w.reloadMu.Lock()
-	defer w.reloadMu.Unlock()
-}
-
 // Snapshot returns the effective configuration — a value copy of the
 // last-good load. The signature is the pinned producer contract: the
 // consumer of plan 03-04 matches interface{ Snapshot() config.Config }.
@@ -176,4 +150,68 @@ func (w *Watcher) LastError() error {
 	}
 
 	return nil
+}
+
+// loop drains the event source until ctx is done; every goroutine has an
+// exit condition (go-ultimate concurrency hygiene).
+func (w *Watcher) loop(ctx context.Context, src EventSource) {
+	defer func() { _ = src.Close() }() // teardown: the close error carries no signal
+
+	for {
+		select {
+		case <-ctx.Done():
+			if w.timer != nil {
+				w.timer.Stop()
+			}
+
+			return
+		case err, ok := <-src.Errors():
+			if !ok {
+				return
+			}
+			slog.Warn("config watch error", "error", err)
+		case ev, ok := <-src.Events():
+			if !ok {
+				return
+			}
+			w.handle(ev)
+		}
+	}
+}
+
+// handle re-arms the debounce timer for events of the watched file only:
+// other names in the directory and non-trigger operations are ignored, a
+// fresh event inside the window recharges the timer (the armTimer
+// discipline of actor.go:572-577 — stop the old AfterFunc, arm a new one).
+func (w *Watcher) handle(ev fsnotify.Event) {
+	if filepath.Base(ev.Name) != w.fileName {
+		return
+	}
+	if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
+		return
+	}
+	if w.timer != nil {
+		w.timer.Stop()
+	}
+	w.timer = time.AfterFunc(w.opts.debounce, w.reload)
+}
+
+// reload re-parses the config: a valid document replaces the served
+// snapshot atomically; a rejected one WARNs ("config reload rejected",
+// D-32) and leaves the last-good in place with the error exposed through
+// LastError — status only, never section content (T-03-02-04).
+func (w *Watcher) reload() {
+	w.reloadMu.Lock()
+	defer w.reloadMu.Unlock()
+
+	cfg, err := w.opts.load(w.path)
+	if err != nil {
+		slog.Warn("config reload rejected", "error", err)
+		w.lastErr.Store(&err)
+
+		return
+	}
+	w.current.Store(cfg)
+	var none error
+	w.lastErr.Store(&none)
 }

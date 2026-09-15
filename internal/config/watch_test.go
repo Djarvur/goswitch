@@ -15,6 +15,13 @@ import (
 	"github.com/Djarvur/goswitch/internal/config"
 )
 
+// Fixture refusals — package sentinels (the err113 discipline of the
+// strict lint: no dynamically created error values).
+var (
+	errFixtureDecode  = errors.New("decode config: unknown field")
+	errFixtureInotify = errors.New("inotify queue overflow")
+)
+
 // fakeSource feeds synthetic events without inotify — the EventSource seam
 // (Wave 0 gap note: the corpus runs headless, no real filesystem watch).
 type fakeSource struct {
@@ -126,7 +133,9 @@ func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	return b.buf.Write(p)
+	n, _ := b.buf.Write(p) // strings.Builder.Write never fails
+
+	return n, nil
 }
 
 func (b *syncBuffer) String() string {
@@ -188,7 +197,7 @@ func TestWatch_InvalidRewriteKeepsLastGood(t *testing.T) {
 			return docWith(300), nil
 		}
 
-		return nil, errors.New("decode config: line 2: unknown field timeots")
+		return nil, errFixtureDecode
 	})
 	fx.src.send("/tmp/goswitch-test/goswitch.yaml", fsnotify.Write)
 
@@ -274,7 +283,7 @@ func TestWatch_SourceErrorWarns(t *testing.T) {
 		return docWith(300), nil
 	})
 
-	fx.src.errors <- errors.New("inotify queue overflow")
+	fx.src.errors <- errFixtureInotify
 
 	if !waitUntil(func() bool { return strings.Contains(buf.String(), `"msg":"config watch error"`) }) {
 		t.Error("log misses the WARN record config watch error")
@@ -335,7 +344,7 @@ func TestWatch_InitialLoadFailureRefuses(t *testing.T) {
 	_, err := config.NewWatcher(context.Background(), "/tmp/goswitch-test/goswitch.yaml",
 		config.WithSource(func() (config.EventSource, error) { return newFakeSource(), nil }),
 		config.WithLoader(func(string) (*config.Config, error) {
-			return nil, errors.New("decode config: unknown field")
+			return nil, errFixtureDecode
 		}),
 	)
 	if err == nil {
