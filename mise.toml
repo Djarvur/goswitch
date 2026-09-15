@@ -49,3 +49,39 @@ run = "go run ./test/e2e -case kill9-survive"
 [tasks.e2e-d01]
 description = "e2e: D-01 probe matrix — source-switch experiment, appends verdicts to docs/adr/d01-experiment-log.md (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case d01-probe"
+
+[tasks.e2e-chromium-smoke]
+description = "e2e: 02-02 chromium surface smoke — fresh-instance driver proof (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case chromium-smoke"
+
+[tasks.e2e-gte-smoke]
+description = "e2e: 02-02 gnome-text-editor surface smoke — standalone-instance driver proof (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case gte-smoke"
+
+[tasks.e2e-word]
+description = "e2e: 02-03 word-correction tracer — ghbdtn→привет in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-en-ru"
+
+[tasks.e2e-word-space]
+description = "e2e: 02-03 word-after-space D-13 geometry — ghbdtn␠→привет␠ in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-after-space"
+
+[tasks.e2e-word-ru]
+description = "e2e: 02-04 RU→EN correction — flip→RU typing привет→double tap→ghbdtn in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-ru-en"
+
+[tasks.e2e-word-mixed]
+description = "e2e: 02-04 mixed word D-16 — gfbпривет untouched after double tap in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-mixed"
+
+[tasks.e2e-ladder-chromium]
+description = "e2e: 02-05 ladder actual level in chromium — ghbdtn→привет, level+verify-after pinned from -debug log (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case ladder-chromium"
+
+[tasks.e2e-reset-escape]
+description = "e2e: 02-05 CORR-09 reset by Escape — ghbdtn kept untouched, empty-buffer refusal in the log (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case reset-escape"
+
+[tasks.e2e-matrix]
+description = "e2e: 02-06 YAML case matrix v1 — per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v1.yaml"

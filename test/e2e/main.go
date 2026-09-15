@@ -47,10 +47,11 @@ const (
 
 // config is the stand's CLI surface.
 type config struct {
-	caseName string
-	pacing   int
-	logPath  string
-	helper   string
+	caseName   string
+	pacing     int
+	logPath    string
+	helper     string
+	matrixPath string
 }
 
 // desktopSnapshot is the live-desktop state the teardown restores.
@@ -71,6 +72,8 @@ type stand struct {
 	daemon    *exec.Cmd
 	zenity    *exec.Cmd
 	zenityOut *bytes.Buffer
+	chromium  *exec.Cmd
+	gte       *exec.Cmd
 	snap      desktopSnapshot
 }
 
@@ -85,12 +88,26 @@ func main() {
 // and may downgrade a PASS to FAIL through the named return.
 func run() (exit int) {
 	var cfg config
-	flag.StringVar(&cfg.caseName, "case", "", "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe")
+	flag.StringVar(&cfg.caseName, "case", "",
+		"case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke"+
+			" | word-en-ru | word-after-space | word-ru-en | word-mixed | ladder-chromium | reset-escape")
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
 	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py", "path to the AT-SPI helper script")
+	flag.StringVar(&cfg.matrixPath, "matrix", "",
+		"YAML case matrix to run (multi-doc cases; every case gets a fresh daemon)")
 	flag.Parse()
+
+	// The matrix branch owns its whole stand lifecycle: case isolation needs
+	// a setupStand → case → teardown cycle PER CASE (02-06), so the single
+	// shared stand of the -case path must not wrap it.
+	if cfg.matrixPath != "" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		return runMatrixFile(ctx, cfg, cfg.matrixPath)
+	}
 
 	caseFn, err := pickCase(cfg.caseName)
 	if err != nil {
@@ -164,15 +181,24 @@ func runCaseWatchdog(
 // built per call (no mutable globals).
 func pickCase(name string) (func(context.Context, *stand) error, error) {
 	registry := map[string]func(context.Context, *stand) error{
-		"m1-gate":       runM1Gate,
-		"ibus-restart":  runIbusRestart,
-		"kill9-survive": runKill9Survive,
-		"d01-probe":     runD01Probe,
+		"m1-gate":          runM1Gate,
+		"ibus-restart":     runIbusRestart,
+		"kill9-survive":    runKill9Survive,
+		"d01-probe":        runD01Probe,
+		"chromium-smoke":   runChromiumSmoke,
+		"gte-smoke":        runGTESmoke,
+		"word-en-ru":       runWordENRU,
+		"word-after-space": runWordAfterSpace,
+		"word-ru-en":       runWordRUEN,
+		"word-mixed":       runWordMixed,
+		"ladder-chromium":  runLadderChromium,
+		"reset-escape":     runResetEscape,
 	}
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
-			" d01-probe)", name)
+			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed,"+
+			" ladder-chromium, reset-escape)", name)
 	}
 
 	return fn, nil
@@ -322,6 +348,8 @@ func (s *stand) teardown() {
 	s.stopDaemon()
 	s.restoreEngine(ctx)
 	s.reapZenity()
+	s.closeChromium()
+	s.closeGTE()
 	_ = s.logFile.Close()
 	if s.cfg.logPath == "" {
 		_ = os.Remove(s.logPath)

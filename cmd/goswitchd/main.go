@@ -55,6 +55,6 @@ func engineConfig() engine.Config {
 	return engine.Config{
 		Component: engine.NewComponent(engines),
 		Engines:   engines,
-		Handler:   actor, // decisions are logged at window expiry; keys stay unconsumed.
+		Handler:   actor, // decides consumption (RU script mode) at the key; tap decisions at window expiry.
 	}
 }

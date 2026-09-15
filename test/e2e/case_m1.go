@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -132,6 +133,14 @@ func (s *stand) closeEntrySurface(ctx context.Context, kind surfaceKind) error {
 		return err
 	case surfaceShell:
 		return s.pressKey(ctx, "Escape")
+	case surfaceChromium:
+		// Driver-managed surface (surface.go): chromium cases close their
+		// instance through the driver, never through the entry-surface path.
+		return nil
+	case surfaceGnomeTextEditor:
+		// Driver-managed surface (surface.go): same as chromium — the
+		// entry-surface path never closes it.
+		return nil
 	}
 
 	return nil
@@ -185,10 +194,33 @@ func (s *stand) startZenity(ctx context.Context) error {
 	return nil
 }
 
+// zenity focus-recovery timing (plan 02-03): the first seconds watch
+// whether the entry takes focus on its own (the phase-1 behavior on an idle
+// desk); past the grace the loop pokes the entry with the pid-keyed
+// input-node grabFocus every grabEvery until the surfaceFocusWait budget
+// runs out — the same mutter focus-stealing recovery proven for the GTK4
+// gnome-text-editor window in plan 02-02. Each poke re-issues the window
+// activation request with a timestamp that outranks the denial; a sustained
+// owner-activity burst can outlast a single poke, so the budget carries
+// several of them.
+const (
+	zenityGrabGrace = 2 * time.Second
+	zenityGrabEvery = 2 * time.Second
+)
+
 // waitZenityEntry polls the witness until the spawned entry owns keyboard
-// focus — the gate that makes injection safe.
+// focus — the gate that makes injection safe. Recovery (plan 02-03): zenity
+// 4.0.1 is a GTK4 window, and mutter denies focus to its map request
+// whenever a real input event — even pointer motion — follows it
+// (live-verified 2026-09-14 on the owner's active desktop: m1-gate failed
+// its 5 s wait twice in a row while idle-desktop probes took focus within a
+// second). Past the grace the loop pokes the entry with the pid-keyed
+// grabFocus; the refused call still re-issues the activation, so the wait
+// survives an active desktop.
 func (s *stand) waitZenityEntry(ctx context.Context) error {
-	deadline := time.Now().Add(witnessWait)
+	pid := strconv.Itoa(s.zenity.Process.Pid)
+	deadline := time.Now().Add(surfaceFocusWait)
+	nextGrab := time.Now().Add(zenityGrabGrace)
 	for {
 		now, err := s.focusWitness(ctx)
 		if err != nil {
@@ -199,6 +231,11 @@ func (s *stand) waitZenityEntry(ctx context.Context) error {
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("zenity entry did not take focus (witness %q)", now)
+		}
+		if time.Now().After(nextGrab) {
+			// Best-effort poke: a no-op while the window tree is not up.
+			_, _ = runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "grab-input-pid", pid)
+			nextGrab = time.Now().Add(zenityGrabEvery)
 		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {
 			return err

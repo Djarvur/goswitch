@@ -16,28 +16,53 @@ import (
 
 // recordingHandler captures everything the engine funnels through the seam.
 type recordingHandler struct {
-	events []engine.EngineEvent
-	kinds  []engine.LifecycleKind
+	events   []engine.EngineEvent
+	kinds    []engine.LifecycleKind
+	texts    []string
+	cursors  []uint32
+	caps     []uint32
+	attached []engine.Emitter
 }
 
-func (h *recordingHandler) HandleKey(ev engine.EngineEvent) {
+func (h *recordingHandler) HandleKey(ev engine.EngineEvent) bool {
 	h.events = append(h.events, ev)
+
+	return false
 }
 
 func (h *recordingHandler) HandleLifecycle(kind engine.LifecycleKind) {
 	h.kinds = append(h.kinds, kind)
 }
 
+func (h *recordingHandler) HandleSurroundingText(text string, cursorPos uint32) {
+	h.texts = append(h.texts, text)
+	h.cursors = append(h.cursors, cursorPos)
+}
+
+func (h *recordingHandler) HandleCapabilities(caps uint32) {
+	h.caps = append(h.caps, caps)
+}
+
+func (h *recordingHandler) AttachEngine(eng engine.Emitter) {
+	h.attached = append(h.attached, eng)
+}
+
 // panicHandler injects a panic into every seam call (INTEG-05 test double).
 type panicHandler struct{}
 
-func (panicHandler) HandleKey(engine.EngineEvent) {
+func (panicHandler) HandleKey(engine.EngineEvent) bool {
 	panic("injected handler panic")
 }
 
 func (panicHandler) HandleLifecycle(engine.LifecycleKind) {
 	panic("injected handler panic")
 }
+
+func (panicHandler) HandleSurroundingText(string, uint32) {}
+
+func (panicHandler) HandleCapabilities(uint32) {}
+
+func (panicHandler) AttachEngine(engine.Emitter) {}
 
 // discardLogger resets the default slog logger after a test replaced it.
 func discardLogger(t *testing.T) {
@@ -48,9 +73,10 @@ func discardLogger(t *testing.T) {
 	})
 }
 
-// TestEngine_ProcessKeyEventReturnsFalse pins the observer contract
-// (INTEG-02): every event — bare modifiers included — transits, nothing is
-// consumed.
+// TestEngine_ProcessKeyEventReturnsFalse pins the decline half of the
+// consume contract (formerly the Phase 1 observer contract, INTEG-02): with
+// a handler that declines, every event — bare modifiers included — transits
+// and decodes exactly once on the way through.
 func TestEngine_ProcessKeyEventReturnsFalse(t *testing.T) {
 	t.Parallel()
 
@@ -106,6 +132,127 @@ func TestEngine_ProcessKeyEventReturnsFalse(t *testing.T) {
 	}
 }
 
+// consumeStubHandler is the configurable decision double of the consume
+// contract: HandleKey answers the configured verdict, nothing else.
+type consumeStubHandler struct {
+	consume bool
+}
+
+func (h *consumeStubHandler) HandleKey(engine.EngineEvent) bool { return h.consume }
+
+func (h *consumeStubHandler) HandleLifecycle(engine.LifecycleKind) {}
+
+func (h *consumeStubHandler) HandleSurroundingText(string, uint32) {}
+
+func (h *consumeStubHandler) HandleCapabilities(uint32) {}
+
+func (h *consumeStubHandler) AttachEngine(engine.Emitter) {}
+
+// TestEngine_ProcessKeyEventConsumePropagation pins the 02-04 contract that
+// replaces the Phase 1 observer-false table: the handler's verdict IS the
+// method's answer — true means consumed (the RU-mode commit path), false
+// means transit; a nil handler stays a pure observer.
+func TestEngine_ProcessKeyEventConsumePropagation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		handler engine.EventHandler
+		want    bool
+	}{
+		{"handler consumes", &consumeStubHandler{consume: true}, true},
+		{"handler declines", &consumeStubHandler{consume: false}, false},
+		{"nil handler observes", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			eng := engine.NewEngine(tt.handler, "goswitch-en")
+			handled, err := eng.ProcessKeyEvent(0x67, 38, 0)
+			if err != nil {
+				t.Fatalf("ProcessKeyEvent() err = %v, want nil", err)
+			}
+			if handled != tt.want {
+				t.Errorf("ProcessKeyEvent() = %v, want %v (handler verdict must propagate)", handled, tt.want)
+			}
+		})
+	}
+}
+
+// ibusTextVariant builds the wire shape of a SetSurroundingText payload the
+// way godbus decodes it on the incoming path: the IBusText struct as a
+// positional []any (STRUCT never decodes into the typed struct).
+func ibusTextVariant(t *testing.T, text string) dbus.Variant {
+	t.Helper()
+
+	sig, err := dbus.ParseSignature("(sa{sv}sv)")
+	if err != nil {
+		t.Fatalf("parse struct signature: %v", err)
+	}
+	attrSig, err := dbus.ParseSignature("(sa{sv}av)")
+	if err != nil {
+		t.Fatalf("parse attrlist signature: %v", err)
+	}
+
+	return dbus.MakeVariantWithSignature([]any{
+		"IBusText",
+		map[string]dbus.Variant{},
+		text,
+		dbus.MakeVariantWithSignature([]any{
+			"IBusAttrList",
+			map[string]dbus.Variant{},
+			[]dbus.Variant{},
+		}, attrSig),
+	}, sig)
+}
+
+// TestEngine_SurroundingTextForward pins the incoming decode of the
+// surrounding text (plan 02-03): a struct-shaped payload is decoded and
+// forwarded with text and cursor position; every other shape is dropped
+// without a call. Capabilities forward likewise.
+func TestEngine_SurroundingTextForward(t *testing.T) {
+	t.Parallel()
+
+	rec := &recordingHandler{}
+	eng := engine.NewEngine(rec, "goswitch-en")
+
+	if err := eng.SetSurroundingText(ibusTextVariant(t, "ghbdtn"), 6, 6); err != nil {
+		t.Fatalf("SetSurroundingText() err = %v, want nil", err)
+	}
+	if err := eng.SetSurroundingText(dbus.MakeVariant("not a struct"), 1, 1); err != nil {
+		t.Fatalf("SetSurroundingText(malformed) err = %v, want nil", err)
+	}
+
+	if len(rec.texts) != 1 || rec.texts[0] != "ghbdtn" {
+		t.Errorf("forwarded texts = %q, want exactly [ghbdtn]", rec.texts)
+	}
+	if len(rec.cursors) != 1 || rec.cursors[0] != 6 {
+		t.Errorf("forwarded cursors = %v, want exactly [6]", rec.cursors)
+	}
+
+	if err := eng.SetCapabilities(engine.CapSurroundingText); err != nil {
+		t.Fatalf("SetCapabilities() err = %v, want nil", err)
+	}
+	if len(rec.caps) != 1 || rec.caps[0] != engine.CapSurroundingText {
+		t.Errorf("forwarded caps = %v, want exactly [CapSurroundingText]", rec.caps)
+	}
+}
+
+// TestEmitters_DetachedQuiet pins the detached-engine contract of every
+// emitter: with no connection bound (headless construction, the state every
+// unit test creates) the calls are quiet returns — nothing panics, nothing
+// is expected on the wire.
+func TestEmitters_DetachedQuiet(t *testing.T) {
+	t.Parallel()
+
+	eng := engine.NewEngine(nil, "goswitch-en")
+	eng.RequireSurroundingText()
+	eng.DeleteSurroundingText(-6, 6)
+	eng.CommitText(engine.NewIBusText("quiet"))
+	eng.ForwardKeyEvent(engine.KeyBackSpace, 14, 0)
+}
+
 // TestEngine_DecodeState pins the one-shot decode of the raw IBus state
 // word: bit 30 is release, the low byte is the modifier mask.
 func TestEngine_DecodeState(t *testing.T) {
@@ -140,6 +287,7 @@ func TestEngine_KeyConstants(t *testing.T) {
 		"KeyTab":       engine.KeyTab,
 		"KeyReturn":    engine.KeyReturn,
 		"KeyEscape":    engine.KeyEscape,
+		"KeyKPEnter":   engine.KeyKPEnter,
 		"KeyShiftL":    engine.KeyShiftL,
 		"KeyShiftR":    engine.KeyShiftR,
 		"KeyControlL":  engine.KeyControlL,
@@ -150,6 +298,7 @@ func TestEngine_KeyConstants(t *testing.T) {
 		"KeyTab":       0xff09,
 		"KeyReturn":    0xff0d,
 		"KeyEscape":    0xff1b,
+		"KeyKPEnter":   0xff8b,
 		"KeyShiftL":    0xffe1,
 		"KeyShiftR":    0xffe2,
 		"KeyControlL":  0xffe3,

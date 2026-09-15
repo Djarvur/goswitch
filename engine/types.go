@@ -48,11 +48,14 @@ type EngineDesc struct {
 }
 
 // AttrList mirrors the serialized IBusAttrList wire struct; Attributes is
-// an empty au for plain commits.
+// an av of variant-wrapped serialized IBusAttribute values — ibusattrlist.h
+// keeps a GArray of attribute OBJECTS, and the daemon's CommitText parser
+// reads the child as "av": an 'au' there trips its format assertion and
+// crashes the 1.5.29 daemon (live-verified 2026-09-14, journal SEGV).
 type AttrList struct {
 	Name        string // "IBusAttrList".
 	Attachments map[string]dbus.Variant
-	Attributes  []uint32
+	Attributes  []dbus.Variant // empty av for plain commits
 }
 
 // IBusText mirrors the serialized IBusText wire struct; AttrList carries a
@@ -74,7 +77,7 @@ func NewIBusText(text string) IBusText {
 		AttrList: dbus.MakeVariant(AttrList{
 			Name:        "IBusAttrList",
 			Attachments: map[string]dbus.Variant{},
-			Attributes:  []uint32{},
+			Attributes:  []dbus.Variant{},
 		}),
 	}
 }

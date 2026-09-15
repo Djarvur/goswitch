@@ -62,12 +62,36 @@ type EngineEvent struct {
 	Mods    uint32
 }
 
+// Emitter is the outgoing-signal surface of an Engine — the ladder
+// primitives the correction pipeline drives (ADR-003). Declared here
+// because EventHandler.AttachEngine hands the freshly minted engine to the
+// handler as this seam, not as the concrete object: consumers (and their
+// test doubles) program against the four emitters alone.
+type Emitter interface {
+	RequireSurroundingText()
+	DeleteSurroundingText(offset int32, nchars uint32)
+	ForwardKeyEvent(keyval, keycode, state uint32)
+	CommitText(text IBusText)
+}
+
 // EventHandler is the seam the rest of the daemon plugs into (hotkey FSM,
-// buffers, correction — later phases). A nil handler is legal: the engine
-// then only observes and logs.
+// buffers, correction). A nil handler is legal: the engine then only
+// observes and logs. HandleKey's bool is the consumption verdict: true means
+// the handler already delivered the key's character (RU-mode commit) and the
+// client must not insert anything.
 type EventHandler interface {
-	HandleKey(ev EngineEvent)
+	HandleKey(ev EngineEvent) (consume bool)
 	HandleLifecycle(kind LifecycleKind)
+	// HandleSurroundingText delivers the surrounding text the client
+	// reported (the runes before the anchor at cursorPos) — the input of
+	// the ADR-004 pre-correction verification.
+	HandleSurroundingText(text string, cursorPos uint32)
+	// HandleCapabilities delivers the per-input-context capability bitmap
+	// (SetCapabilities), the input of the ADR-003 ladder-level choice.
+	HandleCapabilities(caps uint32)
+	// AttachEngine binds the emitter sink of the engine minted for the
+	// input context: the handler's corrections drive it.
+	AttachEngine(eng Emitter)
 }
 
 // Engine is the per-input-context D-Bus object exported on the three
@@ -122,9 +146,12 @@ func decodeEvent(keyval, keycode, state uint32) EngineEvent {
 
 // ProcessKeyEvent implements org.freedesktop.IBus.Engine.ProcessKeyEvent
 // (u keyval, u keycode, u state) → b. It decodes the event, traces it at
-// DEBUG, forwards it to the handler and immediately returns false: the
-// Phase 1 engine is an observer, transit by construction (INTEG-02). Bare
-// modifier presses are never consumed.
+// DEBUG and forwards it to the handler: the handler's verdict IS the answer
+// — consumption is decided by the EventHandler (the RU script mode of Phase
+// 2 commits a Cyrillic rune and consumes the key), the transport only
+// returns it. A nil handler stays a pure observer (transit, the Phase 1
+// contract), and bare modifier presses are never consumed — the actor
+// declines every non-printable.
 func (e *Engine) ProcessKeyEvent(keyval, keycode, state uint32) (handled bool, err *dbus.Error) {
 	defer recoverHandler("ProcessKeyEvent", &err)
 
@@ -134,11 +161,12 @@ func (e *Engine) ProcessKeyEvent(keyval, keycode, state uint32) (handled bool, e
 		"keycode", ev.Keycode,
 		"release", ev.Release,
 		"mods", fmt.Sprintf("0x%x", ev.Mods))
+	var consume bool
 	if e.handler != nil {
-		e.handler.HandleKey(ev)
+		consume = e.handler.HandleKey(ev)
 	}
 
-	return false, nil
+	return consume, nil
 }
 
 // SetCursorLocation implements org.freedesktop.IBus.Engine.SetCursorLocation
@@ -151,20 +179,62 @@ func (e *Engine) SetCursorLocation(x, y, width, height int32) (err *dbus.Error) 
 
 // SetSurroundingText implements
 // org.freedesktop.IBus.Engine.SetSurroundingText (v text, u cursor_pos,
-// u anchor_pos): logged at DEBUG, contents never recorded at INFO.
+// u anchor_pos): the variant-wrapped IBusText is decoded once here and the
+// text with its cursor position is funneled to the handler — the input of
+// the ADR-004 pre-correction verification. Logged at DEBUG, contents never
+// recorded at INFO (D-20). A payload that does not decode as IBusText is
+// dropped: the correction waiting on it then times out silently.
 func (e *Engine) SetSurroundingText(text dbus.Variant, cursorPos, anchorPos uint32) (err *dbus.Error) {
 	defer recoverHandler("SetSurroundingText", &err)
 	slog.Debug("surrounding_text", "cursor_pos", cursorPos, "anchor_pos", anchorPos)
+	if e.handler != nil {
+		if t, ok := decodeIBusText(text); ok {
+			e.handler.HandleSurroundingText(t.Text, cursorPos)
+		}
+	}
 
 	return nil
 }
 
+// decodeIBusText decodes a variant-wrapped IBusText wire struct. godbus
+// decodes STRUCT generically into []any — the typed struct never appears on
+// the incoming path — so the positional fields (types.go field order is the
+// wire contract) are extracted defensively and any other shape is refused.
+func decodeIBusText(text dbus.Variant) (IBusText, bool) {
+	fields, ok := text.Value().([]any)
+	if !ok || len(fields) < 4 {
+		return IBusText{}, false
+	}
+	name, ok := fields[0].(string)
+	if !ok {
+		return IBusText{}, false
+	}
+	attachments, ok := fields[1].(map[string]dbus.Variant)
+	if !ok {
+		return IBusText{}, false
+	}
+	value, ok := fields[2].(string)
+	if !ok {
+		return IBusText{}, false
+	}
+	attrList, ok := fields[3].(dbus.Variant)
+	if !ok {
+		return IBusText{}, false
+	}
+
+	return IBusText{Name: name, Attachments: attachments, Text: value, AttrList: attrList}, true
+}
+
 // SetCapabilities implements org.freedesktop.IBus.Engine.SetCapabilities
-// (u caps): the capability bitmap is stored per input context.
+// (u caps): the capability bitmap is stored per input context and funneled
+// to the handler — the input of the ADR-003 ladder-level choice.
 func (e *Engine) SetCapabilities(caps uint32) (err *dbus.Error) {
 	defer recoverHandler("SetCapabilities", &err)
 	e.caps = caps
 	slog.Debug("capabilities", "caps", fmt.Sprintf("0x%x", caps))
+	if e.handler != nil {
+		e.handler.HandleCapabilities(caps)
+	}
 
 	return nil
 }
@@ -313,6 +383,47 @@ func (e *Engine) CommitText(text IBusText) {
 	}
 	if err := e.conn.Emit(e.path, ifaceEngine+".CommitText", dbus.MakeVariant(text)); err != nil {
 		slog.Error("commit text emit failed", "error", err)
+	}
+}
+
+// DeleteSurroundingText emits the org.freedesktop.IBus.Engine.
+// DeleteSurroundingText signal — the level-1 ladder primitive (ADR-003):
+// the client is asked to delete nchars runes before (negative offset) or
+// after the cursor. Fire-and-forget on IBus 1.5.29 — the ADR-004
+// verification is the compensation, not an ack.
+func (e *Engine) DeleteSurroundingText(offset int32, nchars uint32) {
+	if e.conn == nil {
+		return
+	}
+	if err := e.conn.Emit(e.path, ifaceEngine+".DeleteSurroundingText", offset, nchars); err != nil {
+		slog.Error("delete surrounding emit failed", "error", err)
+	}
+}
+
+// RequireSurroundingText emits the org.freedesktop.IBus.Engine.
+// RequireSurroundingText signal — the client answers with a fresh
+// SetSurroundingText, which is the input of the pre-correction
+// verification (ADR-004).
+func (e *Engine) RequireSurroundingText() {
+	if e.conn == nil {
+		return
+	}
+	if err := e.conn.Emit(e.path, ifaceEngine+".RequireSurroundingText"); err != nil {
+		slog.Error("require surrounding emit failed", "error", err)
+	}
+}
+
+// ForwardKeyEvent emits the org.freedesktop.IBus.Engine.ForwardKeyEvent
+// signal — the level-2 ladder primitive (ADR-003): the key event is replayed
+// to the client as if the user pressed it (the Backspace burst before the
+// replacement commit). Fire-and-forget like every engine signal — the
+// ADR-004 verification is the compensation, never an expected ack.
+func (e *Engine) ForwardKeyEvent(keyval, keycode, state uint32) {
+	if e.conn == nil {
+		return
+	}
+	if err := e.conn.Emit(e.path, ifaceEngine+".ForwardKeyEvent", keyval, keycode, state); err != nil {
+		slog.Error("forward key event emit failed", "error", err)
 	}
 }
 
