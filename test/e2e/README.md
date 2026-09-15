@@ -20,7 +20,7 @@ $ mise run e2e-gte-smoke      # 02-02: драйвер gnome-text-editor — stan
 $ mise run e2e-word          # 02-03: трассер коррекции — ghbdtn→привет в zenity сквозным конвейером
 $ mise run e2e-word-space    # 02-03: геометрия D-13 — слово после пробела, ghbdtn␠→привет␠
 $ mise run e2e-word-ru       # 02-04: флип→RU-набор привет→тап-тап→ghbdtn — второе направление
-$ mise run e2e-word-mixed    # 02-04: смешанное слово gfbпривет не трогается (D-16, тихий отказ)
+$ mise run e2e-word-mixed    # 03-01: смешанное слово gfbпривет конвертирует чужой прогон → паипривет (D-23, сукцессия D-16)
 $ mise run e2e-ladder-chromium # 02-05: лестница в chromium — фактический уровень + verify-after из -debug-лога
 $ mise run e2e-reset-escape  # 02-05: сброс буфера по Escape (CORR-09) — поле не тронуто, отказ empty-buffer в логе
 ```
@@ -35,7 +35,7 @@ $ go run ./test/e2e -case m1-gate
 
 | Флаг       | Значение                                                                |
 |------------|------------------------------------------------------------------------|
-| `-case`    | `m1-gate` \| `ibus-restart` \| `kill9-survive` \| `d01-probe` \| `chromium-smoke` \| `gte-smoke` \| `word-en-ru` \| `word-after-space` \| `word-ru-en` \| `word-mixed` \| `ladder-chromium` \| `reset-escape` |
+| `-case`    | `m1-gate` \| `ibus-restart` \| `kill9-survive` \| `d01-probe` \| `chromium-smoke` \| `gte-smoke` \| `word-en-ru` \| `word-after-space` \| `word-ru-en` \| `word-mixed` \| `phrase-en-ru` \| `phrase-mixed` \| `ladder-chromium` \| `reset-escape` |
 | `-pacing`  | мс между инжектируемыми нажатиями ydotool (дефолт 40; поднять на нагруженной машине) |
 | `-log`     | путь лога демона (дефолт — temp-файл, удаляется в teardown)             |
 | `-helper`  | путь AT-SPI-хелпера (дефолт `test/e2e/focus_helper.py`)                 |

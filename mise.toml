@@ -78,6 +78,10 @@ run = "go run ./test/e2e -case word-mixed"
 description = "e2e: 03-01 phrase tracer — ghbdtn ghbdtn→привет привет by triple Right Shift in zenity (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case phrase-en-ru"
 
+[tasks.e2e-phrase-mixed]
+description = "e2e: 03-01 mixed phrase D-26 — ghbdtn привет→привет привет by triple Right Shift in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case phrase-mixed"
+
 [tasks.e2e-ladder-chromium]
 description = "e2e: 02-05 ladder actual level in chromium — ghbdtn→привет, level+verify-after pinned from -debug log (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case ladder-chromium"

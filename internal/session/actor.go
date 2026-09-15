@@ -431,14 +431,13 @@ func (a *Actor) startPhraseCorrection() {
 }
 
 // startRangeCorrection is the ONE correction pipeline of the daemon,
-// parameterized by its range (D-23): classify the range, convert it, choose
-// the ladder level by the caps bit, then verify against the freshest
-// surrounding text (ADR-004 — the verification covers the whole range,
-// token+tail, exactly what the ladder deletes). Every refusal logs its D-20
-// reason at INFO — without the range's contents — and touches nothing. The
-// tracer direction is homogeneous-script: Detect refuses a range with
-// letters of both scripts; the run-wise mixed conversion of Phase 3 Task 2
-// replaces this step for every range. The caller holds the mutex.
+// parameterized by its range (D-23): convert the range run-wise through
+// ConvertRuns (homogeneous wholesale, mixed by the last-letter anchor —
+// D-22/D-23), choose the ladder level by the caps bit, then verify against
+// the freshest surrounding text (ADR-004 — the verification covers the
+// whole range, token+tail, exactly what the ladder deletes). Every refusal
+// logs its D-20 reason at INFO — without the range's contents — and touches
+// nothing. The caller holds the mutex.
 //
 // Transport adaptation (live finding, 2026-09-14): neither GTK nor the
 // mutter input context answers RequireSurroundingText — clients push
@@ -454,15 +453,17 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 
 		return
 	}
-	dir, ok := correct.Detect(rng.token)
+	converted, changed, ok := correct.ConvertRuns(rng.token)
 	if !ok {
-		slog.Info("correction skipped", "reason", tokenRefusal(rng.token))
+		slog.Info("correction skipped", "reason", refusalReason(rng.token))
 
 		return
 	}
-	converted, ok := correct.Convert(rng.token, dir)
-	if !ok {
-		slog.Info("correction skipped", "reason", "convert-failed")
+	if !changed {
+		// D-24: every letter of the range is already in the anchor layout —
+		// a SUCCESSFUL operation without changes (the owner's choice over a
+		// refusal and over a WARN); nothing to replace, nothing to verify.
+		slog.Info("correction", "outcome", "done")
 
 		return
 	}
@@ -526,6 +527,13 @@ func (a *Actor) executeCorrection() {
 // preserves it for every client). The caller holds the mutex.
 func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time) {
 	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps, correct.DefaultBackspaceCap)
+	if plan.Level == correct.LevelNone {
+		// D-27: the Backspace series would exceed the cap and this client
+		// has no DeleteSurroundingText — refuse silently, not one deletion.
+		slog.Info("correction skipped", "reason", "backspace-cap")
+
+		return
+	}
 	for range plan.Backspaces {
 		a.eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
 	}
@@ -615,22 +623,16 @@ func concatRunes(head, tail []rune) []rune {
 	return append(joined, tail...)
 }
 
-// tokenRefusal labels a direction-less token for the D-20 skip log: letters
-// of both scripts are a mixed word (D-16), anything else has no letters at
-// all. A diagnostic label only — the refusal decision itself belongs to
-// correct.Detect and is not duplicated here.
-func tokenRefusal(token []rune) string {
-	var latin, cyrillic bool
+// refusalReason labels a ConvertRuns refusal for the D-20 skip log: a range
+// without Latin or Cyrillic letters has nothing to anchor on; anything else
+// failed on a letter missing from the layout tables. A diagnostic label
+// only — the refusal decision itself belongs to correct.ConvertRuns and is
+// not duplicated here.
+func refusalReason(token []rune) string {
 	for _, r := range token {
-		switch {
-		case unicode.Is(unicode.Latin, r):
-			latin = true
-		case unicode.Is(unicode.Cyrillic, r):
-			cyrillic = true
+		if unicode.Is(unicode.Latin, r) || unicode.Is(unicode.Cyrillic, r) {
+			return "convert-failed"
 		}
-	}
-	if latin && cyrillic {
-		return "mixed-script"
 	}
 
 	return "no-letters"

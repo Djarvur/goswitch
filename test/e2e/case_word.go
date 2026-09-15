@@ -20,10 +20,12 @@ const (
 	// wordResultRUAfterSpace is the D-13 expectation: the corrected word
 	// WITH its separator — the trailing space is load-bearing.
 	wordResultRUAfterSpace = "привет "
-	// wordMixedExpected is the D-16 oracle: the mixed word exactly as
-	// assembled — the EN part typed in EN mode (transit) plus the RU part
-	// committed by the engine after the flip — and left untouched.
-	wordMixedExpected = "gfb" + wordResultRU
+	// wordMixedConverted is the D-23 oracle (succession of the D-16
+	// refusal, plan 03-01): the mixed word assembled through both real
+	// printing branches — the EN part typed in EN mode (transit) plus the
+	// RU part committed by the engine after the flip — converts ONLY its
+	// foreign Latin run: gfb→паи, the Cyrillic run untouched.
+	wordMixedConverted = "паи" + wordResultRU
 )
 
 // runWordENRU proves the core-value tracer (CORR-01, CORR-07 level 1):
@@ -220,12 +222,13 @@ func runWordRUEN(ctx context.Context, s *stand) error {
 	return nil
 }
 
-// runWordMixed proves the D-16 refusal live (plan 02-04): "gfb" typed in EN
-// mode transits, the flip switches to RU, "ghbdtn" is committed as «привет»
-// — the field holds the mixed word gfbпривет assembled through both real
-// printing branches, and the double tap must leave it EXACTLY as it is: the
-// daemon logs the mixed-script skip reason (D-20) and both oracles — the
-// content-exact readback and the zenity stdout — print the untouched word.
+// runWordMixed proves the D-23 run conversion live (plan 03-01, succession
+// of the 02-04 D-16 refusal): "gfb" typed in EN mode transits, the flip
+// switches to RU, "ghbdtn" is committed as «привет» — the field holds the
+// mixed word gfbпривет assembled through both real printing branches, and
+// the double tap converts ONLY the foreign Latin run: the daemon logs the
+// correction-done record and both oracles — the content-exact readback and
+// the zenity stdout — print "паипривет".
 func runWordMixed(ctx context.Context, s *stand) error {
 	if err := s.activateGoswitch(ctx); err != nil {
 		return err
@@ -254,7 +257,7 @@ func runWordMixed(ctx context.Context, s *stand) error {
 	if err := s.injectText(ctx, wordProbeEN); err != nil {
 		return err
 	}
-	if err := s.waitZenityChars(ctx, len([]rune(wordMixedExpected))); err != nil {
+	if err := s.waitZenityChars(ctx, len([]rune("gfb"+wordResultRU))); err != nil {
 		return fmt.Errorf("word-mixed RU typing: %w", err)
 	}
 
@@ -264,21 +267,21 @@ func runWordMixed(ctx context.Context, s *stand) error {
 	if err := s.waitForLog(ctx, `"msg":"action","n":2`, decisionWait); err != nil {
 		return fmt.Errorf("word-mixed double-tap decision: %w", err)
 	}
-	// D-16/D-20: the refusal lands in the log with its reason — and the
-	// field must not change by one rune.
-	if err := s.waitForLog(ctx, `"reason":"mixed-script"`, correctionWait); err != nil {
-		return fmt.Errorf("word-mixed D-16 refusal: %w", err)
+	// D-23: the run conversion completes — the foreign run gfb converted,
+	// the Cyrillic run recommitted unchanged.
+	if err := s.waitForLog(ctx, `"msg":"correction","outcome":"done"`, correctionWait); err != nil {
+		return fmt.Errorf("word-mixed D-23 conversion: %w", err)
 	}
 
-	if err := s.waitZenityText(ctx, wordMixedExpected); err != nil {
-		return fmt.Errorf("word-mixed untouched oracle (D-16): %w", err)
+	if err := s.waitZenityText(ctx, wordMixedConverted); err != nil {
+		return fmt.Errorf("word-mixed converted oracle (D-23): %w", err)
 	}
 	out, err := s.closeZenity(ctx)
 	if err != nil {
 		return err
 	}
-	if out != wordMixedExpected {
-		return fmt.Errorf("word-mixed oracle: entry printed %q, want the untouched %q", out, wordMixedExpected)
+	if out != wordMixedConverted {
+		return fmt.Errorf("word-mixed oracle: entry printed %q, want the run-converted %q", out, wordMixedConverted)
 	}
 
 	return nil

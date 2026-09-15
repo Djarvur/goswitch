@@ -35,7 +35,9 @@ func TestBuildPlan_BothLevels(t *testing.T) {
 
 	t.Run("level 1 with tail", func(t *testing.T) {
 		t.Parallel()
-		got := correct.BuildPlan([]rune(wordEN), []rune(" "), []rune(wordRU), correct.CapSurroundingText, correct.DefaultBackspaceCap)
+		got := correct.BuildPlan(
+			[]rune(wordEN), []rune(" "), []rune(wordRU),
+			correct.CapSurroundingText, correct.DefaultBackspaceCap)
 		assertPlan(t, got, correct.Plan{
 			Level:  correct.Level1,
 			Offset: -7,
@@ -56,7 +58,9 @@ func TestBuildPlan_BothLevels(t *testing.T) {
 
 	t.Run("empty tail degenerates", func(t *testing.T) {
 		t.Parallel()
-		got := correct.BuildPlan([]rune(wordEN), nil, []rune(wordRU), correct.CapSurroundingText, correct.DefaultBackspaceCap)
+		got := correct.BuildPlan(
+			[]rune(wordEN), nil, []rune(wordRU),
+			correct.CapSurroundingText, correct.DefaultBackspaceCap)
 		assertPlan(t, got, correct.Plan{
 			Level:  correct.Level1,
 			Offset: -6,
@@ -91,7 +95,9 @@ func TestPlan_TailArithmetic(t *testing.T) {
 
 	t.Run("level 1 deletes token and tail", func(t *testing.T) {
 		t.Parallel()
-		got := correct.BuildPlan([]rune(wordEN), []rune(" "), []rune(wordRU), correct.CapSurroundingText, correct.DefaultBackspaceCap)
+		got := correct.BuildPlan(
+			[]rune(wordEN), []rune(" "), []rune(wordRU),
+			correct.CapSurroundingText, correct.DefaultBackspaceCap)
 		assertPlan(t, got, correct.Plan{
 			Level:  correct.Level1,
 			Offset: -7,
@@ -162,7 +168,7 @@ func TestBuildPlan_BackspaceCap(t *testing.T) {
 		token := letters(correct.DefaultBackspaceCap)
 		got := correct.BuildPlan(token, []rune(" "), token, 0, correct.DefaultBackspaceCap)
 		if got.Level != correct.LevelNone {
-			t.Fatalf("Level = %d, want LevelNone — token+tail = cap+1 exceeds the cap (D-13 geometry counts both)", got.Level)
+			t.Fatalf("Level = %d, want LevelNone — token+tail = cap+1 exceeds the cap (D-13 geometry)", got.Level)
 		}
 	})
 
@@ -183,7 +189,7 @@ func TestBuildPlan_BackspaceCap(t *testing.T) {
 		token := letters(correct.DefaultBackspaceCap * 2)
 		got := correct.BuildPlan(token, nil, token, correct.CapSurroundingText, correct.DefaultBackspaceCap)
 		if got.Level != correct.Level1 {
-			t.Fatalf("Level = %d, want Level1 — DeleteSurroundingText is one call, not a series (D-27: ladder priority)", got.Level)
+			t.Fatalf("Level = %d, want Level1 — DeleteSurroundingText is one call, not a series (D-27)", got.Level)
 		}
 	})
 }

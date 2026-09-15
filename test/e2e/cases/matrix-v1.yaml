@@ -77,7 +77,7 @@ steps:
   - {tap: double}
 expect_text: "ghbdtn"  # the double tap corrects привет BACK — both directions of the loop
 ---
-name: word-mixed-untouched
+name: word-mixed
 surface: zenity
 mode: en
 steps:
@@ -85,7 +85,7 @@ steps:
   - {tap: single}      # script flip EN→RU; the runner waits for the mode record (Pitfall 5)
   - {type: "ghbdtn"}   # committed as привет through the engine
   - {tap: double}
-expect_text: "gfbпривет"  # D-16: letters of both scripts — the word is left exactly as assembled
+expect_text: "паипривет"  # D-23 (03-01 succession of the D-16 refusal): anchor RU from the last letter — the foreign run gfb→паи converts, the Cyrillic run stays
 ---
 name: fallback-chromium
 surface: chromium

@@ -74,6 +74,12 @@ func BuildPlan(token, tail, converted []rune, caps uint32, backspaceCap int) Pla
 			Commit: commit,
 		}
 	}
+	if n > backspaceCap {
+		// D-27: the Backspace series would exceed the cap and the client
+		// cannot delete — level 2 is not built at all, and the actor takes
+		// the silent backspace-cap refusal instead of a destructive burst.
+		return Plan{Level: LevelNone}
+	}
 
 	return Plan{Level: Level2, Backspaces: n, Commit: commit}
 }
