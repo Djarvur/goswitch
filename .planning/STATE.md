@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 3
-current_phase_name: Фразы, выделение, переключение и конфигурация
-status: verifying
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-09-15T15:01:20.427Z"
+current_phase: 4
+current_phase_name: Поставка и приёмка
+status: planning
+stopped_at: Phase 3 complete, ready to plan Phase 4
+last_updated: "2026-09-15T19:09:41.182Z"
 last_activity: 2026-09-15
-last_activity_desc: Phase 3 execution started
-state_head: 21df37c71e5b62b7bcdcfc416e6d800341840704
+last_activity_desc: Phase 3 complete, transitioned to Phase 4
+state_head: 29720ebb1e8afdaf873bbe37f8e779a46138d58a
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 3
   total_plans: 19
   completed_plans: 19
-  percent: 0
+  percent: 75
 ---
 
 # Project State
@@ -23,22 +23,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 3 — Фразы, выделение, переключение и конфигурация
+**Current focus:** Phase 4 — Поставка и приёмка
 
 ## Current Position
 
-Phase: 3 (Фразы, выделение, переключение и конфигурация) — EXECUTING
-Plan: 7 of 7
-Status: Phase complete — ready for verification
-Last activity: 2026-09-15 — Phase 3 execution started
+Phase: 4 — Поставка и приёмка
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-15 — Phase 3 complete, transitioned to Phase 4
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 12
+- Total plans completed: 19
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 | 4. Поставка и приёмка | 0/? | - | - |
 | 01 | 5 | - | - |
 | 2 | 7 | - | - |
+| 3 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -156,6 +157,9 @@ Recent decisions affecting current work:
 - [Phase 3]: [03-07] GTE's surrounding-push map is operation-specific: typing/ctrl+a/shift+right push, Home/shift+end NEVER — the reverse geometry is proven via gated shift+right extensions from the home caret (cursor=N/anchor=0, chromium's native shape); probed names: home/shift+right/shift+end lowercase (KEY_-prefixed forms fall back to first letters)
 - [Phase 3]: [03-07] The reload step drives config application THROUGH goswitchctl (INST-02+CONF-02 in one step): CLI exit/reply + BOTH log forms (config reloaded / WARN config reload rejected) + D-32 status validity; fragments apply by key-line replace/append — the appended unknown key IS the broken-edit mechanics
 - [Phase 3]: [03-07] The overview episode's FocusOut hard-resets the daemon buffer — the super-space row retypes over a select-all after the focus recovery; workflow_dispatch executes the REF's workflow definition (the v2 step name shows in the green106 run)
+- [Phase 3]: Phase closed 2026-09-15 (verify-work UAT 4/4, все пункты владельцем): матрица v2 пере-прогнана на HEAD 54ea460 живьём — 21/21 PASS, exit 0 (префлайт 7/7); WINDOWS #2 (чтение D-24) и #4 (GTK4-Wayland forwarded-события — платформенное ограничение) закрыты решениями владельца; REQUIREMENTS.md MACR-01 выровнен (Complete с оговоркой); zenity-вердикт 03-03 развёрнут и принят
+- [Phase 3]: Post-hook артефакты при закрытии: 03-SECURITY.md (28 угроз: 25 mitigate закрыты + 3 accept, threats_open 0, ASVS L1) и 03-VALIDATION.md (nyquist_compliant true — все 12 требований фазы покрыты зелёными тестами, пробелов нет); пере-верификации Фаз 1 (20/20, коммит 7205606) и 2 (23/23, 54ea460) на дереве Фазы 3 — stale-пальцы обновлены каноническим verb'ом
+- [Phase 3]: correct.Detect production-orphaned после сукцессии D-16→D-23 (остался только в тестах как classifyRune-референс) — предупреждение верификатора, кандидат на уборку в будущем; не дефект
 
 ### Pending Todos
 
@@ -177,6 +181,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T15:01:20.359Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-09-15T19:15:00Z
+Stopped at: Phase 3 complete, ready to plan Phase 4
 Resume file: None

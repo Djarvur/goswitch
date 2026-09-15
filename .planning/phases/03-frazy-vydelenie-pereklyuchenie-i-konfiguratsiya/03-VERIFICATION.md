@@ -1,9 +1,10 @@
 ---
 phase: 03-frazy-vydelenie-pereklyuchenie-i-konfiguratsiya
 verified: 2026-09-15T15:55:41Z
-status: human_needed
+status: passed
 score: 19/20 must-haves verified
 covered_files:
+
   - .planning/phases/03-frazy-vydelenie-pereklyuchenie-i-konfiguratsiya/03-01-PLAN.md
   - .planning/phases/03-frazy-vydelenie-pereklyuchenie-i-konfiguratsiya/03-01-SUMMARY.md
   - .planning/phases/03-frazy-vydelenie-pereklyuchenie-i-konfiguratsiya/03-02-PLAN.md
@@ -72,15 +73,18 @@ covered_files:
   - test/e2e/matrix_test.go
   - test/e2e/preflight.go
   - test/e2e/README.md
+
 covered_digest: "v1:sha256:7f4491ae20dbe9c66f4bebc1e61323a43873536d6e109c9326746765fb486783"
 behavior_unverified: 1
 overrides_applied: 0
 behavior_unverified_items:
+
   - truth: "SC-5a: e2e-матрица v2 зелёная во всей широте на верифицируемом HEAD"
     test: "Run `mise run e2e-matrix-v2` on the live desktop at HEAD 44a4c65 (and optionally dispatch the e2e-matrix workflow on green106 at HEAD)"
     expected: "21/21 PASS, exit 0, teardown restores desktop state — re-establishing the acceptance evidence over the 8 review-fix commits (7152cd3..d94a3ce) that postdate the recorded green runs"
     why_human: "The recorded green matrix evidence (live 21/21 and CI run 34984814995) is at headSha 21df37c; HEAD adds 737 lines of behavioral Go/YAML changes on paths every matrix case exercises (WR-05 verify-after debounce, WR-03 preflight UID auth, CR-01 tap-key wiring, CR-02 verifyWait). No post-fix matrix run exists (gh run list shows none; the stray ./e2e binary predates even 21df37c). Live e2e drives the owner's desktop and is not re-run by the verifier (Phase 1/2 precedent). The headless corpus is green at HEAD, so this is an evidence-currency gap, not a defect signal."
 human_verification:
+
   - test: "Re-run the acceptance matrix at HEAD: `mise run e2e-matrix-v2` (live desktop); optionally dispatch e2e-matrix on green106 at 44a4c65"
     expected: "21/21 PASS with exit 0 and a restored desktop — closes the evidence-currency gap left by the review-fix commits (see behavior_unverified_items)"
     why_human: "Live e2e drives the owner's GNOME session; verifier policy re-fetches machine evidence but never drives the desktop. The only green matrix runs (live + CI 34984814995) are at 21df37c, 8 behavioral fix commits before HEAD."
@@ -228,6 +232,7 @@ specified in artifacts_produced sections).
 `gsd_run query verify.key-links` per plan: 5/7 plans fully verified by the
 tool; plan 06 reported 2 failures and plan 07 one — **all three are
 tool-shape false negatives, manually disproven**:
+
 - Plan 06 `internal/ctlsvc → internal/session` ("EISDIR"): ctlsvc.go:50
   `StatusSnapshot() session.Status`, :119 CorrectNow — the prescribed
   direction (session never imports ctlsvc).
