@@ -82,16 +82,17 @@ func main() {
 }
 
 // run wires the whole stand: registry, setup, preflight, the case and the
-// ALWAYS-run teardown. Returning an int keeps the exit-code contract in one
-// place; defers are honored because run returns normally. The deferred
-// finisher also machine-verifies the gsettings restore (plan 01-04, T-04-02)
-// and may downgrade a PASS to FAIL through the named return.
-func run() (exit int) {
-	var cfg config
-	flag.StringVar(&cfg.caseName, "case", "",
-		"case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke"+
-			" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed"+
-			" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard")
+// caseListUsage is the -case help text: every registry name, "|" joined.
+func caseListUsage() string {
+	return "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke" +
+		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
+		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
+		" | combo-word-layout"
+}
+
+// parseFlags fills the stand's CLI surface from os.Args.
+func parseFlags(cfg *config) {
+	flag.StringVar(&cfg.caseName, "case", "", caseListUsage())
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
@@ -99,6 +100,16 @@ func run() (exit int) {
 	flag.StringVar(&cfg.matrixPath, "matrix", "",
 		"YAML case matrix to run (multi-doc cases; every case gets a fresh daemon)")
 	flag.Parse()
+}
+
+// run wires the whole stand: registry, setup, preflight, the case and the
+// ALWAYS-run teardown. Returning an int keeps the exit-code contract in one
+// place; defers are honored because run returns normally. The deferred
+// finisher also machine-verifies the gsettings restore (plan 01-04, T-04-02)
+// and may downgrade a PASS to FAIL through the named return.
+func run() (exit int) {
+	var cfg config
+	parseFlags(&cfg)
 
 	// The matrix branch owns its whole stand lifecycle: case isolation needs
 	// a setupStand → case → teardown cycle PER CASE (02-06), so the single
@@ -182,30 +193,31 @@ func runCaseWatchdog(
 // built per call (no mutable globals).
 func pickCase(name string) (func(context.Context, *stand) error, error) {
 	registry := map[string]func(context.Context, *stand) error{
-		"m1-gate":          runM1Gate,
-		"ibus-restart":     runIbusRestart,
-		"kill9-survive":    runKill9Survive,
-		"d01-probe":        runD01Probe,
-		"chromium-smoke":   runChromiumSmoke,
-		"gte-smoke":        runGTESmoke,
-		"word-en-ru":       runWordENRU,
-		"word-after-space": runWordAfterSpace,
-		"word-ru-en":       runWordRUEN,
-		"word-mixed":       runWordMixed,
-		"phrase-en-ru":     runPhraseENRU,
-		"phrase-mixed":     runPhraseMixed,
-		"ladder-chromium":  runLadderChromium,
-		"reset-escape":     runResetEscape,
-		"select-smoke":     runSelectSmoke,
-		"select-correct":   runSelectCorrect,
-		"select-clipboard": runSelectClipboard,
+		"m1-gate":           runM1Gate,
+		"ibus-restart":      runIbusRestart,
+		"kill9-survive":     runKill9Survive,
+		"d01-probe":         runD01Probe,
+		"chromium-smoke":    runChromiumSmoke,
+		"gte-smoke":         runGTESmoke,
+		"word-en-ru":        runWordENRU,
+		"word-after-space":  runWordAfterSpace,
+		"word-ru-en":        runWordRUEN,
+		"word-mixed":        runWordMixed,
+		"phrase-en-ru":      runPhraseENRU,
+		"phrase-mixed":      runPhraseMixed,
+		"ladder-chromium":   runLadderChromium,
+		"reset-escape":      runResetEscape,
+		"select-smoke":      runSelectSmoke,
+		"select-correct":    runSelectCorrect,
+		"select-clipboard":  runSelectClipboard,
+		"combo-word-layout": runComboWordLayout,
 	}
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
 			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed,"+
 			" phrase-en-ru, phrase-mixed, ladder-chromium, reset-escape, select-smoke, select-correct,"+
-			" select-clipboard)", name)
+			" select-clipboard, combo-word-layout)", name)
 	}
 
 	return fn, nil

@@ -10,8 +10,9 @@ import "time"
 // Phase 3.
 const DefaultWindow = 300 * time.Millisecond
 
-// KeyvalShiftR is the IBus keyval of the right Shift key
-// (/usr/include/ibus-1.0/ibuskeysyms.h — verified verbatim).
+// KeyvalShiftR is the IBus keyval of the right Shift key — the documented
+// default tap key of NewFSM (/usr/include/ibus-1.0/ibuskeysyms.h — verified
+// verbatim).
 const KeyvalShiftR = 0xffe2
 
 // MaxTaps caps a series: a fourth tap inside the window stays at three so
@@ -84,10 +85,11 @@ func (f *FSM) Feed(ev Event, now time.Duration) []Action {
 	return nil
 }
 
-// keyPress arms a Shift_R hold or, for any other key, either marks modifier
-// use (while held) or silently cancels a pending series.
+// keyPress arms a hold of the configured tap key or, for any other key,
+// either marks modifier use (while held) or silently cancels a pending
+// series.
 func (f *FSM) keyPress(e KeyPress) {
-	if e.Keyval == KeyvalShiftR {
+	if e.Keyval == f.tapKeyval {
 		f.held = true
 		f.sawKey = false
 
@@ -101,10 +103,10 @@ func (f *FSM) keyPress(e KeyPress) {
 	f.taps = 0
 }
 
-// keyRelease routes Shift_R releases through the tap logic; any other
+// keyRelease routes tap-key releases through the tap logic; any other
 // release between taps silently cancels a pending series.
 func (f *FSM) keyRelease(e KeyRelease, now time.Duration) {
-	if e.Keyval == KeyvalShiftR {
+	if e.Keyval == f.tapKeyval {
 		f.releaseShift(now)
 
 		return

@@ -348,15 +348,18 @@ func TestFSM_ConfigurableTapKey(t *testing.T) {
 
 	t.Run("corpus keyval keeps its semantics", func(t *testing.T) {
 		t.Parallel()
-		f := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
-		tapKey(f, hotkey.KeyvalShiftR, 0)
-		acts := f.Feed(hotkey.TimerExpired{}, hotkey.DefaultWindow)
+		one := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
+		tapKey(one, hotkey.KeyvalShiftR, 0)
+		acts := one.Feed(hotkey.TimerExpired{}, hotkey.DefaultWindow)
 		if !actionsEqual(acts, []hotkey.Action{hotkey.Single}) {
 			t.Errorf("TimerExpired after one Shift_R tap = %v, want [Single]", acts)
 		}
-		tapKey(f, hotkey.KeyvalShiftR, gapJustInside)
-		tapKey(f, hotkey.KeyvalShiftR, 2*gapJustInside)
-		acts = f.Feed(hotkey.TimerExpired{}, 2*gapJustInside+hotkey.DefaultWindow)
+
+		tri := hotkey.NewFSM(hotkey.DefaultWindow, hotkey.KeyvalShiftR)
+		tapKey(tri, hotkey.KeyvalShiftR, 0)
+		tapKey(tri, hotkey.KeyvalShiftR, gapJustInside)
+		tapKey(tri, hotkey.KeyvalShiftR, 2*gapJustInside)
+		acts = tri.Feed(hotkey.TimerExpired{}, 2*gapJustInside+hotkey.DefaultWindow)
 		if !actionsEqual(acts, []hotkey.Action{hotkey.Triple}) {
 			t.Errorf("TimerExpired after three Shift_R taps = %v, want [Triple]", acts)
 		}

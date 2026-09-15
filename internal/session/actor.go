@@ -73,22 +73,23 @@ const (
 // mutex is the actor's single entry point: without it the FSM state would
 // race between concurrent ProcessKeyEvent calls.
 type Actor struct {
-	mu          sync.Mutex
-	fsm         *hotkey.FSM
-	window      time.Duration
-	start       time.Time
-	timer       *time.Timer
-	buf         *correct.Buffer
-	caps        uint32
-	eng         engine.Emitter
-	surr        []rune // cached text-before-cursor from the latest client push
-	sel         selectionState
-	pending     *pendingFix
-	after       *pendingAfter
-	verifyEpoch uint64               // monotonic verify-after round tag (stale-timer guard)
-	mode        scriptMode           // output-script state, EN at start (ADR-001 Option B)
-	opts        Options              // correction tuning (D-27 cap, D-28 rung switch)
-	clip        *clipboard.Clipboard // the rung's wl-clipboard client
+	mu           sync.Mutex
+	fsm          *hotkey.FSM
+	window       time.Duration
+	start        time.Time
+	timer        *time.Timer
+	buf          *correct.Buffer
+	caps         uint32
+	eng          engine.Emitter
+	surr         []rune // cached text-before-cursor from the latest client push
+	sel          selectionState
+	pending      *pendingFix
+	after        *pendingAfter
+	verifyEpoch  uint64               // monotonic verify-after round tag (stale-timer guard)
+	mode         scriptMode           // output-script state, EN at start (ADR-001 Option B)
+	opts         Options              // correction tuning (D-27 cap, D-28 rung switch, D-36 combo)
+	clip         *clipboard.Clipboard // the rung's wl-clipboard client
+	comboPending bool                 // a word-layout combo awaits its word pipeline's settlement (D-36)
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -100,6 +101,17 @@ type Options struct {
 	BackspaceCap    int
 	ClipboardRung   bool
 	WordLayoutCombo hotkey.Binding
+}
+
+// defaultComboBinding is the built-in word-layout combo (D-36/SPEC §4.1
+// "Shift+RightCtrl"): wire-equal to hotkey.ParseBinding("shift+ctrl_r") —
+// the config default of 03-02 — under that package's ModMask semantics
+// (the full modifier state of the bound key's event: the held Shift OR the
+// Control_R press's own family bit). A literal, not a ParseBinding call,
+// so the built-in path needs no error handling; the equivalence is pinned
+// by the combo corpus against both spellings of the same gesture.
+func defaultComboBinding() hotkey.Binding {
+	return hotkey.Binding{Keyval: hotkey.KeyvalCtrlR, ModMask: hotkey.MaskShift | hotkey.MaskControl}
 }
 
 // selectionState is the selection half of the latest surrounding-text push
@@ -256,6 +268,10 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		a.sel = selectionState{}
 		a.resolvePending()
 		a.clearAfter()
+		// A combo retired by the context's death never settles its word
+		// half — the flip is dropped with it (cleared WITHOUT settleCombo:
+		// the gesture belonged to the input context that just left).
+		a.comboPending = false
 		if a.timer != nil {
 			a.timer.Stop()
 			a.timer = nil
@@ -287,6 +303,7 @@ func (a *Actor) HandleSurroundingText(text string, cursorPos, anchorPos uint32) 
 		if !a.pendingVerdict() {
 			a.resolvePending()
 			slog.Info("correction skipped", "reason", "verify-mismatch")
+			a.settleCombo() // the word half settled by refusal — the D-36 flip still fires
 
 			return
 		}
@@ -374,6 +391,31 @@ func (a *Actor) VerifyExpiry() {
 	a.resolvePending()
 	a.clearAfter()
 	slog.Info("correction skipped", "reason", "verify-timeout")
+	a.settleCombo() // the round closed by timeout — the combo's flip still fires
+}
+
+// effectiveCombo resolves the combo binding in force: the configured
+// binding, or the built-in default when none was fed (the zero Binding of
+// the no-config path). The caller holds the mutex.
+func (a *Actor) effectiveCombo() hotkey.Binding {
+	if a.opts.WordLayoutCombo.Keyval != 0 {
+		return a.opts.WordLayoutCombo
+	}
+
+	return defaultComboBinding()
+}
+
+// settleCombo fires the combo's layout flip: the word half of the gesture
+// has SETTLED — its completion or refusal record is already in the log —
+// so the D-36 order (correct the word FIRST, switch the layout SECOND)
+// holds on every pipeline outcome. The caller holds the mutex and must
+// call this only AFTER the settled record.
+func (a *Actor) settleCombo() {
+	if !a.comboPending {
+		return
+	}
+	a.comboPending = false
+	a.flipScript()
 }
 
 // pendingVerdict checks the pending fix's range against the fresh push: the
@@ -552,9 +594,35 @@ func (a *Actor) flipScript() {
 // feedKey decides one press: whether the engine consumes the key and which
 // rune the buffer takes — the script-true invariant made branch-local (a
 // rune that reaches the field also reaches the buffer, whatever delivered
-// it). The CORR-09 reset keyvals (Enter and its keypad variant, Tab,
-// Escape) end the phrase instead of feeding it. The caller holds the mutex.
+// it). The word-layout combo (D-36) is recognized FIRST, above every mode
+// branch: a press of the bound combo key under its bound HELD modifiers —
+// the press's state word carries only the modifiers held before the key
+// (live finding 2026-09-15: a Control_R press under Shift arrives with
+// Shift|NumLock, its own Control bit rides only on the release), so the
+// match compares Binding.ModMask with the key's own family bit cleared —
+// latch-tolerant through &, the NumLock precedent of 02-04 — kills the tap
+// series with a deliberate Reset (Pitfall 4: left to the FSM the Control_R
+// press would silently die as modifier use) and launches the word pipeline
+// of the Double semantics with the flip deferred to its settlement
+// (comboPending/settleCombo). The combo press itself transits: a bare
+// modifier chord puts no rune in the field, and the transit keeps the
+// client's press/release pairing intact. The CORR-09 reset keyvals (Enter
+// and its keypad variant, Tab, Escape) end the phrase instead of feeding
+// it. The caller holds the mutex.
 func (a *Actor) feedKey(ev engine.EngineEvent) bool {
+	if c := a.effectiveCombo(); ev.Keyval == c.Keyval {
+		// The HELD subset of the binding: a press never carries the key's
+		// own family bit, so it is cleared from the required mask.
+		if held := c.ModMask &^ hotkey.FamilyMask(c.Keyval); ev.Mods&held == held {
+			a.fsm.Feed(hotkey.Reset{}, a.elapsed())
+			slog.Info("combo", "kind", "word-layout")
+			a.comboPending = true
+			a.startCorrection()
+
+			return false
+		}
+	}
+
 	switch {
 	case ev.Keyval == engine.KeyBackSpace:
 		a.buf.Backspace()
@@ -654,6 +722,7 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 	converted, changed, ok := correct.ConvertRuns(runes)
 	if !ok {
 		slog.Info("correction skipped", "reason", refusalReason(runes))
+		a.settleCombo()
 
 		return
 	}
@@ -662,11 +731,13 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 		// a SUCCESSFUL operation without changes; nothing to replace,
 		// nothing to verify.
 		slog.Info("correction", "outcome", "done")
+		a.settleCombo()
 
 		return
 	}
 	if a.eng == nil {
 		slog.Info("correction skipped", "reason", "no-engine")
+		a.settleCombo()
 
 		return
 	}
@@ -722,12 +793,14 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	armed := time.Now()
 	if len(rng.token) == 0 {
 		slog.Info("correction skipped", "reason", "empty-buffer")
+		a.settleCombo() // no word — the flip is the combo's primary intent
 
 		return
 	}
 	converted, changed, ok := correct.ConvertRuns(rng.token)
 	if !ok {
 		slog.Info("correction skipped", "reason", refusalReason(rng.token))
+		a.settleCombo()
 
 		return
 	}
@@ -736,11 +809,13 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 		// a SUCCESSFUL operation without changes (the owner's choice over a
 		// refusal and over a WARN); nothing to replace, nothing to verify.
 		slog.Info("correction", "outcome", "done")
+		a.settleCombo()
 
 		return
 	}
 	if a.eng == nil {
 		slog.Info("correction skipped", "reason", "no-engine")
+		a.settleCombo()
 
 		return
 	}
@@ -795,6 +870,7 @@ func (a *Actor) executeCorrection() {
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
 	logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
+	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerify(p.converted, p.rng.tail)
 }
 
@@ -817,6 +893,7 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 	a.eng.CommitText(engine.NewIBusText(string(p.converted)))
 	a.buf.HardReset() // the buffer can no longer mirror the replaced field
 	logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
+	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerifyRange(p.converted, sel.start)
 }
 
@@ -832,6 +909,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		// D-27: the Backspace series would exceed the cap and this client
 		// has no DeleteSurroundingText — refuse silently, not one deletion.
 		slog.Info("correction skipped", "reason", "backspace-cap")
+		a.settleCombo()
 
 		return
 	}
@@ -841,6 +919,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
 	logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
+	a.settleCombo()
 }
 
 // logCorrectionDone writes the completion pair of one ladder execution: the

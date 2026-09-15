@@ -93,6 +93,28 @@ func keyFamilyMasks() map[string]uint32 {
 	}
 }
 
+// FamilyMask returns the modifier bit a press of the given keyval adds to
+// the IBus state word — the bit that shows up on the key's RELEASE, never
+// on its press (live finding 2026-09-15: a Control_R press under a held
+// Shift arrives with mods Shift|NumLock; the Control bit appears only on
+// the release). Binding.ModMask includes the key's own family bit (the
+// 03-02 wire-truth rule), so a PRESS-side binding match must compare
+// against the HELD subset — ModMask with this bit cleared.
+func FamilyMask(keyval uint32) uint32 {
+	switch keyval {
+	case KeyvalShiftL, KeyvalShiftR:
+		return MaskShift
+	case KeyvalCtrlL, KeyvalCtrlR:
+		return MaskControl
+	case KeyvalAltL, KeyvalAltR:
+		return MaskMod1
+	case KeyvalSuperL, KeyvalSuperR:
+		return MaskMod4
+	default:
+		return 0
+	}
+}
+
 // ParseBinding resolves a binding name against the closed name tables:
 // "+"-joined tokens with the KEY as the last token, the rest modifiers.
 // ModMask is the full modifier state of the bound key's event — the held

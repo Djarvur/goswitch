@@ -105,3 +105,7 @@ run = "go run ./test/e2e -case select-correct"
 [tasks.e2e-select-clipboard]
 description = "e2e: 03-03 clipboard rung — daemon -config spawn with clipboard_rung on + live wl-copy/wl-paste round-trip through the daemon's client (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case select-clipboard"
+
+[tasks.e2e-combo]
+description = "e2e: 03-04 combo word-layout — Shift+RightCtrl corrects ghbdtn→привет then flips the mode, order pinned from -debug log (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case combo-word-layout"

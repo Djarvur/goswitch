@@ -158,3 +158,35 @@ func TestParseBinding_KeyvalProvenance(t *testing.T) {
 		})
 	}
 }
+
+// TestFamilyMask pins the press-side wire truth (live finding 2026-09-15,
+// plan 03-04): a key press's state word carries only the modifiers held
+// BEFORE the key — the key's own family bit appears on its release. Every
+// bindable key maps to its family bit, everything else to none.
+func TestFamilyMask(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		keyval uint32
+		want   uint32
+	}{
+		{name: "Shift_L", keyval: hotkey.KeyvalShiftL, want: hotkey.MaskShift},
+		{name: "right shift", keyval: hotkey.KeyvalShiftR, want: hotkey.MaskShift},
+		{name: "Ctrl_L", keyval: hotkey.KeyvalCtrlL, want: hotkey.MaskControl},
+		{name: "Ctrl_R", keyval: hotkey.KeyvalCtrlR, want: hotkey.MaskControl},
+		{name: "Alt_L", keyval: hotkey.KeyvalAltL, want: hotkey.MaskMod1},
+		{name: "Alt_R", keyval: hotkey.KeyvalAltR, want: hotkey.MaskMod1},
+		{name: "Super_L", keyval: hotkey.KeyvalSuperL, want: hotkey.MaskMod4},
+		{name: "Super_R", keyval: hotkey.KeyvalSuperR, want: hotkey.MaskMod4},
+		{name: "letter", keyval: 0x061, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := hotkey.FamilyMask(tc.keyval); got != tc.want {
+				t.Errorf("FamilyMask(%#x) = %#x, want %#x", tc.keyval, got, tc.want)
+			}
+		})
+	}
+}

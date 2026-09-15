@@ -33,6 +33,12 @@ const (
 	KeyShiftL   = 0xffe1
 	KeyShiftR   = 0xffe2
 	KeyControlL = 0xffe3
+	// KeyControlR is the right Ctrl key — the default combo key of the
+	// word-layout gesture (SWCH-02/D-36; ibuskeysyms.h:191
+	// "#define IBUS_KEY_Control_R 0xffe4", verified verbatim — never from
+	// memory, the 02-05 class trap). The resolved binding itself lives in
+	// the pure hotkey package as KeyvalCtrlR.
+	KeyControlR = 0xffe4
 	KeySpace    = 0x020
 	// KeyV is the Latin-1 'v' — the paste half of the clipboard rung's
 	// Ctrl+V forward burst (plan 03-03, D-28).

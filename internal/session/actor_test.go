@@ -1333,25 +1333,28 @@ func TestActor_PhraseMixedCorrects(t *testing.T) {
 }
 
 // Combo corpus (plan 03-04, SWCH-02/D-36): a press of the configured combo
-// key under its configured modifiers — the default Control_R under
-// Shift+Control (the 03-02 wire-truth ModMask: the full state word of the
-// bound key's event) — corrects the last word through the double-tap
-// pipeline and THEN flips the script mode, in that fixed order (D-36: the
-// SPEC action name is "correct the word AND switch the layout"). The combo
-// kills the tap series with a deliberate Reset (Pitfall 4: the pre-combo
-// FSM silently swallowed the gesture as modifier use) and never feeds the
-// buffer.
+// key under its configured HELD modifiers — the default Control_R under a
+// held Shift, matched against Binding.ModMask with the key's own family
+// bit cleared (the live wire truth: a press's state word carries only the
+// modifiers held before the key) — corrects the last word through the
+// double-tap pipeline and THEN flips the script mode, in that fixed order
+// (D-36: the SPEC action name is "correct the word AND switch the
+// layout"). The combo kills the tap series with a deliberate Reset
+// (Pitfall 4: the pre-combo FSM silently swallowed the gesture as modifier
+// use) and never feeds the buffer.
 
 // pressComboDefault feeds the default combo shape: Shift held (press only,
-// never released), then a Control_R press carrying Shift+Control in the
-// state word plus the NumLock latch — the latch-tolerant mask compare of
-// the 02-04 precedent.
+// never released), then a Control_R press whose state word carries the HELD
+// Shift plus the NumLock latch — the live wire truth (2026-09-15: a press
+// carries only the modifiers held before the key; the key's own Control bit
+// appears on its release) under the latch-tolerant mask compare of the
+// 02-04 precedent.
 func pressComboDefault(a *session.Actor) {
 	const numLockLatch = 0x10 // IBUS_MOD2_MASK: latched NumLock (live-observed)
 	a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalShiftR})
 	a.HandleKey(engine.EngineEvent{
 		Keyval: hotkey.KeyvalCtrlR,
-		Mods:   engine.MaskShift | engine.MaskControl | numLockLatch,
+		Mods:   engine.MaskShift | numLockLatch,
 	})
 }
 
@@ -1402,7 +1405,7 @@ func TestActor_ComboWordThenFlip(t *testing.T) {
 		t.Fatalf("completion (%d) or mode (%d) record missing; log:\n%s", iDone, iMode, logged)
 	}
 	if iDone > iMode {
-		t.Errorf("mode flip preceded the settled word correction (done@%d > mode@%d) — D-36 order violated", iDone, iMode)
+		t.Errorf("mode flip preceded the settled word correction (done@%d > mode@%d) — D-36 order", iDone, iMode)
 	}
 }
 
@@ -1456,7 +1459,7 @@ func TestActor_ComboConfigurableBinding(t *testing.T) {
 		a.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalAltL}) // Alt held
 		a.HandleKey(engine.EngineEvent{
 			Keyval: hotkey.KeyvalCtrlL,
-			Mods:   engine.MaskMod1 | engine.MaskControl,
+			Mods:   engine.MaskMod1, // held Alt only — the press never carries Ctrl_L's own bit
 		})
 
 		if !strings.Contains(buf.String(), `"msg":"combo","kind":"word-layout"`) {
