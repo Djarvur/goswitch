@@ -510,7 +510,7 @@ func (a *Actor) executeCorrection() {
 	if p.deadline != nil {
 		p.deadline.Stop()
 	}
-	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps)
+	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, correct.DefaultBackspaceCap)
 	a.eng.DeleteSurroundingText(plan.Offset, plan.NChars)
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
@@ -525,7 +525,7 @@ func (a *Actor) executeCorrection() {
 // The burst→commit order is the wire contract (research A4: the daemon
 // preserves it for every client). The caller holds the mutex.
 func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time) {
-	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps)
+	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps, correct.DefaultBackspaceCap)
 	for range plan.Backspaces {
 		a.eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
 	}

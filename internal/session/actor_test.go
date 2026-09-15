@@ -395,29 +395,13 @@ func TestActor_VerifyPaths(t *testing.T) {
 }
 
 // TestActor_TokenRefusals pins the pipeline-entry refusals of the D-20
-// vocabulary: a mixed-script token (D-16) and a letterless token each skip
-// with the exact INFO reason and never even start the verification round.
-// (The 02-03 "no surrounding capability" refusal pin is superseded by
-// TestActor_Level2NoCaps: a no-caps client is no longer refused — ladder
-// level 2 executes.)
+// vocabulary: a letterless token skips with the exact INFO reason and never
+// even starts the verification round. (The mixed-script subtest is
+// superseded by the D-16→D-23 succession — TestActor_MixedWordConverts-
+// ForeignRuns converts the foreign runs; the 02-03 "no surrounding
+// capability" refusal pin is superseded by TestActor_Level2NoCaps: a
+// no-caps client is no longer refused — ladder level 2 executes.)
 func TestActor_TokenRefusals(t *testing.T) {
-	t.Run("mixed script", func(t *testing.T) {
-		buf := captureLogs(t)
-		a, sink := wiredActor()
-
-		typeWord(a, "gfb"+wordRU) // letters of both scripts: D-16 silent refusal
-		tapShift(a)
-		tapShift(a)
-		a.ExpiryAt(expiryAfterWindow)
-
-		if !strings.Contains(buf.String(), `"reason":"mixed-script"`) {
-			t.Errorf("mixed-script record missing; log:\n%s", buf.String())
-		}
-		if got := sink.requireCount(); got != 0 {
-			t.Errorf("mixed token started verification %d times, want 0", got)
-		}
-	})
-
 	t.Run("no letters", func(t *testing.T) {
 		buf := captureLogs(t)
 		a, sink := wiredActor()
@@ -1245,13 +1229,15 @@ func TestActor_ScriptTrueBuffer(t *testing.T) {
 	}
 }
 
-// TestActor_MixedWordUntouched pins the D-16 live path on the sink: a mixed
-// word assembled the way the desktop produces it — "gfb" typed in EN
-// (transit), then the flip, then the rest typed in RU (committed Cyrillic
-// runes) — is refused by the direction detector, and the refusal is TOTAL:
-// the exact INFO reason and zero destructive calls (no deletion, no commit,
-// not even a verification round).
-func TestActor_MixedWordUntouched(t *testing.T) {
+// TestActor_MixedWordConvertsForeignRuns pins the D-16→D-23 succession
+// (plan 03-01 task 2): a mixed word assembled the way the desktop produces
+// it — "gfb" typed in EN (transit), then the flip, then the rest typed in
+// RU (committed Cyrillic runes) — is no longer refused wholesale; the
+// run-wise conversion converts ONLY the foreign Latin run: the whole token
+// range is deleted (-9,9) and "паипривет" is committed, the Cyrillic run
+// re-committed unchanged. The Phase 2 refusal pin (TestActor_MixedWord-
+// Untouched, D-16) is superseded by this contract.
+func TestActor_MixedWordConvertsForeignRuns(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
 
@@ -1269,17 +1255,68 @@ func TestActor_MixedWordUntouched(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	if !strings.Contains(buf.String(), `"reason":"mixed-script"`) {
-		t.Errorf("mixed-script record missing; log:\n%s", buf.String())
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("mixed word started verification %d times, want 1 — the run conversion runs the pipeline", got)
 	}
-	if got := sink.requireCount(); got != 0 {
-		t.Errorf("mixed word started verification %d times, want 0", got)
+	if strings.Contains(buf.String(), `"reason":"mixed-script"`) {
+		t.Errorf("mixed-script refusal fired — the D-16→D-23 succession removed it; log:\n%s", buf.String())
 	}
-	if calls := sink.deleteCalls(); len(calls) != 0 {
-		t.Errorf("mixed word deleted %+v — D-16: не трогать", calls)
+
+	// The verification sees the whole mixed token — exactly what the ladder
+	// deletes — and the settle commits the run-converted replacement.
+	field := "gfb" + wordRU
+	a.HandleSurroundingText(field, runeLen(field))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -9, nchars: 9}) {
+		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole mixed token range", calls)
 	}
-	if texts := sink.commitTexts(); len(texts) != 6 {
-		t.Errorf("mixed word got %d extra commits beyond the typed runes — D-16: не трогать", len(texts)-6)
+	texts := sink.commitTexts()
+	if len(texts) != 7 || texts[6] != "паи"+wordRU {
+		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, "паи"+wordRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_PhraseMixedCorrects pins D-26 on the sink: a phrase with words
+// in different layouts — "ghbdtn" typed in EN, the flip, " привет"
+// committed in RU — corrects through the SAME run semantics as the mixed
+// word (anchor = last letter of the phrase, foreign runs converted, own
+// runs untouched); there is no separate phrase-level script semantics. The
+// triple tap deletes the whole phrase (-13,13) and commits "привет привет".
+func TestActor_PhraseMixedCorrects(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN) // EN word: transit, buffer fed as typed
+	pressSpace(a)       // the phrase separator
+	flipMode(a)         // EN → RU
+	typeWord(a, wordEN) // RU word: commits "привет", buffer script-true
+
+	tapShift(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("mixed phrase started verification %d times, want 1", got)
+	}
+
+	field := wordEN + " " + wordRU
+	a.HandleSurroundingText(field, runeLen(field))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -13, nchars: 13}) {
+		t.Fatalf("deletions = %+v, want exactly one (-13,13) — the whole mixed phrase range", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 7 || texts[6] != wordRU+" "+wordRU {
+		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, wordRU+" "+wordRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
 	}
 }
 
