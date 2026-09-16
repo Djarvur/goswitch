@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/install/ -race -count=1 -v (transcribed to node-test TAP)",
+  "exitCode": 1,
+  "targetTest": "TestInstall_Sequence",
+  "failingTest": "TestInstall_Sequence",
+  "expected": "8 recorded subprocess calls in the D-39/D-40 order (get sources, write-cache+env, list-engine, daemon-reload, enable --now, ibus restart, set sources, ibus engine) and the three $HOME artifacts written",
+  "actual": "0 subprocess calls recorded and no artifacts written - the stub Install returns (nil, nil); all 9 corpus tests fail on assertions",
+  "output": "not ok 1 - TestInstall_Sequence\nnot ok 2 - TestInstall_EveryWriteCacheCarriesEnv\nnot ok 3 - TestInstall_ComponentXMLMirrorsWireIdentity\nnot ok 4 - TestInstall_UnitAbsoluteExecStart\nnot ok 5 - TestInstall_DaemonBinaryMissing\nnot ok 6 - TestInstall_StateFileOutsideConfigDir\nnot ok 7 - TestInstall_SecondInstallKeepsOriginalBackup\nnot ok 8 - TestUninstall_FullRollback\nnot ok 9 - TestUninstall_CorruptStateFallsBack\nnot ok 10 - TestUninstall_CorruptStateFallsBack/garbage_value\nnot ok 11 - TestUninstall_CorruptStateFallsBack/unparsable\n# tests 11\n# pass 0\n# fail 11"
+}
