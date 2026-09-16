@@ -1,8 +1,8 @@
 ---
 phase: 03-frazy-vydelenie-pereklyuchenie-i-konfiguratsiya
-verified: 2026-09-15T15:55:41Z
+verified: 2026-09-16T19:19:27Z
 status: passed
-score: 19/20 must-haves verified
+score: 20/20 must-haves verified
 covered_files:
 
   - .planning/phases/03-frazy-vydelenie-pereklyuchenie-i-konfiguratsiya/03-01-PLAN.md
@@ -74,229 +74,238 @@ covered_files:
   - test/e2e/preflight.go
   - test/e2e/README.md
 
-covered_digest: "v1:sha256:7f4491ae20dbe9c66f4bebc1e61323a43873536d6e109c9326746765fb486783"
-behavior_unverified: 1
+covered_digest: "v1:sha256:653571db7ff881699d5946f8d830e45c1442741527a5cc7dcddbd3829bc460de"
+behavior_unverified: 0
 overrides_applied: 0
-behavior_unverified_items:
-
-  - truth: "SC-5a: e2e-матрица v2 зелёная во всей широте на верифицируемом HEAD"
-    test: "Run `mise run e2e-matrix-v2` on the live desktop at HEAD 44a4c65 (and optionally dispatch the e2e-matrix workflow on green106 at HEAD)"
-    expected: "21/21 PASS, exit 0, teardown restores desktop state — re-establishing the acceptance evidence over the 8 review-fix commits (7152cd3..d94a3ce) that postdate the recorded green runs"
-    why_human: "The recorded green matrix evidence (live 21/21 and CI run 34984814995) is at headSha 21df37c; HEAD adds 737 lines of behavioral Go/YAML changes on paths every matrix case exercises (WR-05 verify-after debounce, WR-03 preflight UID auth, CR-01 tap-key wiring, CR-02 verifyWait). No post-fix matrix run exists (gh run list shows none; the stray ./e2e binary predates even 21df37c). Live e2e drives the owner's desktop and is not re-run by the verifier (Phase 1/2 precedent). The headless corpus is green at HEAD, so this is an evidence-currency gap, not a defect signal."
-human_verification:
-
-  - test: "Re-run the acceptance matrix at HEAD: `mise run e2e-matrix-v2` (live desktop); optionally dispatch e2e-matrix on green106 at 44a4c65"
-    expected: "21/21 PASS with exit 0 and a restored desktop — closes the evidence-currency gap left by the review-fix commits (see behavior_unverified_items)"
-    why_human: "Live e2e drives the owner's GNOME session; verifier policy re-fetches machine evidence but never drives the desktop. The only green matrix runs (live + CI 34984814995) are at 21df37c, 8 behavioral fix commits before HEAD."
-  - test: "Owner decision — WINDOWS ledger #2 (open): confirm the D-24 corpus reading. The plan's literal nothing-to-convert example (привет → out==input) was resolved toward the must-haves (homogeneous ranges convert wholesale per уточнение D-22; the changed=false surface is implemented and reserved for externally anchored ranges)"
-    expected: "Owner accepts the уточнение D-22 resolution (matrix v1 word-ru-en keeps привет→ghbdtn wholesale) and marks ledger #2 resolved — or requests the strict-anchor reading, which would re-open the golden corpus"
-    why_human: "Planned semantics resolution routed to the verify gate by the plan's FLAGGED assumption; the automated oracle passes either way — this is an owner-intent confirmation, not a code check."
-  - test: "Owner decision — WINDOWS ledger #4 (open, unmet-truth): GTK4-Wayland (GNOME 46) does not apply IBus-forwarded key events. The daemon side is wire-proven (dbus-monitor captures engine burst + ibus-daemon relay to the focused InputContext) but GTK4 widgets never act — affecting the MACR Ctrl+letter end-effect, a live ADR-003 level-2 witness, and the D-28 Ctrl+V rung driver"
-    expected: "Owner either accepts this as a documented GNOME platform limitation (wire relay = the provable boundary) or schedules investigation on other surfaces; then flips the REQUIREMENTS.md MACR-01 checkbox/traceability to match the decision (currently inconsistent: implementation verified, checkbox still Pending)"
-    why_human: "Platform truth verified live by the executor; no automated oracle can decide 'document vs investigate'. The requirement's end-user-visible effect on GTK4 surfaces is unprovable on this desktop."
-  - test: "Owner eyeball — the corrected zenity selection verdict (03-07 coverage D5): a silently-surviving ctrl+a selection on zenity makes CommitText REPLACE the selected residue (field settles at the converted word alone); this reverses the 03-03 spike table's transparency verdict, which was probe-contaminated"
-    expected: "Owner acknowledges the corrected actual (matrix row select-all-zenity pins it: expect_text \"ghbdtn\", expect_sel_step degraded)"
-    why_human: "A live-truth reversal between two phase documents; the automated oracle pins the new behavior, but the reversal itself is exactly what the verify gate exists to surface."
+re_verification:
+  previous_status: human_needed
+  previous_score: 19/20
+  previous_verified: 2026-09-15T15:55:41Z
+  reason: "fingerprint refresh after Phase 4 execution (commits 357a647..42d10a1) reworked shared covered files — install package, selfcheck/version identity (D-37), perf harness, matrix v3 (D-47), double-run gate (D-48)"
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
+  resolved_human_items:
+    - "Human item 1 (matrix v2 re-run at HEAD) — CLOSED: owner-authorized live run 2026-09-15T21:41+03:00, 21/21 PASS at HEAD 54ea460 (03-UAT.md item 1); superseded by the stronger Phase-4 D-48 double-run gate — CI run 35108412175 (re-fetched: success) at 9f2fd75 with BOTH matrix-v3 runs 31/31, and v3 is a strict superset of v2 (all 21 v2 case names verified present)"
+    - "Human item 2 (WINDOWS ledger #2, D-24 corpus reading) — CLOSED: owner accepted 2026-09-15, homogeneous-wholesale resolution confirmed, ledger #2 resolved (03-UAT.md item 2)"
+    - "Human item 3 (WINDOWS ledger #4, GTK4-Wayland forwarded events) — CLOSED: owner accepted 2026-09-15 as a documented GNOME platform limitation; REQUIREMENTS.md MACR-01 flipped Complete with the caveat, footer refreshed (03-UAT.md item 3; commit 9069287)"
+    - "Human item 4 (zenity selection verdict reversal, 03-07 D5) — CLOSED: owner acknowledged 2026-09-15; corrected actual pinned by select-all-zenity and re-proven live in the 21/21 run at 54ea460 (03-UAT.md item 4)"
 ---
 
 # Phase 3: Фразы, выделение, переключение и конфигурация — Verification Report
 
 **Phase Goal (ROADMAP.md):** «Полный словарь жестов — тройной тап исправляет фразу, двойной при выделении исправляет выделенное, смешанный текст корректируется по ADR-семантике; одиночный Right Shift переключает раскладку механизмом по ADR; все хоткеи и таймауты настраиваются YAML-конфигом с hot reload и управляются через `goswitchctl` — всё подтверждает зелёная e2e-матрица v2 полной широты.»
-**Verified:** 2026-09-15T15:55:41Z
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-16T19:19:27Z
+**Status:** passed
+**Re-verification:** Yes — stale-fingerprint refresh on the Phase-4 tree (HEAD 42d10a1, branch gsd/phase-04-postavka-i-priemka)
+
+## Re-verification Scope and Method
+
+The phase passed verification at close (2026-09-15T15:55:41Z, status
+human_needed with all 4 human items) and the codebase then advanced through
+Phase 4 (поставка и приёмка: install/uninstall lifecycle, selfcheck + D-37
+version identity, goreleaser pipeline, perf harness, matrix v3, double-run
+gate, docs/release). This pass re-checked every must-have against the
+CURRENT tree; live-desktop re-runs were NOT needed — recorded evidence plus
+current-tree static/automated checks.
+
+**What Phase 4 actually changed in phase-3-owned files** (diff
+30ca7ae..HEAD): purely additive D-37 version identity — `Actor.SetVersion`,
+`Status.Version`, a leading `version=` token in `renderStatus`, a
+`-version` flag on goswitchd — plus test/e2e harness growth (matrix v3,
+watchdog, fresh-session preflight, perf case) and the new
+`internal/install` package. No correction/selection/switching/config
+pipeline line was reworked. All pinned contracts survive (details per truth
+below).
+
+**The one previously behavior-unverified truth is closed by recorded
+evidence:** (a) the owner-authorized live matrix v2 re-run — 21/21 PASS at
+HEAD 54ea460, post-review-fixes (03-UAT.md item 1); (b) superseded upward by
+Phase 4's D-48 double-run gate — CI run 35108412175 (re-fetched by this
+verifier: conclusion success, workflow_dispatch, headSha 9f2fd75,
+2026-09-16T14:25Z) with BOTH matrix-v3 runs 31/31, and matrix-v3.yaml is a
+strict superset of v2 (all 21 v2 case names verified present, 10 new
+gedit/x11 rows). After 9f2fd75, HEAD differs only by docs and a
+goswitchctl status-line parser test corpus — zero production code.
 
 ## Verification Approach Note (MVP mode discrepancy)
 
 ROADMAP.md declares `**Mode:** mvp` for Phase 3, but the goal is a Russian
 capability statement, not a canonical User Story — `gsd_run query
-user-story.validate` → `valid: false`. Per `verify-mvp-mode.md` the MVP
-user-flow framing fires only when BOTH `mode: mvp` AND a user-story goal are
-present; a non-story goal is surfaced as a discrepancy. Same resolution as
-Phase 1/2 verifications: standard goal-backward verification against the 5
-Success Criteria + the 7 plans' must_haves, with a User Flow Coverage table
-below as evidence framing. **Discrepancy surfaced for the owner:** run
-`/gsd mvp-phase 3` if a User-Story goal is wanted; no action required
-otherwise.
+user-story.validate` → `valid: false` (checked at initial verification).
+Per `verify-mvp-mode.md` the MVP user-flow framing fires only when BOTH
+`mode: mvp` AND a user-story goal are present; standard goal-backward
+verification against the 5 Success Criteria + the 7 plans' must_haves
+applies. Unchanged from the initial pass; `/gsd mvp-phase 3` remains
+available to the owner if a User-Story goal is wanted.
 
 ## Stale-criteria note (D-34/D-35, per 03-CONTEXT)
 
-Two SC-3 phrasings are recorded as STALE against accepted ADR-001/ADR-002:
-«святой порядок: свитч на первый тап» (ADR-002 decides all actions at window
-expiry) and «родное Super+Space и MRU продолжают работать, индикатор GNOME
-актуален» (ADR-001 «один хозяин»: the indicator shows one source and does not
-reflect the internal mode). Per D-34 the verifier did NOT require their
-literal fulfillment; the working interpretation (native Super mechanism not
-broken by goswitch's presence; mode-record oracle, never gsettings) was
-verified instead. This is owner-preauthorized (D-34, BIND), not an override.
+Unchanged: two SC-3 phrasings are recorded STALE against accepted
+ADR-001/ADR-002 («святой порядок: свитч на первый тап»; «индикатор GNOME
+актуален»), verified via the working interpretation (native Super mechanism
+not broken; mode-record oracle). Owner-preauthorized (D-34, BIND), not an
+override.
 
 ## Live-gate evidence policy
 
-Live e2e (all `mise run e2e-*` tasks) drives the owner's desktop and was NOT
-re-run by the verifier (Phase 1/2 precedent). Machine evidence was
-independently re-fetched: `gh run view 34984814995` → `conclusion: success`,
-`event: workflow_dispatch`, `headBranch: gsd/phase-03-frazy-...` (the phase
-branch), workflow `e2e-matrix`. Headless gates WERE re-run at HEAD: full
-`go test ./... -race -count=1` (12/12 packages ok) and `mise run ci`
-(build + vet + golangci-lint strict + race; 0 lint issues).
-
-**Evidence-currency finding (the one material gap):** the green matrix runs
-(live 21/21 at 17:54 local, CI 34984814995 at headSha 21df37c) PREDATE the 8
-review-fix commits (7152cd3..d94a3ce, 18:26–18:45 local) — 737
-insertions/153 deletions of Go/YAML changes on paths every matrix case
-exercises: `internal/session/actor.go` (278 lines: CR-01 tap-key wiring,
-CR-02 verifyWait, WR-01 rung off-mutex, WR-05 verify-after debounce),
-`internal/clipboard/clipboard.go` (CR-03), `internal/config/config.go` (WR-02),
-`internal/hotkey/fsm.go` (SetTapKey), `test/e2e/matrix.go` (WR-03 UID auth —
-used by every case's preflight), `matrix-v2.yaml` (verify_wait_ms 250 reload).
-No post-fix matrix or CI dispatch exists (`gh run list` shows 2 runs total).
-The headless corpus at HEAD — including the new RED→GREEN pins for every fix
-(TestActor_HotReloadTapKey, TestActor_HotReloadVerifyWait,
-TestClipboard_KilledNotEmpty/DeadlineKillNotEmpty,
-TestActor_ClipboardRungOffKeyPath, TestActor_VerifyAfterLevel1 debounced,
-TestFSM_SetTapKey) — is green, so this is an evidence-currency gap routed to
-human re-run, not a defect signal. Phase 2's verifier explicitly checked the
-same property and found only docs drift; here code drifted.
+Live e2e drives the owner's desktop and is not re-run by the verifier
+(Phase 1/2/3 precedent). Machine evidence re-fetched THIS pass: `gh run
+view 35108412175` → conclusion success, event workflow_dispatch, headSha
+9f2fd75, workflow e2e-matrix (the D-48 double-run gate; run log per commit
+4946e28: both v3 runs 31/31). Headless gates re-run at HEAD 42d10a1: `go
+build ./...` OK; full `go test ./... -race -count=1` → 14/14 packages ok
+(includes the new internal/install package); `go vet ./...` clean;
+`golangci-lint run` → 0 issues.
 
 ## User Flow Coverage
 
 User capability (goal, non-story form): «полный словарь жестов коррекции и
-переключения, настраиваемый YAML-ом и управляемый goswitchctl».
+переключения, настраиваемый YAML-ом и управляемый goswitchctl». All rows
+re-checked on the current tree.
 
 | Step | Expected | Evidence | Status |
 |------|----------|----------|--------|
-| Type a wrong-layout phrase, triple-tap Right Shift | whole phrase converts `ghbdtn ghbdtn`→`привет привет` (registers, 70-rune phrase, RU→EN) | matrix-v2.yaml 8 phrase rows; actor.go Triple→startPhraseCorrection; TestActor_TripleTapCorrectsPhrase (re-run green) | ✓ |
-| Select wrong text, double-tap | exactly the selection converts, both geometries, 3 surfaces | matrix-v2.yaml 5 select rows (zenity degraded pin, GTE LTR+partial+reverse, chromium RTL); TestActor_DoubleTapSelectionCorrects/SelectionLeftToRight | ✓ |
-| Type mixed-script text, tap | only foreign runs convert (`gfbпривет`→`паипривет`) | TestConvertRuns_GoldenCorpus verbatim (D-22/D-23); word-mixed/phrase-mixed rows | ✓ |
-| Single Right Shift | internal mode flips EN↔RU both ways (mode-record oracle) | layout-single row; TestActor_FlipOnSingle; zero gsettings in actor.go (grep) | ✓ |
-| Shift+RightCtrl combo | word corrected FIRST, then mode flips | TestActor_ComboWordThenFlip (sink order + log order); combo-word-layout row | ✓ |
-| Edit the YAML config | applied without restart; typo → last-good + visible error | reload-window / reload-invalid-last-good / ctl-status-reload rows; watcher corpus + TestActor_HotReload* | ✓ |
-| goswitchctl status / reload / correct | live answers, --json, exit≠0 contract, D-32 error visibility | ctl-smoke case; ctlsvc corpus incl. over-the-wire name-guard on a private dbus-daemon | ✓ |
-| Super+letter in configured apps | intercepted → Ctrl+letter forwarded (wire-proven) | TestActor_MACR* corpus; macr-super-letter row (relay oracle; GTK4 client boundary → Human item 3) | ✓ |
-| Outcome: green matrix v2 proves the lot | 21/21 PASS live + CI | green at 21df37c (re-fetched); NOT re-run at HEAD after review fixes | ⚠ human |
+| Type a wrong-layout phrase, triple-tap Right Shift | whole phrase converts `ghbdtn ghbdtn`→`привет привет` (registers, 70-rune phrase, RU→EN) | matrix-v2.yaml 8 phrase rows (all present in v3); actor.go:578/:1383 Triple→startPhraseCorrection; TestActor_TripleTapCorrectsPhrase in the green -race corpus | ✓ |
+| Select wrong text, double-tap | exactly the selection converts, both geometries, 3 surfaces | matrix-v2.yaml 5 select rows; verify.go:24/:41 SelectionRange/VerifyRangeAt; TestActor_DoubleTapSelectionCorrects/SelectionLeftToRight green | ✓ |
+| Type mixed-script text, tap | only foreign runs convert (`gfbпривет`→`паипривет`) | TestConvertRuns_GoldenCorpus verbatim (D-22/D-23), green; word-mixed/phrase-mixed rows | ✓ |
+| Single Right Shift | internal mode flips EN↔RU both ways (mode-record oracle) | layout-single row; TestActor_FlipOnSingle green; zero gsettings in internal/session (the 28 new gsettings hits are ALL internal/install — Phase-4 lifecycle code outside the switch path) | ✓ |
+| Shift+RightCtrl combo | word corrected FIRST, then mode flips | TestActor_ComboWordThenFlip; settleCombo at terminals actor.go:601/:723/:1342/:1352 | ✓ |
+| Edit the YAML config | applied without restart; typo → last-good + visible error | reload-window / reload-invalid-last-good / ctl-status-reload rows; watcher pins + TestActor_HotReload* green | ✓ |
+| goswitchctl status / reload / correct | live answers, --json, exit≠0 contract, D-32 error visibility | ctl-smoke case; ctlsvc corpus incl. over-the-wire name-guard; status line now LEADS with version= (D-37, additive) — counts-and-states-only invariant re-affirmed in code | ✓ |
+| Super+letter in configured apps | intercepted → Ctrl+letter forwarded (wire-proven) | TestActor_MACR* corpus; macr-super-letter row (relay oracle; GTK4 client boundary = documented platform limitation, WINDOWS #4 closed by owner) | ✓ |
+| Outcome: green matrix proves the lot | green runs recorded | 21/21 v2 live at 54ea460 (UAT) + 31/31 v3 twice in CI 35108412175 (re-fetched success); v3 ⊇ v2 | ✓ |
 
 ## Goal Achievement
 
 ### Observable Truths
 
 Consolidated from the 5 ROADMAP Success Criteria (primary contract) merged
-with the 7 plans' must_haves (≈45 plan-level truths deduplicate into these).
+with the 7 plans' must_haves. All 20 re-verified on the current tree; line
+numbers refreshed to HEAD 42d10a1.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | SC-1: Triple Right Shift corrects the whole phrase since the last hard reset (CORR-02, D-25) — live `ghbdtn ghbdtn`→`привет привет` | ✓ VERIFIED | actor.go:561 Triple→startPhraseCorrection over Phrase()/ReplacePhrase (buffer.go:117-134); TestActor_TripleTapCorrectsPhrase/EmptyBuffer/PhraseVerifyMismatch green under -race (re-run at HEAD); 8 live phrase rows green at acceptance commit |
-| 2 | SC-1: Double Right Shift under an active selection corrects exactly the selected range, both geometric directions (CORR-03, D-30, Pitfall 6) | ✓ VERIFIED | SelectionRange/VerifyRangeAt (verify.go:24-52); selection branch actor.go:1295+; TestActor_DoubleTapSelectionCorrects/SelectionLeftToRight/SelectionMixedConverts green; 5 select rows live at acceptance |
-| 3 | Clipboard round-trip rung opt-in (default OFF), order after verify-mismatch, best-effort restore, stdin-only content (D-28/D-29, ADR-003 rung C) | ✓ VERIFIED | clipboard.go (cmd.Stdin-only, pinned flags, CR-03 kill-vs-empty fix :86); TestActor_ClipboardRungDisabledByDefault/AfterMismatch/OffKeyPath + TestClipboard_KilledNotEmpty/DeadlineKillNotEmpty green; no live rung driver exists on this desktop (documented exclusion, WINDOWS #4 family) |
-| 4 | SC-2: mixed text converts by runs — anchor = last letter, foreign runs independently, own runs untouched, digits neutral (CORR-06, D-22/D-23) | ✓ VERIFIED | runs.go ConvertRuns (144 LOC, run scanner); TestConvertRuns_GoldenCorpus verbatim from CONTEXT specifics — re-run green |
-| 5 | Уточнение D-22: homogeneous wholesale (Phase-2 behavior intact); D-24 changed=false = success-without-changes; D-16→D-23 succession (`gfbпривет`→`паипривет`) | ✓ VERIFIED | runs.go:44-91 (wholesale branch) + actor.go:1330/:1409 D-24 branches (outcome done, no WARN, zero sink calls); matrix-v1 word-mixed row expects паипривет; v1 16/16 at acceptance — owner confirmation of the corpus reading → Human item 2 |
-| 6 | Backspace cap D-27: default 50, level 2 not built over cap, zero deletions on refusal (reason backspace-cap) | ✓ VERIFIED | plan.go DefaultBackspaceCap=50, LevelNone; actor.go:1514 skipCorrection("backspace-cap"); TestBuildPlan_BackspaceCap green |
-| 7 | SC-3: single Right Shift flips internal mode EN↔RU behind `layoutset`; oracle = mode log record, never gsettings (SWCH-01, D-34/ADR-001) | ✓ VERIFIED | flipScript actor.go:1167; TestActor_FlipOnSingle green; grep gsettings internal/ → 0 hits; layout-single live both directions at acceptance |
-| 8 | SC-3/SWCH-04: tap-timing conflict resolved per ADR-002; window + tap key configurable; FSM corpus (11+ tests) semantically untouched (D-35); post-review: tap_key and verify_wait_ms actually consumed (CR-01/CR-02) | ✓ VERIFIED | NewFSM(window, tapKeyval) + SetTapKey (fsm.go:66-89); actor tapKeyval/tapKeyName/verifyWait fields fed by applySnapshot (:653-661); TestFSM_ConfigurableTapKey/SetTapKey + TestActor_HotReloadTapKey/VerifyWait green — the review found these knobs dead and the fixes are wired and pinned |
-| 9 | SC-3/SWCH-02: combo Shift+RightCtrl corrects the word THEN flips (D-36 order), binding renavigable, series Reset, buffer not fed (Pitfall 4) | ✓ VERIFIED | combo branch above mode branches (actor.go:1215-1225, FamilyMask held-subset predicate); settleCombo at every pipeline terminal (:599-609, :585, :707); TestActor_ComboWordThenFlip/EmptyBufferStillFlips/ConfigurableBinding/DoesNotFeedBuffer + TestFSM_ModifierUse green |
-| 10 | SC-3/SWCH-03 (working interpretation, D-34 pre-authorized): native Super mechanism not broken — daemon keeps its IBus name and corrects after the shell chord | ✓ VERIFIED | super-space-alive row (live PASS ×4 at acceptance; Super+Space itself is not ydotool-injectable — documented); literal MRU/indicator wording STALE per D-34, not required |
+| 1 | SC-1: Triple Right Shift corrects the whole phrase since the last hard reset (CORR-02, D-25) — live `ghbdtn ghbdtn`→`привет привет` | ✓ VERIFIED | actor.go:578/:1383-1387 Triple→startPhraseCorrection over Phrase()/ReplacePhrase (buffer.go:117/:126); TestActor_TripleTapCorrectsPhrase/EmptyBuffer/PhraseVerifyMismatch green under -race (re-run this pass); 8 phrase rows in matrix-v2, carried into v3 |
+| 2 | SC-1: Double Right Shift under an active selection corrects exactly the selected range, both geometric directions (CORR-03, D-30, Pitfall 6) | ✓ VERIFIED | SelectionRange/VerifyRangeAt (verify.go:24/:41); selection branch + selectionState in actor.go; TestActor_DoubleTapSelectionCorrects/SelectionLeftToRight/SelectionMixedConverts green; 5 select rows live green in both the 21/21 (54ea460) and 31/31 (35108412175) runs |
+| 3 | Clipboard round-trip rung opt-in (default OFF), order after verify-mismatch, best-effort restore, stdin-only content (D-28/D-29, ADR-003 rung C) | ✓ VERIFIED | clipboard.go:154 cmd.Stdin-only content path, CR-03 kill-vs-empty fix intact; TestActor_ClipboardRungDisabledByDefault/AfterMismatch/OffKeyPath + TestClipboard_KilledNotEmpty/DeadlineKillNotEmpty green; no live rung driver on this desktop (documented exclusion; WINDOWS #4 family closed) |
+| 4 | SC-2: mixed text converts by runs — anchor = last letter, foreign runs independently, own runs untouched, digits neutral (CORR-06, D-22/D-23) | ✓ VERIFIED | runs.go:63 ConvertRuns (run scanner unchanged); TestConvertRuns_GoldenCorpus verbatim from CONTEXT specifics — green this pass |
+| 5 | Уточнение D-22: homogeneous wholesale (Phase-2 behavior intact); D-24 changed=false = success-without-changes; D-16→D-23 succession (`gfbпривет`→`паипривет`) | ✓ VERIFIED | wholesale branch in runs.go; D-24 `!changed` branches intact at actor.go:1346/:1425 (shifted by additive D-37 lines); matrix-v1 word-mixed row expects паипривет; owner confirmed the corpus reading (WINDOWS #2 resolved, 03-UAT item 2) |
+| 6 | Backspace cap D-27: default 50, level 2 not built over cap, zero deletions on refusal (reason backspace-cap) | ✓ VERIFIED | plan.go:30 DefaultBackspaceCap=50, LevelNone; actor.go:1530 skipCorrection("backspace-cap"); TestBuildPlan_BackspaceCap green |
+| 7 | SC-3: single Right Shift flips internal mode EN↔RU behind `layoutset`; oracle = mode log record, never gsettings (SWCH-01, D-34/ADR-001) | ✓ VERIFIED | flipScript actor.go:1190; TestActor_FlipOnSingle green; grep gsettings internal/session/ → 0 hits. The 28 gsettings references introduced since the initial pass are ALL in internal/install (Phase-4 install/uninstall lifecycle — reads/restores org.gnome.desktop.input-sources at install time), outside the daemon's switch path; contract intact |
+| 8 | SC-3/SWCH-04: tap-timing conflict resolved per ADR-002; window + tap key configurable; FSM corpus semantically untouched (D-35); tap_key and verify_wait_ms actually consumed (CR-01/CR-02) | ✓ VERIFIED | NewFSM(window, tapKeyval) + SetTapKey (fsm.go:66/:85); applySnapshot feeds a.verifyWait (:669-675) and a.tapKeyval (:684); TestFSM_ConfigurableTapKey/SetTapKey + TestActor_HotReloadTapKey/VerifyWait green |
+| 9 | SC-3/SWCH-02: combo Shift+RightCtrl corrects the word THEN flips (D-36 order), binding renavigable, series Reset, buffer not fed (Pitfall 4) | ✓ VERIFIED | combo branch above mode branches; settleCombo at every pipeline terminal (actor.go:601/:620/:723/:1342/:1352); TestActor_ComboWordThenFlip/EmptyBufferStillFlips/ConfigurableBinding/DoesNotFeedBuffer + TestFSM_ModifierUse green |
+| 10 | SC-3/SWCH-03 (working interpretation, D-34 pre-authorized): native Super mechanism not broken — daemon keeps its IBus name and corrects after the shell chord | ✓ VERIFIED | super-space-alive row live PASS ×4 at acceptance, carried in v2→v3; literal MRU/indicator wording STALE per D-34, not required; gsettings scoping as truth 7 |
 | 11 | SC-4/CONF-01: all hotkeys/timeouts/params in YAML (hotkeys/timeouts/correction/macr); strict KnownFields decode, named-field errors, range ceilings (D-31/D-33) | ✓ VERIFIED | load.go:28 KnownFields(true); config.go per-section Validate; TestLoad_UnknownKeyRejected + TestValidate_* green; docs/CONFIG.md complete reference |
-| 12 | SC-4/CONF-02: hot reload without restart — dir-watch + debounce, last-good + WARN, one snapshot per event, stale-timer no-re-arm (D-32, Pitfall 8) | ✓ VERIFIED | watch.go (atomic.Pointer, dir-watch :127, "config reload rejected" :237, Reload() shared core); AttachConfig + applySnapshot; TestWatch_* + TestActor_HotReloadWindowNewSeries/OptionsAndCombo/InvalidKeepsLastGood green |
-| 13 | SC-4/CONF-03: Caramba correspondence table in docs, no name cloning, model-difference caveat (D-31) | ✓ VERIFIED | docs/CONFIG.md:105-121 — table maps all keys to Caramba purposes with the first-tap vs window-expiry caveat |
-| 14 | SC-4/INST-02: goswitchctl status(--json)/reload/correct against a live daemon; primary-owner name guard; recover shim per method; status carries mode/counters/config only (D-32 visible) | ✓ VERIFIED | ctlsvc.go (ErrNotPrimaryOwner :40, guard :193-200, recoverMethod on all 3 methods); cmd/goswitchctl stdlib-only; TestSvc_Status/ReloadConfig(×3)/CorrectNow/NameGuard (over a real private dbus-daemon)/RecoverShim + ctl-smoke live ×4 at acceptance |
-| 15 | SC-5/MACR-01: implemented per ADR-005 — interception above combo/mode branches (RU pin), burst on Super release, consumed-upstream WARN + counters, per-app a11y observer with degradation ladder + lazy start, alt_modifier default-off (b.3) | ✓ VERIFIED | actor.go MACR branch (:955-1008, macrPendingKeyval); appid.go (FocusedApp, ErrBusClosed, StateChanged match); TestActor_MACRIntercepts/ConsumedUpstream/RULayoutStillIntercepts/AltModifier/DisabledByDefault/PerAppMatch/AppidDegradation/GlobalWhenNoApps/AppidLazyStart green; live: probe verdicts + wire-relay oracle + per-app ×3 — client-side effect on GTK4 stops at the boundary → Human item 3 |
-| 16 | SC-5: e2e-matrix v2 green in full breadth (21 cases: 8 phrase incl. registers + 70-rune A3 pin, 5 selection rows across 3 surfaces both geometries, mixed, combo, single, super-space, 3 reload rows, MACR; clipboard row excluded with the documented spike-verdict comment) — **at the verified HEAD** | ⚠ PRESENT_BEHAVIOR_UNVERIFIED | matrix-v2.yaml (21 cases verified on disk); green live 21/21 AND CI 34984814995 (success, re-fetched) — both at 21df37c; the 8 review-fix commits (737 lines on exercised paths) postdate every green run; headless corpus green at HEAD. One re-run closes it → Human item 1 |
-| 17 | anchorPos seam carries the anchor to the actor on every surface; per-surface actuals spike-pinned (Pitfall 1; A1/A2/A5) | ✓ VERIFIED | engine.go:89/:190-195 signature + wire call + DEBUG trace; all implementors updated; spike table in 03-03-SUMMARY; zenity verdict corrected live in 03-07 (→ Human item 4) |
-| 18 | D-30 continuity: no selection → the Phase-2 word path unchanged; Phase-2 corpus green without expectation edits | ✓ VERIFIED | TestActor_NoSelectionStillWord (green by design through both RED rounds); v1 matrix 16/16 at acceptance with only the planned word-mixed succession edit |
-| 19 | Key/binding provenance: closed name tables from ibuskeysyms.h; KeyV=0x076, KeyControlR=0xffe4, KeySuperL/R; ParseBinding + FamilyMask press-side rule | ✓ VERIFIED | names.go:103-146; keys.go:36-51 provenance comments; TestParseBinding/TestParseBinding_KeyvalProvenance/TestFamilyMask green |
-| 20 | CI circuit: workflow defaults to matrix-v2.yaml (v1 path preserved); first green green106 v2 run recorded; mise task registry complete (17 e2e tasks) | ✓ VERIFIED | e2e-matrix.yml:29/:69-76 (post-WR-04 env form); gh run 34984814995 re-fetched (success, phase branch, 2026-09-15T14:54Z); mise.toml e2e-* tasks verified |
+| 12 | SC-4/CONF-02: hot reload without restart — dir-watch + debounce, last-good + WARN, one snapshot per event, stale-timer no-re-arm (D-32, Pitfall 8) | ✓ VERIFIED | watch.go:89-90 atomic.Pointer, Reload() :167, "config reload rejected" :237; AttachConfig + applySnapshot; TestWatch_* + TestActor_HotReloadWindowNewSeries/OptionsAndCombo/InvalidKeepsLastGood green |
+| 13 | SC-4/CONF-03: Caramba correspondence table in docs, no name cloning, model-difference caveat (D-31) | ✓ VERIFIED | docs/CONFIG.md:105-121 — table maps all keys to Caramba purposes with the first-tap vs window-expiry caveat; unchanged by Phase 4 |
+| 14 | SC-4/INST-02: goswitchctl status(--json)/reload/correct against a live daemon; primary-owner name guard; recover shim per method; status carries machine state only, never user text (D-32 visible) | ✓ VERIFIED | ctlsvc.go:37-40 ErrNotPrimaryOwner, :91/:102/:120 recoverMethod on all 3 methods, :166 recover shim; TestSvc_Status/ReloadConfig(×3)/CorrectNow/NameGuard (over a real private dbus-daemon)/RecoverShim green; ctl-smoke live ×4 at acceptance. Phase-4 D-37 ADDS a leading `version=` token to renderStatus — additive, comment re-affirms «Counts and states only — never user text (T-03-06-03)»; D-32 invariant intact. The initial pass's narrower wording ("mode/counters/config only") is superseded by the later roadmap decision D-37, not broken |
+| 15 | SC-5/MACR-01: implemented per ADR-005 — interception above combo/mode branches (RU pin), burst on Super release, consumed-upstream WARN + counters, per-app a11y observer with degradation ladder + lazy start, alt_modifier default-off (b.3) | ✓ VERIFIED | actor.go:123-124/:999 macrPendingKeyval/macrIntercepted; appid.go:41/:163 ErrBusClosed/FocusedApp; TestActor_MACR* corpus green; live: probe verdicts + wire-relay oracle + per-app ×3; GTK4 client boundary = documented platform limitation (WINDOWS #4 closed by owner; REQUIREMENTS.md MACR-01 flipped Complete with caveat) |
+| 16 | SC-5: e2e-matrix green in full breadth (21 v2 cases: 8 phrase incl. registers + 70-rune A3 pin, 5 selection rows across 3 surfaces both geometries, mixed, combo, single, super-space, 3 reload rows, MACR; clipboard row excluded with the documented spike-verdict comment) — **at the verified HEAD** | ✓ VERIFIED (closed this pass) | Previously ⚠ (green runs predated the review-fix commits). Now: (a) 03-UAT.md item 1 — owner-authorized live `mise run e2e-matrix-v2` 21/21 PASS at HEAD 54ea460 (post 7152cd3..d94a3ce fixes); (b) D-48 double-run gate — CI 35108412175 re-fetched success at 9f2fd75, BOTH matrix-v3 runs 31/31; v3 verified a strict superset (comm -23 of case names empty); production code identical 9f2fd75→HEAD (only docs + goswitchctl parser test corpus after). matrix-v2.yaml still 21 cases on disk |
+| 17 | anchorPos seam carries the anchor to the actor on every surface; per-surface actuals spike-pinned (Pitfall 1; A1/A2/A5) | ✓ VERIFIED | engine.go:87-89/:190-195 signature + wire call + DEBUG trace; implementors unchanged; zenity verdict corrected + owner-acknowledged (03-UAT item 4); select-all-zenity row green in both matrix runs |
+| 18 | D-30 continuity: no selection → the Phase-2 word path unchanged; Phase-2 corpus green without expectation edits | ✓ VERIFIED | TestActor_NoSelectionStillWord present and green in this pass's -race run; v1 matrix 16/16 at acceptance; v1 path still routed in the workflow |
+| 19 | Key/binding provenance: closed name tables from ibuskeysyms.h; KeyV=0x076, KeyControlR=0xffe4, KeySuperL/R; ParseBinding + FamilyMask press-side rule | ✓ VERIFIED | names.go; engine/keys.go:36-51 with ibuskeysyms.h provenance comments; TestParseBinding/TestParseBinding_KeyvalProvenance/TestFamilyMask green |
+| 20 | CI circuit: workflow routes the full-breadth matrix by input (v1 AND v2 paths preserved); first green run recorded; mise task registry complete | ✓ VERIFIED (wording superseded) | Initial wording was "defaults to matrix-v2.yaml". Phase-4 D-48 legitimately moved the default input to matrix-v3.yaml (e2e-matrix.yml:44) while PRESERVING the v1 and v2 routes (:133-138, :149-152); mise now carries 32 e2e-* task lines. Substance — CI circuit wired to the full-breadth matrix with a recorded green run — holds and is stronger: green v3 31/31 ×2 at 35108412175 (re-fetched) on top of the green v2 21/21 at 54ea460 |
 
-**Score:** 19/20 truths verified (1 present, behavior-unverified at HEAD)
+**Score:** 20/20 truths verified (0 present-but-behavior-unverified)
 
 Behavior-dependent truths note: every state-transition/invariant truth in
 this phase (phrase/selection pipelines, verify-after debounce, hot-reload
 window arming, combo settlement fan-out, MACR release-time burst, clipboard
 kill-vs-empty, name guard over the wire) is covered by a named behavioral
-test **re-run green under -race at HEAD by the verifier**; the live-desktop
-dimension is covered by the green matrix runs at the acceptance commit —
-whose currency at HEAD is the single ⚠ item.
+test re-run green under -race at the current HEAD by this verifier; the
+live-desktop dimension is covered by the green v2 21/21 run at 54ea460
+(UAT) AND the green v3 31/31 double-run at 9f2fd75 (CI 35108412175,
+re-fetched) — both postdating every review fix.
 
 ### Decision Coverage
 
-`gsd_run query check.decision-coverage-verify` (03-CONTEXT.md): **15/15
-decisions honored** by shipped artifacts, none missing (non-blocking gate).
+`gsd_run query check.decision-coverage-verify` (03-CONTEXT.md), re-run this
+pass: **15/15 decisions honored** by shipped artifacts, none missing
+(non-blocking gate).
+
+### Advisory (New Scope, Unevidenced)
+
+Re-verification ran; the Step 7 scan over files modified since the previous
+verification (actor.go, ctlsvc.go, both cmd mains, matrix.go, main.go,
+preflight.go, e2e-matrix.yml, mise.toml, go.mod/go.sum) found zero debt
+markers, zero stubs, zero empty implementations. Two informational notes,
+neither evidence-bearing against phase-3 must-haves:
+
+| # | Finding | Category | Why Advisory |
+|---|---------|----------|--------------|
+| 1 | golangci-lint v2.13+ warns `exhaustruct` is deprecated (replaced by `exhaustruct_v5`); .golangci.yml still names the old linter | other (tooling config) | New since the initial pass (newer linter release); zero lint issues either way; config belongs to the repo-wide quality gate, not a phase-3 truth. Resolve in a housekeeping pass |
+| 2 | internal/install now shells out to gsettings (28 refs) — the initial pass's "zero gsettings in internal/" grep no longer holds verbatim | other (scope note) | By design: Phase-4 D-39 install lifecycle reads/restores input sources at INSTALL time; the switch path (internal/session) still has zero gsettings, so truths 7/10's contract is intact. Recorded so future greps scope correctly |
 
 ### Required Artifacts
 
-`gsd_run query verify.artifacts` per plan: **all 7 plans report valid**.
-Substantiveness cross-checked by the verifier directly (all key files exist,
-6218 LOC over the 20 core artifacts; zero stub markers; all symbols wired as
-specified in artifacts_produced sections).
+`gsd_run query verify.artifacts` per plan at initial verification: all 7
+plans valid. This pass: all 67 covered files exist on the current tree
+(existence check before fingerprinting); the phase-4 diff touched only
+additive surfaces of them (see Re-verification Scope). Substantiveness
+re-confirmed by grep of every pinned symbol (per-truth evidence above);
+zero stub markers.
 
 ### Key Link Verification
 
-`gsd_run query verify.key-links` per plan: 5/7 plans fully verified by the
-tool; plan 06 reported 2 failures and plan 07 one — **all three are
-tool-shape false negatives, manually disproven**:
+Initial pass: 5/7 plans fully verified by the tool; the 3 tool-shape false
+negatives manually disproven (ctlsvc→session direction, goswitchctl bus
+name constants, matrix.yaml↔matrix.go strict schema). Re-checked this pass
+on the current tree:
 
-- Plan 06 `internal/ctlsvc → internal/session` ("EISDIR"): ctlsvc.go:50
-  `StatusSnapshot() session.Status`, :119 CorrectNow — the prescribed
-  direction (session never imports ctlsvc).
-- Plan 06 `cmd/goswitchctl → internal/ctlsvc` ("EISDIR"): main.go:26-27
-  `org.djarvur.goswitch` / `/org/djarvur/goswitch` bus name+path constants.
-- Plan 07 `matrix-v2.yaml → matrix.go` (pattern miss): the link is the
-  strict schema — matrix.go:143-145 defines matrixKindSelect/Combo/Reload,
-  :243-245 the yaml fields, :398-400 the closed vocabularies; matrix-v2.yaml
-  uses exactly those kinds (verified per-row).
-
-All other links verified by the tool, including actor→ConvertRuns (the D-23
-single-code-path pin: grep shows zero `Detect(` in actor.go), actor→engine
-emitters, main→AttachConfig, main→ctlsvc.Run, workflow→matrix-v2.yaml.
+- ctlsvc.go still returns `session.Status` (:124 area) — direction intact.
+- cmd/goswitchctl bus name/path constants intact (selfcheck and version
+  additions did not touch them).
+- matrix.go kind vocabulary (:154-158 matrixKindType..Select) still parses
+  matrix-v2.yaml (21 cases decode; TestMatrix corpus green) and now also
+  matrix-v3.yaml (31 cases; new select/combo/reload rows use the same
+  closed vocabularies).
+- All other links unchanged: actor→ConvertRuns (zero `Detect(` in
+  actor.go), actor→engine emitters, main→AttachConfig, main→ctlsvc.Run.
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| internal/session/actor.go | correction ranges | buf.Phrase()/activeRange + selectionState from live SetSurroundingText pushes | ✓ live pushes (select rows correct through both geometries) | ✓ FLOWING |
-| internal/session/actor.go | config snapshot | Watcher.Snapshot() over atomic.Pointer (fsnotify dir events / ctl Reload) | ✓ reload rows change window/verify_wait live at acceptance | ✓ FLOWING |
-| internal/session/actor.go | MACR counters | macrIntercepted/macrConsumed increments on live key events | ✓ super-intercept records gated in macr row | ✓ FLOWING |
-| internal/ctlsvc/ctlsvc.go | status line | renderStatus ← StatusSnapshot counters + watcher LastError/ConfigPath | ✓ corrections_done=1 observed in ctl-smoke after forced correct | ✓ FLOWING |
-| test/e2e/matrix.go | report | per-case runMatrixCaseIsolated results over real daemon+surfaces | ✓ 21 PASS lines in the CI run log (21df37c) | ✓ FLOWING (at acceptance commit; HEAD re-run → Human item 1) |
+| internal/session/actor.go | correction ranges | buf.Phrase()/activeRange + selectionState from live SetSurroundingText pushes | ✓ select rows green in both recorded matrix runs | ✓ FLOWING |
+| internal/session/actor.go | config snapshot | Watcher.Snapshot() over atomic.Pointer (fsnotify dir events / ctl Reload) | ✓ reload rows change window/verify_wait live in recorded runs | ✓ FLOWING |
+| internal/session/actor.go | MACR counters | macrIntercepted/macrConsumed increments on live key events | ✓ super-intercept gated in macr row, carried in v3 | ✓ FLOWING |
+| internal/session/actor.go | version (NEW, D-37) | daemon build identity pinned via SetVersion at construction | ✓ additive; unit-pinned in the new corpus | ✓ FLOWING |
+| internal/ctlsvc/ctlsvc.go | status line | renderStatus ← StatusSnapshot (now leading with version=) + watcher LastError/ConfigPath | ✓ corrections_done observed live in ctl-smoke at acceptance | ✓ FLOWING |
+| test/e2e/matrix.go | report | per-case runMatrixCaseIsolated results over real daemon+surfaces | ✓ 21 PASS lines (54ea460) + 31/31 ×2 (CI 35108412175) | ✓ FLOWING |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Full headless corpus | `mise exec -- go test ./... -race -count=1` | 12/12 packages ok (engine, appid, clipboard, config, correct, ctlsvc, hotkey, logging, session, layouts, test/e2e) | ✓ PASS |
-| Full CI gate | `mise run ci` | exit 0, lint 0 issues, all tests ok | ✓ PASS |
-| Key behavioral tests exist | `go test ./internal/session/ -list '.*'` + correct package | 30+ named pins enumerated incl. all review-fix tests (HotReloadTapKey/VerifyWait, ClipboardRungOffKeyPath) | ✓ PASS |
-| CI matrix run (live) | `gh run view 34984814995` (re-fetched) | conclusion success, workflow_dispatch, phase branch, workflow e2e-matrix | ✓ PASS (at 21df37c) |
-| Post-review-fix matrix run | `gh run list --workflow e2e-matrix` | only 2 runs total — none at HEAD | ✗ FAIL (evidence-currency → Human item 1) |
-| Commits exist | `git cat-file -t` × 31 hashes from SUMMARYs | all present | ✓ PASS |
-| Matrix v2 breadth | case names in matrix-v2.yaml | 21 cases; select/combo/reload kinds present; clipboard exclusion documented | ✓ PASS |
-| Live e2e re-run | not re-run (drives owner's desktop) | CI artifact + live reports at acceptance commit cited instead | ? SKIP (by policy) |
+| Build | `go build ./...` | exit 0 | ✓ PASS |
+| Full headless corpus (single full-suite run) | `go test ./... -race -count=1` | 14/14 packages ok (incl. new internal/install) | ✓ PASS |
+| Vet | `go vet ./...` | clean | ✓ PASS |
+| Lint (strict) | `mise exec -- golangci-lint run` | 0 issues (upstream exhaustruct deprecation warning only) | ✓ PASS |
+| Named behavioral tests exist | `go test ./internal/... -list '.*'` (enumeration only) | all 15 sampled pins present: TripleTapCorrectsPhrase, DoubleTapSelectionCorrects, NoSelectionStillWord, ConvertRuns_GoldenCorpus, FlipOnSingle, ComboWordThenFlip, HotReloadTapKey/VerifyWait, ClipboardRungOffKeyPath, Clipboard_KilledNotEmpty, FSM_SetTapKey, MACRIntercepts, Load_UnknownKeyRejected, Svc_NameGuard, VerifyAfterLevel1 | ✓ PASS |
+| CI matrix run (recorded, re-fetched) | `gh run view 35108412175` | conclusion success, workflow_dispatch, headSha 9f2fd75 (D-48 double-run gate: both v3 runs 31/31) | ✓ PASS |
+| Live e2e re-run | not re-run (drives owner's desktop) | recorded UAT 21/21 at 54ea460 + CI 35108412175 cited | ? SKIP (by policy) |
+| Matrix v2 breadth preserved | case-name diff v2 vs v3 | v2 still 21 cases; v3 = strict superset (31; all 21 v2 names present) | ✓ PASS |
 
 ### Probe Execution
 
 Step 7c: no `scripts/*/tests/probe-*.sh` convention in this repo. The
-phase's runnable probes are the mise e2e tasks (live-session; covered by the
-CI-artifact policy above) and the CI gate (re-run, PASS). The matrix-v2 CI
-run IS the phase-declared probe target — executed and green at 21df37c.
+phase's runnable probes remain the mise e2e tasks (live-session; covered by
+the recorded-evidence policy above) and the CI gate (re-run this pass:
+build + vet + lint + full -race suite, all green). The matrix CI run is the
+phase-declared probe target — green at 9f2fd75 (35108412175) and, for v2
+specifically, at 54ea460 (UAT).
 
 ### Test Quality Audit
 
-| Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
-|-----------|-----------|--------|---------|----------|-----------------|---------|
-| internal/correct/*_test.go (7 files) | CORR-02/03/06 | all | 0 | 0 | value (rune-exact golden corpus) | OK |
-| internal/session/actor_test.go (~90 tests) | CORR-02/03, SWCH-01/02, CONF-02, MACR-01 | all | 0 | 0 | behavioral (op-log order, sink sequences, log shapes) | OK |
-| internal/config/*_test.go, internal/hotkey/*_test.go | CONF-01/02, SWCH-04 | all | 0 | 0 | value (decode errors, ranges, wire-truth masks) | OK |
-| internal/ctlsvc/ctlsvc_test.go | INST-02 | all | 1 env-guard | 0 | behavioral (over-the-wire on a private dbus-daemon) | OK |
-| internal/clipboard/clipboard_test.go | CORR-03 | all | 0 | 0 | value + real-kill shapes (CR-03 corpus forges real children) | OK |
-| internal/appid/appid_test.go | MACR-01 | all | 0 | 0 | behavioral (fake a11y feed) | OK |
-| test/e2e/matrix_test.go | SC-5 | all | 0 | 0 | value (strict decode, exit code) | OK |
-
-- Disabled tests on requirements: **0** (the single `t.Skipf` in
-  TestSvc_NameGuard fires only on machines with no dbus-daemon at all — it
-  executed in every gate here and on the CI runner; documented).
-- Circular patterns: **0** — expected values are hand-authored literals
-  (ghbdtn/привет/паипривет…); the golden corpus is independent of the system.
-- Assertion strength: matrix oracles are rune-exact; actor corpus pins exact
-  emitter sequences and counters. No existence-only assertions on
-  requirement-linked tests.
+Unchanged from the initial pass (Phase 4 added new test files — install,
+selfcheck, perf, watchdog, goswitchctl/main — which belong to Phase 4's
+verification): phase-3 requirement-linked corpora remain all-active,
+non-circular, value/behavioral-level. This pass re-confirmed: the single
+env-guard skip in TestSvc_NameGuard still executed (dbus-daemon present);
+expected values remain hand-authored literals (ghbdtn/привет/паипривет);
+matrix oracles rune-exact. Disabled tests on requirements: **0**. Circular
+patterns: **0**.
 
 ### Requirements Coverage
 
@@ -312,95 +321,77 @@ run IS the phase-declared probe target — executed and green at 21df37c.
 | CONF-01 | 03-02 | All keys/timeouts/params in YAML | ✓ SATISFIED | truth 11 |
 | CONF-02 | 03-02, 03-04, 03-07 | Hot reload without restart | ✓ SATISFIED | truth 12 |
 | CONF-03 | 03-02 | Caramba compatibility (wish) via docs table | ✓ SATISFIED | truth 13 |
-| MACR-01 | 03-05, 03-07 | Super+letter → Ctrl+letter per ADR-005 | ✓ SATISFIED (daemon side; client-boundary owner decision → Human item 3) | truth 15 |
+| MACR-01 | 03-05, 03-07 | Super+letter → Ctrl+letter per ADR-005 | ✓ SATISFIED (Complete with GTK4 caveat — owner decision, UAT item 3) | truth 15; REQUIREMENTS.md:45/:108 now aligned (flipped Complete with the platform caveat, footer refreshed) |
 | INST-02 | 03-06, 03-07 | goswitchctl status/reload/correct | ✓ SATISFIED | truth 14 |
 
 Orphaned requirements: **none** — REQUIREMENTS.md traceability maps exactly
 these 12 IDs to Phase 3; every plan requirement field resolves to them.
-
-Bookkeeping warning: REQUIREMENTS.md still shows **MACR-01 `[ ]`/Pending**
-while the mechanism is implemented, unit-pinned and matrix-covered — coherent
-with WINDOWS #4 being open, but inconsistent with the other 11 rows (all
-flipped Complete). Resolve together with Human item 3; the file's «Last
-updated» footer is also stale.
+The initial pass's bookkeeping warning (MACR-01 checkbox Pending) is
+RESOLVED: commit 9069287 flipped it Complete with the caveat.
 
 ### Anti-Patterns Found
 
-Debt-marker gate: **ZERO** TBD/FIXME/XXX and zero TODO/HACK/PLACEHOLDER
-across all phase Go/YAML/TOML/workflow/doc files (re-grepped).
+Debt-marker gate re-run on all phase-3 covered files modified since the
+previous verification: **ZERO** TBD/FIXME/XXX and zero TODO/HACK/PLACEHOLDER.
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| repo root `./e2e` | — | Stray untracked 5.9 MB Go ELF binary (mtime 17:37, predates the matrix commit) — a `go build ./test/e2e` artifact never cleaned | ℹ️ Info | Untracked, never committed — repo hygiene only; delete or gitignore |
-| .planning/REQUIREMENTS.md | 45, 108 | MACR-01 checkbox Pending vs implemented+verified reality (all other phase-3 rows flipped) | ⚠️ Warning (bookkeeping) | Resolves with Human item 3; footer «Last updated» stale |
-| internal/session/actor.go | 1536-1538 | logCorrectionDone writes source/result words at DEBUG (review IN-01, unfixed by scope decision) | ℹ️ Info | D-21-permitted debug channel, -debug flag warns; no INFO leak (verified: INFO records carry outcome only) |
-| engine/engine.go | 103-109 | Engine.caps write-only field (review IN-02, unfixed) | ℹ️ Info | Dead state; first future reader inherits a race — carried as review Info debt |
-| internal/hotkey/names.go | 123-146 | ParseBinding accepts degenerate bindings (review IN-04, unfixed) | ℹ️ Info | Harmless today (WR-02 closed the tap_key side); grammar lacks canonical-form check |
-| test/e2e/README.md | — | -case table stale vs registry (review IN-03, unfixed) | ℹ️ Info | Docs-only |
+| repo root `./e2e` | — | Stray untracked Go build artifact, still present locally (rebuilt 2026-09-16 by Phase-4 e2e activity) | ℹ️ Info | RESOLVED at repo-hygiene level: now gitignored (`.gitignore:38` `/e2e`) — cannot be committed |
+| .golangci.yml | — | `exhaustruct` linter name deprecated upstream since v2.13.0 (→ exhaustruct_v5) | ℹ️ Info | Tooling housekeeping; 0 lint issues today; not a phase-3 regression (see Advisory) |
+| internal/session/actor.go | logCorrectionDone | source/result words at DEBUG (review IN-01) | ℹ️ Info | Unchanged by Phase 4; D-21-permitted debug channel, -debug flag warns; INFO records content-free |
+| engine/engine.go | Engine.caps | write-only field (review IN-02) | ℹ️ Info | Unchanged (engine untouched by Phase 4); dead state carried as review Info debt |
+| internal/hotkey/names.go | ParseBinding | degenerate bindings accepted (review IN-04) | ℹ️ Info | Unchanged; harmless (WR-02 closed the tap_key side) |
+| test/e2e/README.md | — | -case table stale vs registry (review IN-03) | ℹ️ Info | Docs-only; unchanged by Phase 4 (which updated the perf table section) |
 
-The 8 in-scope review findings (CR-01..03, WR-01..05) are all FIXED with
-RED→GREEN evidence at commits 7152cd3..d94a3ce, each fix pinned by a named
-test re-run green at HEAD by this verifier. The 6 Info findings were
-explicitly out of the fix scope (REVIEW-FIX.md) and are carried above.
+The 8 in-scope review findings (CR-01..03, WR-01..05) remain FIXED with
+RED→GREEN pins, re-confirmed green in this pass's -race run.
 
-Prohibition audit (15 judgment-tier across the 7 plans; ADR-550 D4 —
-non-authoritative LLM-judge verdicts, `unverified-prohibition — human review
-recommended` for the live-only ones): programmatically upheld — no
-autocorrection without a gesture (startCorrection called only from FSM
-Double/Triple expiry, the combo branch, CorrectNow: actor.go:416/:558/:1221);
-INFO records content-free (skipCorrection/logCorrectionDone verified);
-KnownFields strict decode; last-good + WARN; clipboard content never in any
-log or argv (cmd.Stdin only); selection range exactness unit-pinned; save/
-restore byte-exact with --clear for empty; zero gsettings in internal/ (grep);
-TestFSM_ModifierUse green; consumed-upstream WARN with counters; status
-surface carries counts/states only. Live-only judgments (teardown restores
-the desktop; matrix never red from stand fault; session-bus same-uid
-isolation) rest on the green runs at 21df37c — human review recommended
-alongside Human item 1.
+Prohibition audit: the initial pass's 15 judgment-tier verdicts carry
+forward — all programmatically-upheld ones re-confirmed this pass (no
+autocorrection without a gesture — startCorrection still only from FSM
+Double/Triple expiry, combo branch, CorrectNow; INFO content-free;
+KnownFields strict; last-good + WARN; clipboard content stdin-only, never
+logged/argv; selection exactness pinned; zero gsettings in the switch path;
+TestFSM_ModifierUse green; consumed-upstream WARN + counters; status
+surface counts/states/version only). The formerly live-only judgments
+(teardown restores the desktop; matrix never red from stand fault;
+session-bus same-uid isolation) now rest on TWO green recorded runs
+(21/21 at 54ea460 per UAT, and 31/31 ×2 at 35108412175 with the D-48
+fresh-session preflight + double-run gate) — evidence materially stronger
+than at the initial pass.
 
 ### Human Verification Required
 
-1. **Re-run the acceptance matrix at HEAD** — `mise run e2e-matrix-v2` on the
-   live desktop (optionally dispatch e2e-matrix on green106 at 44a4c65).
-   Expected: 21/21 PASS, exit 0, desktop restored. Why: every recorded green
-   matrix run predates the 8 review-fix commits (737 behavioral lines); the
-   verifier does not drive the owner's session.
+**None — all 4 items from the initial verification are RESOLVED**, recorded
+in 03-UAT.md (status: complete, 4 passed, 0 issues):
 
-2. **Owner decision — WINDOWS #2 (D-24 corpus reading).** Confirm the
-   уточнение D-22 resolution: homogeneous ranges convert wholesale (matrix v1
-   `привет`→`ghbdtn` stays green); the nothing-to-convert surface
-   (changed=false → outcome done, no WARN) is implemented and reserved for
-   externally anchored ranges. Expected: accept → ledger #2 resolved.
-
-3. **Owner decision — WINDOWS #4 (GTK4-Wayland forwarded-events).** The
-   daemon side of MACR-01/level-2/Ctrl+V is wire-proven (engine burst +
-   ibus-daemon relay captured); GTK4 widgets never apply forwarded events on
-   this desktop. Expected: accept as a documented platform limitation or
-   schedule investigation; then align the REQUIREMENTS.md MACR-01 row with
-   the decision.
-
-4. **Owner eyeball — zenity selection verdict reversal (03-07 D5).** A
-   silently-surviving ctrl+a selection on zenity makes the commit replace the
-   selected residue (field settles at the converted word alone) — the 03-03
-   spike's transparency verdict was probe-contaminated. Expected: acknowledge
-   the corrected actual pinned in select-all-zenity.
+1. ~~Matrix v2 re-run at HEAD~~ → owner-authorized live run 21/21 PASS at
+   HEAD 54ea460 (2026-09-15); superseded by the D-48 double-run gate (v3
+   31/31 ×2, CI 35108412175, re-fetched success at 9f2fd75).
+2. ~~WINDOWS ledger #2 (D-24 corpus reading)~~ → owner accepted the
+   уточнение D-22 resolution 2026-09-15; ledger #2 resolved.
+3. ~~WINDOWS ledger #4 (GTK4-Wayland forwarded events)~~ → owner accepted
+   as a documented GNOME platform limitation; REQUIREMENTS.md MACR-01
+   flipped Complete with the caveat.
+4. ~~Zenity selection verdict reversal (03-07 D5)~~ → owner acknowledged;
+   corrected actual pinned by select-all-zenity and re-proven live.
 
 ### Gaps Summary
 
-**No code gaps.** All 19 substance truths verified with behavioral evidence
-re-run green at HEAD; all artifacts substantive and wired; all key links
-proven (3 tool false negatives manually disproven); 12/12 requirements
-satisfied with zero orphans; decision coverage 15/15; zero debt markers;
-zero disabled/circular tests; `mise run ci` green (0 lint issues). The
-`human_needed` status comes from: (1) the evidence-currency gap on the
-acceptance matrix — the only green live/CI matrix runs predate the review-fix
-commits, so the phase's crown criterion («всё подтверждает зелёная e2e-матрица
-v2») is machine-proven only at 21df37c, not at HEAD — and (2)-(4) the owner
-decision items the plans deliberately routed to the verify gate (WINDOWS #2,
-#4, and the zenity verdict reversal). One command (`mise run e2e-matrix-v2`)
-plus three owner acknowledgments close everything.
+**No gaps.** All 20 must-haves verified on the current tree (HEAD 42d10a1):
+the phase-4 diff touched phase-3 code only additively (D-37 version
+identity) and every pinned contract survives — the switch path's gsettings
+abstinence, the D-32 counts-and-states-only status invariant (now with a
+leading version token), the strict-decode/hot-reload config core, the
+phrase/selection/runs/combo/MACR pipelines, and the matrix breadth (v2
+intact at 21 cases and provably subsumed by the green v3 31/31 double-run).
+Headless gates re-run green at HEAD (build, full -race suite 14/14, vet,
+strict lint 0 issues). The evidence-currency gap and all four human items
+from the initial pass are closed by recorded evidence (03-UAT.md 4/4; CI
+35108412175 re-fetched success). Status advances from human_needed to
+**passed**; the fingerprint is refreshed over all 67 covered files.
 
 ---
 
-_Verified: 2026-09-15T15:55:41Z_
+_Verified: 2026-09-16T19:19:27Z_
 _Verifier: Claude (gsd-verifier)_
