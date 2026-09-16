@@ -170,11 +170,9 @@ func run() (exit int) {
 		return 1
 	}
 
-	limit := spec.watchdog
-	if limit == 0 {
-		limit = caseTimeout
-	}
-	if err := runCaseWatchdog(ctx, cfg.caseName, spec.fn, s, limit); err != nil {
+	// Zero watchdog means the default: runCaseWatchdog resolves it
+	// (watchdogLimit) — the same convention the matrix path relies on.
+	if err := runCaseWatchdog(ctx, cfg.caseName, spec.fn, s, spec.watchdog); err != nil {
 		s.printLogExcerpt()
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
@@ -186,11 +184,27 @@ func run() (exit int) {
 	return 0
 }
 
+// watchdogLimit resolves the case deadline: zero is the REQUEST for the
+// default (the caseSpec.watchdog convention — "a non-zero watchdog
+// overrides the default case deadline"), never a zero-length budget. The
+// matrix runner passes 0 for exactly this meaning; the 04-04 signature
+// change briefly turned it into a literal time.After(0) that failed every
+// matrix case instantly (live finding of the first D-48 dispatch, run
+// 35107406144) — the resolution lives HERE so no caller can re-trip it.
+func watchdogLimit(explicit time.Duration) time.Duration {
+	if explicit == 0 {
+		return caseTimeout
+	}
+
+	return explicit
+}
+
 // runCaseWatchdog runs the case body under a hard deadline (the case's own
-// watchdog override, or the default caseTimeout) and cancels its context on
-// expiry: a live-session stand must never strand the owner's desktop. A
-// stuck case fails fast, names the case, and control falls through to the
-// teardown contract (restore + machine verification).
+// watchdog override, or the default caseTimeout — see watchdogLimit) and
+// cancels its context on expiry: a live-session stand must never strand
+// the owner's desktop. A stuck case fails fast, names the case, and
+// control falls through to the teardown contract (restore + machine
+// verification).
 func runCaseWatchdog(
 	ctx context.Context,
 	name string,
@@ -198,6 +212,7 @@ func runCaseWatchdog(
 	s *stand,
 	limit time.Duration,
 ) error {
+	limit = watchdogLimit(limit)
 	caseCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

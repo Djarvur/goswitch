@@ -749,7 +749,7 @@ func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error 
 
 		return runCaseWatchdog(ctx, c.Name, func(ctx context.Context, s *stand) error {
 			return runMatrixCase(ctx, s, c)
-		}, s, 0)
+		}, s, 0) // 0 = the default caseTimeout (resolved by watchdogLimit)
 	}()
 	if caseErr != nil {
 		s.printLogExcerpt()
