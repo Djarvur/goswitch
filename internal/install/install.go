@@ -143,6 +143,9 @@ type Installer struct {
 	selfDir       string
 	activeEngines ActiveEngines
 	registryProbe RegistryProbe
+	// ctlStatus is the selfcheck's version-step probe of the daemon's
+	// control service (D-41 step 1); the corpus answers without a live bus.
+	ctlStatus CtlStatus
 }
 
 // installState is the on-disk restore contract between install and
@@ -246,6 +249,15 @@ func WithActiveEngines(fn ActiveEngines) func(*Installer) {
 func WithRegistryProbe(fn RegistryProbe) func(*Installer) {
 	return func(i *Installer) {
 		i.registryProbe = fn
+	}
+}
+
+// WithCtlStatus replaces the control-status probe of the selfcheck's
+// version step (D-41) — the test seam: the corpus answers without a live
+// session bus.
+func WithCtlStatus(fn CtlStatus) func(*Installer) {
+	return func(i *Installer) {
+		i.ctlStatus = fn
 	}
 }
 
