@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 3
-waived_count: 1
-fixed_count: 2
+open_count: 1
+waived_count: 2
+fixed_count: 3
 total_count: 6
-last_updated: 2026-09-16T14:35:35.768Z
+last_updated: 2026-09-16T14:53:16.148Z
 ---
 
 # Broken Windows Ledger
@@ -16,9 +16,9 @@ last_updated: 2026-09-16T14:35:35.768Z
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | 02 | deviation | test/e2e/case_ladder.go |  | Plan oracle level:2 falsified live: google-chrome 153 reports caps 0x29 and applies DeleteSurroundingText — actual level is 1 (ibus#2354 obsolete on target); case pins actual level 1 + verify-after match; no live level-2 witness exists on this desktop (all surfaces report the bit), unit corpus carries level 2 | fixed |  | 2026-09-14T22:27:01.392Z | 2026-09-15T05:19:04.926Z |
-| 2 | 3 | deviation | internal/correct/runs.go | 57 | D-24 nothing-to-convert example unsatisfiable under уточнение D-22 (homogeneous converts wholesale per matrix v1); changed=false surface implemented, reserved for selection path 03-03 — owner confirms at verify gate | open |  | 2026-09-15T08:57:29.492Z |  |
+| 2 | 3 | deviation | internal/correct/runs.go | 57 | D-24 nothing-to-convert example unsatisfiable under уточнение D-22 (homogeneous converts wholesale per matrix v1); changed=false surface implemented, reserved for selection path 03-03 — owner confirms at verify gate | fixed |  | 2026-09-15T08:57:29.492Z | 2026-09-16T14:53:15.673Z |
 | 3 | 3 | deviation | internal/correct/runs.go | 57 | test | waived | junk entry appended by executor output-shape probe — not a real defect, removed intent | 2026-09-15T08:57:41.296Z | 2026-09-15T08:58:03.115Z |
-| 4 | 3 | unmet-truth | test/e2e/case_macr.go | 595 | GTK4-Wayland (GNOME 46) does not apply IBus-forwarded key events: the relay reaches the focused InputContext (dbus-monitor pinned) but the widget never acts — MACR's Ctrl+letter remap, the ADR-003 level-2 Backspace replay and the D-28 Ctrl+V burst all stop at the client boundary (03-05 Deviation 3) | open |  | 2026-09-15T13:23:14.477Z |  |
+| 4 | 3 | unmet-truth | test/e2e/case_macr.go | 595 | GTK4-Wayland (GNOME 46) does not apply IBus-forwarded key events: the relay reaches the focused InputContext (dbus-monitor pinned) but the widget never acts — MACR's Ctrl+letter remap, the ADR-003 level-2 Backspace replay and the D-28 Ctrl+V burst all stop at the client boundary (03-05 Deviation 3) | waived | owner accepted GTK4-Wayland forwarded-events platform limitation (UAT 2026-09-15, REQUIREMENTS MACR-01 caveat) | 2026-09-15T13:23:14.477Z | 2026-09-16T14:53:16.148Z |
 | 5 | 04 | unmet-truth | test/e2e/perf.go | 1 | INST-03 latency budget verdict is FAIL under the prescribed ydotool→AT-SPI window (p95 190-205ms >= 50ms over two full runs): the window is dominated by ydotool 0.1.8 per-event injection overhead (~80-125ms/event), daemon reaction is 0.2-1.8ms; owner methodology decision required before the D-46 README table publishes latency numbers | open |  | 2026-09-16T13:51:53.747Z |  |
 | 6 | 04 | deviation | test/e2e/main.go | 201 | 04-04 (1b443eb) turned the matrix path's zero watchdog limit into a literal time.After(0): every matrix case (v1/v2/v3) failed instantly with 'did not complete within 0s' — live-caught by the first D-48 double-run dispatch (run 35107406144); fixed structurally by watchdogLimit resolving 0 to caseTimeout inside runCaseWatchdog (9f2fd75, RED->GREEN tests) | fixed |  | 2026-09-16T14:35:30.840Z | 2026-09-16T14:35:35.768Z |
 
@@ -43,10 +43,10 @@ last_updated: 2026-09-16T14:35:35.768Z
     "file": "internal/correct/runs.go",
     "line": 57,
     "description": "D-24 nothing-to-convert example unsatisfiable under уточнение D-22 (homogeneous converts wholesale per matrix v1); changed=false surface implemented, reserved for selection path 03-03 — owner confirms at verify gate",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-15T08:57:29.492Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-16T14:53:15.673Z"
   },
   {
     "id": 3,
@@ -67,10 +67,10 @@ last_updated: 2026-09-16T14:35:35.768Z
     "file": "test/e2e/case_macr.go",
     "line": 595,
     "description": "GTK4-Wayland (GNOME 46) does not apply IBus-forwarded key events: the relay reaches the focused InputContext (dbus-monitor pinned) but the widget never acts — MACR's Ctrl+letter remap, the ADR-003 level-2 Backspace replay and the D-28 Ctrl+V burst all stop at the client boundary (03-05 Deviation 3)",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "owner accepted GTK4-Wayland forwarded-events platform limitation (UAT 2026-09-15, REQUIREMENTS MACR-01 caveat)",
     "recorded_at": "2026-09-15T13:23:14.477Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-16T14:53:16.148Z"
   },
   {
     "id": 5,
