@@ -139,5 +139,5 @@ description = "e2e: 03-06 INST-02 — goswitchctl status/reload/correct against 
 run = "go run ./test/e2e -case ctl-smoke"
 
 [tasks.e2e-install-cycle]
-description = "e2e: 04-01 INST-01 — goswitchctl install → unit active → registry+live registration → uninstall → desktop restored to snapshot (live GNOME session; NOT in ci)"
+description = "e2e: 04-01 INST-01 — goswitchctl install → correction ghbdtn→привет through the UNIT daemon → status → reinstall → uninstall → desktop restored to snapshot (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case install-cycle"
