@@ -1,0 +1,64 @@
+# release — goreleaser публикует релиз по тегу v* (D-38, план 04-03).
+#
+# Сборка и публикация: mise install ставит goreleaser ровно версии пина
+# из mise.toml [tools] — единый источник версий локально и в CI (D-09/D-11,
+# Падение 10: версионный дрейф исключён). Дальше `goreleaser release
+# --clean` делает всё: сборку обоих бинарников с дефолтной прошивкой
+# main.version/main.commit/main.date (D-37, vars из 04-02), tar.gz-архив
+# с обоими бинарниками + checksums.txt (T-04-03-01) и публикацию в
+# GitHub Releases.
+#
+# Права: permissions contents: write — ТОЛЬКО в этом workflow (Падение 10 /
+# T-04-03-02): pr-sanity.yml и e2e-matrix.yml остаются contents: read,
+# никаких secrets сверх GITHUB_TOKEN. Первая публикация — v1.0.0
+# (схема тегов semver, discretion A7); тег ставит план 04-07 после зелёных
+# гейтов фазы.
+#
+# Регистрация workflow резолвится от default branch (прецедент 02-07):
+# до мержа фазы тег не публикуется — workflow на тег ещё не заведётся.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# Право записи в релизы — единственное место в наборе workflow (Падение 10).
+permissions:
+  contents: write
+
+concurrency:
+  # Публикация не должна рваться: второй тег встаёт в очередь, а не
+  # отменяет идущий релиз (та же дисциплина, что e2e-gnome).
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: goreleaser release
+    runs-on: ubuntu-latest
+    steps:
+      # Полная история и теги нужны goreleaser: changelog строится по
+      # коммитам, main.commit/main.date (D-37) штампуются из git-состояния.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Официальный инсталлятор mise — прецедент pr-sanity.yml (mise.run —
+      # каноническая точка раздачи; ephemeral runner, без секретов).
+      - name: Install mise
+        run: curl https://mise.run | sh
+
+      - name: Add mise to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Ставит go и goreleaser ровно в версиях пинов mise.toml — CI и
+      # локальный релизный цикл используют один инструмент (Падение 10).
+      - name: Install tools from mise.toml
+        run: mise install
+
+      # goreleaser публикует под GITHUB_TOKEN — единственный секрет этого
+      # workflow; права ограничены contents: write выше.
+      - name: goreleaser release
+        run: mise exec -- goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
