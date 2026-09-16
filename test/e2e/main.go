@@ -57,10 +57,14 @@ type config struct {
 // caseSpec is one registry entry: the case body plus the stand-shape flag.
 // standalone cases (install-cycle) run WITHOUT the stand daemon — the
 // single-instance ctlsvc name and the IBus registration belong to the
-// daemon the case itself installs as a systemd unit.
+// daemon the case itself installs as a systemd unit. A non-zero watchdog
+// overrides the default case deadline (perf: N × its repeat budget —
+// raised, never removed: a live-session stand must never strand the
+// owner's desktop).
 type caseSpec struct {
 	fn         func(context.Context, *stand) error
 	standalone bool
+	watchdog   time.Duration
 }
 
 // desktopSnapshot is the live-desktop state the teardown restores.
@@ -102,7 +106,7 @@ func caseListUsage() string {
 		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
-		" | macr-per-app | ctl-smoke | install-cycle"
+		" | macr-per-app | ctl-smoke | install-cycle | perf"
 }
 
 // parseFlags fills the stand's CLI surface from os.Args.
@@ -166,7 +170,11 @@ func run() (exit int) {
 		return 1
 	}
 
-	if err := runCaseWatchdog(ctx, cfg.caseName, spec.fn, s); err != nil {
+	limit := spec.watchdog
+	if limit == 0 {
+		limit = caseTimeout
+	}
+	if err := runCaseWatchdog(ctx, cfg.caseName, spec.fn, s, limit); err != nil {
 		s.printLogExcerpt()
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
@@ -178,15 +186,17 @@ func run() (exit int) {
 	return 0
 }
 
-// runCaseWatchdog runs the case body under a hard deadline (caseTimeout) and
-// cancels its context on expiry: a live-session stand must never strand the
-// owner's desktop. A stuck case fails fast, names the case, and control
-// falls through to the teardown contract (restore + machine verification).
+// runCaseWatchdog runs the case body under a hard deadline (the case's own
+// watchdog override, or the default caseTimeout) and cancels its context on
+// expiry: a live-session stand must never strand the owner's desktop. A
+// stuck case fails fast, names the case, and control falls through to the
+// teardown contract (restore + machine verification).
 func runCaseWatchdog(
 	ctx context.Context,
 	name string,
 	fn func(context.Context, *stand) error,
 	s *stand,
+	limit time.Duration,
 ) error {
 	caseCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -197,10 +207,10 @@ func runCaseWatchdog(
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(caseTimeout):
+	case <-time.After(limit):
 		cancel()
 
-		return fmt.Errorf("watchdog: case %q did not complete within %v", name, caseTimeout)
+		return fmt.Errorf("watchdog: case %q did not complete within %v", name, limit)
 	}
 }
 
@@ -235,6 +245,7 @@ func pickCase(name string) (caseSpec, error) {
 		"macr-per-app":      {fn: runMacrPerApp},
 		"ctl-smoke":         {fn: runCtlSmoke},
 		"install-cycle":     {fn: runInstallCycle, standalone: true},
+		"perf":              {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
 	}
 	spec, ok := registry[name]
 	if !ok {
@@ -243,7 +254,7 @@ func pickCase(name string) (caseSpec, error) {
 			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
 			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
-			" ctl-smoke, install-cycle)", name)
+			" ctl-smoke, install-cycle, perf)", name)
 	}
 
 	return spec, nil
@@ -357,6 +368,23 @@ func (s *stand) startDaemonArgs(args ...string) error {
 	cmd.Stderr = s.logFile
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start goswitchd: %w", err)
+	}
+	s.daemon = cmd
+
+	return nil
+}
+
+// startDaemonPlain spawns the daemon WITHOUT -debug — the production form
+// the perf run measures (T-04-04-03: the -debug trace would be neither
+// honest nor private; the acceptance numbers come from the prod shape).
+//
+//nolint:noctx // the daemon must outlive the run context: teardown SIGTERMs
+func (s *stand) startDaemonPlain() error {
+	cmd := exec.Command(s.daemonBin)
+	cmd.Stdout = s.logFile
+	cmd.Stderr = s.logFile
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start goswitchd (prod form): %w", err)
 	}
 	s.daemon = cmd
 

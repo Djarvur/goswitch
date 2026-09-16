@@ -749,7 +749,7 @@ func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error 
 
 		return runCaseWatchdog(ctx, c.Name, func(ctx context.Context, s *stand) error {
 			return runMatrixCase(ctx, s, c)
-		}, s)
+		}, s, 0)
 	}()
 	if caseErr != nil {
 		s.printLogExcerpt()

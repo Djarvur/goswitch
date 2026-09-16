@@ -28,11 +28,35 @@ const (
 // contain spaces, hence SplitN), the stdout scanner buffer bounds and the
 // line queue depth.
 const (
-	python3HelperBin  = "/usr/bin/python3" //nolint:unused // staged (Task 2 consumes)
-	witnessLineFields = 4                  //nolint:unused // staged (Task 2 consumes)
-	witnessScanInit   = 64 * 1024          //nolint:unused // staged (Task 2 consumes)
-	witnessScanMax    = 1024 * 1024        //nolint:unused // staged (Task 2 consumes)
-	witnessLineQueue  = 64                 //nolint:unused // staged (Task 2 consumes)
+	python3HelperBin  = "/usr/bin/python3"
+	witnessLineFields = 4
+	witnessScanInit   = 64 * 1024
+	witnessScanMax    = 1024 * 1024
+	witnessLineQueue  = 64
+)
+
+// Perf-run knobs (plan 04-04): N, the observation budget and the witness
+// mode are the methodology's numbers (D-43/D-44) — named once here, cited
+// by the report. The witness mode is PINNED by the Task-1 live smoke: the
+// event listener delivered (zenity, line well under 2 s, pid-tagged), so
+// the run is event-driven with NO polling quantum; witness-poll (fixed
+// 5 ms quantum, WITNESS_POLL_QUANTUM_S in focus_helper.py) is the
+// documented fallback if a future desktop proves the listener unstable.
+const (
+	perfSamples      = 40               // N: homogeneous hot-case repeats (D-43)
+	perfSampleWait   = 5 * time.Second  // per-repeat witness observation budget
+	perfRepeatBudget = 15 * time.Second // per-repeat wall budget; watchdog = N × this
+	perfReportPath   = "perf-report.txt"
+	perfWitnessMode  = "witness-events"
+	perfSurfaceApp   = "zenity"
+)
+
+// The reported percentile ranks (D-43): the median and the two tail
+// quantiles the acceptance table publishes.
+const (
+	perfP50 = 0.50
+	perfP95 = 0.95
+	perfP99 = 0.99
 )
 
 // percentile sorts a copy of the sample and indexes it — the research
@@ -77,8 +101,6 @@ func parseProcStatusKB(v string) int64 {
 // readProcStatus reads the measured process's VmHWM/VmRSS once — pid
 // identity is the stand's own subprocess (s.daemon.Process.Pid), never a
 // pgrep/pkill pattern (research anti-pattern, live hit).
-//
-//nolint:unused // staged for the perf case (04-04 Task 2 is the consumer)
 func readProcStatus(pid int) (hwm, rss int64, err error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
 	if err != nil {
@@ -105,8 +127,6 @@ func budgetGate(p95 time.Duration, vmHWMKB int64) error {
 // The leading timestamp is stamped by the helper at OBSERVATION arrival —
 // it is the t1 of the D-44 window, and the text readback latency behind it
 // stays out of the measured interval.
-//
-//nolint:unused // staged for the perf case (04-04 Task 2 is the consumer)
 type witnessEvent struct {
 	at   time.Time
 	app  string
@@ -116,8 +136,6 @@ type witnessEvent struct {
 
 // parseWitnessLine splits one witness protocol line. The text (last field)
 // may contain spaces; the app name and pid may not.
-//
-//nolint:unused // staged for the perf case (04-04 Task 2 is the consumer)
 func parseWitnessLine(line string) (witnessEvent, error) {
 	parts := strings.SplitN(line, " ", witnessLineFields)
 	if len(parts) != witnessLineFields {
@@ -141,8 +159,6 @@ func parseWitnessLine(line string) (witnessEvent, error) {
 // call (pid identity, shutdown by pid — never pkill/pgrep -f), a line
 // reader feeding a channel, and stderr captured under a mutex for the
 // failure diagnostics (T-04-04-02: a wedged witness fails the wait loudly).
-//
-//nolint:unused // staged for the perf case (04-04 Task 2 is the consumer)
 type perfWitness struct {
 	cmd   *exec.Cmd
 	lines chan string
@@ -155,8 +171,6 @@ type perfWitness struct {
 // per measured surface, its pid passed as the watch target). The witness
 // rides the given context: a watchdog cancellation kills it, so a wedged
 // helper can never outlive the case.
-//
-//nolint:unused // staged for the perf case (04-04 Task 2 is the consumer)
 func startWitness(ctx context.Context, helper, mode string, args ...string) (*perfWitness, error) {
 	argv := append([]string{helper, mode}, args...)
 	cmd := exec.CommandContext(ctx, python3HelperBin, argv...)
@@ -194,8 +208,6 @@ func startWitness(ctx context.Context, helper, mode string, args ...string) (*pe
 // await reads witness lines until pred accepts one; the matched line's
 // helper-side timestamp is the return value (t1). A timeout, a run-context
 // cancellation or a dead witness all fail the wait loudly.
-//
-//nolint:unused // staged for the perf case (04-04 Task 2 is the consumer)
 func (w *perfWitness) await(
 	ctx context.Context, timeout time.Duration, pred func(witnessEvent) bool,
 ) (time.Time, error) {
@@ -221,8 +233,6 @@ func (w *perfWitness) await(
 }
 
 // stderr returns the witness's collected stderr (diagnostics only).
-//
-//nolint:unused // staged for the perf case (04-04 Task 2 is the consumer)
 func (w *perfWitness) stderr() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -231,11 +241,186 @@ func (w *perfWitness) stderr() string {
 }
 
 // shutdown kills the witness process by pid and reaps it.
-//
-//nolint:unused // staged for the perf case (04-04 Task 2 is the consumer)
 func (w *perfWitness) shutdown() {
 	if w.cmd.Process != nil {
 		_ = w.cmd.Process.Kill()
 	}
 	_ = w.cmd.Wait()
+}
+
+// runPerf is the dedicated INST-03 acceptance run (D-43/D-44/D-45): one
+// homogeneous hot case — the Shift+RightCtrl combo correcting ghbdtn→привет
+// AND flipping the mode in a single chord (the live diagnostic pinned the
+// press-side immediate fire: press→correction-done ≈ 0.3–1.8 ms, no
+// discrimination window) — repeated N times under a resident event
+// witness, reported as p50/p95/p99 plus the memory checkpoints, gated by
+// the budget (exit != 0 over budget). The daemon under measurement is the
+// PRODUCTION form: no -config (built-in defaults), no -debug (T-04-04-03 —
+// the numbers must be honest).
+func runPerf(ctx context.Context, s *stand) error {
+	regBase := s.countSub(componentRegisteredMark)
+	s.stopDaemon()
+	if err := s.startDaemonPlain(); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, componentRegisteredMark, regBase+1, registrationWait); err != nil {
+		return fmt.Errorf("perf prod-form daemon registration: %w", err)
+	}
+	if err := s.activateGoswitchFresh(ctx); err != nil {
+		return fmt.Errorf("perf activation: %w", err)
+	}
+	_, rssStart, err := readProcStatus(s.daemon.Process.Pid)
+	if err != nil {
+		return fmt.Errorf("perf VmRSS checkpoint 1: %w", err)
+	}
+	combo, err := s.probeComboInjection(ctx)
+	if err != nil {
+		return fmt.Errorf("perf combo canonicalization: %w", err)
+	}
+	w, err := startWitness(ctx, s.cfg.helper, perfWitnessMode)
+	if err != nil {
+		return err
+	}
+	defer w.shutdown()
+
+	samples := make([]time.Duration, 0, perfSamples)
+	for i := range perfSamples {
+		sample, err := perfRepeat(ctx, s, combo, w)
+		if err != nil {
+			return fmt.Errorf("perf repeat %d/%d: %w", i+1, perfSamples, err)
+		}
+		samples = append(samples, sample)
+	}
+
+	hwm, rssEnd, err := readProcStatus(s.daemon.Process.Pid)
+	if err != nil {
+		return fmt.Errorf("perf VmHWM oracle: %w", err)
+	}
+	p50 := percentile(samples, perfP50)
+	p95 := percentile(samples, perfP95)
+	p99 := percentile(samples, perfP99)
+	verdict := budgetGate(p95, hwm)
+	if err := writePerfReport(combo, samples, p50, p95, p99, rssStart, rssEnd, hwm, verdict); err != nil {
+		return err
+	}
+
+	return verdict
+}
+
+// activateGoswitchFresh is the count-based form of activateGoswitch,
+// required after the in-case daemon restart: the log already carries the
+// old daemon's focus_in records, so a plain waitForLog would pass on a
+// stale match while the fresh engine is not global yet.
+func (s *stand) activateGoswitchFresh(ctx context.Context) error {
+	base := s.countSub("focus_in")
+	if _, err := runCmd(ctx, "ibus", "engine", "goswitch-en"); err != nil {
+		return fmt.Errorf("activate goswitch-en: %w", err)
+	}
+
+	return s.waitForNew(ctx, "focus_in", base+1, focusWait)
+}
+
+// perfRepeat drives ONE homogeneous hot-case sample (D-43). A fresh zenity
+// entry per repeat: the closing Enter doubles as the ADR-004 buffer reset,
+// so no repeat inherits the previous one's buffer state. The probe word is
+// typed and settled (quiesce) BEFORE t0; t0 stamps immediately before the
+// chord injection; t1 is the witness's text-changed observation carrying
+// the converted word (its helper-side timestamp — the D-44 window
+// ydotool→AT-SPI, honest upper bound, ydotool spawn included). The
+// flip-back tap and the zenity stdout readback confirm the repeat AFTER
+// the sample, outside the window.
+func perfRepeat(ctx context.Context, s *stand, combo string, w *perfWitness) (time.Duration, error) {
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if kind != surfaceZenity {
+		return 0, errors.New("perf needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+	if err := s.injectText(ctx, wordProbeEN); err != nil {
+		return 0, fmt.Errorf("type the probe word: %w", err)
+	}
+	if err := s.waitZenityText(ctx, wordProbeEN); err != nil {
+		return 0, fmt.Errorf("probe word settle (quiesce): %w", err)
+	}
+
+	t0 := time.Now() // the D-44 window opens immediately before the injection
+	if err := s.pressKey(ctx, combo); err != nil {
+		return 0, fmt.Errorf("combo injection: %w", err)
+	}
+	t1, err := w.await(ctx, perfSampleWait, func(ev witnessEvent) bool {
+		return ev.app == perfSurfaceApp && ev.text == wordResultRU && !ev.at.Before(t0)
+	})
+	if err != nil {
+		return 0, fmt.Errorf("witness observation: %w", err)
+	}
+
+	// The combo corrected AND flipped to RU; the next repeat needs EN
+	// typing, so the tap-back gates on ITS OWN mode record before the
+	// close — count-based, never a plain waitForLog: the probe's flip-back
+	// record is already in the log and a stale match would close the
+	// surface with the tap window still open.
+	enBase := s.countSub(`"msg":"mode","to":"en"`)
+	if err := s.injectKeys(ctx, "Shift_R"); err != nil {
+		return 0, fmt.Errorf("flip-back tap: %w", err)
+	}
+	if err := s.waitForNew(ctx, `"msg":"mode","to":"en"`, enBase+1, decisionWait); err != nil {
+		return 0, fmt.Errorf("flip-back record: %w", err)
+	}
+	out, err := s.closeZenity(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("surface close: %w", err)
+	}
+	if out != wordResultRU {
+		return 0, fmt.Errorf("repeat readback: entry printed %q, want %q", out, wordResultRU)
+	}
+
+	return t1.Sub(t0), nil
+}
+
+// writePerfReport renders the acceptance report — stdout AND
+// perf-report.txt (the artifact the README's D-46 table transcribes): the
+// methodology block naming the witness mechanism and its quantum, the
+// percentile rows, the memory checkpoints and the budget verdict. Field
+// CONTENT is never printed (T-04-04-01): numbers, units and verdicts only.
+func writePerfReport(
+	combo string, samples []time.Duration, p50, p95, p99 time.Duration,
+	rssStart, rssEnd, hwm int64, verdict error,
+) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "perf report — %s\n", time.Now().UTC().Format(time.RFC3339))
+	b.WriteString("methodology:\n")
+	b.WriteString("  window: ydotool injection -> AT-SPI text-changed observation" +
+		" (honest upper bound; includes the ydotool spawn)\n")
+	if perfWitnessMode == "witness-events" {
+		b.WriteString("  witness: resident Atspi.EventListener on object:text-changed" +
+			" (event-driven; no polling quantum; one spawn per run)\n")
+	} else {
+		b.WriteString("  witness: resident line-protocol poller witness-poll" +
+			" (fixed 5 ms quantum — WITNESS_POLL_QUANTUM_S in focus_helper.py)\n")
+	}
+	fmt.Fprintf(&b, "  case: %d repeats of one homogeneous hot case — combo %s:"+
+		" word correction + layout flip in one chord (D-43)\n", len(samples), combo)
+	b.WriteString("  surface: zenity entry, fresh per repeat (the closing Enter is the ADR-004 buffer reset)\n")
+	b.WriteString("  daemon: production form (no -config, no -debug; built-in defaults)\n")
+	fmt.Fprintf(&b, "samples: %d\n", len(samples))
+	fmt.Fprintf(&b, "p50: %.1f ms\n", float64(p50)/float64(time.Millisecond))
+	fmt.Fprintf(&b, "p95: %.1f ms\n", float64(p95)/float64(time.Millisecond))
+	fmt.Fprintf(&b, "p99: %.1f ms\n", float64(p99)/float64(time.Millisecond))
+	fmt.Fprintf(&b, "vmrss_start_kb: %d\n", rssStart)
+	fmt.Fprintf(&b, "vmrss_end_kb: %d\n", rssEnd)
+	fmt.Fprintf(&b, "vm_hwm_kb: %d\n", hwm)
+	if verdict != nil {
+		fmt.Fprintf(&b, "budget: FAIL (%v)\n", verdict)
+	} else {
+		fmt.Fprintf(&b, "budget: PASS (p95 < %v, vm_hwm_kb < %d)\n", perfLatencyBudget, perfMemoryBudgetKB)
+	}
+
+	report := b.String()
+	fmt.Print(report)
+	if err := os.WriteFile(perfReportPath, []byte(report), configFilePerm); err != nil {
+		return fmt.Errorf("write %s: %w", perfReportPath, err)
+	}
+
+	return nil
 }

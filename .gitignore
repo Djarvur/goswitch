@@ -8,6 +8,7 @@ bin/
 
 # Test and coverage output
 e2e-report.txt
+perf-report.txt
 *.coverprofile
 coverage.out
 coverage.html

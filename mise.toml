@@ -141,3 +141,7 @@ run = "go run ./test/e2e -case ctl-smoke"
 [tasks.e2e-install-cycle]
 description = "e2e: 04-01 INST-01 — goswitchctl install → correction ghbdtn→привет through the UNIT daemon → status → reinstall → uninstall → desktop restored to snapshot (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case install-cycle"
+
+[tasks.e2e-perf]
+description = "e2e: 04-04 INST-03 — dedicated perf run: 40 homogeneous combo hot-case repeats (correct+flip chord), resident AT-SPI event witness, p50/p95/p99 + VmRSS/VmHWM report, budget gate exit≠0, perf-report.txt (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case perf"
