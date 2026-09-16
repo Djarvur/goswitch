@@ -133,6 +133,11 @@ bound that includes the rig's own per-chord injection overhead
 is below 2 ms; the memory budget holds with a wide margin. The table is
 re-measured and refreshed with every release.
 
+Budget status: honestly stated, this end-to-end window **exceeds** the
+50 ms hotkey-reaction budget — the excess comes from the measurement
+rig's own injection overhead, not from the daemon (reaction < 2 ms;
+the memory budget is met). v1.0.0 ships with these as-measured numbers.
+
 ## Privacy
 
 The daemon logs counters and decisions only — never the text you type,

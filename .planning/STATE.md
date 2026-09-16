@@ -5,10 +5,10 @@ current_phase: 04
 current_phase_name: Поставка и приёмка
 status: verifying
 stopped_at: "CHECKPOINT 04-07: perf budget gate red (p95 184.4ms >= 50ms, WINDOWS #5) — owner methodology decision pending; v1.0.0 tag NOT created; resume by deciding (a) uinput stand injector (b) window redefinition (c) accept"
-last_updated: "2026-09-16T15:03:35.670Z"
+last_updated: "2026-09-16T17:38:38.787Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 04 execution started
-state_head: b1f0aaad7d848ca90e2dc97bcd8a8402d037c9fb
+state_head: b8e969d09a2b0ad4d442ee8c6f2e42b7a69508f1
 progress:
   total_phases: 4
   completed_phases: 0
@@ -180,6 +180,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-07: README perf table publishes honest live numbers + methodology (window includes ~170 ms stand-injector overhead; daemon reaction <2 ms); repo README is not public until the tag — the tag stays blocked on the perf gate
 - [Phase 04]: 04-07: WINDOWS ledger reconciled via verbs — #2 fixed, #4 waived with the owner 2026-09-15 reason; #5 left open deliberately (executor must not decide the owner latency-methodology question)
 - [Phase 04]: 04-07: docs/ACCEPTANCE.md carries the formal D-48 fresh-session double-run as item 1 (before local install), procedure per docs/ci-runner.md
+- [Phase 04]: 04-07 resume: owner resolved WINDOWS #5 with decision (в) — accept the ydotool→AT-SPI stand numbers as-is; v1.0.0 publishes with the real p50/p95/p99 and the budget-fail status stated honestly in the README perf table (window ydotool→AT-SPI, combo case, N=40; daemon reaction sub-millisecond, injector-dominated window). e2e-perf budget-fail is the sanctioned result — not a blocking gate; #5 waived via verb (open_count 0)
 
 ### Pending Todos
 
