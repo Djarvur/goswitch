@@ -53,7 +53,7 @@
 
 ### INST — Поставка и эксплуатация
 
-- [ ] **INST-01**: Установка без root: systemd user unit, регистрация engine в IBus, `go install` + бинарник из GitHub releases
+- [x] **INST-01**: Установка без root: systemd user unit, регистрация engine в IBus, `go install` + бинарник из GitHub releases
 - [x] **INST-02**: CLI `goswitchctl`: статус, перечитать конфиг, принудительно скорректировать
 - [ ] **INST-03**: Реакция на горячую клавишу < 50 мс; потребление памяти < 50 МБ
 - [x] **INST-04**: Структурные логи с уровнями; debug-режим с трассировкой клавиш
@@ -110,7 +110,7 @@
 | TEST-02 | Phase 1 | Complete |
 | TEST-03 | Phase 1 | Complete |
 | TEST-04 | Phase 2 | Complete |
-| INST-01 | Phase 4 | Pending |
+| INST-01 | Phase 4 | Complete |
 | INST-02 | Phase 3 | Complete |
 | INST-03 | Phase 4 | Pending |
 | INST-04 | Phase 1 | Complete |

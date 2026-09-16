@@ -4,11 +4,11 @@ milestone: v1.0.0
 current_phase: 04
 current_phase_name: Поставка и приёмка
 status: verifying
-stopped_at: "CHECKPOINT 04-07: perf budget gate red (p95 184.4ms >= 50ms, WINDOWS #5) — owner methodology decision pending; v1.0.0 tag NOT created; resume by deciding (a) uinput stand injector (b) window redefinition (c) accept"
-last_updated: "2026-09-16T17:38:38.787Z"
+stopped_at: "Plan 04-07 complete: v1.0.0 published and verified (run 35130309174 success; tar.gz + checksums.txt assets; goswitchd -version stamps 1.0.0 + tag commit; proxy v1.0.0.info OK; go install channel live), WINDOWS #5 waived by owner decision (в) — open_count 0, INST-01 closed. Next: phase 04 verify-work — owner UAT session per docs/ACCEPTANCE.md; phase merge to main and milestone close are the owner's calls"
+last_updated: "2026-09-16T17:56:02.837Z"
 last_activity: 2026-09-16
-last_activity_desc: Phase 04 execution started
-state_head: b8e969d09a2b0ad4d442ee8c6f2e42b7a69508f1
+last_activity_desc: Plan 04-07 complete — v1.0.0 released, WINDOWS ledger zeroed, INST-01 closed
+state_head: 9139486c51bdd2b53ca098d8eca23ca30910c272
 progress:
   total_phases: 4
   completed_phases: 0
@@ -89,7 +89,7 @@ Progress: [████████░░] 75%
 | Phase 04 P04 | 35 min | 2 tasks | 8 files |
 | Phase 04 P03 | 7 min | 2 tasks | 4 files |
 | Phase 04 P06 | 22 min | 2 tasks | 6 files |
-| Phase 04 P07 | 16 min | 2 tasks | 4 files |
+| Phase 04 P07 | 33 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -202,6 +202,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T15:03:35.587Z
-Stopped at: CHECKPOINT 04-07: perf budget gate red (p95 184.4ms >= 50ms, WINDOWS #5) — owner methodology decision pending; v1.0.0 tag NOT created; resume by deciding (a) uinput stand injector (b) window redefinition (c) accept
+Last session: 2026-09-16T17:55:51.061Z
+Stopped at: Plan 04-07 complete: v1.0.0 published and verified (run 35130309174 success; tar.gz + checksums.txt assets; goswitchd -version stamps 1.0.0 + tag commit; proxy v1.0.0.info OK; go install channel live), WINDOWS #5 waived by owner decision (в) — open_count 0, INST-01 closed. Next: phase 04 verify-work — owner UAT session per docs/ACCEPTANCE.md; phase merge to main and milestone close are the owner's calls
 Resume file: None
