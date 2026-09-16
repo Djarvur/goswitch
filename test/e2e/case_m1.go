@@ -141,6 +141,12 @@ func (s *stand) closeEntrySurface(ctx context.Context, kind surfaceKind) error {
 		// Driver-managed surface (surface.go): same as chromium — the
 		// entry-surface path never closes it.
 		return nil
+	case surfaceGedit:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return nil
+	case surfaceChromiumX11:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return nil
 	}
 
 	return nil

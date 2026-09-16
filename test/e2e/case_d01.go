@@ -403,6 +403,12 @@ func (s *stand) readBackText(ctx context.Context, kind surfaceKind) string {
 		// Driver-managed surface (surface.go): same as chromium — the
 		// focused-text bridge owns the readback.
 		return ""
+	case surfaceGedit:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return ""
+	case surfaceChromiumX11:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return ""
 	}
 
 	return ""

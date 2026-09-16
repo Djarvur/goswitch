@@ -28,3 +28,6 @@ __pycache__/
 .vscode/
 *.swp
 .DS_Store
+
+# go build output of the e2e stand (go build -o e2e ./test/e2e)
+/e2e

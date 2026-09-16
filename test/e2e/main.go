@@ -83,7 +83,9 @@ type stand struct {
 	zenity      *exec.Cmd
 	zenityOut   *bytes.Buffer
 	chromium    *exec.Cmd
+	chromiumX11 *exec.Cmd // the x11/XWayland window-mode instance (04-05)
 	gte         *exec.Cmd
+	gedit       *exec.Cmd // the GTK3-generation editor instance (04-05)
 	snap        desktopSnapshot
 	caseCfgPath string // the matrix case's -config doc ("" until a reload step establishes it)
 }
@@ -96,6 +98,7 @@ func main() {
 // caseListUsage is the -case help text: every registry name, "|" joined.
 func caseListUsage() string {
 	return "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke" +
+		" | gedit-smoke | x11-smoke" +
 		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
@@ -211,6 +214,8 @@ func pickCase(name string) (caseSpec, error) {
 		"d01-probe":         {fn: runD01Probe},
 		"chromium-smoke":    {fn: runChromiumSmoke},
 		"gte-smoke":         {fn: runGTESmoke},
+		"gedit-smoke":       {fn: runGeditSmoke},
+		"x11-smoke":         {fn: runChromiumX11Smoke},
 		"word-en-ru":        {fn: runWordENRU},
 		"word-after-space":  {fn: runWordAfterSpace},
 		"word-ru-en":        {fn: runWordRUEN},
@@ -234,10 +239,11 @@ func pickCase(name string) (caseSpec, error) {
 	spec, ok := registry[name]
 	if !ok {
 		return caseSpec{}, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
-			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed,"+
-			" phrase-en-ru, phrase-mixed, ladder-chromium, reset-escape, select-smoke, select-correct,"+
-			" select-clipboard, combo-word-layout, layout-single, super-space-alive, macr-probe,"+
-			" macr-super-letter, macr-per-app, ctl-smoke, install-cycle)", name)
+			" d01-probe, chromium-smoke, gte-smoke, gedit-smoke, x11-smoke, word-en-ru,"+
+			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
+			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
+			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
+			" ctl-smoke, install-cycle)", name)
 	}
 
 	return spec, nil

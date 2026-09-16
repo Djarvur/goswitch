@@ -46,6 +46,7 @@ func preflight(ctx context.Context, s *stand) error {
 			check{"daemon-log-heartbeat", checkLogHeartbeat},
 			check{"chromium-launch", checkChromiumLaunch},
 			check{"gnome-text-editor-launch", checkGnomeTextEditorLaunch},
+			check{"gedit-launch", checkGeditLaunch},
 		)
 	}
 	for _, c := range checks {
@@ -176,6 +177,30 @@ func checkGnomeTextEditorLaunch(ctx context.Context, s *stand) error {
 		return fmt.Errorf("%w (does the new-document window open and take focus?)", err)
 	}
 	s.closeGTE()
+
+	return nil
+}
+
+// checkGeditLaunch proves the gedit surface driver's happy path (plan
+// 04-05): the binary exists, the standalone instance with its isolated
+// XDG dirs opens an empty document, the witness sees the editor focused,
+// and the PID close cleans up. One actionable diagnostic line when the
+// binary is missing — gedit is NOT part of the default Ubuntu GNOME
+// install, so its absence is the expected failure this check exists to
+// name (the research Fall-6 warning-sign detector).
+func checkGeditLaunch(ctx context.Context, s *stand) error {
+	if _, err := exec.LookPath(geditBin); err != nil {
+		return fmt.Errorf("%s not in PATH: %w (sudo apt install gedit — universe repo)", geditBin, err)
+	}
+	if err := s.startGedit(ctx); err != nil {
+		return err
+	}
+	if err := s.waitGeditInput(ctx, 0); err != nil {
+		s.closeGedit()
+
+		return fmt.Errorf("%w (does the new-document window open and take focus?)", err)
+	}
+	s.closeGedit()
 
 	return nil
 }

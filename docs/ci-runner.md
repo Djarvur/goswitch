@@ -24,6 +24,7 @@ user unit, окружение сессии).
 | python3-gi + AT-SPI                           | `/usr/bin/python3 -c "import gi; gi.require_version('Atspi','2.0')"` |
 | gir1.2-atspi-2.0, at-spi2-core                | `dpkg -l gir1.2-atspi-2.0 at-spi2-core`                        |
 | Поверхности матрицы                           | `zenity --version`; `google-chrome --version`; `gnome-text-editor --version` |
+| gedit — поверхность матрицы v3 (план 04-05)   | `gedit --version` (GTK3-поколение IM/AT-SPI; в дефолтный GNOME НЕ входит — `sudo apt install gedit`, репозиторий universe) |
 | gh CLI, аутентифицирован с правом admin на репозитории | `gh api repos/Djarvur/goswitch/actions/runners` → HTTP 200    |
 | curl, tar                                     | `command -v curl tar`                                          |
 

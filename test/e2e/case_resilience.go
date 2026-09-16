@@ -171,6 +171,12 @@ func (s *stand) kill9Oracle(ctx context.Context, kind surfaceKind, charsBefore i
 		// Driver-managed surface (surface.go): same as chromium — resilience
 		// cases stay on the entry surfaces.
 		return nil
+	case surfaceGedit:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return nil
+	case surfaceChromiumX11:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return nil
 	}
 
 	return nil

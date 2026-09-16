@@ -17,6 +17,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -42,6 +43,14 @@ const (
 	matrixSurfaceZenity = "zenity"
 	matrixSurfaceGTE    = "gnome-text-editor"
 	surfaceChromiumName = "chromium"
+	// The matrix-v3 surfaces (plan 04-05, D-47): gedit — the GTK3
+	// IM/AT-SPI generation (libgedit-gtksourceview-300), and
+	// chromium-x11 — the --ozone-platform=x11 window mode (a different
+	// IM path from the native-Wayland surface). Both entered the
+	// vocabulary only after their 04-05 spikes pinned the driver
+	// behavior ("pin the actual, never the assumption" — 02-05).
+	matrixSurfaceGedit     = "gedit"
+	surfaceChromiumX11Name = "chromium-x11"
 )
 
 // matrixLevelMax is the deepest ladder level (ADR-003); expect_level above
@@ -49,7 +58,13 @@ const (
 const matrixLevelMax = 2
 
 func matrixSurfaces() []string {
-	return []string{matrixSurfaceZenity, surfaceChromiumName, matrixSurfaceGTE}
+	return []string{
+		matrixSurfaceZenity,
+		surfaceChromiumName,
+		surfaceChromiumX11Name,
+		matrixSurfaceGTE,
+		matrixSurfaceGedit,
+	}
 }
 
 func matrixModes() []string {
@@ -831,6 +846,18 @@ func openMatrixSurface(ctx context.Context, s *stand, name string) error {
 		}
 
 		return s.waitGTEInput(ctx, 0)
+	case matrixSurfaceGedit:
+		if err := s.startGedit(ctx); err != nil {
+			return err
+		}
+
+		return s.waitGeditInput(ctx, 0)
+	case surfaceChromiumX11Name:
+		if err := s.startChromiumX11(ctx); err != nil {
+			return err
+		}
+
+		return s.waitChromiumX11Input(ctx, 0)
 	}
 
 	return fmt.Errorf("unknown surface %q", name)
@@ -916,10 +943,23 @@ func (s *stand) waitActiveSurrounding(ctx context.Context, before int) (surround
 }
 
 // matrixSurfaceReportsAnchor names the surfaces whose surrounding pushes
-// carry a selection anchor (the 03-03 spike table: GTE cursor=0/anchor=len
-// under ctrl+a; chromium cursor=len/anchor=0 — both ACTIVE).
+// carry a selection anchor. The v3 entries are SPIKE-PINNED (plan 04-05,
+// live probes 2026-09-16 — "pin the actual, never the assumption"):
+//   - gedit pushes NO anchor: every push carries cursor == anchor (the
+//     ctrl+a chord lands — the caret jump proves it — but the GTK3 client
+//     never reports a selection): the zenity-class D-30 degradation;
+//   - chromium-x11 pushes NOTHING at all (zero surrounding pushes — the
+//     x11 input context never services the surrounding protocol), so it
+//     cannot report an anchor either.
 func matrixSurfaceReportsAnchor(surface string) bool {
-	return surface == matrixSurfaceGTE || surface == surfaceChromiumName
+	switch surface {
+	case matrixSurfaceGTE, surfaceChromiumName:
+		return true
+	case matrixSurfaceGedit, surfaceChromiumX11Name:
+		return false
+	}
+
+	return false
 }
 
 // comboMatrixStep injects the canonical combo name and gates on the two
@@ -1109,13 +1149,18 @@ func assertReloadStatus(ctx context.Context, ctlBin, expect string) error {
 }
 
 // matrixSurfaceApp maps a matrix surface onto the AT-SPI application name
-// its witness line carries (surface.go's live-verified names).
+// its witness line carries (surface.go's live-verified names; the v3
+// entries are the 04-05 spike pins).
 func matrixSurfaceApp(surface string) string {
 	switch surface {
 	case surfaceChromiumName:
 		return chromiumAppName
+	case surfaceChromiumX11Name:
+		return chromiumX11AppName
 	case matrixSurfaceGTE:
 		return gteAppName
+	case matrixSurfaceGedit:
+		return geditAppName
 	}
 
 	return matrixSurfaceZenity
@@ -1245,22 +1290,30 @@ func openZenityFocused(ctx context.Context, s *stand) error {
 	}
 }
 
+// matrixSurfaceCmd returns the stand's spawned process of a surface
+// (nil when the stand has none open under that name).
+func matrixSurfaceCmd(s *stand, name string) *exec.Cmd {
+	switch name {
+	case matrixSurfaceZenity:
+		return s.zenity
+	case surfaceChromiumName:
+		return s.chromium
+	case surfaceChromiumX11Name:
+		return s.chromiumX11
+	case matrixSurfaceGTE:
+		return s.gte
+	case matrixSurfaceGedit:
+		return s.gedit
+	}
+
+	return nil
+}
+
 // matrixSurfacePID returns the stand's spawned process id of a surface
 // (0 when the stand has none open under that name).
 func matrixSurfacePID(s *stand, name string) int {
-	switch name {
-	case matrixSurfaceZenity:
-		if s.zenity != nil && s.zenity.Process != nil {
-			return s.zenity.Process.Pid
-		}
-	case surfaceChromiumName:
-		if s.chromium != nil && s.chromium.Process != nil {
-			return s.chromium.Process.Pid
-		}
-	case matrixSurfaceGTE:
-		if s.gte != nil && s.gte.Process != nil {
-			return s.gte.Process.Pid
-		}
+	if cmd := matrixSurfaceCmd(s, name); cmd != nil && cmd.Process != nil {
+		return cmd.Process.Pid
 	}
 
 	return 0
@@ -1388,54 +1441,73 @@ func (s *stand) preCorrectionActiveSelection() bool {
 }
 
 // verifyMatrixText compares the field content with expect_text rune for
-// rune. The readback rides the AT-SPI bridge with settle polling (the
-// bridge can lag the field by a beat, 02-03 finding); a zenity case whose
-// steps closed the dialog falls back to the stdout close-oracle.
+// rune: the driver-owned surfaces settle through their pid-keyed gates and
+// readbacks, zenity carries its own oracle (see verifyZenityText).
 func verifyMatrixText(ctx context.Context, s *stand, c matrixCase) error {
 	want := c.ExpectText
 	runes := utf8.RuneCountInString(want)
 	switch c.Surface {
 	case matrixSurfaceZenity:
-		if zenityAlive(s) {
-			if err := s.waitZenityText(ctx, want); err != nil {
-				return err
-			}
-			out, err := s.closeZenity(ctx)
-			if err != nil {
-				return err
-			}
-			// The delivery oracle: zenity prints the entry text on OK. The
-			// printed line loses boundary whitespace, so it pins the word
-			// only when the expectation itself carries none — the readback
-			// above already pinned the exact content.
-			if out != want && strings.TrimSpace(want) == want {
-				return fmt.Errorf("expected %q, got %q (stdout oracle)", want, out)
-			}
-
-			return nil
-		}
-		// Steps closed the dialog (Enter): the collected stdout IS the oracle.
-		out := strings.TrimSpace(s.zenityOut.String())
-		if out != strings.TrimSpace(want) {
-			return fmt.Errorf("expected %q, got %q (closed-dialog stdout)", strings.TrimSpace(want), out)
-		}
-
-		return nil
+		return verifyZenityText(ctx, s, want)
 	case surfaceChromiumName:
 		if err := s.waitMatrixInputPid(ctx, matrixSurfacePID(s, surfaceChromiumName), runes); err != nil {
 			return fmt.Errorf("applied state: %w", err)
 		}
 
 		return waitMatrixReadback(ctx, want, s.readChromiumText)
+	case surfaceChromiumX11Name:
+		if err := s.waitMatrixInputPid(ctx, matrixSurfacePID(s, surfaceChromiumX11Name), runes); err != nil {
+			return fmt.Errorf("applied state: %w", err)
+		}
+
+		return waitMatrixReadback(ctx, want, s.readChromiumX11Text)
 	case matrixSurfaceGTE:
 		if err := s.waitGTEInput(ctx, runes); err != nil {
 			return fmt.Errorf("applied state: %w", err)
 		}
 
 		return waitMatrixReadback(ctx, want, s.readGTEText)
+	case matrixSurfaceGedit:
+		if err := s.waitGeditInput(ctx, runes); err != nil {
+			return fmt.Errorf("applied state: %w", err)
+		}
+
+		return waitMatrixReadback(ctx, want, s.readGeditText)
 	}
 
 	return fmt.Errorf("unknown surface %q", c.Surface)
+}
+
+// verifyZenityText is the zenity verification branch of verifyMatrixText:
+// a live dialog readbacks through the AT-SPI bridge and its close-oracle
+// is the printed stdout; steps that already closed the dialog (Enter) fall
+// back to the collected stdout alone.
+func verifyZenityText(ctx context.Context, s *stand, want string) error {
+	if zenityAlive(s) {
+		if err := s.waitZenityText(ctx, want); err != nil {
+			return err
+		}
+		out, err := s.closeZenity(ctx)
+		if err != nil {
+			return err
+		}
+		// The delivery oracle: zenity prints the entry text on OK. The
+		// printed line loses boundary whitespace, so it pins the word
+		// only when the expectation itself carries none — the readback
+		// above already pinned the exact content.
+		if out != want && strings.TrimSpace(want) == want {
+			return fmt.Errorf("expected %q, got %q (stdout oracle)", want, out)
+		}
+
+		return nil
+	}
+	// Steps closed the dialog (Enter): the collected stdout IS the oracle.
+	out := strings.TrimSpace(s.zenityOut.String())
+	if out != strings.TrimSpace(want) {
+		return fmt.Errorf("expected %q, got %q (closed-dialog stdout)", strings.TrimSpace(want), out)
+	}
+
+	return nil
 }
 
 // zenityAlive reports whether the spawned zenity entry is still running
