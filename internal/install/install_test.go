@@ -549,3 +549,233 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 		})
 	}
 }
+
+// readAll is the corpus's file-content reader.
+func readAll(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+
+	return string(data)
+}
+
+// TestInstall_OverInstallIdempotent pins the install-over-install
+// contract: the second install over an ALREADY installed desktop (the
+// saved state must not become the goswitch-only takeover value) succeeds,
+// keeps the FIRST install's backup, and rewrites the XML/unit atomically
+// with the same content.
+func TestInstall_OverInstallIdempotent(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	xmlPath, unitPath, statePath := installPaths(home)
+	firstXML, firstUnit := readAll(t, xmlPath), readAll(t, unitPath)
+
+	// The second install sees the post-takeover desktop (goswitch-only
+	// sources) — exactly what must NOT replace the saved backup.
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == "get" && args[2] == gsettingsKey {
+			return []byte(goswitchSources), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	runInstall(t, i)
+
+	if got := readAll(t, statePath); !strings.Contains(got, ownerSources) {
+		t.Errorf("second install re-saved the state to %q, want the original %q kept", got, ownerSources)
+	}
+	if got := readAll(t, xmlPath); got != firstXML {
+		t.Error("second install rewrote the component XML with different content")
+	}
+	if got := readAll(t, unitPath); got != firstUnit {
+		t.Error("second install rewrote the unit with different content")
+	}
+}
+
+// TestInstall_WriteCacheRetryOnce pins Pitfall 4's remedy: a cache probe
+// miss triggers EXACTLY ONE retry write-cache (both attempts env-carrying),
+// a hit after the retry succeeds, and a double miss fails with the named
+// error after exactly two attempts.
+func TestInstall_WriteCacheRetryOnce(t *testing.T) {
+	t.Run("retry once then hit", func(t *testing.T) {
+		f := &fakeRunner{}
+		home := t.TempDir()
+		probes := 0
+		i := install.New(
+			install.WithRunner(f.run),
+			install.WithHome(home),
+			install.WithSelfDir(selfDirWithDaemon(t)),
+			install.WithActiveEngines(func(context.Context) ([]string, error) {
+				return []string{engineENName}, nil
+			}),
+			install.WithRegistryProbe(func() bool {
+				probes++
+
+				return probes >= 2 // first probe misses, the retry's probe hits
+			}),
+		)
+		runInstall(t, i)
+
+		wantEnv := "IBUS_COMPONENT_PATH=" + filepath.Join(home, ".config", "ibus", "component") +
+			":/usr/share/ibus/component"
+		caches := 0
+		for _, c := range f.snapshot() {
+			if c.name != binIbus || len(c.args) == 0 || c.args[0] != opWriteCache {
+				continue
+			}
+			caches++
+			if !slices.Contains(c.env, wantEnv) {
+				t.Errorf("retry write-cache env lacks %q (got %v)", wantEnv, c.env)
+			}
+		}
+		if caches != 2 {
+			t.Errorf("write-cache ran %d times, want exactly 2 (the first try + one retry)", caches)
+		}
+	})
+
+	t.Run("retry exhausted fails named", func(t *testing.T) {
+		f := &fakeRunner{}
+		home := t.TempDir()
+		i := install.New(
+			install.WithRunner(f.run),
+			install.WithHome(home),
+			install.WithSelfDir(selfDirWithDaemon(t)),
+			install.WithActiveEngines(func(context.Context) ([]string, error) {
+				return []string{engineENName}, nil
+			}),
+			install.WithRegistryProbe(func() bool { return false }),
+		)
+		if _, err := i.Install(context.Background()); err == nil {
+			t.Fatal("Install() over a never-hit cache = nil error, want the named registry failure")
+		}
+		caches := 0
+		for _, c := range f.snapshot() {
+			if c.name == binIbus && len(c.args) > 0 && c.args[0] == opWriteCache {
+				caches++
+			}
+		}
+		if caches != 2 {
+			t.Errorf("write-cache ran %d times, want exactly 2 (never a third retry)", caches)
+		}
+	})
+}
+
+// TestInstall_UnitHijackOverwritten pins the ASVS V14 guard (T-04-01-01):
+// a foreign pre-created goswitchd.service does not survive install — the
+// install atomically overwrites it AND verifies the written content
+// (read-back), REPORTING the verification verdict; a post-write divergence
+// must be an error, never a silent hijack.
+func TestInstall_UnitHijackOverwritten(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	_, unitPath, _ := installPaths(home)
+	foreign := "[Service]\nExecStart=/usr/bin/evil --keylog\n"
+	if err := os.WriteFile(unitPath, []byte(foreign), 0o600); err != nil {
+		t.Fatalf("plant the hijacked unit: %v", err)
+	}
+
+	selfDir := filepath.Join(home, "self")
+	if err := os.MkdirAll(selfDir, 0o755); err != nil {
+		t.Fatalf("mkdir self: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(selfDir, "goswitchd"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write self daemon: %v", err)
+	}
+	i2 := install.New(
+		install.WithRunner(f.run),
+		install.WithHome(home),
+		install.WithSelfDir(selfDir),
+		install.WithActiveEngines(func(context.Context) ([]string, error) {
+			return []string{engineENName}, nil
+		}),
+		install.WithRegistryProbe(func() bool { return true }),
+	)
+	report, err := i2.Install(context.Background())
+	if err != nil {
+		t.Fatalf("Install() over a hijacked unit err = %v, want the atomic overwrite to succeed", err)
+	}
+
+	unit := readAll(t, unitPath)
+	if strings.Contains(unit, "evil") {
+		t.Errorf("hijacked unit content survived install: %q", unit)
+	}
+	if !strings.Contains(unit, "ExecStart="+filepath.Join(selfDir, "goswitchd")) {
+		t.Errorf("unit lacks the restored absolute ExecStart: %q", unit)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool { return strings.Contains(line, "verified") }) {
+		t.Errorf("report %v carries no read-back verification verdict — the ASVS V14 check must be observable", report)
+	}
+}
+
+// TestUninstall_Idempotent pins the rollback's tolerance: a second
+// uninstall over already-removed artifacts is a green no-op — every
+// removal/stop/disable step tolerates the already-gone state.
+func TestUninstall_Idempotent(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	if _, err := i.Uninstall(context.Background(), false); err != nil {
+		t.Fatalf("first Uninstall() err = %v, want nil", err)
+	}
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("second Uninstall() err = %v, want a green no-op (report %v)", err, report)
+	}
+
+	xmlPath, unitPath, statePath := installPaths(home)
+	for _, p := range []string{xmlPath, unitPath, statePath} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("artifact %s reappeared after the second uninstall", p)
+		}
+	}
+}
+
+// TestUninstall_PurgeRemovesUserConfig pins the D-42 purge semantics: the
+// default uninstall preserves ~/.config/goswitch (user's own work),
+// --purge removes it AND the state directory.
+func TestUninstall_PurgeRemovesUserConfig(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	userCfg := filepath.Join(home, ".config", "goswitch", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+		t.Fatalf("mkdir user config: %v", err)
+	}
+	if err := os.WriteFile(userCfg, []byte("hotkeys: {}\n"), 0o600); err != nil {
+		t.Fatalf("write user config: %v", err)
+	}
+
+	runInstall(t, i)
+	if _, err := i.Uninstall(context.Background(), false); err != nil {
+		t.Fatalf("default Uninstall() err = %v, want nil", err)
+	}
+	if _, err := os.Stat(userCfg); err != nil {
+		t.Errorf("default uninstall removed the user's %s — D-42 preserves it", userCfg)
+	}
+
+	runInstall(t, i)
+	if _, err := i.Uninstall(context.Background(), true); err != nil {
+		t.Fatalf("purge Uninstall() err = %v, want nil", err)
+	}
+	for _, dir := range []string{
+		filepath.Join(home, ".config", "goswitch"),
+		filepath.Join(home, ".local", "share", "goswitch"),
+	} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("purge left %s behind — --purge removes it (D-42)", dir)
+		}
+	}
+}

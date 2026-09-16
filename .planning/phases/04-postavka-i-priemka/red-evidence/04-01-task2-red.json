@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/install/ -race -count=1 (full corpus; target transcribed to node-test TAP)",
+  "exitCode": 1,
+  "targetTest": "TestInstall_UnitHijackOverwritten",
+  "failingTest": "TestInstall_UnitHijackOverwritten",
+  "expected": "install report carries a read-back verification verdict for the written unit (ASVS V14 content check observable); a post-write divergence must be an error, never a silent hijack",
+  "actual": "install succeeded over the hijacked unit and replaced the content, but the report carries no verification verdict — no read-back check exists; the other 13 corpus tests pass (Task 1 already delivered the idempotency/retry/purge behaviors)",
+  "output": "=== RUN   TestInstall_UnitHijackOverwritten\n    install_test.go:716: report [daemon: ... state: ... component: ... registry: goswitch visible after write-cache unit: ... unit: daemon-reload + enable --now done engine: registered live (ListActiveEngines) sources: single owner [('ibus', 'goswitch-en')] engine: activated goswitch-en] carries no read-back verification verdict — the ASVS V14 check must be observable\n--- FAIL: TestInstall_UnitHijackOverwritten (0.00s)\nFAIL\nnot ok 1 - TestInstall_UnitHijackOverwritten\n# tests 14\n# pass 13\n# fail 1"
+}
