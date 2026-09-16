@@ -29,6 +29,15 @@ expected: owner relogin → dispatch e2e-matrix with fresh_session=true per
 docs/ci-runner.md «D-48 double-run gate» → loginctl preflight passes (session age ≤ 30 min),
 then both sequential v3 runs report matrix: 31/31 PASS, job conclusion success
 result: [pending]
+attempts:
+  - attempt 1 (run 35142914380, 2026-09-16 19:50Z): preflight PASS (session genuinely
+    fresh), matrix v3 run #1 FAILED 8/31 — a11y witness not answering within 30s
+    (`focus_helper.py witness: signal: killed`) on 23 cases, interleaved with 8 PASSes.
+    Classification: environmental — the known gnome-shell a11y-bridge serial-wedge class
+    (STATE deferred-items / ci-runner.md «Зависание моста gnome-shell»); no test/e2e code
+    changed since the green double-run proof at 9f2fd75 (run 35108412175, 31/31 twice).
+    Remedy: relogin (rebuilds the whole a11y stack) + re-dispatch within the 30-min
+    fresh-session window.
 
 ## Summary
 
