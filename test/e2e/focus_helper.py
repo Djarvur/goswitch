@@ -49,6 +49,30 @@ Subcommands:
               background grab is refused (GTK4 errors, GTK3 returns false —
               live-verified in phase 01-03), which is why the stand drives
               its own input surface (the shell's search entry) instead.
+  witness-events
+              resident perf witness (plan 04-04, D-44): ONE
+              Atspi.EventListener on object:text-changed, one startup cost,
+              ONE LINE PER EVENT on stdout —
+              "<RFC3339 UTC> <app> <pid> <text>". The timestamp is stamped
+              at event arrival — the t1 of the measured ydotool→AT-SPI
+              window; the text readback happens after the stamp, so its
+              latency never lands inside the window. Events from
+              non-input-surface roles are ignored. The process runs until
+              killed by pid (the Go client owns the lifecycle; never
+              pkill/pgrep -f — the pattern matches the caller's own
+              command line, live hit in the phase research).
+  witness-poll <pid>
+              resident poller fallback for the same perf window (A2, used
+              only if the event listener proves unstable on the desk):
+              SAME line protocol, driven by a fixed in-process quantum —
+              WITNESS_POLL_QUANTUM_S = 5 ms, the named constant D-44's
+              methodology requires. Watches the pid's first input node and
+              prints a line whenever its text CHANGES; a line per poll
+              would flood the protocol without adding information. When
+              the watched node dies the poller re-finds it inside the same
+              pid's application; if the whole application is gone the
+              poller idles and the Go await times out loudly (never
+              silently).
 
 Every caller must use /usr/bin/python3: PATH python3 is linuxbrew without
 gi (01-PATTERNS § test/e2e).
@@ -57,11 +81,18 @@ Exit codes: 0 success, 1 named failure, 2 usage error.
 """
 import re
 import sys
+import time
+from datetime import datetime, timezone
 
 import gi
 
 gi.require_version("Atspi", "2.0")
 from gi.repository import Atspi  # noqa: E402
+
+# The fallback poller's fixed quantum (D-44): the methodology of the perf
+# report names this constant as the observer's quantization when the
+# witness-poll mode drives the measurement.
+WITNESS_POLL_QUANTUM_S = 0.005  # 5 ms
 
 INPUT_ROLES = ("TEXT", "PASSWORD_TEXT", "ENTRY")
 
@@ -362,6 +393,101 @@ def cmd_focus(app_name):
     return None
 
 
+def app_of(node):
+    """Return the application node above node in the AT-SPI tree, or None.
+
+    The application is the ancestor whose parent is the desktop root —
+    the same instance-exact identity the pid-keyed readbacks use (plan
+    02-02), here needed to name and pid-tag the witness lines.
+    """
+    try:
+        cur = node
+        while cur is not None:
+            parent = cur.get_parent()
+            if parent is None:
+                return None
+            if role_name(parent).startswith("DESKTOP"):
+                return cur
+            cur = parent
+    except Exception:
+        return None
+    return None
+
+
+def witness_line(node, text):
+    """Format one witness protocol line: "<RFC3339 UTC> <app> <pid> <text>".
+
+    The timestamp is stamped FIRST — before the app walk and the text
+    readback — so the Go side's t1 is the observation arrival, never the
+    readback completion (the honest upper bound of D-44 stays tight).
+    """
+    ts = datetime.now(timezone.utc).isoformat()
+    app = app_of(node)
+    name, pid = "(unknown)", "-"
+    if app is not None:
+        name = app.get_name() or name
+        try:
+            pid = str(app.get_process_id())
+        except Exception:
+            pid = "-"
+    return f"{ts} {name} {pid} {text}"
+
+
+def cmd_witness_events():
+    """Resident object:text-changed listener — one line per input event.
+
+    The listener hears every text change on the desktop; filtering to the
+    input-surface roles drops window-title and shell noise before the line
+    is printed (the Go client still matches by app name and text). Runs
+    until the process is killed by pid.
+    """
+
+    def on_event(event):
+        try:
+            node = event.source
+            if role_name(node) not in INPUT_ROLES:
+                return None
+            print(witness_line(node, read_text(node) or ""), flush=True)
+        except Exception:
+            return None  # a transient node error must not kill the witness
+        return None
+
+    listener = Atspi.EventListener.new(on_event)
+    if not listener.register("object:text-changed"):
+        return "could not register the object:text-changed listener"
+    Atspi.event_main()
+    return None
+
+
+def cmd_witness_poll(pid_str):
+    """Resident poller fallback — same line protocol, fixed 5 ms quantum.
+
+    One line per TEXT CHANGE (not per poll: a line per poll would flood
+    the protocol without adding information). The timestamp of a change
+    line is the poll that observed it, so the honest quantization of this
+    mode is WITNESS_POLL_QUANTUM_S — the methodology names it (D-44).
+    """
+    try:
+        pid = int(pid_str)
+    except ValueError:
+        return f"not a process id: {pid_str}"
+    node = None
+    last = None
+    while True:
+        if node is not None and char_count(node) < 0:
+            node = None  # the watched node died — re-find inside the same app
+        if node is None:
+            app = app_by_pid(pid)
+            if app is not None:
+                node = first_input_node(app)
+        if node is not None:
+            text = read_text(node) or ""
+            if text != last:
+                last = text
+                print(witness_line(node, text), flush=True)
+        time.sleep(WITNESS_POLL_QUANTUM_S)
+
+
 def main(argv):
     if len(argv) == 2 and argv[1] == "witness":
         problem = cmd_witness()
@@ -385,10 +511,14 @@ def main(argv):
         problem = cmd_grab_input_pid(argv[2], want_chars)
     elif len(argv) == 3 and argv[1] == "focus":
         problem = cmd_focus(argv[2])
+    elif len(argv) == 2 and argv[1] == "witness-events":
+        problem = cmd_witness_events()
+    elif len(argv) == 3 and argv[1] == "witness-poll":
+        problem = cmd_witness_poll(argv[2])
     else:
         print("usage: focus_helper.py witness | text <app> | focused-text | focused-text-pid <pid>"
               " | focused-inputs | focused-input-pid <pid> | grab-input-pid <pid> [want-chars]"
-              " | focus <app-name>", file=sys.stderr)
+              " | focus <app-name> | witness-events | witness-poll <pid>", file=sys.stderr)
         return 2
     if problem is not None:
         print(f"focus_helper: {problem}", file=sys.stderr)

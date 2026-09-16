@@ -12,9 +12,12 @@ import (
 )
 
 // TestPercentile_Exact pins the percentile formula
-// s[int(float64(len(s)-1))*p on the [10..100] sample: p50 = 50,
-// p95 = p99 = 100 — exact values, no interpolation (04-RESEARCH
-// Don't Hand-Roll: sort + index, no stats dependency).
+// s[int(float64(len(s)-1)*p)] on the [10..100] sample: index int(9*p) gives
+// p50 = s[4] = 50 and p95 = p99 = s[8] = 90 (9*0.95 = 8.55, 9*0.99 = 8.91 —
+// both truncate to 8). The plan's behavior block wrote p95/p99 = 100, an
+// arithmetic slip against its own normative formula (deviation, Rule 1) —
+// exact values, no interpolation (04-RESEARCH Don't Hand-Roll: sort +
+// index, no stats dependency).
 func TestPercentile_Exact(t *testing.T) {
 	t.Parallel()
 
@@ -27,11 +30,11 @@ func TestPercentile_Exact(t *testing.T) {
 	if got := percentile(samples, 0.50); got != 50*time.Millisecond {
 		t.Errorf("percentile(p50) = %v, want %v", got, 50*time.Millisecond)
 	}
-	if got := percentile(samples, 0.95); got != 100*time.Millisecond {
-		t.Errorf("percentile(p95) = %v, want %v", got, 100*time.Millisecond)
+	if got := percentile(samples, 0.95); got != 90*time.Millisecond {
+		t.Errorf("percentile(p95) = %v, want %v", got, 90*time.Millisecond)
 	}
-	if got := percentile(samples, 0.99); got != 100*time.Millisecond {
-		t.Errorf("percentile(p99) = %v, want %v", got, 100*time.Millisecond)
+	if got := percentile(samples, 0.99); got != 90*time.Millisecond {
+		t.Errorf("percentile(p99) = %v, want %v", got, 90*time.Millisecond)
 	}
 }
 
