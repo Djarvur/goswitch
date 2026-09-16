@@ -518,3 +518,56 @@ macr:
   apps: []
   alt_modifier: ""
 `
+
+// TestRenderStatusVersionToken pins the D-37 token: the daemon's build
+// version LEADS the status line, the fixed-token grammar stays space-free
+// before config_error, and config_error still closes the line (its value
+// whitespace-flattened) — the wire canon of the status surface.
+func TestRenderStatusVersionToken(t *testing.T) {
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{Status: fakeStatus{snap: session.Status{
+		Mode:         "en",
+		Version:      "dev",
+		ConfigPath:   "/tmp/goswitch-version.yaml",
+		ConfigValid:  false,
+		ConfigError:  "decode config: boom with spaces",
+	}}})
+
+	reply, err := svc.Status()
+	if err != nil {
+		t.Fatalf("Status error = %v, want nil", err)
+	}
+	if !strings.HasPrefix(reply, "version=dev ") {
+		t.Errorf("Status reply %q must lead with the version= token", reply)
+	}
+	for _, want := range []string{"mode=en", "config_path=/tmp/goswitch-version.yaml", "config_valid=false"} {
+		if !strings.Contains(reply, want) {
+			t.Errorf("Status reply %q missing %q", reply, want)
+		}
+	}
+	// config_error remains the LAST field, its flattened value closing the line.
+	if !strings.HasSuffix(reply, "config_error=decode config: boom with spaces") {
+		t.Errorf("Status reply %q must close with the config_error token", reply)
+	}
+	// Pair grammar: the tokens before config_error carry no spaces.
+	head := reply[:strings.Index(reply, "config_error=")]
+	for _, tok := range strings.Fields(head) {
+		parts := strings.Split(tok, "=")
+		if len(parts) != 2 || strings.ContainsAny(parts[0], " ") {
+			t.Errorf("status token %q breaks the space-free key=value grammar", tok)
+		}
+	}
+
+	t.Run("no config still leads with version", func(t *testing.T) {
+		svc := ctlsvc.NewSvc(ctlsvc.Deps{Status: fakeStatus{snap: session.Status{Mode: "ru", Version: "v9.9.9"}}})
+		reply, err := svc.Status()
+		if err != nil {
+			t.Fatalf("Status error = %v, want nil", err)
+		}
+		if !strings.HasPrefix(reply, "version=v9.9.9 ") {
+			t.Errorf("no-config Status reply %q must lead with version=v9.9.9", reply)
+		}
+		if !strings.HasSuffix(reply, "config=none") {
+			t.Errorf("no-config Status reply %q must close with config=none", reply)
+		}
+	})
+}

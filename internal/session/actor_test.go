@@ -3135,3 +3135,15 @@ func TestActor_StatusConfigFields(t *testing.T) {
 		t.Errorf("config error = %q, want the rejection naming the key", st.ConfigError)
 	}
 }
+
+// TestStatusCarriesVersion pins the D-37 build identity in the status
+// snapshot: the version the daemon pinned at construction (its stamped or
+// dev-fallback build) reaches goswitchctl status through StatusSnapshot.
+func TestStatusCarriesVersion(t *testing.T) {
+	a, _ := wiredActor()
+	a.SetVersion("v1.2.3")
+
+	if st := a.StatusSnapshot(); st.Version != "v1.2.3" {
+		t.Errorf("snapshot Version = %q, want v1.2.3", st.Version)
+	}
+}

@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./cmd/goswitchd/ ./internal/session/ ./internal/ctlsvc/ -race -count=1 (transcribed to node-test TAP)",
+  "exitCode": 1,
+  "targetTest": "TestVersionString",
+  "failingTest": "TestVersionString",
+  "expected": "versionString() renders 'goswitchd dev' for the unstamped dev build and 'goswitchd v1.0.0 abc123 2026-01-01' for a goreleaser-stamped build; runVersion prints the line; the actor snapshot carries the pinned Version; renderStatus leads with version=",
+  "actual": "The version.go stubs return empty strings, SetVersion stores nothing so the snapshot Version stays empty, and renderStatus emits no version token: TestVersionString (3 subtests), TestVersionFlag, TestStatusCarriesVersion and TestRenderStatusVersionToken (2 subtests) all fail on assertions; every pre-existing test passes",
+  "output": "not ok 1 - TestVersionString/dev_fallback:_no_commit,_no_date\nnot ok 2 - TestVersionString/stamped_release_build\nnot ok 3 - TestVersionString/stamped_commit_without_date\nnot ok 4 - TestVersionString\nnot ok 5 - TestVersionFlag\nnot ok 6 - TestStatusCarriesVersion\nnot ok 7 - TestRenderStatusVersionToken\nnot ok 8 - TestRenderStatusVersionToken/no_config_still_leads_with_version\n# tests 8\n# pass 0\n# fail 8"
+}

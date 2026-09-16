@@ -135,6 +135,10 @@ type Actor struct {
 	appidStarted bool
 	appidWarned  bool // one WARN per degradation episode — a broken source must not spam per keystroke
 	startAppid   func() (AppidSource, error)
+	// version is the daemon's build identity (D-37) pinned at construction;
+	// the status snapshot lifts it so goswitchctl status identifies the
+	// running build.
+	version string
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -328,6 +332,12 @@ func (a *Actor) UseAppidStarter(fn func() (AppidSource, error)) {
 	a.startAppid = fn
 }
 
+// SetVersion pins the daemon's build identity into the status snapshot
+// (D-37): the daemon calls it once at construction with its stamped (or
+// dev-fallback) version, and StatusSnapshot lifts it into the report.
+// STUB (RED of plan 04-02 Task 1): stores nothing yet.
+func (a *Actor) SetVersion(_ string) {}
+
 // MACRCounters snapshots the Super→Ctrl layer's counters — the goswitchctl
 // status surface of plan 03-06 (ADR-005 b.2: every intercepted combination
 // and every upstream-consumed one is countable, never silent).
@@ -339,11 +349,12 @@ func (a *Actor) MACRCounters() MACRStats {
 }
 
 // Status is the daemon state snapshot for the control surface (INST-02):
-// the internal mode, the correction outcome counters with their skip-reason
-// breakdown, the MACR interception counters and the config-source status
-// (D-32 last-good visibility). Counts and states ONLY — never typed or
-// corrected text (D-20, T-03-06-03).
+// the build identity (D-37), the internal mode, the correction outcome
+// counters with their skip-reason breakdown, the MACR interception counters
+// and the config-source status (D-32 last-good visibility). Counts and
+// states ONLY — never typed or corrected text (D-20, T-03-06-03).
 type Status struct {
+	Version               string
 	Mode                  string
 	CorrectionsDone       int
 	CorrectionsSkipped    int
