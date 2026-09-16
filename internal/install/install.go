@@ -207,6 +207,9 @@ func New(opts ...func(*Installer)) *Installer {
 	if i.registryProbe == nil {
 		i.registryProbe = i.probeRegistryCache
 	}
+	if i.ctlStatus == nil {
+		i.ctlStatus = probeCtlStatus
+	}
 
 	return i
 }

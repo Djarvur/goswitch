@@ -91,6 +91,13 @@ func runInstallCycle(ctx context.Context, s *stand) error {
 	if err := installRegistered(ctx); err != nil {
 		return err
 	}
+	// The D-41 self-check runs right after the install it audits (INST-01,
+	// the roadmap's №1 criterion): the registration wait above guarantees
+	// the unit daemon is far enough into run() that its ctlsvc name (the
+	// audit's version step) is already on the session bus.
+	if err := installSelfcheck(ctx, ctlBin); err != nil {
+		return err
+	}
 	if err := installCorrection(ctx, s, "first correction"); err != nil {
 		return err
 	}
@@ -105,6 +112,29 @@ func runInstallCycle(ctx context.Context, s *stand) error {
 	}
 
 	return runUninstallAndVerify(ctx, ctlBin, s)
+}
+
+// installSelfcheck proves the D-41 audit rides the installed desktop: the
+// freshly built CLI exits 0 and prints the six ok verdicts in order.
+func installSelfcheck(ctx context.Context, ctlBin string) error {
+	out, errOut, err := runCtl(ctx, ctlBin, "selfcheck")
+	if err != nil {
+		return fmt.Errorf("install-cycle: selfcheck exited non-zero (out %q err %q): %w", out, errOut, err)
+	}
+	for _, want := range []string{
+		"ok version",
+		"ok component-visible",
+		"ok unit-active",
+		"ok engine-registered",
+		"ok config",
+		"ok input-source",
+	} {
+		if !strings.Contains(out, want) {
+			return fmt.Errorf("install-cycle: selfcheck output misses %q (out %q)", want, out)
+		}
+	}
+
+	return nil
 }
 
 // installCorrection runs one full word-correction gesture against the

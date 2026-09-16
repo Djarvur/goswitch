@@ -28,6 +28,10 @@ const (
 
 	envComponentPath = "IBUS_COMPONENT_PATH"
 	opListEngine     = "list-engine"
+
+	// stepComponentName mirrors the audit's step name for the corpus's
+	// transparency pin (the install-package const is unexported).
+	stepComponentName = "component-visible"
 )
 
 // selfcheckConfigYAML is a COMPLETE valid config document (the 03-02
@@ -49,11 +53,14 @@ macr:
   alt_modifier: ""
 `
 
+// errFakeCtlDown is the corpus's static daemon-silent error (err113).
+var errFakeCtlDown = errors.New("name has no owner")
+
 // selfcheckGreenStub answers the healthy desktop for the audit: the unit
 // active and the single-owner sources set; list-engine falls through to
 // defaultReply's registry hit.
 func selfcheckGreenStub(name string, args []string) ([]byte, error) {
-	if name == binSystemctl && len(args) == 4 && args[2] == "is-active" {
+	if name == binSystemctl && len(args) == 3 && args[1] == "is-active" {
 		return []byte("active"), nil
 	}
 	if name == binGSettings && len(args) == 3 && args[0] == opGet {
@@ -63,10 +70,31 @@ func selfcheckGreenStub(name string, args []string) ([]byte, error) {
 	return defaultReply(name, args)
 }
 
+// redUnitStub answers an inactive unit over the otherwise-green desktop.
+func redUnitStub(name string, args []string) ([]byte, error) {
+	if name == binSystemctl && len(args) == 3 && args[1] == "is-active" {
+		return []byte("inactive"), nil
+	}
+
+	return selfcheckGreenStub(name, args)
+}
+
+// redSourcesStub answers the pre-install owner sources over the
+// otherwise-green desktop.
+func redSourcesStub(name string, args []string) ([]byte, error) {
+	if name == binGSettings && len(args) == 3 && args[0] == opGet {
+		return []byte(ownerSources), nil
+	}
+
+	return selfcheckGreenStub(name, args)
+}
+
 // newSelfchecker builds an installer for the selfcheck corpus: fake runner,
 // the given $HOME, canned ctlStatus and activeEngines — no live bus, no
 // real desktop behind the audit.
-func newSelfchecker(t *testing.T, f *fakeRunner, home, status string, statusErr error, engines []string) *install.Installer {
+func newSelfchecker(
+	t *testing.T, f *fakeRunner, home, status string, statusErr error, engines []string,
+) *install.Installer {
 	t.Helper()
 
 	return install.New(
@@ -181,8 +209,9 @@ func TestSelfcheck_ComponentRepair(t *testing.T) {
 	if err := i.Selfcheck(context.Background(), &buf); err != nil {
 		t.Fatalf("Selfcheck error = %v, want nil (the repair must recover the step)", err)
 	}
-	if out := buf.String(); strings.Count(out, "component-visible") != 1 || !strings.Contains(out, "ok component-visible") {
-		t.Errorf("selfcheck output %q must carry exactly one transparent ok component-visible verdict", out)
+	verdict := "ok component-visible"
+	if out := buf.String(); strings.Count(out, stepComponentName) != 1 || !strings.Contains(out, verdict) {
+		t.Errorf("selfcheck output %q must carry exactly one transparent %q verdict", out, verdict)
 	}
 	if repairs := countWriteCaches(f); repairs != 1 {
 		t.Errorf("repair write-cache count = %d, want exactly 1 (T-04-02-01: never a loop)", repairs)
@@ -229,24 +258,9 @@ func TestSelfcheck_ComponentRedAfterRepair(t *testing.T) {
 // config invalid (path + parse reason) and the sources not the goswitch
 // owner — each fails the run and stops it (fail-fast).
 func TestSelfcheck_EachRedPath(t *testing.T) {
-	redUnitStub := func(name string, args []string) ([]byte, error) {
-		if name == binSystemctl && len(args) == 4 && args[2] == "is-active" {
-			return []byte("inactive"), nil
-		}
-
-		return selfcheckGreenStub(name, args)
-	}
-	redSourcesStub := func(name string, args []string) ([]byte, error) {
-		if name == binGSettings && len(args) == 3 && args[0] == opGet {
-			return []byte(ownerSources), nil
-		}
-
-		return selfcheckGreenStub(name, args)
-	}
-
 	t.Run("version: daemon not answering", func(t *testing.T) {
 		f := &fakeRunner{stub: selfcheckGreenStub}
-		i := newSelfchecker(t, f, t.TempDir(), "", errors.New("name has no owner"), []string{engineENName})
+		i := newSelfchecker(t, f, t.TempDir(), "", errFakeCtlDown, []string{engineENName})
 		runRed(t, i, "FAIL version", hintUnitStart)
 	})
 
@@ -263,30 +277,7 @@ func TestSelfcheck_EachRedPath(t *testing.T) {
 	})
 
 	t.Run("config invalid: path and parse reason", func(t *testing.T) {
-		home := t.TempDir()
-		cfgDir := filepath.Join(home, ".config", "goswitch")
-		if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-			t.Fatalf("mkdir config dir: %v", err)
-		}
-		cfgPath := filepath.Join(cfgDir, "config.yaml")
-		if err := os.WriteFile(cfgPath, []byte("not_a_known_key: true\n"), 0o600); err != nil {
-			t.Fatalf("write invalid config: %v", err)
-		}
-		f := &fakeRunner{stub: selfcheckGreenStub}
-		i := newSelfchecker(t, f, home, ctlStatusHealthy, nil, []string{engineENName})
-
-		var buf bytes.Buffer
-		if err := i.Selfcheck(context.Background(), &buf); err == nil {
-			t.Fatal("Selfcheck error = nil, want the invalid config to fail the run")
-		}
-		out := buf.String()
-		if !strings.Contains(out, "FAIL config") || !strings.Contains(out, cfgPath) {
-			t.Errorf("selfcheck output %q must carry FAIL config with the path %q", out, cfgPath)
-		}
-		if !strings.Contains(out, "not_a_known_key") {
-			t.Errorf("selfcheck output %q must name the parse reason", out)
-		}
-		assertLastLineFail(t, out)
+		runConfigRed(t)
 	})
 
 	t.Run("input source not the goswitch owner", func(t *testing.T) {
@@ -294,6 +285,38 @@ func TestSelfcheck_EachRedPath(t *testing.T) {
 		i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
 		runRed(t, i, "FAIL input-source", hintInstall)
 	})
+}
+
+// runConfigRed drives the config step's red scenario: an existing document
+// that fails the strict decode fails the run, with the path and the parse
+// reason in the verdict.
+func runConfigRed(t *testing.T) {
+	t.Helper()
+
+	home := t.TempDir()
+	cfgDir := filepath.Join(home, ".config", "goswitch")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("not_a_known_key: true\n"), 0o600); err != nil {
+		t.Fatalf("write invalid config: %v", err)
+	}
+	f := &fakeRunner{stub: selfcheckGreenStub}
+	i := newSelfchecker(t, f, home, ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err == nil {
+		t.Fatal("Selfcheck error = nil, want the invalid config to fail the run")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "FAIL config") || !strings.Contains(out, cfgPath) {
+		t.Errorf("selfcheck output %q must carry FAIL config with the path %q", out, cfgPath)
+	}
+	if !strings.Contains(out, "not_a_known_key") {
+		t.Errorf("selfcheck output %q must name the parse reason", out)
+	}
+	assertLastLineFail(t, out)
 }
 
 // TestSelfcheck_ConfigNoFileGreen pins the no-file green (the 04-planner
@@ -341,7 +364,10 @@ func TestSelfcheck_StatusProbeSeam(t *testing.T) {
 	t.Run("reply without version= is red", func(t *testing.T) {
 		f := &fakeRunner{stub: selfcheckGreenStub}
 		i := newSelfchecker(t, f, t.TempDir(), ctlStatusNoVer, nil, []string{engineENName})
-		runRed(t, i, "FAIL version", hintUnitStart)
+		// The plan pins the unit-start hint for the SILENT daemon (the
+		// EachRedPath case); a pre-version reply names its own fix — the
+		// unit restart that puts a stamping-capable daemon in place.
+		runRed(t, i, "FAIL version", "systemctl --user restart goswitchd")
 	})
 
 	t.Run("healthy reply is green", func(t *testing.T) {

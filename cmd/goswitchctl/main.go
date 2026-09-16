@@ -40,12 +40,17 @@ const ctlCallTimeout = 5 * time.Second
 // too small for that chain).
 const installTimeout = 120 * time.Second
 
+// selfcheckTimeout is the selfcheck budget — also NOT ctlCallTimeout: the
+// audit spans ibus probes and possibly an env-cache repair (D-41).
+const selfcheckTimeout = 60 * time.Second
+
 // errDaemonNotRunning names the friendly verdict for a missing name owner
 // — the acceptance-pinned wording.
 var errDaemonNotRunning = errors.New("daemon not running? (org.djarvur.goswitch is not on the session bus)")
 
 // errUsage is the subcommand grammar (err113: static).
-var errUsage = errors.New("usage: goswitchctl status [--json] | reload | correct | install | uninstall [--purge]")
+var errUsage = errors.New(
+	"usage: goswitchctl status [--json] | reload | correct | install | uninstall [--purge] | selfcheck")
 
 // configErrorKey terminates the status token grammar: its value is the
 // LAST field and may contain spaces (a flattened parse error), so the
@@ -98,6 +103,11 @@ func run(ctx context.Context, args []string) error {
 		return runInstallCmd(ctx)
 	case "uninstall":
 		return runUninstallCmd(ctx, args[1:])
+	case "selfcheck":
+		ctx, cancel := context.WithTimeout(ctx, selfcheckTimeout)
+		defer cancel()
+
+		return runSelfcheckCmd(ctx)
 	default:
 		return fmt.Errorf("unknown subcommand %q: %w", args[0], errUsage)
 	}
@@ -116,6 +126,17 @@ func runInstallCmd(ctx context.Context) error {
 		return fmt.Errorf("install: %w", err)
 	}
 	printReport(report)
+
+	return nil
+}
+
+// runSelfcheckCmd executes the D-41 audit under its own budget: the
+// per-step verdicts stream to stdout, and the first red verdict is the
+// non-zero exit contract.
+func runSelfcheckCmd(ctx context.Context) error {
+	if err := install.Selfcheck(ctx, os.Stdout); err != nil {
+		return fmt.Errorf("selfcheck: %w", err)
+	}
 
 	return nil
 }
