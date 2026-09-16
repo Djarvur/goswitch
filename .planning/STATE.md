@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 04
 current_phase_name: Поставка и приёмка
-status: executing
-stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-09-16T14:35:21.331Z"
+status: verifying
+stopped_at: "CHECKPOINT 04-07: perf budget gate red (p95 184.4ms >= 50ms, WINDOWS #5) — owner methodology decision pending; v1.0.0 tag NOT created; resume by deciding (a) uinput stand injector (b) window redefinition (c) accept"
+last_updated: "2026-09-16T15:03:35.670Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 04 execution started
-state_head: 4946e2875c04c749d8bb2bea560c34de239f14d9
+state_head: b1f0aaad7d848ca90e2dc97bcd8a8402d037c9fb
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 26
-  completed_plans: 25
+  completed_plans: 26
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 04 (Поставка и приёмка) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-16 — Phase 04 execution started
 
 Progress: [████████░░] 75%
@@ -89,6 +89,7 @@ Progress: [████████░░] 75%
 | Phase 04 P04 | 35 min | 2 tasks | 8 files |
 | Phase 04 P03 | 7 min | 2 tasks | 4 files |
 | Phase 04 P06 | 22 min | 2 tasks | 6 files |
+| Phase 04 P07 | 16 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,9 @@ Recent decisions affecting current work:
 - [Phase 04]: D-48 механика доказана живьём: один dispatch (run 35108412175) — два последовательных прогона v3 по 31/31 PASS без вмешательства; формальный свежесессионный гейт — шаг приёмки 04-07
 - [Phase 04]: loginctl-факты: show-session -p Since не свойство, Timestamp --value в человеческом формате — префлайт парсит GNU date -d
 - [Phase 04]: Регресс вочдога 04-04: матричный путь передавал лимит 0 → мгновенный time.After(0) на каждый кейс; резолюция 0→caseTimeout перенесена внутрь runCaseWatchdog (watchdogLimit) с RED→GREEN тестами
+- [Phase 04]: 04-07: README perf table publishes honest live numbers + methodology (window includes ~170 ms stand-injector overhead; daemon reaction <2 ms); repo README is not public until the tag — the tag stays blocked on the perf gate
+- [Phase 04]: 04-07: WINDOWS ledger reconciled via verbs — #2 fixed, #4 waived with the owner 2026-09-15 reason; #5 left open deliberately (executor must not decide the owner latency-methodology question)
+- [Phase 04]: 04-07: docs/ACCEPTANCE.md carries the formal D-48 fresh-session double-run as item 1 (before local install), procedure per docs/ci-runner.md
 
 ### Pending Todos
 
@@ -197,6 +201,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T14:35:21.241Z
-Stopped at: Completed 04-06-PLAN.md
+Last session: 2026-09-16T15:03:35.587Z
+Stopped at: CHECKPOINT 04-07: perf budget gate red (p95 184.4ms >= 50ms, WINDOWS #5) — owner methodology decision pending; v1.0.0 tag NOT created; resume by deciding (a) uinput stand injector (b) window redefinition (c) accept
 Resume file: None
