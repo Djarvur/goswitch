@@ -32,6 +32,7 @@ const (
 	binIbus      = "ibus"
 	binSystemctl = "systemctl"
 	opWriteCache = "write-cache"
+	opGet        = "get"
 	engineENName = "goswitch-en"
 )
 
@@ -86,7 +87,7 @@ func (f *fakeRunner) snapshot() []instCall {
 // defaultReply answers the happy-path desktop: gsettings get returns the
 // owner sources, ibus list-engine already lists goswitch.
 func defaultReply(name string, args []string) ([]byte, error) {
-	if name == binGSettings && len(args) == 3 && args[0] == "get" && args[2] == gsettingsKey {
+	if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
 		return []byte(ownerSources), nil
 	}
 	if name == binIbus && len(args) > 0 && args[0] == "list-engine" {
@@ -420,7 +421,7 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	// The second install sees the post-takeover desktop (goswitch-only
 	// sources) — exactly the state it must NOT save over the marker.
 	f.stub = func(name string, args []string) ([]byte, error) {
-		if name == "gsettings" && len(args) == 3 && args[0] == "get" && args[2] == gsettingsKey {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
 			return []byte(goswitchSources), nil
 		}
 
@@ -579,7 +580,7 @@ func TestInstall_OverInstallIdempotent(t *testing.T) {
 	// The second install sees the post-takeover desktop (goswitch-only
 	// sources) — exactly what must NOT replace the saved backup.
 	f.stub = func(name string, args []string) ([]byte, error) {
-		if name == binGSettings && len(args) == 3 && args[0] == "get" && args[2] == gsettingsKey {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
 			return []byte(goswitchSources), nil
 		}
 

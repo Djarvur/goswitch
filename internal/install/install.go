@@ -108,6 +108,7 @@ var (
 	errNotRegistered = errors.New(
 		"goswitch-en did not register with the live ibus-daemon in time (did the unit start and register?)")
 	errRestoreFailed = errors.New("gsettings rejected the restored sources (saved value failed the shape check?)")
+	errWriteVerify   = errors.New("written file content mismatch after read-back (possible tampering — ASVS V14)")
 )
 
 // Runner executes one installer subprocess (ibus, systemctl, gsettings):
@@ -400,14 +401,15 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 	return prior, nil
 }
 
-// writeComponent renders and atomically installs the component XML.
+// writeComponent renders and atomically installs the component XML, then
+// verifies the written content by read-back.
 func (i *Installer) writeComponent() error {
 	data, err := renderComponentXML()
 	if err != nil {
 		return err
 	}
 
-	return writeAtomic(i.path(componentDirRel, componentFile), data, permPublic)
+	return writeVerified(i.path(componentDirRel, componentFile), data, permPublic)
 }
 
 // registerCache refreshes the registry cache and verifies the component
@@ -501,9 +503,10 @@ func (i *Installer) probeRegistryCache() bool {
 	return strings.Contains(string(data), engineEN) || strings.Contains(string(data), engineRU)
 }
 
-// writeUnit renders and atomically installs the systemd user unit.
+// writeUnit renders and atomically installs the systemd user unit, then
+// verifies the written content by read-back.
 func (i *Installer) writeUnit(daemonPath string) error {
-	return writeAtomic(i.path(unitDirRel, unitFile), renderUnit(daemonPath), permPublic)
+	return writeVerified(i.path(unitDirRel, unitFile), renderUnit(daemonPath), permPublic)
 }
 
 // startUnit reloads the user manager and enables+starts the unit.
@@ -569,9 +572,9 @@ func (i *Installer) report(daemonPath string) []string {
 	return []string{
 		"daemon: " + daemonPath,
 		"state: " + i.path(stateDirRel, stateFile),
-		"component: " + i.path(componentDirRel, componentFile),
+		"component: " + i.path(componentDirRel, componentFile) + " content verified (read-back)",
 		"registry: goswitch visible after write-cache",
-		"unit: " + i.path(unitDirRel, unitFile),
+		"unit: " + i.path(unitDirRel, unitFile) + " content verified (read-back)",
 		"unit: daemon-reload + enable --now done",
 		"engine: registered live (ListActiveEngines)",
 		"sources: single owner " + ownerSourcesSet,
@@ -806,6 +809,31 @@ func withEnv(key, value string) []string {
 	}
 
 	return append(env, prefix+value)
+}
+
+// writeVerified writes atomically and then re-reads the file, comparing
+// byte-exactly — the ASVS V14 hijack guard (T-04-01-01): a foreign
+// pre-created unit or any post-write divergence fails the install with a
+// named error instead of surviving silently.
+func writeVerified(path string, data []byte, perm os.FileMode) error {
+	if err := writeAtomic(path, data, perm); err != nil {
+		return err
+	}
+
+	return verifyWritten(path, data)
+}
+
+// verifyWritten re-reads path and requires the exact written bytes.
+func verifyWritten(path string, want []byte) error {
+	got, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read back %s: %w", path, err)
+	}
+	if !bytes.Equal(got, want) {
+		return fmt.Errorf("%w: %s", errWriteVerify, path)
+	}
+
+	return nil
 }
 
 // writeAtomic writes data to path through a temp file in the SAME
