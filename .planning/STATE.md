@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 04
 current_phase_name: Поставка и приёмка
 status: executing
-stopped_at: Completed 04-05-PLAN.md
-last_updated: "2026-09-16T12:26:08.234Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-09-16T13:01:27.556Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 04 execution started
-state_head: a5456d0cec2e3a6828fd361a6728c78eab24168c
+state_head: cb32ad325a33247b8b8ad71e7f5ee10a107fa273
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 26
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 04 (Поставка и приёмка) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 04 execution started
 
@@ -85,6 +85,7 @@ Progress: [████████░░] 75%
 | Phase 03 P07 | 48 min | 2 tasks | 15 files |
 | Phase 04 P01 | 47 min | 3 tasks | 8 files |
 | Phase 04 P05 | 75 min | 2 tasks | 11 files |
+| Phase 04 P02 | 24 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -164,6 +165,8 @@ Recent decisions affecting current work:
 - [Phase 3]: correct.Detect production-orphaned после сукцессии D-16→D-23 (остался только в тестах как classifyRune-референс) — предупреждение верификатора, кандидат на уборку в будущем; не дефект
 - [Phase 04]: [04-01] IBUS_COMPONENT_PATH replaces the ibus scan path — every goswitch write-cache carries user dir + /usr/share/ibus/component ':'-joined; a user-only value strips system components from the registry cache and the next daemon start dies without its config component (live finding, desktop repaired in-session)
 - [Phase 04]: [04-01] Registry verification probes the cache FILE before the restart (list-engine stays stale until the daemon restarts); after the async `ibus restart` the registry view is gated by a bounded-wait list-engine — A6 chain proven live
+- [Phase 04]: [04-02] The wire component keeps its scheme version 0.1.0 — engine.NewComponent is NOT tied to the build stamp; the D-37 identity surfaces only via goswitchd -version and the status version= token (research Pattern 3) — IBus component metadata is scheme versioning, not release identity; mixing them would force a re-registration on every build. The status/-version channels identify builds for bug reports (D-37) without touching the wire.
+- [Phase 04]: [04-02] Missing config = green defaults enforced by selfcheck: install generates no config, so no file can trip the strict decode (D-33); selfcheck validates the plan-pinned ~/.config/goswitch/config.yaml path only when present — The 04-planner decision (research Open Question 5): a generated config risks strict-decode refusals; the daemon's built-in defaults are the no-config contract, and selfcheck's config step treats an absent document as the green default state.
 
 ### Pending Todos
 
@@ -185,6 +188,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T12:26:08.151Z
-Stopped at: Completed 04-05-PLAN.md
+Last session: 2026-09-16T13:01:00.369Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
