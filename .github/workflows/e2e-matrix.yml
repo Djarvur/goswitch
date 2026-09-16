@@ -1,19 +1,34 @@
 # e2e-matrix — живая YAML-матрица на столе владельца (D-19, TEST-04).
 #
-# По умолчанию прогоняет матрицу v2 (03-07, критерий №5 фазы 3: полная
-# широта жестов — фразы/выделение/комбо/reload/MACR); path-инпут
-# сохраняет v1-регрессию (явное указание файла v1 запускает mise-задачу
-# v1). Обе задачи — те же, что и локальный цикл (D-09 — CI вызывает ровно
-# те же задачи, что и владелец; прецедент pr-sanity.yml). Отчёт
-# дублируется в e2e-report.txt и выгружается артефактом при любом исходе
-# (if: always()).
+# По умолчанию прогоняет матрицу v3 (04-05: superset v2 — gedit +
+# chromium-x11); path-инпут сохраняет регрессии (явное указание файла
+# v1/v2 запускает mise-задачу v1/v2). Задачи прогона — те же, что и
+# локальный цикл (D-09 — CI вызывает ровно те же задачи, что и владелец;
+# прецедент pr-sanity.yml). Отчёт дублируется в e2e-report.txt и
+# выгружается артефактом при любом исходе (if: always()).
+#
+# ДВОЙНОЙ ПРОГОН — гейт D-48 (план 04-06): «Матрица зелёная дважды
+# подряд на нетронутой сессии» = прогон №1 → сразу прогон №2, БЕЗ
+# пересоздания сессии и ручного вмешательства между прогонами. Суть
+# проверки в том, что первый прогон НЕ портит состояние для второго —
+# любой шаг очистки/пересоздания между прогонами подменил бы проверку.
+# Любое падение любого прогона краснит job (exit ≠ 0).
+#
+# Свежесть сессии — вход fresh_session (bool, default false): true
+# включает префлайт, сверяющий возраст GNOME-сессии раннера (loginctl)
+# с порогом 30 минут; превышение = падение job с подсказкой перелогина
+# (операционализация «нетронутой сессии», research A8/Open Question 2 —
+# заявленная свежесть обязана сверяться с фактом, T-04-06-01). Процедура
+# гейта владельца — docs/ci-runner.md («D-48 double-run gate»): механика
+# двойного прогона доказывается на текущей сессии (fresh_session=false);
+# формальный свежесессионный прогон — шаг приёмки фазы.
 #
 # Триггер — ТОЛЬКО workflow_dispatch, сознательно (T-02-07-01). Раннер
 # живёт ВНУТРИ графической сессии владельца, стенд печатает на живом
 # столе: событие из форка или ветки никогда не должно уметь его запустить.
 # Диспатчить могут только роли с правом write.
 #
-# Один прогон за раз (Pitfall 8): concurrency-группа e2e-gnome БЕЗ
+# Один прогон job'а за раз (Pitfall 8): concurrency-группа e2e-gnome БЕЗ
 # cancel-in-progress — второй диспатч встаёт в очередь, а не отменяет
 # бегущий; два стенда, печатающие на одном столе, запрещены планом.
 #
@@ -25,11 +40,17 @@ on:
   workflow_dispatch:
     inputs:
       matrix:
-        description: "matrix file to run (v2 default; v1 keeps the regression path)"
-        default: test/e2e/cases/matrix-v2.yaml
+        description: "matrix file to run (v3 default; v1/v2 keep the regression paths)"
+        default: test/e2e/cases/matrix-v3.yaml
         type: string
+      fresh_session:
+        description: "D-48 gate: set true only after owner relogin"
+        default: false
+        type: boolean
 
 # Минимальные права токена (T-02-07-01); секретов workflow не использует.
+# contents: write здесь не появляется — release.yml один владеет записью
+# (греп-гейт 04-03, T-04-06-03).
 permissions:
   contents: read
 
@@ -41,8 +62,8 @@ jobs:
   e2e:
     name: matrix (live GNOME session)
     runs-on: [self-hosted, gnome]
-    # Watchdog кейса — 180 с; 21 кейс v2 + сборка демона укладываются
-    # с запасом. Потолок защищает стол от зависшего прогона.
+    # Watchdog кейса — 180 с; ДВА прогона 31 кейса v3 + сборка демона
+    # укладываются с запасом. Потолок защищает стол от зависшего прогона.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -60,20 +81,70 @@ jobs:
       - name: Install tools from mise.toml
         run: mise install
 
+      # Префлайт свежести сессии (D-48, A8): при fresh_session=true
+      # сверяем ФАКТИЧЕСКИЙ возраст графической сессии раннера с порогом —
+      # заявка свежести без проверки была бы декларацией, а не гейтом.
+      - name: fresh-session preflight (D-48)
+        if: inputs.fresh_session == true
+        env:
+          # 30 минут с момента входа — порог «нетронутой сессии» (D-48);
+          # смена порога — осознанное решение владельца через эту константу.
+          D48_MAX_SESSION_AGE_SEC: 1800
+        run: |
+          set -eu
+          sid=""
+          while read -r id _uid name _rest; do
+            [ "$name" = "$USER" ] || continue
+            case "$(loginctl show-session "$id" -p Type --value 2>/dev/null)" in
+              wayland|x11) sid="$id"; break ;;
+            esac
+          done < <(loginctl list-sessions --no-legend 2>/dev/null)
+          if [ -z "$sid" ]; then
+            echo "::error::no graphical session for $USER — owner relogin required (D-48)"
+            exit 1
+          fi
+          echo "session $sid since: $(loginctl show-session "$sid" -p Since --value)"
+          ts_us=$(loginctl show-session "$sid" -p Timestamp --value)
+          age_sec=$(( $(date +%s) - ts_us / 1000000 ))
+          echo "session age: ${age_sec}s (threshold ${D48_MAX_SESSION_AGE_SEC}s)"
+          if [ "$age_sec" -gt "$D48_MAX_SESSION_AGE_SEC" ]; then
+            echo "::error::session age ${age_sec}s > ${D48_MAX_SESSION_AGE_SEC}s — owner relogin required (D-48)"
+            exit 1
+          fi
+
       # Локальный и CI-прогон — одна и та же задача (D-09). Path-инпут
-      # выбирает задачу: v1-файл — v1-регрессия, иначе v2 (дефолт).
-      # Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
+      # выбирает задачу: v1-файл — v1-регрессия, v2 — v2, иначе v3
+      # (дефолт). Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
       # Инпут идёт через env, не через интерполяцию в shell — каноническая
       # защита от expression-injection (WR-04): раннер живёт в графической
       # сессии владельца, и `$(…)` в диспатч-инпуте не должен исполняться.
-      - name: e2e matrix (${{ inputs.matrix }})
+      # ПРОГОН №1 из двух (D-48).
+      - name: matrix v3 run #1 (${{ inputs.matrix }})
         env:
           MATRIX: ${{ inputs.matrix }}
         run: |
           if [ "$MATRIX" = "test/e2e/cases/matrix-v1.yaml" ]; then
             mise run e2e-matrix
-          else
+          elif [ "$MATRIX" = "test/e2e/cases/matrix-v2.yaml" ]; then
             mise run e2e-matrix-v2
+          else
+            mise run e2e-matrix-v3
+          fi
+
+      # ПРОГОН №2 СРАЗУ после №1 (D-48): между прогонами НЕТ шагов
+      # очистки/пересоздания/сброса окружения — проверяется, что первый
+      # прогон не портит состояние для второго (T-04-06-02); вмешательство
+      # между прогонами = подмена проверки D-48.
+      - name: matrix v3 run #2 (${{ inputs.matrix }})
+        env:
+          MATRIX: ${{ inputs.matrix }}
+        run: |
+          if [ "$MATRIX" = "test/e2e/cases/matrix-v1.yaml" ]; then
+            mise run e2e-matrix
+          elif [ "$MATRIX" = "test/e2e/cases/matrix-v2.yaml" ]; then
+            mise run e2e-matrix-v2
+          else
+            mise run e2e-matrix-v3
           fi
 
       # Отчёт — даже с упавшего прогона: FAIL-строки и есть диагностика.
