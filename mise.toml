@@ -137,3 +137,7 @@ run = "go run ./test/e2e -case macr-per-app"
 [tasks.e2e-ctl]
 description = "e2e: 03-06 INST-02 — goswitchctl status/reload/correct against a live -config daemon, last-good error visible in status (D-32) (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case ctl-smoke"
+
+[tasks.e2e-install-cycle]
+description = "e2e: 04-01 INST-01 — goswitchctl install → unit active → registry+live registration → uninstall → desktop restored to snapshot (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case install-cycle"

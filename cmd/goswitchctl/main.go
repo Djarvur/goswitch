@@ -1,8 +1,10 @@
-// Command goswitchctl is the daemon's control client (INST-02): the three
-// subcommands — status (with --json), reload and correct — drive the
-// control service the daemon exports on the D-Bus session bus. Stdlib only
-// (the project convention: no CLI framework), all logic in run so the exit
-// contract lives in one place.
+// Command goswitchctl is the daemon's control client (INST-02) and the
+// installer's entry point (INST-01): status (with --json), reload and
+// correct drive the control service on the D-Bus session bus; install and
+// uninstall [--purge] run the user-space lifecycle (all logic lives in
+// internal/install — the client stays flag parsing and printing only).
+// Stdlib only (the project convention: no CLI framework), all dispatch in
+// run so the exit contract lives in one place.
 package main
 
 import (
@@ -17,10 +19,12 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"github.com/Djarvur/goswitch/internal/install"
 )
 
 // The control service's D-Bus coordinates (internal/ctlsvc owns the service
-// side; the literals stay here so the client binary links no daemon
+// side; the literals stay here so the control branches link no daemon
 // packages — a thin client).
 const (
 	ctlBusName = "org.djarvur.goswitch"
@@ -31,12 +35,17 @@ const (
 // the named subcommand, not hang the terminal.
 const ctlCallTimeout = 5 * time.Second
 
+// installTimeout is the install/uninstall budget — NOT ctlCallTimeout:
+// the lifecycle spans an ibus restart and a unit start (research: 5 s is
+// too small for that chain).
+const installTimeout = 120 * time.Second
+
 // errDaemonNotRunning names the friendly verdict for a missing name owner
 // — the acceptance-pinned wording.
 var errDaemonNotRunning = errors.New("daemon not running? (org.djarvur.goswitch is not on the session bus)")
 
 // errUsage is the subcommand grammar (err113: static).
-var errUsage = errors.New("usage: goswitchctl status [--json] | reload | correct")
+var errUsage = errors.New("usage: goswitchctl status [--json] | reload | correct | install | uninstall [--purge]")
 
 // configErrorKey terminates the status token grammar: its value is the
 // LAST field and may contain spaces (a flattened parse error), so the
@@ -54,33 +63,90 @@ func main() {
 
 // run dispatches the subcommand and prints the reply; a non-nil error is
 // the non-zero exit contract (a rejected reload, an unreachable daemon).
+// The D-Bus branches carry ctlCallTimeout; install/uninstall get their OWN
+// installTimeout budget (they never dial the daemon).
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errUsage
 	}
-	ctx, cancel := context.WithTimeout(ctx, ctlCallTimeout)
-	defer cancel()
 
 	switch args[0] {
 	case "status":
+		ctx, cancel := context.WithTimeout(ctx, ctlCallTimeout)
+		defer cancel()
+
 		return runStatus(ctx, args[1:])
 	case "reload":
+		ctx, cancel := context.WithTimeout(ctx, ctlCallTimeout)
+		defer cancel()
+
 		reply, err := callMethod(ctx, "ReloadConfig")
 		if err != nil {
 			return fmt.Errorf("reload: %w", err)
 		}
 		printLine(reply)
 	case "correct":
+		ctx, cancel := context.WithTimeout(ctx, ctlCallTimeout)
+		defer cancel()
+
 		reply, err := callMethod(ctx, "CorrectNow")
 		if err != nil {
 			return fmt.Errorf("correct: %w", err)
 		}
 		printLine(reply)
+	case "install":
+		return runInstallCmd(ctx)
+	case "uninstall":
+		return runUninstallCmd(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown subcommand %q: %w", args[0], errUsage)
 	}
 
 	return nil
+}
+
+// runInstallCmd executes the D-39 install under its own budget and prints
+// the step-by-step report.
+func runInstallCmd(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, installTimeout)
+	defer cancel()
+
+	report, err := install.Install(ctx)
+	if err != nil {
+		return fmt.Errorf("install: %w", err)
+	}
+	printReport(report)
+
+	return nil
+}
+
+// runUninstallCmd executes the D-42 rollback under its own budget;
+// --purge additionally removes the user's ~/.config/goswitch data (D-42).
+func runUninstallCmd(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
+	purge := fs.Bool("purge", false, "also remove the user's ~/.config/goswitch data (default: preserved)")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("uninstall flags: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, installTimeout)
+	defer cancel()
+
+	report, err := install.Uninstall(ctx, *purge)
+	if err != nil {
+		return fmt.Errorf("uninstall: %w", err)
+	}
+	printReport(report)
+
+	return nil
+}
+
+// printReport writes the lifecycle report line by line — the CLI's
+// contract IS terminal output, so the write error is explicitly discarded
+// (one place, not per-line).
+func printReport(report []string) {
+	for _, line := range report {
+		printLine(line)
+	}
 }
 
 // printLine writes one reply line to stdout — the CLI's contract IS

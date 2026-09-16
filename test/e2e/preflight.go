@@ -26,26 +26,33 @@ const registrationWait = 10 * time.Second
 
 // preflight runs the fail-fast environment checks (TEST-02). Each check
 // carries a named diagnostic so a missing prerequisite prints one line a
-// human can act on before the stand exits 1.
+// human can act on before the stand exits 1. Standalone cases (no stand
+// daemon — install-cycle) run the environment core only: the daemon-bound
+// and surface-driver checks presuppose the stand's own daemon/surfaces.
 func preflight(ctx context.Context, s *stand) error {
-	checks := []struct {
+	type check struct {
 		name string
 		run  func(context.Context, *stand) error
-	}{
+	}
+	checks := []check{
 		{"injection-selftest", checkInjectionSelfTest},
 		{"ibus-address", checkIbusAddress},
 		{"uinput-writable", checkUinputWritable},
 		{"python-gi", checkPythonGI},
-		{"engine-registered", checkEngineRegistered},
-		{"daemon-log-heartbeat", checkLogHeartbeat},
-		{"chromium-launch", checkChromiumLaunch},
-		{"gnome-text-editor-launch", checkGnomeTextEditorLaunch},
 	}
-	for _, check := range checks {
-		if err := check.run(ctx, s); err != nil {
-			return fmt.Errorf("preflight %s: %w", check.name, err)
+	if !s.standalone {
+		checks = append(checks,
+			check{"engine-registered", checkEngineRegistered},
+			check{"daemon-log-heartbeat", checkLogHeartbeat},
+			check{"chromium-launch", checkChromiumLaunch},
+			check{"gnome-text-editor-launch", checkGnomeTextEditorLaunch},
+		)
+	}
+	for _, c := range checks {
+		if err := c.run(ctx, s); err != nil {
+			return fmt.Errorf("preflight %s: %w", c.name, err)
 		}
-		fmt.Printf("preflight %s: ok\n", check.name)
+		fmt.Printf("preflight %s: ok\n", c.name)
 	}
 
 	return nil

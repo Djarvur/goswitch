@@ -25,6 +25,16 @@ const (
 	markerSources   = "MARKER-ORIGINAL"
 )
 
+// The pinned binary/operation names the corpus asserts on (goconst: named
+// once instead of repeated literals).
+const (
+	binGSettings = "gsettings"
+	binIbus      = "ibus"
+	binSystemctl = "systemctl"
+	opWriteCache = "write-cache"
+	engineENName = "goswitch-en"
+)
+
 // The gsettings schema key of the input sources (D-40's single-owner
 // takeover writes and D-42's restore rewrites it).
 const (
@@ -53,7 +63,7 @@ type fakeRunner struct {
 }
 
 // run records the invocation and answers it through the stub.
-func (f *fakeRunner) run(_ context.Context, name string, args []string, env []string, _ []byte) ([]byte, error) {
+func (f *fakeRunner) run(_ context.Context, name string, args, env []string, _ []byte) ([]byte, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, instCall{name: name, args: slices.Clone(args), env: slices.Clone(env)})
 	stub := f.stub
@@ -76,10 +86,10 @@ func (f *fakeRunner) snapshot() []instCall {
 // defaultReply answers the happy-path desktop: gsettings get returns the
 // owner sources, ibus list-engine already lists goswitch.
 func defaultReply(name string, args []string) ([]byte, error) {
-	if name == "gsettings" && len(args) == 3 && args[0] == "get" && args[2] == gsettingsKey {
+	if name == binGSettings && len(args) == 3 && args[0] == "get" && args[2] == gsettingsKey {
 		return []byte(ownerSources), nil
 	}
-	if name == "ibus" && len(args) > 0 && args[0] == "list-engine" {
+	if name == binIbus && len(args) > 0 && args[0] == "list-engine" {
 		return []byte(listEngineOut), nil
 	}
 
@@ -87,7 +97,9 @@ func defaultReply(name string, args []string) ([]byte, error) {
 }
 
 // newInstaller builds the installer over the fake runner, a fake $HOME and
-// a self dir whose goswitchd stand-in exists.
+// a self dir whose goswitchd stand-in exists. The registry probe defaults
+// to hit (the happy-path desktop) — the retry corpus scripts miss/hit by
+// overriding it.
 func newInstaller(t *testing.T, f *fakeRunner, home, selfDir string, engines []string) *install.Installer {
 	t.Helper()
 
@@ -98,6 +110,7 @@ func newInstaller(t *testing.T, f *fakeRunner, home, selfDir string, engines []s
 		install.WithActiveEngines(func(context.Context) ([]string, error) {
 			return engines, nil
 		}),
+		install.WithRegistryProbe(func() bool { return true }),
 	)
 }
 
@@ -115,9 +128,9 @@ func selfDirWithDaemon(t *testing.T) string {
 
 // installPaths are the three $HOME artifacts of an install.
 func installPaths(home string) (xmlPath, unitPath, statePath string) {
-	return filepath.Join(home, ".config/ibus/component/goswitch.xml"),
-		filepath.Join(home, ".config/systemd/user/goswitchd.service"),
-		filepath.Join(home, ".local/share/goswitch/install-state.json")
+	return filepath.Join(home, ".config", "ibus", "component", "goswitch.xml"),
+		filepath.Join(home, ".config", "systemd", "user", "goswitchd.service"),
+		filepath.Join(home, ".local", "share", "goswitch", "install-state.json")
 }
 
 // runInstall is the corpus's one-line driver: install and fail the test on
@@ -193,19 +206,22 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 func TestInstall_Sequence(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
-	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"xkb:us::eng", "goswitch-en"})
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"xkb:us::eng", engineENName})
 
 	runInstall(t, i)
 
+	// The live-true order (first install-cycle run): the cache-file probe
+	// verifies write-cache immediately (list-engine stays stale until the
+	// restart), and the daemon-view list-engine gate runs AFTER the restart.
 	assertCallSequence(t, f.snapshot(), []struct{ name, args string }{
-		{"gsettings", "get " + gsettingsSchema + " " + gsettingsKey},
-		{"ibus", "write-cache"},
-		{"ibus", "list-engine"},
-		{"systemctl", "--user daemon-reload"},
-		{"systemctl", "--user enable --now goswitchd"},
-		{"ibus", "restart"},
-		{"gsettings", "set " + gsettingsSchema + " " + gsettingsKey + " " + goswitchSources},
-		{"ibus", "engine goswitch-en"},
+		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
+		{binIbus, opWriteCache},
+		{binSystemctl, "--user daemon-reload"},
+		{binSystemctl, "--user enable --now goswitchd"},
+		{binIbus, "restart"},
+		{binIbus, "list-engine"},
+		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + goswitchSources},
+		{binIbus, "engine goswitch-en"},
 	})
 
 	xmlPath, unitPath, statePath := installPaths(home)
@@ -224,11 +240,15 @@ func TestInstall_Sequence(t *testing.T) {
 func TestInstall_EveryWriteCacheCarriesEnv(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
-	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"goswitch-en"})
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
 
 	runInstall(t, i)
 
-	want := "IBUS_COMPONENT_PATH=" + filepath.Join(home, ".config/ibus/component")
+	// The env REPLACES the scan path: the value must carry the user dir
+	// AND the system dir (a user-only value strips the system components
+	// from the registry — live finding, first install-cycle run).
+	want := "IBUS_COMPONENT_PATH=" + filepath.Join(home, ".config", "ibus", "component") +
+		":/usr/share/ibus/component"
 	caches := 0
 	for _, c := range f.snapshot() {
 		if c.name != "ibus" || len(c.args) == 0 || c.args[0] != "write-cache" {
@@ -253,7 +273,7 @@ func TestInstall_EveryWriteCacheCarriesEnv(t *testing.T) {
 func TestInstall_ComponentXMLMirrorsWireIdentity(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
-	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"goswitch-en"})
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
 
 	runInstall(t, i)
 
@@ -302,7 +322,7 @@ func TestInstall_UnitAbsoluteExecStart(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
 	selfDir := selfDirWithDaemon(t)
-	i := newInstaller(t, f, home, selfDir, []string{"goswitch-en"})
+	i := newInstaller(t, f, home, selfDir, []string{engineENName})
 
 	runInstall(t, i)
 
@@ -341,7 +361,7 @@ func TestInstall_DaemonBinaryMissing(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
 	selfDir := t.TempDir() // no goswitchd inside
-	i := newInstaller(t, f, home, selfDir, []string{"goswitch-en"})
+	i := newInstaller(t, f, home, selfDir, []string{engineENName})
 
 	report, err := i.Install(context.Background())
 	if err == nil {
@@ -363,7 +383,7 @@ func TestInstall_DaemonBinaryMissing(t *testing.T) {
 func TestInstall_StateFileOutsideConfigDir(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
-	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"goswitch-en"})
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
 
 	runInstall(t, i)
 
@@ -375,7 +395,7 @@ func TestInstall_StateFileOutsideConfigDir(t *testing.T) {
 	if !strings.Contains(string(data), ownerSources) {
 		t.Errorf("state %q does not carry the pre-install sources VERBATIM (%q)", data, ownerSources)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".config/goswitch/install-state.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".config", "goswitch", "install-state.json")); !os.IsNotExist(err) {
 		t.Error("state found inside ~/.config/goswitch — Pitfall 8 places it in ~/.local/share/goswitch")
 	}
 	assertPerm(t, statePath, 0o600)
@@ -387,7 +407,7 @@ func TestInstall_StateFileOutsideConfigDir(t *testing.T) {
 func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
-	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"goswitch-en"})
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
 
 	runInstall(t, i)
 
@@ -413,7 +433,8 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 		t.Fatalf("re-read state: %v", err)
 	}
 	if !strings.Contains(string(data), markerSources) {
-		t.Errorf("second install overwrote the original backup: state = %q, want the %q marker intact", data, markerSources)
+		t.Errorf("second install overwrote the original backup: state = %q, want %q intact",
+			data, markerSources)
 	}
 }
 
@@ -424,11 +445,11 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 func TestUninstall_FullRollback(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
-	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"goswitch-en"})
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
 
 	runInstall(t, i)
 
-	userCfgDir := filepath.Join(home, ".config/goswitch")
+	userCfgDir := filepath.Join(home, ".config", "goswitch")
 	if err := os.MkdirAll(userCfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir user config: %v", err)
 	}
@@ -443,13 +464,13 @@ func TestUninstall_FullRollback(t *testing.T) {
 	}
 
 	assertCallSequence(t, uninstallCalls(t, f), []struct{ name, args string }{
-		{"systemctl", "--user stop goswitchd"},
-		{"systemctl", "--user disable goswitchd"},
-		{"systemctl", "--user daemon-reload"},
-		{"ibus", "write-cache"},
-		{"ibus", "restart"},
-		{"gsettings", "set " + gsettingsSchema + " " + gsettingsKey + " " + ownerSources},
-		{"ibus", "engine " + derivedActivation},
+		{binSystemctl, "--user stop goswitchd"},
+		{binSystemctl, "--user disable goswitchd"},
+		{binSystemctl, "--user daemon-reload"},
+		{binIbus, opWriteCache},
+		{binIbus, "restart"},
+		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + ownerSources},
+		{binIbus, "engine " + derivedActivation},
 	})
 
 	xmlPath, unitPath, statePath := installPaths(home)
@@ -494,7 +515,7 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeRunner{}
 			home := t.TempDir()
-			i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"goswitch-en"})
+			i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
 			runInstall(t, i)
 
 			_, _, statePath := installPaths(home)
@@ -504,13 +525,15 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 
 			report, err := i.Uninstall(context.Background(), false)
 			if err != nil {
-				t.Fatalf("Uninstall() over a corrupt state err = %v — the rollback must not abort (report %v)", err, report)
+				t.Fatalf("Uninstall() over a corrupt state err = %v — must not abort (report %v)",
+					err, report)
 			}
 
 			var restore *instCall
 			for _, c := range uninstallCalls(t, f) {
-				if c.name == "gsettings" && len(c.args) == 4 && c.args[0] == "set" {
+				if c.name == binGSettings && len(c.args) == 4 && c.args[0] == "set" {
 					restore = &c
+
 					break
 				}
 			}

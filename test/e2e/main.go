@@ -54,6 +54,15 @@ type config struct {
 	matrixPath string
 }
 
+// caseSpec is one registry entry: the case body plus the stand-shape flag.
+// standalone cases (install-cycle) run WITHOUT the stand daemon — the
+// single-instance ctlsvc name and the IBus registration belong to the
+// daemon the case itself installs as a systemd unit.
+type caseSpec struct {
+	fn         func(context.Context, *stand) error
+	standalone bool
+}
+
 // desktopSnapshot is the live-desktop state the teardown restores.
 type desktopSnapshot struct {
 	sources    string
@@ -70,6 +79,7 @@ type stand struct {
 	logPath     string
 	logFile     *os.File
 	daemon      *exec.Cmd
+	standalone  bool // no stand daemon: the case owns the bus (install-cycle)
 	zenity      *exec.Cmd
 	zenityOut   *bytes.Buffer
 	chromium    *exec.Cmd
@@ -89,7 +99,7 @@ func caseListUsage() string {
 		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
-		" | macr-per-app | ctl-smoke"
+		" | macr-per-app | ctl-smoke | install-cycle"
 }
 
 // parseFlags fills the stand's CLI surface from os.Args.
@@ -123,7 +133,7 @@ func run() (exit int) {
 		return runMatrixFile(ctx, cfg, cfg.matrixPath)
 	}
 
-	caseFn, err := pickCase(cfg.caseName)
+	spec, err := pickCase(cfg.caseName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
@@ -133,7 +143,7 @@ func run() (exit int) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	s, err := setupStand(ctx, cfg)
+	s, err := setupStand(ctx, cfg, spec.standalone)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL %s: stand setup: %v\n", cfg.caseName, err)
 
@@ -153,7 +163,7 @@ func run() (exit int) {
 		return 1
 	}
 
-	if err := runCaseWatchdog(ctx, cfg.caseName, caseFn, s); err != nil {
+	if err := runCaseWatchdog(ctx, cfg.caseName, spec.fn, s); err != nil {
 		s.printLogExcerpt()
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
@@ -193,54 +203,57 @@ func runCaseWatchdog(
 
 // pickCase resolves the case name through the registry; the registry is
 // built per call (no mutable globals).
-func pickCase(name string) (func(context.Context, *stand) error, error) {
-	registry := map[string]func(context.Context, *stand) error{
-		"m1-gate":           runM1Gate,
-		"ibus-restart":      runIbusRestart,
-		"kill9-survive":     runKill9Survive,
-		"d01-probe":         runD01Probe,
-		"chromium-smoke":    runChromiumSmoke,
-		"gte-smoke":         runGTESmoke,
-		"word-en-ru":        runWordENRU,
-		"word-after-space":  runWordAfterSpace,
-		"word-ru-en":        runWordRUEN,
-		"word-mixed":        runWordMixed,
-		"phrase-en-ru":      runPhraseENRU,
-		"phrase-mixed":      runPhraseMixed,
-		"ladder-chromium":   runLadderChromium,
-		"reset-escape":      runResetEscape,
-		"select-smoke":      runSelectSmoke,
-		"select-correct":    runSelectCorrect,
-		"select-clipboard":  runSelectClipboard,
-		"combo-word-layout": runComboWordLayout,
-		"layout-single":     runLayoutSingle,
-		"super-space-alive": runSuperSpaceAlive,
-		"macr-probe":        runMacrProbe,
-		"macr-super-letter": runMacrSuperLetter,
-		"macr-per-app":      runMacrPerApp,
-		"ctl-smoke":         runCtlSmoke,
+func pickCase(name string) (caseSpec, error) {
+	registry := map[string]caseSpec{
+		"m1-gate":           {fn: runM1Gate},
+		"ibus-restart":      {fn: runIbusRestart},
+		"kill9-survive":     {fn: runKill9Survive},
+		"d01-probe":         {fn: runD01Probe},
+		"chromium-smoke":    {fn: runChromiumSmoke},
+		"gte-smoke":         {fn: runGTESmoke},
+		"word-en-ru":        {fn: runWordENRU},
+		"word-after-space":  {fn: runWordAfterSpace},
+		"word-ru-en":        {fn: runWordRUEN},
+		"word-mixed":        {fn: runWordMixed},
+		"phrase-en-ru":      {fn: runPhraseENRU},
+		"phrase-mixed":      {fn: runPhraseMixed},
+		"ladder-chromium":   {fn: runLadderChromium},
+		"reset-escape":      {fn: runResetEscape},
+		"select-smoke":      {fn: runSelectSmoke},
+		"select-correct":    {fn: runSelectCorrect},
+		"select-clipboard":  {fn: runSelectClipboard},
+		"combo-word-layout": {fn: runComboWordLayout},
+		"layout-single":     {fn: runLayoutSingle},
+		"super-space-alive": {fn: runSuperSpaceAlive},
+		"macr-probe":        {fn: runMacrProbe},
+		"macr-super-letter": {fn: runMacrSuperLetter},
+		"macr-per-app":      {fn: runMacrPerApp},
+		"ctl-smoke":         {fn: runCtlSmoke},
+		"install-cycle":     {fn: runInstallCycle, standalone: true},
 	}
-	fn, ok := registry[name]
+	spec, ok := registry[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
+		return caseSpec{}, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
 			" d01-probe, chromium-smoke, gte-smoke, word-en-ru, word-after-space, word-ru-en, word-mixed,"+
 			" phrase-en-ru, phrase-mixed, ladder-chromium, reset-escape, select-smoke, select-correct,"+
 			" select-clipboard, combo-word-layout, layout-single, super-space-alive, macr-probe,"+
-			" macr-super-letter, macr-per-app, ctl-smoke)", name)
+			" macr-super-letter, macr-per-app, ctl-smoke, install-cycle)", name)
 	}
 
-	return fn, nil
+	return spec, nil
 }
 
 // setupStand builds the daemon, snapshots the desktop and starts the
 // daemon subprocess with -debug and both std streams into the log file
-// (T-03-03: the log lives in $TMPDIR and is removed unless -log pinned it).
-func setupStand(ctx context.Context, cfg config) (*stand, error) {
+// (T-03-03: the log lives in $TMPDIR and is removed unless -log pinned
+// it). A standalone case (install-cycle) skips the START — the daemon
+// binary is still built, because the installed unit runs it.
+func setupStand(ctx context.Context, cfg config, standalone bool) (*stand, error) {
 	tmpDir, err := os.MkdirTemp("", "goswitch-e2e-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
-	s := &stand{cfg: cfg, tmpDir: tmpDir, daemonBin: filepath.Join(tmpDir, "goswitchd")}
+	s := &stand{cfg: cfg, tmpDir: tmpDir, daemonBin: filepath.Join(tmpDir, "goswitchd"), standalone: standalone}
 
 	logFile, err := createLog(cfg.logPath)
 	if err != nil {
@@ -265,10 +278,12 @@ func setupStand(ctx context.Context, cfg config) (*stand, error) {
 	}
 	s.snap = snap
 
-	if err := s.startDaemon(); err != nil {
-		s.discardLog(logFile)
+	if !standalone {
+		if err := s.startDaemon(); err != nil {
+			s.discardLog(logFile)
 
-		return nil, err
+			return nil, err
+		}
 	}
 
 	return s, nil

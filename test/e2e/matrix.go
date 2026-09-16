@@ -711,7 +711,7 @@ func matrixQuiesce(ctx context.Context, cfg config) error {
 // another's leftovers. Word-ru-en and word-mixed leave the daemon in RU
 // mode; sharing a daemon would fail every later en case.
 func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error {
-	s, err := setupStand(ctx, cfg)
+	s, err := setupStand(ctx, cfg, false)
 	if err != nil {
 		return fmt.Errorf("stand setup: %w", err)
 	}
