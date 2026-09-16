@@ -165,7 +165,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-03-PLAN.md — Релизный конвейер: .goreleaser.yaml (дефолтная прошивка), release.yml (тег v*, contents:write только здесь), goreleaser-пин mise — INST-01, D-37/D-38
+- [x] 04-03-PLAN.md — Релизный конвейер: .goreleaser.yaml (дефолтная прошивка), release.yml (тег v*, contents:write только здесь), goreleaser-пин mise — INST-01, D-37/D-38
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -185,7 +185,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
 | 2. Коррекция слова EN↔RU | 7/7 | Complete    | 2026-09-15 |
 | 3. Фразы, выделение, переключение и конфигурация | 7/7 | Complete    | 2026-09-15 |
-| 4. Поставка и приёмка | 4/7 | In Progress|  |
+| 4. Поставка и приёмка | 5/7 | In Progress|  |
 
 ## Coverage
 

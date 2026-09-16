@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 04
 current_phase_name: Поставка и приёмка
 status: executing
-stopped_at: Completed 04-04-PLAN.md
-last_updated: "2026-09-16T13:52:24.213Z"
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-09-16T14:05:07.070Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 04 execution started
-state_head: 1b443ebddd8a5efa9a33310480ecc97c408099d7
+state_head: 46f62fc2e7f3c58e88f4e9061c77a272cd118d82
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 26
-  completed_plans: 23
+  completed_plans: 24
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 04 (Поставка и приёмка) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 04 execution started
 
@@ -87,6 +87,7 @@ Progress: [████████░░] 75%
 | Phase 04 P05 | 75 min | 2 tasks | 11 files |
 | Phase 04 P02 | 24 min | 2 tasks | 13 files |
 | Phase 04 P04 | 35 min | 2 tasks | 8 files |
+| Phase 04 P03 | 7 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,9 @@ Recent decisions affecting current work:
 - [Phase 04]: [04-01] Registry verification probes the cache FILE before the restart (list-engine stays stale until the daemon restarts); after the async `ibus restart` the registry view is gated by a bounded-wait list-engine — A6 chain proven live
 - [Phase 04]: [04-02] The wire component keeps its scheme version 0.1.0 — engine.NewComponent is NOT tied to the build stamp; the D-37 identity surfaces only via goswitchd -version and the status version= token (research Pattern 3) — IBus component metadata is scheme versioning, not release identity; mixing them would force a re-registration on every build. The status/-version channels identify builds for bug reports (D-37) without touching the wire.
 - [Phase 04]: [04-02] Missing config = green defaults enforced by selfcheck: install generates no config, so no file can trip the strict decode (D-33); selfcheck validates the plan-pinned ~/.config/goswitch/config.yaml path only when present — The 04-planner decision (research Open Question 5): a generated config risks strict-decode refusals; the daemon's built-in defaults are the no-config contract, and selfcheck's config step treats an absent document as the green default state.
+- [Phase 04]: Discretion A7 pinned in .goreleaser.yaml comments: v1 amd64-only (Ubuntu 24.04 target, +arm64 on request), semver tags, first release v1.0.0 (tag = plan 04-07), assets = one tar.gz with both binaries + sha256 checksums
+- [Phase 04]: Release tool versions live in mise.toml [tools] only (goreleaser 2.18.1) — CI installs via mise install; goreleaser must never enter go.mod (D-38 runtime principle)
+- [Phase 04]: contents: write is scoped to release.yml alone — grep-gated SCOPE-OK keeps pr-sanity/e2e-matrix at contents: read (Pitfall 10 / T-04-03-02)
 
 ### Pending Todos
 
@@ -189,6 +193,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T13:52:24.134Z
-Stopped at: Completed 04-04-PLAN.md
+Last session: 2026-09-16T14:05:06.986Z
+Stopped at: Completed 04-03-PLAN.md
 Resume file: None
