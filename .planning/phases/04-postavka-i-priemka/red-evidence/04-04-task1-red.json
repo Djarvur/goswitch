@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./test/e2e/ -run 'TestPercentile|TestReadProcStatus|TestPerfBudgetGate' -race -count=1 -v (transcribed to node-test TAP per repo precedent)",
+  "exitCode": 1,
+  "targetTest": "TestPercentile_Exact",
+  "failingTest": "TestPercentile_Exact",
+  "expected": "percentile pins s[int(float64(len(s)-1))*p] exactly (p50=50ms, p95=p99=100ms on [10..100]); parseProcStatus extracts VmHWM=12345/VmRSS=6789 kB and names the missing-VmHWM error; budgetGate passes 49ms/49*1024kB and fails both budget boundaries (50ms, 50MB)",
+  "actual": "All four target tests fail on assertions against the RED stubs: percentile returns 0, parseProcStatus returns zeros and nil error, budgetGate returns nil everywhere; no other test ran",
+  "output": "not ok 1 - TestPercentile_Exact\nnot ok 2 - TestPercentile_SingleSample\nnot ok 3 - TestReadProcStatus\nnot ok 4 - TestPerfBudgetGate\n# tests 4\n# pass 0\n# fail 4"
+}
