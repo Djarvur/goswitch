@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 3
 waived_count: 1
-fixed_count: 1
-total_count: 5
-last_updated: 2026-09-16T13:51:53.747Z
+fixed_count: 2
+total_count: 6
+last_updated: 2026-09-16T14:35:35.768Z
 ---
 
 # Broken Windows Ledger
@@ -20,6 +20,7 @@ last_updated: 2026-09-16T13:51:53.747Z
 | 3 | 3 | deviation | internal/correct/runs.go | 57 | test | waived | junk entry appended by executor output-shape probe — not a real defect, removed intent | 2026-09-15T08:57:41.296Z | 2026-09-15T08:58:03.115Z |
 | 4 | 3 | unmet-truth | test/e2e/case_macr.go | 595 | GTK4-Wayland (GNOME 46) does not apply IBus-forwarded key events: the relay reaches the focused InputContext (dbus-monitor pinned) but the widget never acts — MACR's Ctrl+letter remap, the ADR-003 level-2 Backspace replay and the D-28 Ctrl+V burst all stop at the client boundary (03-05 Deviation 3) | open |  | 2026-09-15T13:23:14.477Z |  |
 | 5 | 04 | unmet-truth | test/e2e/perf.go | 1 | INST-03 latency budget verdict is FAIL under the prescribed ydotool→AT-SPI window (p95 190-205ms >= 50ms over two full runs): the window is dominated by ydotool 0.1.8 per-event injection overhead (~80-125ms/event), daemon reaction is 0.2-1.8ms; owner methodology decision required before the D-46 README table publishes latency numbers | open |  | 2026-09-16T13:51:53.747Z |  |
+| 6 | 04 | deviation | test/e2e/main.go | 201 | 04-04 (1b443eb) turned the matrix path's zero watchdog limit into a literal time.After(0): every matrix case (v1/v2/v3) failed instantly with 'did not complete within 0s' — live-caught by the first D-48 double-run dispatch (run 35107406144); fixed structurally by watchdogLimit resolving 0 to caseTimeout inside runCaseWatchdog (9f2fd75, RED->GREEN tests) | fixed |  | 2026-09-16T14:35:30.840Z | 2026-09-16T14:35:35.768Z |
 
 ````json
 [
@@ -82,6 +83,18 @@ last_updated: 2026-09-16T13:51:53.747Z
     "reason": "",
     "recorded_at": "2026-09-16T13:51:53.747Z",
     "resolved_at": null
+  },
+  {
+    "id": 6,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "test/e2e/main.go",
+    "line": 201,
+    "description": "04-04 (1b443eb) turned the matrix path's zero watchdog limit into a literal time.After(0): every matrix case (v1/v2/v3) failed instantly with 'did not complete within 0s' — live-caught by the first D-48 double-run dispatch (run 35107406144); fixed structurally by watchdogLimit resolving 0 to caseTimeout inside runCaseWatchdog (9f2fd75, RED->GREEN tests)",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-16T14:35:30.840Z",
+    "resolved_at": "2026-09-16T14:35:35.768Z"
   }
 ]
 ````

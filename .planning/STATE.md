@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 04
 current_phase_name: Поставка и приёмка
 status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-09-16T14:05:07.070Z"
+stopped_at: Completed 04-06-PLAN.md
+last_updated: "2026-09-16T14:35:21.331Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 04 execution started
-state_head: 46f62fc2e7f3c58e88f4e9061c77a272cd118d82
+state_head: 4946e2875c04c749d8bb2bea560c34de239f14d9
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 26
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 04 (Поставка и приёмка) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 04 execution started
 
@@ -88,6 +88,7 @@ Progress: [████████░░] 75%
 | Phase 04 P02 | 24 min | 2 tasks | 13 files |
 | Phase 04 P04 | 35 min | 2 tasks | 8 files |
 | Phase 04 P03 | 7 min | 2 tasks | 4 files |
+| Phase 04 P06 | 22 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Discretion A7 pinned in .goreleaser.yaml comments: v1 amd64-only (Ubuntu 24.04 target, +arm64 on request), semver tags, first release v1.0.0 (tag = plan 04-07), assets = one tar.gz with both binaries + sha256 checksums
 - [Phase 04]: Release tool versions live in mise.toml [tools] only (goreleaser 2.18.1) — CI installs via mise install; goreleaser must never enter go.mod (D-38 runtime principle)
 - [Phase 04]: contents: write is scoped to release.yml alone — grep-gated SCOPE-OK keeps pr-sanity/e2e-matrix at contents: read (Pitfall 10 / T-04-03-02)
+- [Phase 04]: D-48 механика доказана живьём: один dispatch (run 35108412175) — два последовательных прогона v3 по 31/31 PASS без вмешательства; формальный свежесессионный гейт — шаг приёмки 04-07
+- [Phase 04]: loginctl-факты: show-session -p Since не свойство, Timestamp --value в человеческом формате — префлайт парсит GNU date -d
+- [Phase 04]: Регресс вочдога 04-04: матричный путь передавал лимит 0 → мгновенный time.After(0) на каждый кейс; резолюция 0→caseTimeout перенесена внутрь runCaseWatchdog (watchdogLimit) с RED→GREEN тестами
 
 ### Pending Todos
 
@@ -193,6 +197,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T14:05:06.986Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-09-16T14:35:21.241Z
+Stopped at: Completed 04-06-PLAN.md
 Resume file: None
