@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 4
+current_phase: 04
 current_phase_name: Поставка и приёмка
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-09-15T22:22:28.636Z"
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-09-16T11:06:05.098Z"
 last_activity: 2026-09-16
-last_activity_desc: Phase 4 execution started
-state_head: 69d7ebf612b768943804e0b76a0840e1458fdb9a
+last_activity_desc: Phase 04 execution started
+state_head: 0250528a94e578a010e00dba8899ab73b05e075e
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 0
   total_plans: 26
-  completed_plans: 19
+  completed_plans: 20
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 4 — Поставка и приёмка
+**Current focus:** Phase 04 — Поставка и приёмка
 
 ## Current Position
 
-Phase: 4 (Поставка и приёмка) — EXECUTING
-Plan: 1 of 7
-Status: Executing Phase 4
-Last activity: 2026-09-16 — Phase 4 execution started
+Phase: 04 (Поставка и приёмка) — EXECUTING
+Plan: 2 of 7
+Status: Ready to execute
+Last activity: 2026-09-16 — Phase 04 execution started
 
 Progress: [████████░░] 75%
 
@@ -83,6 +83,7 @@ Progress: [████████░░] 75%
 | Phase 03 P05 | 99 min | 3 tasks | 10 files |
 | Phase 03 P06 | 22 min | 2 tasks | 11 files |
 | Phase 03 P07 | 48 min | 2 tasks | 15 files |
+| Phase 04 P01 | 47 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,8 @@ Recent decisions affecting current work:
 - [Phase 3]: Phase closed 2026-09-15 (verify-work UAT 4/4, все пункты владельцем): матрица v2 пере-прогнана на HEAD 54ea460 живьём — 21/21 PASS, exit 0 (префлайт 7/7); WINDOWS #2 (чтение D-24) и #4 (GTK4-Wayland forwarded-события — платформенное ограничение) закрыты решениями владельца; REQUIREMENTS.md MACR-01 выровнен (Complete с оговоркой); zenity-вердикт 03-03 развёрнут и принят
 - [Phase 3]: Post-hook артефакты при закрытии: 03-SECURITY.md (28 угроз: 25 mitigate закрыты + 3 accept, threats_open 0, ASVS L1) и 03-VALIDATION.md (nyquist_compliant true — все 12 требований фазы покрыты зелёными тестами, пробелов нет); пере-верификации Фаз 1 (20/20, коммит 7205606) и 2 (23/23, 54ea460) на дереве Фазы 3 — stale-пальцы обновлены каноническим verb'ом
 - [Phase 3]: correct.Detect production-orphaned после сукцессии D-16→D-23 (остался только в тестах как classifyRune-референс) — предупреждение верификатора, кандидат на уборку в будущем; не дефект
+- [Phase 04]: [04-01] IBUS_COMPONENT_PATH replaces the ibus scan path — every goswitch write-cache carries user dir + /usr/share/ibus/component ':'-joined; a user-only value strips system components from the registry cache and the next daemon start dies without its config component (live finding, desktop repaired in-session)
+- [Phase 04]: [04-01] Registry verification probes the cache FILE before the restart (list-engine stays stale until the daemon restarts); after the async `ibus restart` the registry view is gated by a bounded-wait list-engine — A6 chain proven live
 
 ### Pending Todos
 
@@ -181,6 +184,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T21:12:10.582Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-postavka-i-priemka/04-CONTEXT.md
+Last session: 2026-09-16T11:05:55.942Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None
