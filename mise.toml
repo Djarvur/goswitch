@@ -3,6 +3,10 @@
 [tools]
 go = "1.23"
 golangci-lint = "2"
+# Release tool (D-38) — CI/билд-инструмент, НЕ зависимость демона (go.mod не
+# меняется). Пин здесь — единый источник версий локально и в CI (D-09/D-11,
+# Pitfall 10): release.yml ставит его тем же `mise install`.
+goreleaser = "2.18.1"
 
 [env]
 # Deterministic build/test paths

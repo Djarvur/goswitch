@@ -6,6 +6,10 @@ bin/
 # NOTE: no `dist/` entry here on purpose — dist/ holds tracked packaging
 # sources (systemd unit, plan 01-05), not build output.
 
+# goreleaser build output — .goreleaser.yaml redirects dist here so a
+# --clean run can never wipe the tracked dist/ packaging sources (04-03).
+.goreleaser-dist/
+
 # Test and coverage output
 e2e-report.txt
 perf-report.txt
