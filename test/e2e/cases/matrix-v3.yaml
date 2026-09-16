@@ -1,0 +1,368 @@
+# goswitch e2e matrix v3 (plan 04-05, D-47, критерий №2 ROADMAP) — the
+# full matrix breadth: the ENTIRE v2 body (the frozen phase-3 baseline,
+# copied verbatim) plus two new surface series:
+#   - gedit — the GTK3 IM/AT-SPI generation (libgedit-gtksourceview-300),
+#     genuinely different from the GTK4 gnome-text-editor;
+#   - chromium-x11 — the --ozone-platform=x11 window mode (a different IM
+#     path from the native-Wayland chromium surface).
+#
+# Schema: UNCHANGED from v2 — the v2 fields and step kinds only. New
+# surface names enter the closed vocabulary (matrixSurfaces): gedit,
+# chromium-x11. Everything below is spike-pinned (04-05 Task 1, live
+# probes 2026-09-16 on this desktop; verdicts also live in the driver
+# comments and 04-05-SUMMARY):
+#   gedit: caps 0x29; EN-mode transit pushes surrounding text; word
+#   correction runs the level-1 ladder LIVE (delete+commit read back);
+#   ctrl+a NEVER produces an anchor push (cursor == anchor in every push —
+#   the zenity-class D-30 degradation); RU-mode engine commits DO NOT
+#   render (the document stays empty; caps drop to 0x9).
+#   chromium-x11: caps 0x29 DECLARED but zero surrounding pushes ever
+#   (typing pushes nothing; the GTK_IM_MODULE=ibus probe changed nothing);
+#   corrections therefore never run ("correction skipped","reason":
+#   "verify-timeout"); EN-mode typing transits verbatim; in RU mode the
+#   engine commits land in the OMNIBOX (the URL bar).
+#
+# EXCLUDED ROWS (documented, never silent — the spike verdicts):
+#   - gedit select rows: NO anchor push exists to gate on (D-30
+#     degradation). The plan pins select rows ONLY on a spike-confirmed
+#     anchor; a degraded-pin row would duplicate select-all-zenity's
+#     already-accepted shape without adding GTK3-specific signal.
+#   - gedit word-ru-en / word-mixed rows: both need the RU-mode commit
+#     path (the engine types Cyrillic after the flip) — live verdict: the
+#     commits do not render in gedit (field stays EMPTY; expect_text
+#     cannot pin emptiness). Untested GTK3 capability, not a daemon
+#     defect; revisits when the platform changes.
+#   - chromium-x11 select and ru rows: no surrounding pushes at all
+#     (nothing to correct from, nothing to anchor on); RU-mode commits
+#     land in the omnibox — focus chaos, no stable oracle.
+#   - chromium-x11 expect_level: omitted on every row — the ladder never
+#     executes on x11 (the rows pin the verbatim transit text instead; a
+#     future x11 IM fix FAILS these rows loudly and forces a re-pin).
+#   - chromium-x11 gesture steps (tap:double): EXCLUDED from the rows —
+#     the x11 window shows an ambient OMNIBOX focus steal (~20% of x11
+#     cases: mid-case the URL bar grabs focus and the applied-state gate
+#     reads ENTRY:chars=63), so only the minimal stable transit shape is
+#     composable; the skipped-correction behavior itself is log-proven
+#     ("correction skipped","reason":"verify-timeout").
+#   - gedit phrase-after-space (the D-13 tail row): the daemon honors D-13
+#     on gedit (correction record runes=7, source "ghbdtn ", result
+#     "привет ", verify-after MATCH — the field HOLDS the trailing space),
+#     but gedit's GtkTextView a11y readback drops an ENGINE-committed
+#     trailing space, so the row's oracle cannot observe the tail; excluded
+#     as a harness-readback limitation, not a product gap.
+#
+# Every case runs in its own full stand cycle (fresh daemon per case);
+# injection names are the spike/probe-pinned canonical spellings only.
+---
+name: phrase-en-ru
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn ghbdtn"}
+  - {tap: triple}
+expect_text: "привет привет"  # CORR-02: the whole typed phrase converts in one range
+---
+name: phrase-ru-en
+surface: zenity
+mode: ru               # the runner flips the engine to RU before the steps
+steps:
+  - {type: "ghbdtn ghbdtn"}   # engine commits привет привет
+  - {tap: triple}
+expect_text: "ghbdtn ghbdtn"  # both directions of the phrase loop
+---
+name: phrase-mixed
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: space}
+  - {tap: single}      # script flip EN→RU (mode record gated, Pitfall 5)
+  - {type: "ghbdtn"}   # committed as привет through the engine
+  - {tap: triple}
+expect_text: "привет привет"  # D-26: the phrase converts by the same run semantics as the word
+---
+name: phrase-registers
+surface: zenity
+mode: en
+steps:
+  - {type: "Ghbdtn GHBDTN"}
+  - {tap: triple}
+expect_text: "Привет ПРИВЕТ"  # CORR-05 register preservation per rune, at phrase width
+---
+name: phrase-after-space
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn "}  # trailing separator — the D-13 tail geometry at phrase width
+  - {tap: triple}
+expect_text: "привет "  # the separator rides INSIDE the replacement range (load-bearing trailing space)
+---
+name: long-phrase
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn ghbdtn ghbdtn ghbdtn ghbdtn ghbdtn ghbdtn ghbdtn ghbdtn ghbdtn"}  # 70 runes — the A3 pin
+  - {tap: triple}
+expect_text: "привет привет привет привет привет привет привет привет привет привет"  # A3 live-pinned: the surrounding window holds the whole phrase (no client truncation on zenity)
+---
+name: phrase-gte
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "ghbdtn ghbdtn"}
+  - {tap: triple}
+expect_text: "привет привет"  # phrase breadth beyond zenity
+---
+name: phrase-chromium
+surface: chromium
+mode: en
+steps:
+  - {type: "ghbdtn ghbdtn"}
+  - {tap: triple}
+expect_text: "привет привет"  # phrase breadth beyond zenity
+---
+name: word-mixed
+surface: zenity
+mode: en
+steps:
+  - {type: "gfb"}
+  - {tap: single}
+  - {type: "ghbdtn"}   # committed as привет
+  - {tap: double}
+expect_text: "паипривет"  # CORR-06/D-23 succession: anchor RU from the last letter, the foreign run converts
+---
+name: select-all-zenity
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: space}
+  - {tap: single}
+  - {type: "ghbdtn"}   # the field holds the mixed "ghbdtn привет"
+  - {select: "ctrl+a"} # lands silently — zenity pushes no anchor (03-03 spike; v2 live correction below)
+  - {tap: double}
+expect_text: "ghbdtn"  # D-30 degradation daemon-side (word path, no anchor) + the CLIENT-side actual: the silently-selected range eats the commit — the field settles at the converted word alone (the 03-03 spike saw transparency only because its failed probe candidates had destroyed the selection before the tap; pinned live by the first v2 run)
+expect_sel_step: degraded  # the pin: no ACTIVE push in the PRE-correction window (the daemon cannot see the selection)
+---
+name: select-all-gte
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: space}
+  - {tap: single}
+  - {type: "ghbdtn"}   # the field holds the mixed "ghbdtn привет"
+  - {select: "ctrl+a"} # GTE pushes cursor=0/anchor=len (the spike's LTR geometry)
+  - {tap: double}
+expect_text: "привет привет"  # CORR-03: exactly the selected range converts, nothing outside moves
+expect_sel_step: delete-commit
+---
+name: select-all-chromium
+surface: chromium
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: space}
+  - {tap: single}
+  - {type: "ghbdtn"}   # the field holds the mixed "ghbdtn привет"
+  - {select: "ctrl+a"} # chromium pushes cursor=len/anchor=0 — the INVERTED geometry
+  - {tap: double}
+expect_text: "привет привет"  # the commit REPLACES the active selection (the spike's chromium rung)
+expect_sel_step: commit-replaces
+---
+name: select-partial-gte
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: space}
+  - {tap: single}
+  - {type: "ghbdtn"}   # the field holds the mixed "ghbdtn привет" (13 runes)
+  - {key: Home}        # caret to the field start (probe-pinned name)
+  - {key: shift+right} # extend the selection over exactly the first word
+  - {key: shift+right} # [0,2)
+  - {key: shift+right} # [0,3)
+  - {key: shift+right} # [0,4)
+  - {key: shift+right} # [0,5)
+  - {key: shift+right} # [0,6) = "ghbdtn" — a PARTIAL range, the tail untouched
+  - {tap: double}
+expect_text: "привет привет"  # only the selected head converts; привет never re-converts
+expect_sel_step: delete-commit
+---
+name: select-reverse-gte
+surface: gnome-text-editor
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {key: space}
+  - {tap: single}
+  - {type: "ghbdtn"}   # the field holds the mixed "ghbdtn привет" (13 runes)
+  - {key: Home}        # caret to the start (GTE pushes NOTHING for Home — live finding)
+  - {key: shift+right} # extend from the home caret: anchor=0, caret advances — the RIGHT-TO-LEFT shape
+  - {key: shift+right} # [0,2)
+  - {key: shift+right} # [0,3)
+  - {key: shift+right} # [0,4)
+  - {key: shift+right} # [0,5)
+  - {select: "shift+right"}  # [0,6) = "ghbdtn" — gated: the active push (cursor=6, anchor=0) must arrive
+  - {tap: double}
+expect_text: "привет привет"  # Pitfall 6's other direction on the surface whose native ctrl+a is LTR: the cursor sits RIGHT of the anchor, the signed offset computes from the cursor's side
+expect_sel_step: delete-commit
+---
+name: layout-single
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {tap: single}      # EN→RU — the tap step gates on the mode record (D-34 oracle)
+  - {tap: single}      # RU→EN — both directions of the flip
+expect_text: "ghbdtn"  # SWCH-01: single taps only flip the mode; the word is untouched
+---
+name: combo-word-layout
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {combo: "SHIFT_R+CTRL_R"}  # SWCH-02/D-36: the combo step gates on the combo record + the mode flip
+expect_text: "привет"  # the word corrected FIRST, then the layout flipped
+---
+name: super-space-alive
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}   # the word feeds the focus gate's char count (the field survives the episode)
+  - {key: Super}       # SWCH-03 (D-34 working interpretation): the shell's native Super mechanism fires (the overview)
+  - {key: Escape}      # close the overview (esc — the proven spelling)
+  - {focus: zenity}    # settle the entry back into focus (chars=6 — the word is still there)
+  - {select: "ctrl+a"} # the episode's FocusOut hard-reset the BUFFER (live finding of the first v2 run): select the stale word…
+  - {type: "ghbdtn"}   # …and retype over the selection — the field is fresh AND the live buffer re-fed
+  - {tap: double}      # the daemon survived the native chords: the correction still runs
+expect_text: "привет"
+---
+name: reload-window
+surface: zenity
+mode: en
+steps:
+  - reload:            # establishes the case's -config daemon (base 300 → 450) and drives the reload through goswitchctl
+      lines: ["  tap_window_ms: 450"]
+      expect: applied
+  - {type: "ghbdtn"}
+  - reload:            # the RUNNING daemon picks the new window up (CONF-02)
+      lines: ["  tap_window_ms: 200"]
+      expect: applied
+  - {tap: single}      # the deciding tap: a fresh series decides under the reloaded document
+expect_text: "ghbdtn"  # the single tap only flips the mode; the deciding record is the step's gate
+---
+name: reload-invalid-last-good
+surface: zenity
+mode: en
+steps:
+  - reload:
+      lines: ["  tap_window_ms: 450"]
+      expect: applied
+  - {type: "ghbdtn"}
+  - reload:            # the broken edit: the unknown key appends, the strict decode rejects (D-33)
+      lines: ["  tap_window_mss: 100"]
+      expect: rejected  # WARN form + goswitchctl exit 1 + config_valid=false in status
+  - {tap: double}
+expect_text: "привет"  # D-32: the daemon keeps correcting under the last-good snapshot
+---
+name: ctl-status-reload
+surface: zenity
+mode: en
+steps:
+  - reload:            # INST-02 through the reload step: goswitchctl reload (applied reply) + status (config_valid=true);
+      # 250 differs from the base 100 — the reload changes the knob (CR-02), never a no-op write
+      lines: ["  verify_wait_ms: 250"]
+      expect: applied
+  - {type: "ghbdtn"}
+  - {tap: double}      # a correction settles under the config daemon
+expect_text: "привет"
+---
+name: macr-super-letter
+surface: zenity
+mode: en
+steps:
+  - reload:            # MACR-01 config-enabled: the layer ON with the spike-proven free letter 'x'
+      lines: ['  enabled: true', '  letters: "x"']
+      expect: applied
+  - {type: "hello"}
+  - {key: super+x}     # the interception consumes the letter; the step gates on the super-intercept record
+expect_text: "hello"  # the GTK4-Wayland actual: the forwarded Ctrl+x burst reaches the relay but the widget never applies it (03-05)
+---
+name: gedit-word-en-ru
+surface: gedit
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {tap: double}
+expect_text: "привет"  # the 04-05 spike: the level-1 ladder runs live on the GTK3 client (delete+commit read back)
+expect_level: 1        # spike-pinned actual (the "correction","level":1 record, 2026-09-16)
+---
+name: gedit-word-upper
+surface: gedit
+mode: en
+steps:
+  - {type: "GHBDTN"}
+  - {tap: double}
+expect_text: "ПРИВЕТ"  # CORR-05 register preservation on the GTK3 surface
+---
+name: gedit-word-capital
+surface: gedit
+mode: en
+steps:
+  - {type: "Ghbdtn"}
+  - {tap: double}
+expect_text: "Привет"  # CORR-05 capitalized register on the GTK3 surface
+---
+name: gedit-phrase
+surface: gedit
+mode: en
+steps:
+  - {type: "ghbdtn ghbdtn"}
+  - {tap: triple}
+expect_text: "привет привет"  # phrase breadth on the GTK3 generation
+---
+name: gedit-phrase-registers
+surface: gedit
+mode: en
+steps:
+  - {type: "Ghbdtn GHBDTN"}
+  - {tap: triple}
+expect_text: "Привет ПРИВЕТ"  # CORR-05 register preservation at phrase width on the GTK3 surface
+---
+name: gedit-layout-single
+surface: gedit
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {tap: single}      # EN→RU — engine-side flip, no client commits involved
+  - {tap: single}      # RU→EN — SWCH-01 breadth on the GTK3 surface
+expect_text: "ghbdtn"  # single taps only flip the mode; the word is untouched
+---
+name: x11-word-en-ru
+surface: chromium-x11
+mode: en
+steps:
+  - {type: "ghbdtn"}
+expect_text: "ghbdtn"  # the x11 ACTUAL (04-05 spike): typing transits verbatim — the x11 input context never services the surrounding protocol, so nothing can rewrite the field; the row FAILS loudly if the x11 IM path ever starts intercepting text
+---
+name: x11-word-upper
+surface: chromium-x11
+mode: en
+steps:
+  - {type: "GHBDTN"}
+expect_text: "GHBDTN"  # the x11 actual: transit verbatim, register intact
+---
+name: x11-word-capital
+surface: chromium-x11
+mode: en
+steps:
+  - {type: "Ghbdtn"}
+expect_text: "Ghbdtn"  # the x11 actual: transit verbatim
+---
+name: x11-phrase
+surface: chromium-x11
+mode: en
+steps:
+  - {type: "ghbdtn ghbdtn"}
+expect_text: "ghbdtn ghbdtn"  # the x11 actual at phrase width: pure transit
