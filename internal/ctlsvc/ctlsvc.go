@@ -124,13 +124,15 @@ func (s *Svc) CorrectNow() (reply string, err *dbus.Error) {
 
 // renderStatus formats the snapshot as the Status method's single-line
 // key=value report — the wire canon: human-readable as printed, machine-
-// parseable by goswitchctl's --json. The config_error token is always
-// LAST and its value whitespace-flattened (a multi-line parse error must
-// not break the token grammar); skip reasons flatten their dashes so every
-// key is one token. Counts and states only — never user text
-// (T-03-06-03).
+// parseable by goswitchctl's --json. The build version (D-37) LEADS the
+// line, so a bug report's first token identifies the build; the
+// config_error token is always LAST and its value whitespace-flattened
+// (a multi-line parse error must not break the token grammar); skip
+// reasons flatten their dashes so every key is one token. Counts and
+// states only — never user text (T-03-06-03).
 func renderStatus(st session.Status) string {
 	tokens := []string{
+		"version=" + st.Version,
 		"mode=" + st.Mode,
 		"corrections_done=" + strconv.Itoa(st.CorrectionsDone),
 		"corrections_skipped=" + strconv.Itoa(st.CorrectionsSkipped),

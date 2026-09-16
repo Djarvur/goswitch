@@ -525,11 +525,11 @@ macr:
 // whitespace-flattened) — the wire canon of the status surface.
 func TestRenderStatusVersionToken(t *testing.T) {
 	svc := ctlsvc.NewSvc(ctlsvc.Deps{Status: fakeStatus{snap: session.Status{
-		Mode:         "en",
-		Version:      "dev",
-		ConfigPath:   "/tmp/goswitch-version.yaml",
-		ConfigValid:  false,
-		ConfigError:  "decode config: boom with spaces",
+		Mode:        "en",
+		Version:     "dev",
+		ConfigPath:  "/tmp/goswitch-version.yaml",
+		ConfigValid: false,
+		ConfigError: "decode config: boom with spaces",
 	}}})
 
 	reply, err := svc.Status()
@@ -549,8 +549,11 @@ func TestRenderStatusVersionToken(t *testing.T) {
 		t.Errorf("Status reply %q must close with the config_error token", reply)
 	}
 	// Pair grammar: the tokens before config_error carry no spaces.
-	head := reply[:strings.Index(reply, "config_error=")]
-	for _, tok := range strings.Fields(head) {
+	at := strings.Index(reply, "config_error=")
+	if at < 0 {
+		t.Fatalf("Status reply %q lost the config_error token", reply)
+	}
+	for _, tok := range strings.Fields(reply[:at]) {
 		parts := strings.Split(tok, "=")
 		if len(parts) != 2 || strings.ContainsAny(parts[0], " ") {
 			t.Errorf("status token %q breaks the space-free key=value grammar", tok)

@@ -335,8 +335,12 @@ func (a *Actor) UseAppidStarter(fn func() (AppidSource, error)) {
 // SetVersion pins the daemon's build identity into the status snapshot
 // (D-37): the daemon calls it once at construction with its stamped (or
 // dev-fallback) version, and StatusSnapshot lifts it into the report.
-// STUB (RED of plan 04-02 Task 1): stores nothing yet.
-func (a *Actor) SetVersion(_ string) {}
+func (a *Actor) SetVersion(v string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.version = v
+}
 
 // MACRCounters snapshots the Super→Ctrl layer's counters — the goswitchctl
 // status surface of plan 03-06 (ADR-005 b.2: every intercepted combination
@@ -385,6 +389,7 @@ func (a *Actor) StatusSnapshot() Status {
 	defer a.mu.Unlock()
 
 	st := Status{
+		Version:               a.version,
 		Mode:                  "en",
 		CorrectionsDone:       a.corrDone,
 		CorrectionsSkipped:    a.corrSkipped,

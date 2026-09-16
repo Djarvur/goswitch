@@ -25,7 +25,15 @@ import (
 func main() {
 	debug := flag.Bool("debug", false, "enable key tracing (logs every keystroke — passwords become visible)")
 	configPath := flag.String("config", "", "path to the YAML config file (empty = built-in defaults)")
+	showVersion := flag.Bool("version", false, "print the build version and exit")
 	flag.Parse()
+
+	// The version query never reaches the daemon: print and exit 0 before
+	// run() — no signal handling, no bus, no engine (D-37).
+	if *showVersion {
+		runVersion(os.Stdout)
+		os.Exit(0)
+	}
 
 	// No defer here: os.Exit skips defers, so signal handling lives in run().
 	if err := run(context.Background(), *debug, *configPath); err != nil {
@@ -110,10 +118,12 @@ func loadConfig(path string) (config.Config, error) {
 // SetOptions; an attached watcher has PRIORITY per event — the succession
 // of plan 03-04: SetOptions remains the no-config surface, the snapshot
 // wins once a source exists). The actor is built here so the control
-// service can hold it from the start (INST-02).
+// service can hold it from the start (INST-02); the daemon's build version
+// (D-37) is pinned so status identifies the running build.
 func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 	window := time.Duration(cfg.Timeouts.TapWindowMs) * time.Millisecond
 	actor := session.NewActor(window)
+	actor.SetVersion(version)
 	actor.SetOptions(session.Options{
 		BackspaceCap:  cfg.Correction.BackspaceCap,
 		ClipboardRung: cfg.Correction.ClipboardRung,
