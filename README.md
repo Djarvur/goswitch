@@ -121,10 +121,10 @@ and switch the layout in a single chord:
 
 | Metric | Value |
 |--------|-------|
-| p50 latency | 171.9 ms |
-| p95 latency | 190.2 ms |
-| p99 latency | 191.3 ms |
-| peak RSS | 13.4 MB (budget: < 50 MB) |
+| p50 latency | 166.9 ms |
+| p95 latency | 184.4 ms |
+| p99 latency | 186.5 ms |
+| peak RSS | 12.4 MB (budget: < 50 MB) |
 
 Methodology: the window runs from the test rig's key injection (ydotool →
 uinput) to the corrected text observed over AT-SPI — an honest upper
