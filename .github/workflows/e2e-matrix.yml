@@ -103,10 +103,17 @@ jobs:
             echo "::error::no graphical session for $USER — owner relogin required (D-48)"
             exit 1
           fi
-          echo "session $sid since: $(loginctl show-session "$sid" -p Since --value)"
-          ts_us=$(loginctl show-session "$sid" -p Timestamp --value)
-          age_sec=$(( $(date +%s) - ts_us / 1000000 ))
-          echo "session age: ${age_sec}s (threshold ${D48_MAX_SESSION_AGE_SEC}s)"
+          # loginctl отдаёт момент входа свойством Timestamp в ЧЕЛОВЕЧЕСКОМ
+          # формате (живая находка 04-06: `-p Since` свойством не является,
+          # usec-значения show-session не отдаёт) — парсим GNU date.
+          since=$(loginctl show-session "$sid" -p Timestamp --value)
+          ts_epoch=$(date -d "$since" +%s 2>/dev/null || true)
+          if [ -z "$ts_epoch" ]; then
+            echo "::error::cannot parse session start time (${since}) — owner relogin required (D-48)"
+            exit 1
+          fi
+          age_sec=$(( $(date +%s) - ts_epoch ))
+          echo "session $sid since: $since (age ${age_sec}s, threshold ${D48_MAX_SESSION_AGE_SEC}s)"
           if [ "$age_sec" -gt "$D48_MAX_SESSION_AGE_SEC" ]; then
             echo "::error::session age ${age_sec}s > ${D48_MAX_SESSION_AGE_SEC}s — owner relogin required (D-48)"
             exit 1
