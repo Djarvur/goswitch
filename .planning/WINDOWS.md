@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 0
+open_count: 1
 waived_count: 3
 fixed_count: 3
-total_count: 6
-last_updated: 2026-09-16T17:36:37.077Z
+total_count: 7
+last_updated: 2026-09-17T11:53:10.594Z
 ---
 
 # Broken Windows Ledger
@@ -21,6 +21,7 @@ last_updated: 2026-09-16T17:36:37.077Z
 | 4 | 3 | unmet-truth | test/e2e/case_macr.go | 595 | GTK4-Wayland (GNOME 46) does not apply IBus-forwarded key events: the relay reaches the focused InputContext (dbus-monitor pinned) but the widget never acts — MACR's Ctrl+letter remap, the ADR-003 level-2 Backspace replay and the D-28 Ctrl+V burst all stop at the client boundary (03-05 Deviation 3) | waived | owner accepted GTK4-Wayland forwarded-events platform limitation (UAT 2026-09-15, REQUIREMENTS MACR-01 caveat) | 2026-09-15T13:23:14.477Z | 2026-09-16T14:53:16.148Z |
 | 5 | 04 | unmet-truth | test/e2e/perf.go | 1 | INST-03 latency budget verdict is FAIL under the prescribed ydotool→AT-SPI window (p95 190-205ms >= 50ms over two full runs): the window is dominated by ydotool 0.1.8 per-event injection overhead (~80-125ms/event), daemon reaction is 0.2-1.8ms; owner methodology decision required before the D-46 README table publishes latency numbers | waived | owner accepted the ydotool-injector-dominated stand numbers as-is (decision (в), 2026-09-16): publish v1.0.0 with the real ydotool→AT-SPI p50/p95/p99 and the budget-fail status stated honestly in the README perf table; daemon reaction is sub-millisecond, the window overhead is the stand's ydotool 0.1.8 injector | 2026-09-16T13:51:53.747Z | 2026-09-16T17:36:37.077Z |
 | 6 | 04 | deviation | test/e2e/main.go | 201 | 04-04 (1b443eb) turned the matrix path's zero watchdog limit into a literal time.After(0): every matrix case (v1/v2/v3) failed instantly with 'did not complete within 0s' — live-caught by the first D-48 double-run dispatch (run 35107406144); fixed structurally by watchdogLimit resolving 0 to caseTimeout inside runCaseWatchdog (9f2fd75, RED->GREEN tests) | fixed |  | 2026-09-16T14:35:30.840Z | 2026-09-16T14:35:35.768Z |
+| 7 | 04 | deviation | test/e2e/focus_helper.py |  | 04-08 live smoke: INPUT-hit-through-focused-frame not drivable from background context (mutter denies activation; FLAGGED focus-lag case) — witness answered frame-fallback arm in budget; in-situ proof rides the owner's D-48 dispatch | open |  | 2026-09-17T11:53:10.594Z |  |
 
 ````json
 [
@@ -95,6 +96,18 @@ last_updated: 2026-09-16T17:36:37.077Z
     "reason": "",
     "recorded_at": "2026-09-16T14:35:30.840Z",
     "resolved_at": "2026-09-16T14:35:35.768Z"
+  },
+  {
+    "id": 7,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "test/e2e/focus_helper.py",
+    "line": null,
+    "description": "04-08 live smoke: INPUT-hit-through-focused-frame not drivable from background context (mutter denies activation; FLAGGED focus-lag case) — witness answered frame-fallback arm in budget; in-situ proof rides the owner's D-48 dispatch",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T11:53:10.594Z",
+    "resolved_at": null
   }
 ]
 ````
