@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 04
 current_phase_name: Поставка и приёмка
 status: verifying
-stopped_at: "Plan 04-08 complete: G-4-1 closed — focus-first witness (focused frames before descent, verbatim full-walk fallback) + 10s probe floor with pinned witnessQuiesceWindow; quiesce corpus RED→GREEN; live smoke: witness 3.0-4.7s on the 6100-node session (pre-fix 3.8-6.3s), post-close prompt; INPUT-hit-through-focused-frame left to the owner's D-48 dispatch (FLAGGED focus-lag case)"
-last_updated: "2026-09-17T11:51:05.471Z"
+stopped_at: Completed 04-09-PLAN.md
+last_updated: "2026-09-17T22:22:05.297Z"
 last_activity: 2026-09-16
 last_activity_desc: Plan 04-07 complete — v1.0.0 released, WINDOWS ledger zeroed, INST-01 closed
-state_head: 4bf01fce48e392c36720f74e572585b2aff1f563
+state_head: 99fd0b1454353ef50a3b509b34648200d86f8a68
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 27
-  completed_plans: 26
+  total_plans: 28
+  completed_plans: 28
 ---
 
 # Project State
@@ -91,6 +91,7 @@ Progress: [████████░░] 75%
 | Phase 04 P06 | 22 min | 2 tasks | 6 files |
 | Phase 04 P07 | 33 min | 3 tasks | 4 files |
 | Phase 04 P08 | 35 min | 2 tasks | 4 files |
+| Phase 04 P09 | 9 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -182,6 +183,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-07: WINDOWS ledger reconciled via verbs — #2 fixed, #4 waived with the owner 2026-09-15 reason; #5 left open deliberately (executor must not decide the owner latency-methodology question)
 - [Phase 04]: 04-07: docs/ACCEPTANCE.md carries the formal D-48 fresh-session double-run as item 1 (before local install), procedure per docs/ci-runner.md
 - [Phase 04]: 04-07 resume: owner resolved WINDOWS #5 with decision (в) — accept the ydotool→AT-SPI stand numbers as-is; v1.0.0 publishes with the real p50/p95/p99 and the budget-fail status stated honestly in the README perf table (window ydotool→AT-SPI, combo case, N=40; daemon reaction sub-millisecond, injector-dominated window). e2e-perf budget-fail is the sanctioned result — not a blocking gate; #5 waived via verb (open_count 0)
+- [Phase 04]: [04-09] Soft mode covers ONLY preflight failures (busy desk / stale session on schedule: warning + D48_SKIP + exit 0) — real run failures stay red for every trigger; nightly red remains a regression signal
+- [Phase 04]: [04-09] focused-app answers at the frames level only (first focused frame names its app, '(none)' when none) — shell surfaces deliberately unclassified, interpretation is the workflow preflight's job
+- [Phase 04]: [04-09] Nightly-gate shape: root timer restart gdm -> GDM autologin -> graphical-session.target raises user units -> oneshot dispatcher (sleep 120) runs scripts/d48-nightly-dispatch.sh; schedule cron 01:10 UTC is the post-merge redundant belt — machine-checked freshness stays the D-48 gate
 
 ### Pending Todos
 
@@ -203,6 +207,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T11:51:05.358Z
-Stopped at: Plan 04-08 complete: G-4-1 closed — focus-first witness (focused frames before descent, verbatim full-walk fallback) + 10s probe floor with pinned witnessQuiesceWindow; quiesce corpus RED→GREEN; live smoke: witness 3.0-4.7s on the 6100-node session (pre-fix 3.8-6.3s), post-close prompt; INPUT-hit-through-focused-frame left to the owner's D-48 dispatch (FLAGGED focus-lag case)
+Last session: 2026-09-17T22:22:05.214Z
+Stopped at: Completed 04-09-PLAN.md
 Resume file: None

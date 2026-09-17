@@ -154,6 +154,8 @@ Plans:
 **Plans**: 7/7 planned
 Plans:
 
+- [x] 04-09-PLAN.md
+
 - [x] 04-08-PLAN.md
 
 **Wave 1**
@@ -188,7 +190,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
 | 2. Коррекция слова EN↔RU | 7/7 | Complete    | 2026-09-15 |
 | 3. Фразы, выделение, переключение и конфигурация | 7/7 | Complete    | 2026-09-15 |
-| 4. Поставка и приёмка | 8/8 | In Progress|  |
+| 4. Поставка и приёмка | 9/9 | In Progress|  |
 
 ## Coverage
 
