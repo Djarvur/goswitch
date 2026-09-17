@@ -58,3 +58,23 @@ skipped: 0
 blocked: 0
 
 ## Gaps
+
+### G-4-1: a11y witness probe exceeds its budget on large desktop trees
+status: open
+test: 2 (D-48 formal fresh-session run)
+diagnosis: the quiesce probe (`focus_helper.py witness`, called from matrixQuiesce,
+test/e2e/matrix.go:694-722) walks EVERY application's full node tree breadth-first with one
+D-Bus roundtrip per node until it finds a FOCUSED input. Tree size varies with desktop
+state: on fresh sessions gnome-shell exposes 3673 nodes and a gjs extension process 2437
+(profiling 2026-09-17: full walk ~3.0s bare) — the bare walk crosses the 4s
+witnessProbeTimeout (matrix.go:684) under any additional latency, so the 30s quiesce window
+exhausts its probes and healthy cases FAIL ("a11y witness not answering within 30s").
+Healthy sessions (small shell trees, walk <1s) pass — hence 35108412175's 31/31 twice.
+Harness scalability defect; not a product regression (owner's live gesture checklist passed;
+the single select-partial-gte content miss in attempt 2 is bridge-degradation collateral).
+fix direction: focus-first traversal — per app, check frames' FOCUSED state BEFORE
+descending into children, walk only the focused frame's subtree, full walk only as
+fallback; plus raise witnessProbeTimeout 4s→10s as defense in depth. TDD per house
+discipline; matrix + local live run must stay green.
+evidence: UAT attempts 1-2 (runs 35142914380, 35188570260); local profiling on the same
+session (16 apps, 6100 shell/gjs nodes, per-probe 3.8-6.3s vs <1s on healthy session).
