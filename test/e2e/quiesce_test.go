@@ -22,7 +22,8 @@ import (
 // helper's focus-first walk keeps real probes sub-second.
 func TestWitnessProbeBudget_ScalabilityFloor(t *testing.T) {
 	if witnessProbeTimeout < 10*time.Second {
-		t.Fatalf("witnessProbeTimeout = %v, want >= 10s (G-4-1: the bare fresh-session walk ~3.0s crossed the former 4s budget)", witnessProbeTimeout)
+		t.Fatalf("witnessProbeTimeout = %v, want >= 10s (G-4-1: bare fresh-session walk ~3.0s crossed 4s)",
+			witnessProbeTimeout)
 	}
 }
 
@@ -35,7 +36,8 @@ func TestWitnessProbeBudget_ScalabilityFloor(t *testing.T) {
 func TestMatrixQuiesce_WindowCoversProbes(t *testing.T) {
 	need := time.Duration(witnessQuieceAttempts) * (witnessProbeTimeout + witnessPoll)
 	if need > witnessQuiesceWindow {
-		t.Fatalf("quiesce window %v does not cover %d full probes plus pauses (%v); the deadline would exhaust mid-probe", witnessQuiesceWindow, witnessQuieceAttempts, need)
+		t.Fatalf("quiesce window %v does not cover %d full probes plus pauses (%v); deadline exhausts mid-probe",
+			witnessQuiesceWindow, witnessQuieceAttempts, need)
 	}
 }
 
@@ -43,7 +45,9 @@ func TestMatrixQuiesce_WindowCoversProbes(t *testing.T) {
 // deadline and the error text read ONE named constant, never a re-derived
 // product (the expression was duplicated in matrixQuiesce before 04-08).
 func TestMatrixQuiesce_WindowSource(t *testing.T) {
-	if witnessQuiesceWindow != time.Duration(witnessQuieceAttempts)*surfaceFocusWait {
-		t.Fatalf("witnessQuiesceWindow = %v, want witnessQuieceAttempts*surfaceFocusWait = %v — the deadline and the error text must share one source", witnessQuiesceWindow, time.Duration(witnessQuieceAttempts)*surfaceFocusWait)
+	want := time.Duration(witnessQuieceAttempts) * surfaceFocusWait
+	if witnessQuiesceWindow != want {
+		t.Fatalf("witnessQuiesceWindow = %v, want %v (witnessQuieceAttempts*surfaceFocusWait)",
+			witnessQuiesceWindow, want)
 	}
 }

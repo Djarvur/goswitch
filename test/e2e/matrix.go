@@ -683,12 +683,30 @@ func writeMatrixReport(path string, report *matrixReport) {
 // walk must cost seconds, not the whole cmdTimeout budget (live finding
 // 02-06: right after a case's teardown killed its surfaces, the registry
 // briefly lists their app entries and a walk into one blocks until the
-// registry reaps it).
-const witnessProbeTimeout = 4 * time.Second
+// registry reaps it). The 10s floor is the G-4-1 defense in depth: the
+// bare full-tree walk of a fresh-session desktop (3673 gnome-shell + 2437
+// gjs nodes, ~3.0s measured) crossed the former 4s budget under any
+// additive latency and exhausted the quiesce window on healthy cases
+// (04-UAT.md, runs 35142914380/35188570260); 10s holds ~3x headroom over
+// that measured worst case. The helper's focus-first walk (plan 04-08)
+// keeps real probes sub-second — the constant now only backstops the
+// remaining bridge degradation modes.
+const witnessProbeTimeout = 10 * time.Second
 
 // witnessQuieceAttempts caps how many probe windows the quiesce gate waits
-// for the a11y registry to finish reaping killed surfaces.
+// for the a11y registry to finish reaping killed surfaces. Two attempts at
+// the arithmetic of 04-08: (10s probe + 100ms pause) each → 20.2s inside
+// the 30s window. (The misspelled name predates the revision; it lints
+// clean and a rename would be pure churn.)
 const witnessQuieceAttempts = 2
+
+// witnessQuiesceWindow is the single source of the quiesce gate's overall
+// deadline and error text: full probes of all attempts plus the inter-probe
+// pauses must fit inside it (invariant pinned in quiesce_test.go). The
+// deadline is checked after a probe, so at most one probe overruns the
+// nominal window — the case's watchdog (caseTimeout) remains the upper
+// bound.
+const witnessQuiesceWindow = witnessQuieceAttempts * surfaceFocusWait
 
 // matrixQuiesce waits until the desktop's AT-SPI tree answers a witness
 // probe promptly again. Killed surfaces (the per-case teardown SIGKILLs
@@ -699,7 +717,7 @@ const witnessQuieceAttempts = 2
 // (live finding 02-06, shuffled-order run). Waiting for the heal is
 // correct: the wedge always clears on its own.
 func matrixQuiesce(ctx context.Context, cfg config) error {
-	overall := time.Now().Add(witnessQuieceAttempts * surfaceFocusWait)
+	overall := time.Now().Add(witnessQuiesceWindow)
 	var lastErr error
 	for {
 		probe, cancel := context.WithTimeout(ctx, witnessProbeTimeout)
@@ -711,7 +729,7 @@ func matrixQuiesce(ctx context.Context, cfg config) error {
 		lastErr = err
 		if time.Now().After(overall) {
 			return fmt.Errorf("a11y witness not answering within %v: %w",
-				witnessQuieceAttempts*surfaceFocusWait, lastErr)
+				witnessQuiesceWindow, lastErr)
 		}
 		if serr := sleepCtx(ctx, witnessPoll); serr != nil {
 			return serr
