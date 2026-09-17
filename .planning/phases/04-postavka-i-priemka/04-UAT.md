@@ -60,7 +60,7 @@ blocked: 0
 ## Gaps
 
 ### G-4-1: a11y witness probe exceeds its budget on large desktop trees
-status: open
+status: resolved (plan 04-08 executed — SUMMARY 04-08-SUMMARY.md; focus-first probe + 10s floor, live smoke 3.0-4.7s on the degraded session)
 test: 2 (D-48 formal fresh-session run)
 diagnosis: the quiesce probe (`focus_helper.py witness`, called from matrixQuiesce,
 test/e2e/matrix.go:694-722) walks EVERY application's full node tree breadth-first with one
