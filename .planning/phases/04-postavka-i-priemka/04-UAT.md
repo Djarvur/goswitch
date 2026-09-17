@@ -38,6 +38,15 @@ attempts:
     changed since the green double-run proof at 9f2fd75 (run 35108412175, 31/31 twice).
     Remedy: relogin (rebuilds the whole a11y stack) + re-dispatch within the 30-min
     fresh-session window.
+  - attempt 2 (run 35188570260, 2026-09-17 06:08Z, fresh session): FAILED 3/31 — same
+    witness-quiesce wedge; one content miss (select-partial-gte) consistent with the
+    degraded bridge, not a standalone regression (case green in every healthy run).
+    ROOT-CAUSED locally on the same session: the witness probe walks EVERY app's full
+    node tree (one D-Bus call per node); gnome-shell exposes 3673 nodes + a gjs
+    extension 2437 → bare walk ~3.0s, crossing the 4s witnessProbeTimeout under load;
+    healthy sessions have small shell trees (walk <1s) which is why 35108412175 ran
+    31/31 twice. Harness scalability defect (focus-blind full-tree walk), not a product
+    regression and not fresh-session-specific.
 
 ## Summary
 
