@@ -4,7 +4,8 @@
 на раннере — часть phase gate. Раннер — это ЭТА машина: e2e-стенду нужна
 настоящая GNOME Wayland-сессия с фокусом окон, эфемерная ubuntu-latest
 дать её не может. Workflow `.github/workflows/e2e-matrix.yml` запускается
-ТОЛЬКО вручную (`workflow_dispatch`), прогоняет `mise run e2e-matrix` —
+вручную (`workflow_dispatch`) и — после мержа фазы в `main` — по ночному
+`schedule` (план 04-09, раздел ниже), прогоняет `mise run e2e-matrix` —
 ту же задачу, что и локальный запуск (D-09), — и выгружает `e2e-report.txt`
 артефактом.
 
@@ -187,6 +188,156 @@ required (D-48)» → перелогиниться и повторить дис�
 `-f fresh_session=true`; формальный свежесессионный прогон — шаг
 приёмки фазы (verify-work/04-07).
 
+## Автономный ночной гейт (D-48 v2) (план 04-09, G-4-2)
+
+Директива владельца 2026-09-17: «придумай, как тестировать это без
+участия человека». Формальное доказательство D-48 — зелёный двойной
+прогон матрицы на свежей сессии — становится НОЧНЫМ АВТОНОМНЫМ
+ПРОГОНОМ. Цепочка:
+
+```
+root-таймер 03:50: systemctl restart gdm
+  → GDM autologin входит владельца заново
+  → свежая графическая сессия поднимает graphical-session.target
+  → user-юниты стартуют сами: goswitch-ci-runner (раннер) +
+    goswitch-d48-dispatch (диспетчер сессии)
+  → диспетчер через ~2 мин запускает гейт:
+    scripts/d48-nightly-dispatch.sh
+    (= gh workflow run e2e-matrix fresh_session=true)
+```
+
+Человек не набирает команду и не перелогинивается никогда;
+fresh_session-префлайт (loginctl ≤ 30 мин) остаётся МАШИННЫМ свидетелем
+свежести — семантика доказательства не ослаблена, из цикла убран
+именно человек.
+
+> **Безопасность — осознанный tradeoff владельца.** Autologin на
+> личной машине означает: любой у консоли входит в сессию владельца
+> (T-04-09-01, accepted). Владелец применяет настройку ниже ЗНАЯ это;
+> репозиторий возит только ДОКУМЕНТАЦИЮ — НИЧЕГО в репозитории не
+> исполняет sudo и не применяет root-часть само. Все root-файлы из
+> блоков 1–2 применяются руками владельца, один раз.
+
+### Блок 1 — GDM autologin (root, вручную)
+
+`/etc/gdm3/custom.yaml`, секция `[daemon]` (создать файл/секцию, если
+нет):
+
+```yaml
+[daemon]
+AutomaticLoginEnable=true
+AutomaticLogin=<логин владельца>
+```
+
+Tradeoff — см. security-нотаут выше: включённый autologin входит в
+сессию без пароля у физической консоли.
+
+### Блок 2 — root-таймер пересоздания сессии (root, вручную)
+
+`/etc/systemd/system/d48-nightly-relogin.service`:
+
+```ini
+[Unit]
+Description=goswitch D-48 nightly: restart GDM for a fresh autologin session
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart gdm
+```
+
+`/etc/systemd/system/d48-nightly-relogin.timer`:
+
+```ini
+[Unit]
+Description=goswitch D-48 nightly relogin schedule (03:50)
+
+[Timer]
+OnCalendar=*-*-* 03:50:00
+
+[Install]
+WantedBy=timers.target
+```
+
+Применение и проверка:
+
+```console
+$ sudo systemctl daemon-reload
+$ sudo systemctl enable --now d48-nightly-relogin.timer
+$ systemctl list-timers d48-nightly-relogin.timer
+```
+
+`restart gdm` разбирает текущую сессию; autologin возвращает
+пользователя, user-юниты стартуют сами — в этом и есть механизм
+«свежей сессии без человека».
+
+### Блок 3 — systemd USER units (без root)
+
+**(а) Раннер.** Существующий `goswitch-ci-runner.service` (раздел
+«systemd user unit» выше) уже висит на `graphical-session.target`
+(`After=`, `Restart=on-failure`) и переиспользует вручную
+зарегистрированный каталог `~/actions-runner` — дополнительной
+настройки не нужно, только включение, если ещё не включён:
+
+```console
+$ systemctl --user enable goswitch-ci-runner
+```
+
+**(б) Диспетчер сессии.** Файл
+`~/.config/systemd/user/goswitch-d48-dispatch.service`:
+
+```ini
+[Unit]
+Description=goswitch D-48 nightly dispatch (fresh session gate)
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+# Гвард ~2 мин: дать столу и раннеру устояться после входа.
+ExecStartPre=/usr/bin/sleep 120
+# Подставить ФАКТИЧЕСКИЙ путь рабочей копии репозитория на этой машине.
+ExecStart=%h/goswitch/scripts/d48-nightly-dispatch.sh
+# Опционально, файл вне git: строка D48_REF=<ветка> для до-мерж
+# диспатчей фаза-ветки; без файла диспетчер идёт на main.
+EnvironmentFile=-%h/.config/goswitch/d48-dispatch.env
+
+[Install]
+WantedBy=graphical-session.target
+```
+
+Применение и проверка:
+
+```console
+$ systemctl --user daemon-reload
+$ systemctl --user enable goswitch-d48-dispatch
+$ journalctl --user -u goswitch-d48-dispatch
+```
+
+### Ин-репо пояс (post-merge)
+
+После мержа фазы в `main` workflow сам несёт ночной `schedule`
+(cron `10 1 * * *` в **UTC**) — второй, ИЗБЫТОЧНЫЙ путь: GitHub
+диспатчит определение default branch и без диспетчера сессии.
+Concurrency-группа `e2e-gnome` (без cancel-in-progress) ставит
+cron-прогон в очередь за прогоном диспетчера — два стенда на одном
+столе по-прежнему невозможны. Мягкий режим префлайтов (idle-desktop и
+fresh-session) делает неудачный слот нейтральным: `::warning::` +
+пропуск прогонов + `exit 0` — без машинной настройки (блоки 1–3)
+ночные прогоны НЕ краснеют. Часовой пояс: cron в UTC, root-таймер в
+machine-local времени — при регионе, отличном от UTC+3, сдвинуть
+cron так, чтобы слот оставался ~20 минут после автологина.
+
+### Семантика доказательства
+
+Формальное доказательство D-48 = АВТОМАТНЫЙ зелёный двойной прогон
+(«matrix v3 run #1» + «matrix v3 run #2» в одном job, conclusion
+`success`) на автологин-свежей сессии. fresh_session-префлайт
+(loginctl ≤ 30 мин) остаётся машинным свидетелем свежести — по
+директиве владельца 2026-09-17 из цикла убран человек, а не проверка.
+До применения машинной настройки (блоки 1–3) scheduled-прогоны
+завершаются нейтрально (мягкий режим) — без красного ночного шума;
+реальное падение прогона при пройденных префлайтах краснеет при любом
+триггере — ночной красный остаётся регрессионным сигналом.
+
 ## Обновление раннера
 
 GitHub помечает устаревшие раннеры в Settings → Actions → Runners.
@@ -237,8 +388,13 @@ $ unset TOKEN
   → Runner groups: группа `e2e-gnome` с доступом ровно одного
   репозитория и ярлыком `gnome` (по умолчанию раннер попадает в группу
   Default; ограничение группы — рекомендация этого раздела).
-- **Триггер — workflow_dispatch только** (T-02-07-01): fork-PR
-  физически не может запустить матрицу; диспатч — право ролей с write.
+- **Триггеры — workflow_dispatch + ночной schedule** (T-02-07-01 в
+  силе): fork/push-триггеры отсутствуют — fork-PR физически не может
+  запустить матрицу; диспатч — право ролей с write; schedule исполняет
+  ТОЛЬКО определение default branch (ветка защищена, изменения через
+  PR). Юнит диспетчера сессии (D-48 v2) исполняет только ин-репо
+  скрипт с gh-гвардом; root-часть машинной настройки — исключительно
+  ручное применение владельцем, репозиторий sudo не исполняет.
 - **permissions: contents: read**, секретов workflow не использует.
 - **concurrency e2e-gnome без cancel-in-progress**: один прогон за раз.
 - **Registration-token** одноразовый, живёт минуты, в git не попадает
