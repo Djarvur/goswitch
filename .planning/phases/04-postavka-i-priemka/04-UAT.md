@@ -59,6 +59,33 @@ blocked: 0
 
 ## Gaps
 
+### G-4-2: formal D-48 gate requires a human in the loop (owner directive: remove the human)
+status: open
+test: 2 (D-48 formal fresh-session run)
+diagnosis: the acceptance treadmill has four human dependencies — (1) the CI runner is
+launched manually in-session, so its lifecycle/env is hand-maintained and it does not
+auto-serve queued dispatches; (2) a fresh graphical session exists only if a human relogins
+(GDM has no unattended session-start path configured); (3) every gate dispatch needs a human
+to run `gh workflow run`; (4) daytime runs fight the owner for the desktop (focus-stealing
+denial: zenity cannot take focus while a real app window holds it — live finding 2026-09-17
+late evening; matrix runs 8/31 → 3/31 → 0/31 across three fresh sessions while the product
+itself passed the owner's hands-on checklist). Additionally the 04-08 fix never reached CI
+for attempt 3 (branch was 17 commits ahead of origin at dispatch — orchestrator push miss,
+fixed 2026-09-17: 9ff56cb..7fe99b6).
+fix direction (owner directive 2026-09-17: "придумай, как тестировать это без участия
+человека"): unattended nightly gate — GDM autologin (documented one-time machine setup,
+owner applies) + root timer 03:50 `systemctl restart gdm` → fresh idle session; systemd user
+units: CI runner at graphical-session.target (always-correct env, serves queued dispatches)
++ session dispatcher firing `gh workflow run e2e-matrix fresh_session=true` ~2 min after
+login against the configured ref; in-repo: idle-desktop preflight (fail fast "desktop busy"
+instead of 31 opaque failures; soft mode for scheduled triggers), `schedule:` cron on the
+workflow for the post-merge default branch, in-repo dispatch script; formal D-48 evidence
+becomes the unattended green double-run on an autologin-fresh session (machine-checked
+freshness stays the gate). Evidence semantics redefined by owner directive.
+evidence: attempts 1-3 (35142914380, 35188570260, 35271719601); focus-stealing finding
+(witness "gnome-shell:WINDOW:chars=-1" while zenity waits); runner/shell env comparison
+(identical — env hypothesis eliminated); ahead-17 push miss.
+
 ### G-4-1: a11y witness probe exceeds its budget on large desktop trees
 status: resolved (plan 04-08 executed — SUMMARY 04-08-SUMMARY.md; focus-first probe + 10s floor, live smoke 3.0-4.7s on the degraded session)
 test: 2 (D-48 formal fresh-session run)
