@@ -1,0 +1,19 @@
+{
+  "command": "go test ./test/e2e/ -run 'WitnessProbeBudget' -race -count=1 -v (transcribed to node-test TAP per repo precedent, 04-04)",
+  "exitCode": 1,
+  "targetTest": "TestWitnessProbeBudget_ScalabilityFloor",
+  "targetFile": "test/e2e/quiesce_test.go",
+  "failingTest": "TestWitnessProbeBudget_ScalabilityFloor",
+  "expected": "witnessProbeTimeout >= 10*time.Second (G-4-1 scalability floor: the bare fresh-session walk ~3.0s crossed the former 4s budget; 10s keeps ~3x headroom)",
+  "actual": "witnessProbeTimeout is still 4s — the floor test fails on its own assertion with the build green (staged RED step 1; the two window tests join only in step 2 so this pure assertion failure is not masked by a package compile error)",
+  "output": "=== RUN   TestWitnessProbeBudget_ScalabilityFloor\n    quiesce_test.go:25: witnessProbeTimeout = 4s, want >= 10s (G-4-1: the bare fresh-session walk ~3.0s crossed the former 4s budget)\n--- FAIL: TestWitnessProbeBudget_ScalabilityFloor (0.00s)\nFAIL\nFAIL\tgithub.com/Djarvur/goswitch/test/e2e 0.009s\nFAIL\n# transcribed TAP\nnot ok 1 - TestWitnessProbeBudget_ScalabilityFloor\n# tests 1\n# pass 0\n# fail 1",
+  "step2": {
+    "command": "go test ./test/e2e/ -run 'MatrixQuiesce' -race -count=1 -v",
+    "exitCode": 1,
+    "targetTest": "TestMatrixQuiesce_WindowCoversProbes (and TestMatrixQuiesce_WindowSource)",
+    "form": "compile_error — the checker-staged RED shape for this step: the window tests reference witnessQuiesceWindow, which does not exist yet, so their RED form is a package build failure (undefined: witnessQuiesceWindow), deliberately not an assertion failure. This is the planned, mechanically accurate staging from the plan-checker revision (commit 3511f50), not an INVALID_RED accident; step 1's clean assertion failure above carries the gate verdict.",
+    "expected": "package build failure: undefined: witnessQuiesceWindow at the two window tests (until GREEN adds the named constant in matrix.go)",
+    "actual": "test/e2e/quiesce_test.go:37:12, 38:118, 46:5, 47:149: undefined: witnessQuiesceWindow; FAIL github.com/Djarvur/goswitch/test/e2e [build failed]",
+    "output": "# github.com/Djarvur/goswitch/test/e2e [github.com/Djarvur/goswitch/test/e2e.test]\ntest/e2e/quiesce_test.go:37:12: undefined: witnessQuiesceWindow\ntest/e2e/quiesce_test.go:38:118: undefined: witnessQuiesceWindow\ntest/e2e/quiesce_test.go:46:5: undefined: witnessQuiesceWindow\ntest/e2e/quiesce_test.go:47:149: undefined: witnessQuiesceWindow\nFAIL\tgithub.com/Djarvur/goswitch/test/e2e [build failed]\nFAIL"
+  }
+}
