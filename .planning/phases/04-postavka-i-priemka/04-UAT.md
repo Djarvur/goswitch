@@ -60,7 +60,11 @@ blocked: 0
 ## Gaps
 
 ### G-4-2: formal D-48 gate requires a human in the loop (owner directive: remove the human)
-status: open
+status: resolved (plan 04-09 executed and pushed — in-repo: focused-app idle preflight,
+nightly schedule with soft mode, d48-nightly-dispatch.sh, ci-runner.md «Автономный ночной
+гейт (D-48 v2)» with the three machine-setup blocks; activation = owner applies the setup.
+Known wrinkle: if a fresh autologin session ever exposes a focused shell frame, the idle
+preflight fails loudly ("desktop busy: gnome-shell") — single-line shell-exclusion fix.)
 test: 2 (D-48 formal fresh-session run)
 diagnosis: the acceptance treadmill has four human dependencies — (1) the CI runner is
 launched manually in-session, so its lifecycle/env is hand-maintained and it does not
