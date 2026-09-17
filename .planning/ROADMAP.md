@@ -153,6 +153,9 @@ Plans:
 
 **Plans**: 7/7 planned
 Plans:
+
+- [x] 04-08-PLAN.md
+
 **Wave 1**
 
 - [x] 04-01-PLAN.md — Трассер: internal/install + goswitchctl install/uninstall («один хозяин», env-cache, полный откат) + живой install-cycle — INST-01, D-39/D-40/D-42
@@ -185,7 +188,7 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
 | 2. Коррекция слова EN↔RU | 7/7 | Complete    | 2026-09-15 |
 | 3. Фразы, выделение, переключение и конфигурация | 7/7 | Complete    | 2026-09-15 |
-| 4. Поставка и приёмка | 7/7 | In Progress|  |
+| 4. Поставка и приёмка | 8/8 | In Progress|  |
 
 ## Coverage
 

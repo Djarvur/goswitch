@@ -4,15 +4,15 @@ milestone: v1.0.0
 current_phase: 04
 current_phase_name: Поставка и приёмка
 status: verifying
-stopped_at: "Plan 04-07 complete: v1.0.0 published and verified (run 35130309174 success; tar.gz + checksums.txt assets; goswitchd -version stamps 1.0.0 + tag commit; proxy v1.0.0.info OK; go install channel live), WINDOWS #5 waived by owner decision (в) — open_count 0, INST-01 closed. Next: phase 04 verify-work — owner UAT session per docs/ACCEPTANCE.md; phase merge to main and milestone close are the owner's calls"
-last_updated: "2026-09-16T17:56:02.837Z"
+stopped_at: "Plan 04-08 complete: G-4-1 closed — focus-first witness (focused frames before descent, verbatim full-walk fallback) + 10s probe floor with pinned witnessQuiesceWindow; quiesce corpus RED→GREEN; live smoke: witness 3.0-4.7s on the 6100-node session (pre-fix 3.8-6.3s), post-close prompt; INPUT-hit-through-focused-frame left to the owner's D-48 dispatch (FLAGGED focus-lag case)"
+last_updated: "2026-09-17T11:51:05.471Z"
 last_activity: 2026-09-16
 last_activity_desc: Plan 04-07 complete — v1.0.0 released, WINDOWS ledger zeroed, INST-01 closed
-state_head: 9139486c51bdd2b53ca098d8eca23ca30910c272
+state_head: 4bf01fce48e392c36720f74e572585b2aff1f563
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 26
+  total_plans: 27
   completed_plans: 26
 ---
 
@@ -90,6 +90,7 @@ Progress: [████████░░] 75%
 | Phase 04 P03 | 7 min | 2 tasks | 4 files |
 | Phase 04 P06 | 22 min | 2 tasks | 6 files |
 | Phase 04 P07 | 33 min | 3 tasks | 4 files |
+| Phase 04 P08 | 35 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -202,6 +203,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T17:55:51.061Z
-Stopped at: Plan 04-07 complete: v1.0.0 published and verified (run 35130309174 success; tar.gz + checksums.txt assets; goswitchd -version stamps 1.0.0 + tag commit; proxy v1.0.0.info OK; go install channel live), WINDOWS #5 waived by owner decision (в) — open_count 0, INST-01 closed. Next: phase 04 verify-work — owner UAT session per docs/ACCEPTANCE.md; phase merge to main and milestone close are the owner's calls
+Last session: 2026-09-17T11:51:05.358Z
+Stopped at: Plan 04-08 complete: G-4-1 closed — focus-first witness (focused frames before descent, verbatim full-walk fallback) + 10s probe floor with pinned witnessQuiesceWindow; quiesce corpus RED→GREEN; live smoke: witness 3.0-4.7s on the 6100-node session (pre-fix 3.8-6.3s), post-close prompt; INPUT-hit-through-focused-frame left to the owner's D-48 dispatch (FLAGGED focus-lag case)
 Resume file: None
