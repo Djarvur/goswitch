@@ -3,11 +3,23 @@
 
 Subcommands:
   witness     print "<app>:<role>:chars=<n>" of the focused input surface.
-              Input-surface roles (TEXT, PASSWORD_TEXT, ENTRY) are preferred
-              over window frames, which also carry the FOCUSED state in
-              GNOME Shell's tree. The shell's own entries — overview search
-              and lock-screen prompt alike — surface as PASSWORD_TEXT
-              (live-verified in phase 01-03).
+              Focus-first traversal (G-4-1, plan 04-08): per application
+              the FOCUSED state is checked on the window frames BEFORE
+              descending, and only focused frames' subtrees are walked;
+              the full-tree walk remains the fallback for when no frame is
+              focused anywhere — fresh-session trees (gnome-shell 3673 +
+              gjs 2437 nodes) made the bare full walk ~3.0s and crossed
+              the stand's probe budget. Input-surface roles (TEXT,
+              PASSWORD_TEXT, ENTRY) are preferred over window frames,
+              which also carry the FOCUSED state in GNOME Shell's tree;
+              when several surfaces report focused at once (bridge lag)
+              the answer is the first focused-frame input node in
+              desktop→frame order — exhaustive enumeration remains the
+              focused-inputs contract. The shell's own entries — overview
+              search and lock-screen prompt alike — surface as
+              PASSWORD_TEXT (live-verified in phase 01-03), and a locked
+              session still answers through the verbatim full-walk
+              fallback.
   text <app>  print the text of the app's first text-bearing node — the
               desktop-input readback primitive (bridge to Phase 2 TEST-04).
               App-name matching picks the FIRST matching application in the
@@ -141,8 +153,15 @@ def char_count(node):
         return -1
 
 
-def cmd_witness():
-    """Print the focused input surface as app:role:chars=N, or (none)."""
+def full_walk_witness():
+    """Return the full-tree witness answer: a line, or "(none)".
+
+    The verbatim body of the pre-04-08 cmd_witness — the fallback arm of
+    the witness contract. Called only when the focus-first pass finds
+    nothing, so every answer that does not come from a focused frame's
+    subtree is bit-identical to the phase 01-03 semantics (the locked
+    session's shell PASSWORD_TEXT included).
+    """
     fallback = None
     for app in applications():
         for node in walk(app):
@@ -155,12 +174,70 @@ def cmd_witness():
             if fallback is None:
                 fallback = (app.get_name(), role)
             if role in INPUT_ROLES:
-                print(f"{app.get_name()}:{role}:chars={char_count(node)}")
-                return None
+                return f"{app.get_name()}:{role}:chars={char_count(node)}"
     if fallback is None:
-        print("(none)")
-    else:
-        print(f"{fallback[0]}:{fallback[1]}:chars=-1")
+        return "(none)"
+    return f"{fallback[0]}:{fallback[1]}:chars=-1"
+
+
+def focused_frame_witness():
+    """Focus-first pass: answer from focused frames' subtrees only, or None.
+
+    G-4-1 (04-UAT.md): the bare full walk touches EVERY node on the
+    desktop — one D-Bus roundtrip each — and fresh-session trees
+    (gnome-shell 3673 + gjs 2437 nodes) cost ~3.0s bare, crossing the
+    stand's probe budget and failing healthy quiesce gates. Here the
+    FOCUSED state is checked on each application's DIRECT children
+    (frames, child order) BEFORE any descent, and only focused frames'
+    subtrees are walked, with the per-node logic of full_walk_witness
+    verbatim: per-node FOCUSED check, INPUT_ROLES preference, first
+    focused node of any role as the frame-fallback. Returns the witness
+    line of the first focused INPUT_ROLES node in desktop→frame order, or
+    the frame-fallback line (chars=-1) when the focused subtrees hold
+    only non-input nodes; None means nothing was focused anywhere and the
+    caller falls back to the full walk.
+    """
+    fallback = None
+    for app in applications():
+        try:
+            frames = [app.get_child_at_index(k) for k in range(app.get_child_count())]
+        except Exception:
+            continue
+        for frame in frames:
+            try:
+                if not frame.get_state_set().contains(Atspi.StateType.FOCUSED):
+                    continue
+            except Exception:
+                continue
+            for node in walk(frame):
+                try:
+                    if not node.get_state_set().contains(Atspi.StateType.FOCUSED):
+                        continue
+                except Exception:
+                    continue
+                role = role_name(node)
+                if fallback is None:
+                    fallback = (app.get_name(), role)
+                if role in INPUT_ROLES:
+                    return f"{app.get_name()}:{role}:chars={char_count(node)}"
+    if fallback is not None:
+        return f"{fallback[0]}:{fallback[1]}:chars=-1"
+    return None
+
+
+def cmd_witness():
+    """Print the focused input surface as app:role:chars=N, or (none).
+
+    Focus-first first: the answer comes from focused frames' subtrees (an
+    input line, or the frame-fallback chars=-1 arm). Only when that pass
+    finds nothing does the verbatim full walk answer — every
+    no-focused-frame scenario stays bit-identical to the pre-04-08
+    semantics.
+    """
+    answer = focused_frame_witness()
+    if answer is None:
+        answer = full_walk_witness()
+    print(answer)
     return None
 
 
