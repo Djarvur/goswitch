@@ -85,6 +85,23 @@ Subcommands:
               pid's application; if the whole application is gone the
               poller idles and the Go await times out loudly (never
               silently).
+  focused-app
+              print the name of the application holding the focused window
+              frame — the idle-desktop preflight primitive of the e2e
+              matrix (G-4-2, plan 04-09): the matrix's first CI step asks
+              "is the desktop busy" BEFORE paying for 31 cases, and a
+              focused frame anywhere means a real window holds it. The
+              same frames-before-descent discipline as the witness's
+              focus-first pass (04-08), but with NO descent into frame
+              subtrees and NO full walk — the busy/idle verdict is a
+              frames-level question, exhaustive walks stay the witness
+              modes' contract. "(none)" when no frame is focused
+              anywhere; ANY focused frame answers with its application's
+              name — shell/mutter surfaces are not classified
+              modal/non-modal, interpreting the answer is the caller's
+              (workflow preflight's) job. Live-proven mode: gi/AT-SPI
+              needs a live session (precedent 04-04/04-08 — headless RED
+              impossible).
 
 Every caller must use /usr/bin/python3: PATH python3 is linuxbrew without
 gi (01-PATTERNS § test/e2e).
@@ -366,6 +383,40 @@ def cmd_focused_inputs():
     return None
 
 
+def cmd_focused_app():
+    """Print the application holding the focused frame, or (none).
+
+    The idle-desktop preflight primitive (G-4-2, plan 04-09): the e2e
+    matrix's first CI step asks "is the desktop busy" BEFORE paying for
+    31 cases — one focused frame anywhere means a real window holds the
+    desktop. Same frames-before-descent shape as focused_frame_witness
+    (04-08): the FOCUSED state is checked on each application's DIRECT
+    children (frames) only — NO descent into frame subtrees and NO full
+    walk (full_walk_witness stays the witness modes' exclusive); the
+    busy/idle question is decided at the frames level. Deliberate
+    simplification per the plan: shell/mutter surfaces are NOT classified
+    modal/non-modal — the name of ANY application with a focused frame
+    is the answer ("(unnamed)" when the AT-SPI name is empty), "(none)"
+    when no frame is focused anywhere; interpreting the answer is the
+    caller's (workflow preflight's) job, not the helper's.
+    """
+    for app in applications():
+        try:
+            frames = [app.get_child_at_index(k) for k in range(app.get_child_count())]
+        except Exception:
+            continue
+        for frame in frames:
+            try:
+                if not frame.get_state_set().contains(Atspi.StateType.FOCUSED):
+                    continue
+            except Exception:
+                continue
+            print(app.get_name() or "(unnamed)")
+            return None
+    print("(none)")
+    return None
+
+
 def app_by_pid(pid):
     """Return the application node whose process id is pid, or None."""
     for app in applications():
@@ -576,6 +627,8 @@ def main(argv):
         problem = cmd_focused_text_pid(argv[2])
     elif len(argv) == 2 and argv[1] == "focused-inputs":
         problem = cmd_focused_inputs()
+    elif len(argv) == 2 and argv[1] == "focused-app":
+        problem = cmd_focused_app()
     elif len(argv) == 3 and argv[1] == "focused-input-pid":
         problem = cmd_focused_input_pid(argv[2])
     elif len(argv) == 3 and argv[1] == "grab-input-pid":
@@ -595,7 +648,7 @@ def main(argv):
     else:
         print("usage: focus_helper.py witness | text <app> | focused-text | focused-text-pid <pid>"
               " | focused-inputs | focused-input-pid <pid> | grab-input-pid <pid> [want-chars]"
-              " | focus <app-name> | witness-events | witness-poll <pid>", file=sys.stderr)
+              " | focus <app-name> | witness-events | witness-poll <pid> | focused-app", file=sys.stderr)
         return 2
     if problem is not None:
         print(f"focus_helper: {problem}", file=sys.stderr)
