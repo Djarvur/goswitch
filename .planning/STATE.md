@@ -4,14 +4,14 @@ milestone: v1.0.0
 current_phase: 04
 current_phase_name: Поставка и приёмка
 status: verifying
-stopped_at: Completed 04-09-PLAN.md
-last_updated: "2026-09-17T22:22:05.297Z"
-last_activity: 2026-09-16
-last_activity_desc: Plan 04-07 complete — v1.0.0 released, WINDOWS ledger zeroed, INST-01 closed
-state_head: 99fd0b1454353ef50a3b509b34648200d86f8a68
+stopped_at: Phases 1-3 re-verified and marked complete; Phase 4 UAT awaiting owner (test 2 — D-48 fresh-session run)
+last_updated: "2026-09-20T14:38:30.395Z"
+last_activity: 2026-09-20
+last_activity_desc: Phases 1-3 re-verified on post-04-09 tree (fingerprints refreshed), marked complete; Phase 4 UAT in progress
+state_head: 12859e206c96da42670b35749fb4baa409a3fc88
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 3
   total_plans: 28
   completed_plans: 28
 ---
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 ## Current Position
 
-Phase: 04 (Поставка и приёмка) — EXECUTING
-Plan: 7 of 7
-Status: Phase complete — ready for verification
-Last activity: 2026-09-16 — Phase 04 execution started
+Phase: 04 — Поставка и приёмка
+Plan: 9 of 9
+Status: Executed — UAT test 2 pending owner (D-48 fresh-session double-run)
+Last activity: 2026-09-20 — Phases 1–3 re-verified (20/20, 23/23, 20/20), fingerprints refreshed, marked complete
 
 Progress: [████████░░] 75%
 
@@ -50,7 +50,7 @@ Progress: [████████░░] 75%
 | 2. Коррекция слова EN↔RU | 0/? | - | - |
 | 3. Фразы, выделение, переключение и конфигурация | 0/? | - | - |
 | 4. Поставка и приёмка | 0/? | - | - |
-| 01 | 5 | - | - |
+| 1 | 5 | - | - |
 | 2 | 7 | - | - |
 | 3 | 7 | - | - |
 
@@ -207,6 +207,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T22:22:05.214Z
-Stopped at: Completed 04-09-PLAN.md
+Last session: 2026-09-20T14:40:00Z
+Stopped at: Phases 1–3 re-verified and marked complete; Phase 4 UAT awaiting owner (test 2 — D-48 fresh-session run)
 Resume file: None
