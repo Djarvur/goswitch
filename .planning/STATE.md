@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 Phase: 04 — Поставка и приёмка
 Plan: 9 of 9
 Status: Executed — UAT test 2 pending owner (D-48 fresh-session double-run)
-Last activity: 2026-09-20 — Phases 1–3 re-verified (20/20, 23/23, 20/20), fingerprints refreshed, marked complete
+Last activity: 2026-09-27 — Quick task 260927-sy8: engine self-reactivation fix (needs-review); live checks pending
 
 Progress: [████████░░] 75%
 
@@ -196,6 +196,12 @@ None yet.
 - Phase 1: ADR Decision #1 — ЗАКРЫТО планом 01-04 (2026-09-11): kill-criterion спайк D-01 прогнан до кода коррекции, ноль switched-проб, побеждает Option B (внутренний флип); ADR-001 Accepted на гейте M0.
 - Phase 1: MACR-01 — РЕШЕНО владельцем 2026-09-10 (D-12): в v1, внутри goswitch; keyd отвергнут. Механизм утверждён на M0 (ADR-005 Accepted): глобальные правила + per-app YAML списки, идентичность — AT-SPI; код в Фазе 3.
 - Go-работа всех фаз идёт по скиллу go-ultimate (project skill, .zcode/skills/) — конвенции и ревью-чеклист оттуда.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 260927-sy8 | engine self-reactivation: re-activate the global IBus engine on daemon (re)registration when goswitch owns the current input source | 2026-09-27 | c543d2b | Needs Review | [260927-sy8-engine-self-reactivation-re-activate-the](./quick/260927-sy8-engine-self-reactivation-re-activate-the/) |
 
 ## Deferred Items
 
