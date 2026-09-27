@@ -6,11 +6,14 @@
 #   - chromium-x11 — the --ozone-platform=x11 window mode (a different IM
 #     path from the native-Wayland chromium surface).
 #
-# Schema: UNCHANGED from v2 — the v2 fields and step kinds only. New
-# surface names enter the closed vocabulary (matrixSurfaces): gedit,
-# chromium-x11. Everything below is spike-pinned (04-05 Task 1, live
-# probes 2026-09-16 on this desktop; verdicts also live in the driver
-# comments and 04-05-SUMMARY):
+# Schema: the v2 fields and step kinds, PLUS one case-level pin added by
+# quick plan 260927-vu8 — expect_flip_after_done (owner decision 2: the
+# mode record strictly after the settled done record; the YAML schema
+# cannot express record ordering, so the ordering pin rides the case level
+# and the driver checks it). New surface names enter the closed vocabulary
+# (matrixSurfaces): gedit, chromium-x11. Everything below is spike-pinned
+# (04-05 Task 1, live probes 2026-09-16 on this desktop; verdicts also
+# live in the driver comments and 04-05-SUMMARY):
 #   gedit: caps 0x29; EN-mode transit pushes surrounding text; word
 #   correction runs the level-1 ladder LIVE (delete+commit read back);
 #   ctrl+a NEVER produces an anchor push (cursor == anchor in every push —
@@ -366,3 +369,12 @@ mode: en
 steps:
   - {type: "ghbdtn ghbdtn"}
 expect_text: "ghbdtn ghbdtn"  # the x11 actual at phrase width: pure transit
+---
+name: flip-after-word-correction
+surface: zenity
+mode: en
+steps:
+  - {type: "ghbdtn"}
+  - {tap: double}
+expect_text: "привет"  # owner decision 2 (260927-vu8), live: the daemon boots WITHOUT config, so the flip is ON (defaults) — a changed word correction leaves the mode flipped
+expect_flip_after_done: true  # the D-36 order extension pinned live: the mode record strictly after the settled done record

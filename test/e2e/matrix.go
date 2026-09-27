@@ -273,6 +273,11 @@ type matrixReload struct {
 // ladder level"; 1 and 2 pin the ACTUAL level the daemon chose (ADR-003).
 // ExpectSelStep (03-07) names the ACTUAL selection-replacement rung the
 // 03-03 spike table documented for the surface — "" skips the pin.
+// ExpectFlipAfterDone (260927-vu8) pins the owner-decision-2 flip live: the
+// daemon log must hold the mode record strictly AFTER the correction done
+// record — the live form of the D-36 order extension (the YAML schema
+// cannot express record ordering, so the pin rides the case level and the
+// driver checks it).
 type matrixCase struct {
 	Name          string       `yaml:"name"`
 	Surface       string       `yaml:"surface"`
@@ -281,6 +286,7 @@ type matrixCase struct {
 	ExpectText    string       `yaml:"expect_text"`
 	ExpectLevel   uint8        `yaml:"expect_level"`
 	ExpectSelStep string       `yaml:"expect_sel_step"`
+	ExpectFlip    bool         `yaml:"expect_flip_after_done"`
 }
 
 // matrixSelSteps is the closed vocabulary of expect_sel_step — the actual
@@ -982,20 +988,24 @@ func matrixSurfaceReportsAnchor(surface string) bool {
 
 // comboMatrixStep injects the canonical combo name and gates on the two
 // log forms of the D-36 gesture — the combo record itself and the mode
-// flip that settles it (the tapMatrix-precident gate; the existing
-// action/mode shapes are untouched, matrix.go's v1 contract).
+// flip that settles it. Both gates count the NEW occurrence over a
+// baseline taken BEFORE the gesture (the case_combo.go:124 pattern): a
+// whole-log "count ≥ 1" gate could be satisfied early by a mode record
+// from an earlier correction of the same case (the default-ON
+// flip_after_correction of 260927-vu8 made that a real shape).
 func comboMatrixStep(ctx context.Context, s *stand, st matrixStep) error {
 	name, ok := matrixKeyNames()[st.Combo]
 	if !ok {
 		return fmt.Errorf("unknown combo %q", st.Combo) // unreachable: validation
 	}
+	modeBase := s.countSub(`"msg":"mode"`)
 	if err := s.pressKey(ctx, name); err != nil {
 		return err
 	}
 	if err := s.waitForLog(ctx, comboLogMark, decisionWait); err != nil {
 		return fmt.Errorf("combo %s gesture: %w", st.Combo, err)
 	}
-	if err := s.waitForLog(ctx, `"msg":"mode"`, decisionWait); err != nil {
+	if err := s.waitForNew(ctx, `"msg":"mode"`, modeBase+1, decisionWait); err != nil {
 		return fmt.Errorf("combo %s layout flip: %w", st.Combo, err)
 	}
 
@@ -1212,7 +1222,10 @@ func waitMatrixFocusApp(ctx context.Context, s *stand, c matrixCase) error {
 // gates on the FSM decision record BEFORE returning — the RU part of a case
 // must never be typed before a single-tap flip has actually fired
 // (Pitfall 5). A single tap is the script flip: its mode record is the
-// additional gate.
+// additional gate, counted as a NEW occurrence over the baseline taken
+// BEFORE the injection (the case_combo.go:124 pattern) — a whole-log
+// "count ≥ 1" gate could be satisfied early by a correction's own mode
+// record (the default-ON flip_after_correction of 260927-vu8).
 func tapMatrix(ctx context.Context, s *stand, tap string) error {
 	var n int
 	switch tap {
@@ -1225,6 +1238,10 @@ func tapMatrix(ctx context.Context, s *stand, tap string) error {
 	default:
 		return fmt.Errorf("unknown tap %q", tap)
 	}
+	var modeBase int
+	if n == 1 {
+		modeBase = s.countSub(`"msg":"mode"`)
+	}
 	if err := s.injectKeys(ctx, slices.Repeat([]string{"Shift_R"}, n)...); err != nil {
 		return err
 	}
@@ -1232,7 +1249,7 @@ func tapMatrix(ctx context.Context, s *stand, tap string) error {
 		return fmt.Errorf("tap %s decision: %w", tap, err)
 	}
 	if n == 1 {
-		if err := s.waitForLog(ctx, `"msg":"mode"`, decisionWait); err != nil {
+		if err := s.waitForNew(ctx, `"msg":"mode"`, modeBase+1, decisionWait); err != nil {
 			return fmt.Errorf("single-tap script flip: %w", err)
 		}
 	}
@@ -1403,8 +1420,42 @@ func verifyMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
 	if err := verifySelStep(s, c.ExpectSelStep); err != nil {
 		return err
 	}
+	if c.ExpectFlip {
+		if err := verifyFlipAfterDone(s); err != nil {
+			return err
+		}
+	}
 
 	return verifyMatrixText(ctx, s, c)
+}
+
+// verifyFlipAfterDone enforces the expect_flip_after_done pin (owner
+// decision 2, 260927-vu8): the case's daemon log must hold a correction
+// done record FOLLOWED by a mode record — the settled completion first, the
+// flip second (the D-36 order extended). Last occurrences are compared, so
+// earlier records of the episode (a ru-mode case's starting flip among
+// them) cannot satisfy or break the pin.
+func verifyFlipAfterDone(s *stand) error {
+	iDone, iMode := -1, -1
+	for i, line := range s.logLines() {
+		switch {
+		case strings.Contains(line, `"msg":"correction","outcome":"done"`):
+			iDone = i
+		case strings.Contains(line, `"msg":"mode"`):
+			iMode = i
+		}
+	}
+	switch {
+	case iDone < 0:
+		return errors.New("expect_flip_after_done unproven: no correction done record in the log")
+	case iMode < 0:
+		return errors.New("expect_flip_after_done unproven: no mode record after the done record")
+	case iMode < iDone:
+		return fmt.Errorf("mode record (line %d) precedes the settled done record (line %d) — D-36 order extended",
+			iMode, iDone)
+	}
+
+	return nil
 }
 
 // verifySelStep enforces the expect_sel_step pin against the daemon's own
