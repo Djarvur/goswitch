@@ -660,9 +660,10 @@ func (a *Actor) settleCombo() {
 // correction.flip_after_correction is off (the zero-value Options of the
 // unit corpus and the no-SetOptions path stays off; the daemon's built-in
 // defaults feed it ON — CorrectNow's forced word pipeline flips on success
-// exactly like the double tap it reuses). The D-24 done-without-change
-// outcome, the skipCorrection refusals and the selection path never reach
-// it. The caller holds the mutex.
+// exactly like the double tap it reuses) and after a settled CHANGED
+// selection correction (owner report 2026-09-28: «при коррекции выделения
+// — нет» fixed). The D-24 done-without-change outcome and the
+// skipCorrection refusals never reach it. The caller holds the mutex.
 func (a *Actor) settleCorrectionFlip() {
 	if a.comboPending || !a.opts.FlipAfterCorrection {
 		return
@@ -1626,7 +1627,8 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 	a.eng.CommitText(engine.NewIBusText(string(p.converted)))
 	a.buf.HardReset() // the buffer can no longer mirror the replaced field
 	a.logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
-	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
+	a.settleCorrectionFlip() // owner report 2026-09-28: the selection path flips like the word path
+	a.settleCombo()          // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerifyRange(p.converted, sel.start)
 }
 

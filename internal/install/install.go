@@ -90,6 +90,13 @@ const (
 	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
 	gsettingsKeySwitch         = "switch-input-source"
 	gsettingsKeySwitchBackward = "switch-input-source-backward"
+	// gsettingsKeyShowAll is the GNOME 46 single-source indicator gate: with
+	// ONE input source and show-all-sources=false the input indicator is
+	// HIDDEN from the top bar entirely (live finding 2026-09-28 — the
+	// owner's «не вижу» indicator report: no panel property could ever
+	// render). Install turns it on so the goswitch symbol is visible;
+	// uninstall restores the saved value (distro default false).
+	gsettingsKeyShowAll = "show-all-sources"
 )
 
 // ownerSourcesSet is the D-40 single-owner takeover value: goswitch becomes
@@ -177,6 +184,7 @@ type installState struct {
 	Sources             string `json:"sources"`
 	SwitchInputSource   string `json:"switch_input_source"`
 	SwitchInputSourceBw string `json:"switch_input_source_backward"`
+	ShowAllSources      string `json:"show_all_sources"`
 }
 
 // componentXML is the rendered component document: the wire identity of
@@ -341,6 +349,9 @@ func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	if err := i.clearSwitchBinding(ctx); err != nil {
 		return nil, err
 	}
+	if err := i.showIndicator(ctx); err != nil {
+		return nil, err
+	}
 	if err := i.activateEngine(ctx, engineEN); err != nil {
 		return nil, err
 	}
@@ -384,6 +395,10 @@ func (i *Installer) Uninstall(ctx context.Context, purge bool) ([]string, error)
 		return nil, err
 	}
 	lines, err = i.restoreSwitchBinding(ctx, lines)
+	if err != nil {
+		return nil, err
+	}
+	lines, err = i.restoreIndicator(ctx, lines)
 	if err != nil {
 		return nil, err
 	}
@@ -453,6 +468,11 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("read current switch-input-source-backward binding: %w", err)
 	}
 	priorSwitchBw := strings.TrimSpace(string(out))
+	out, err = i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKeyShowAll)
+	if err != nil {
+		return "", fmt.Errorf("read current show-all-sources: %w", err)
+	}
+	priorShowAll := strings.TrimSpace(string(out))
 
 	path := i.path(stateDirRel, stateFile)
 	if _, err := os.Stat(path); err == nil {
@@ -464,6 +484,7 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 		Sources:             prior,
 		SwitchInputSource:   priorSwitch,
 		SwitchInputSourceBw: priorSwitchBw,
+		ShowAllSources:      priorShowAll,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal install state: %w", err)
@@ -656,6 +677,20 @@ func (i *Installer) clearSwitchBinding(ctx context.Context) error {
 	return nil
 }
 
+// showIndicator makes the single-source input indicator visible: GNOME 46
+// hides the indicator when the sources list holds one entry and
+// show-all-sources is false — the owner's desktop ran exactly that state,
+// so the mode panel property had nowhere to render (live finding
+// 2026-09-28). The handover mirrors the switch-binding takeover: set on
+// install, restored from the state file on uninstall.
+func (i *Installer) showIndicator(ctx context.Context) error {
+	if _, err := i.call(ctx, binGSettings, "set", gsettingsSchema, gsettingsKeyShowAll, "true"); err != nil {
+		return fmt.Errorf("set %s: %w", gsettingsKeyShowAll, err)
+	}
+
+	return nil
+}
+
 // activateEngine sets the global engine (SetGlobalEngine via `ibus engine`):
 // the activation path the GNOME shell actually honors (the runtime
 // gsettings `current` write is ignored — Phase 1 live finding).
@@ -811,6 +846,44 @@ func savedSwitchBindings(path string) (forward, backward string, trusted bool) {
 	}
 
 	return forward, backward, true
+}
+
+// restoreIndicator puts the saved show-all-sources value back — the
+// uninstall half of the indicator handover. A missing/garbage saved value
+// restores the distro default (false), reported, never silent.
+func (i *Installer) restoreIndicator(ctx context.Context, lines []string) ([]string, error) {
+	value := "false"
+	saved, ok := savedShowAllSources(i.path(stateDirRel, stateFile))
+	if ok {
+		value = saved
+	}
+	if _, err := i.call(ctx, binGSettings, "set", gsettingsSchema, gsettingsKeyShowAll, value); err != nil {
+		return nil, fmt.Errorf("set %s: %w", gsettingsKeyShowAll, err)
+	}
+	if ok {
+		return append(lines, "show-all-sources: restored "+value), nil
+	}
+
+	return append(lines, "show-all-sources: fallback false (saved state unreadable — safe default applied)"), nil
+}
+
+// savedShowAllSources reads the state file's show_all_sources field, shaped
+// as a bare boolean word ("true"/"false").
+func savedShowAllSources(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var st installState
+	if err := json.Unmarshal(data, &st); err != nil {
+		return "", false
+	}
+	v := strings.TrimSpace(st.ShowAllSources)
+	if v != "true" && v != "false" {
+		return "", false
+	}
+
+	return v, true
 }
 
 // purgeDirs removes the user-owned config dir and the state dir (--purge,

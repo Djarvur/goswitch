@@ -6,39 +6,17 @@ import (
 	"github.com/Djarvur/goswitch/layouts"
 )
 
-// bracketRowAllowSet returns the explicit allow-set of the EN bracket-row
-// symbols that convert during correction (SPEC §4.2 «включая знаки», owner
-// decision 1, revised 2026-09-27): '[', ']', ';', the apostrophe and '`'
-// are the EN symbols that never serve as Russian prose punctuation in the
-// user's intent — typed while intending Russian they mean х ъ ж э ё (the
-// live defect: «несколько дополнительны[» — the word converted, the
-// trailing RU 'х' key stayed). ',' and '.' are deliberately EXCLUDED —
-// universal Russian prose punctuation: "ghbdtn," intends the separator
-// (D-14), so the comma and the dot keep riding along unchanged, as does
-// every other non-letter ('@'-class, digits, space, slash). The set applies
-// in the EN→RU direction only: a ';' in a Russian-typed text is the RU
-// keyboard's own punctuation (Shift+4) and rides in RU→EN, exactly like
-// '"'. The owner may extend the set later. A function, not a package-level
-// var: the strict lint forbids mutable globals (the altModifierCandidates/
-// matrix.go idiom).
-func bracketRowAllowSet() map[rune]bool {
-	return map[rune]bool{
-		'[':  true,
-		']':  true,
-		';':  true,
-		'\'': true,
-		'`':  true,
-	}
-}
-
-// Convert maps every letter of the token through the key-position layout
-// table chosen by dir (CORR-05: register is preserved constructively — the
-// generated tables carry both shift levels per position, so 'g'→'п' and
-// 'G'→'П'). The allow-set bracket-row symbols (bracketRowAllowSet) convert
-// together with the letters in the EN→RU direction (SPEC §4.2 «включая
-// знаки», owner decision 1 revised 2026-09-27); every other non-letter of
-// the token rides through identically (D-14/D-15: "ghbdtn,"→"привет,"); a
-// letter missing from the table fails the whole conversion.
+// Convert maps EVERY table-mapped rune of the token through the
+// key-position layout table chosen by dir (CORR-05: register is preserved
+// constructively — the generated tables carry both shift levels per
+// position, so 'g'→'п' and 'G'→'П'). Full by-position conversion (owner
+// directive 2026-09-28, superseding the D-14 ride-along and the 2026-09-27
+// allow-set): punctuation converts with the word — the comma is 'б' and
+// the question mark is the RU comma's key ("hf,jnftn"→"работает") —
+// making the mapping a bijection: the same physical keys typed in the
+// other mode yield exactly the converted text. A non-letter MISSING from
+// the table (space, tab) rides through identically; a letter missing from
+// the table fails the whole conversion.
 func Convert(token []rune, dir Dir) ([]rune, bool) {
 	var table map[rune]rune
 	switch dir {
@@ -49,22 +27,17 @@ func Convert(token []rune, dir Dir) ([]rune, bool) {
 	default:
 		return nil, false
 	}
-	allow := bracketRowAllowSet()
 	out := make([]rune, 0, len(token))
 	for _, r := range token {
 		if !unicode.IsLetter(r) {
-			// A non-letter converts only when it is in the EN→RU allow-set
-			// and the direction's table carries it; every other non-letter
-			// rides along identically (the D-14 comma, the '.' and the whole
-			// '@'-class — owner decision 1, 260927-vu8).
-			if dir == ENtoRU && allow[r] {
-				if m, ok := table[r]; ok {
-					out = append(out, m)
+			// A non-letter converts when the table carries its key position
+			// (','→'б', '?'→','), rides along when it does not (space, tab).
+			if m, ok := table[r]; ok {
+				out = append(out, m)
 
-					continue
-				}
+				continue
 			}
-			out = append(out, r) // digits and token punctuation ride along identically
+			out = append(out, r) // table-missing non-letters ride along identically
 
 			continue
 		}
