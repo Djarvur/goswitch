@@ -52,6 +52,18 @@ version — only the release archive carries the stamped release version.
 `goswitchctl install` is idempotent (safe to re-run), needs no root, and
 records your previous input sources — `uninstall` restores them.
 
+### Input-source handover
+
+`goswitchctl install` also clears GNOME's own layout-switch binding
+(`org.gnome.desktop.input-sources` `switch-input-source`) and remembers the
+previous value verbatim. With goswitch as the only input source, GNOME's
+Alt+Shift / Super+Space no longer switch anything — with a single source
+they only disabled the engine context (a live finding).
+`goswitchctl uninstall` restores the previous binding.
+
+Switching is goswitch's own job now — the chords are: a single Shift tap,
+a double Shift, Shift + right Ctrl, and Super + Space.
+
 ## Verify
 
 Run the built-in audit:
@@ -75,6 +87,7 @@ Default gestures (reconfigurable — see
 | Gesture | Action |
 |---------|--------|
 | single tap of the right Shift | switch layout EN ↔ RU |
+| Super + Space | switch layout EN ↔ RU |
 | double tap | correct the last word (`ghbdtn` → `привет`, letter case preserved) |
 | triple tap | correct the whole typed phrase |
 | double tap with text selected | correct the selected range only |

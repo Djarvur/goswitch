@@ -2,6 +2,7 @@ package install_test
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -249,10 +250,19 @@ func TestInstall_Sequence(t *testing.T) {
 		}
 	}
 	// Owner decision 3: the state carries the read switch binding VERBATIM
-	// beside the sources, and the report names the handover.
-	state := readAll(t, statePath)
-	if !strings.Contains(state, ownerSwitchBindings) {
-		t.Errorf("state %q does not carry the pre-install switch binding VERBATIM (%q)", state, ownerSwitchBindings)
+	// (decoded — json.Marshal HTML-escapes the '<'/'>' of the raw binding
+	// bytes; the restore path reads the field back through the same
+	// decode), and the report names the handover.
+	var st struct {
+		Sources           string `json:"sources"`
+		SwitchInputSource string `json:"switch_input_source"`
+	}
+	if err := json.Unmarshal([]byte(readAll(t, statePath)), &st); err != nil {
+		t.Fatalf("parse install state: %v", err)
+	}
+	if st.SwitchInputSource != ownerSwitchBindings {
+		t.Errorf("state switch_input_source = %q, want the pre-install binding VERBATIM %q",
+			st.SwitchInputSource, ownerSwitchBindings)
 	}
 	if !slices.ContainsFunc(report, func(line string) bool {
 		return strings.Contains(line, "switch-input-source: cleared")
@@ -560,6 +570,48 @@ func uninstallCalls(t *testing.T, f *fakeRunner) []instCall {
 	return calls[installCallCount:]
 }
 
+// corruptSwitchCase is one planted-state case of
+// TestUninstall_CorruptStateFallsBack: the state file content and the
+// expected restore targets of both bindings (wantFallback pins the visible
+// substitution in the report).
+type corruptSwitchCase struct {
+	plant        string
+	wantSources  string
+	wantSwitch   string
+	wantFallback bool
+}
+
+// corruptSwitchCases is the planted-state table — extracted so the test
+// itself stays under the funlen ceiling.
+func corruptSwitchCases() map[string]corruptSwitchCase {
+	return map[string]corruptSwitchCase{
+		"garbage value": {
+			plant:        `{"sources":"garbage"}`,
+			wantSources:  fallbackSources,
+			wantSwitch:   fallbackSwitchBindings, // field absent → distro default
+			wantFallback: true,
+		},
+		"unparsable": {
+			plant:        "\x00not json",
+			wantSources:  fallbackSources,
+			wantSwitch:   fallbackSwitchBindings,
+			wantFallback: true,
+		},
+		"switch field absent (pre-batch JSON)": {
+			plant:        `{"sources":"` + ownerSources + `"}`,
+			wantSources:  ownerSources, // valid sources restore VERBATIM
+			wantSwitch:   fallbackSwitchBindings,
+			wantFallback: true,
+		},
+		"switch field garbage": {
+			plant:        `{"sources":"` + ownerSources + `","switch_input_source":"garbage"}`,
+			wantSources:  ownerSources,
+			wantSwitch:   fallbackSwitchBindings,
+			wantFallback: true,
+		},
+	}
+}
+
 // TestUninstall_CorruptStateFallsBack pins the ASVS V5 guard (T-04-01-02):
 // state values that fail the shape check never reach gsettings verbatim —
 // the restore substitutes the safe fallbacks, REPORTS them, and the
@@ -569,12 +621,7 @@ func uninstallCalls(t *testing.T, f *fakeRunner) []instCall {
 // JSON) or malformed restores the DISTRO DEFAULT binding with the
 // substitution reported.
 func TestUninstall_CorruptStateFallsBack(t *testing.T) {
-	for name, plant := range map[string]string{
-		"garbage value":                        `{"sources":"garbage"}`,
-		"unparsable":                           "\x00not json",
-		"switch field absent (pre-batch JSON)": `{"sources":"` + ownerSources + `"}`,
-		"switch field garbage":                 `{"sources":"` + ownerSources + `","switch_input_source":"garbage"}`,
-	} {
+	for name, tc := range corruptSwitchCases() {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeRunner{}
 			home := t.TempDir()
@@ -582,7 +629,7 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 			runInstall(t, i)
 
 			_, _, statePath := installPaths(home)
-			if err := os.WriteFile(statePath, []byte(plant), 0o600); err != nil {
+			if err := os.WriteFile(statePath, []byte(tc.plant), 0o600); err != nil {
 				t.Fatalf("plant the corrupt state: %v", err)
 			}
 
@@ -593,8 +640,8 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 			}
 
 			wantSets := map[string]string{
-				gsettingsKey:       fallbackSources,
-				gsettingsKeySwitch: fallbackSwitchBindings,
+				gsettingsKey:       tc.wantSources,
+				gsettingsKeySwitch: tc.wantSwitch,
 			}
 			for _, c := range uninstallCalls(t, f) {
 				if c.name != binGSettings || len(c.args) != 4 || c.args[0] != "set" {
@@ -605,14 +652,16 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 					continue
 				}
 				if c.args[3] != want {
-					t.Errorf("restore of %s set %q, want the safe fallback %q", c.args[2], c.args[3], want)
+					t.Errorf("restore of %s set %q, want %q", c.args[2], c.args[3], want)
 				}
 				delete(wantSets, c.args[2])
 			}
 			for key := range wantSets {
 				t.Errorf("no gsettings set recorded for %s — the fallback must still restore a usable binding", key)
 			}
-			if !slices.ContainsFunc(report, func(line string) bool { return strings.Contains(line, "fallback") }) {
+			if tc.wantFallback && !slices.ContainsFunc(report, func(line string) bool {
+				return strings.Contains(line, "fallback")
+			}) {
 				t.Errorf("report %v does not mention the fallback — the substitution must be visible", report)
 			}
 		})

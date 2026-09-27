@@ -80,18 +80,30 @@ const (
 
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
+	// gsettingsKeySwitch is the GNOME layout-switch keybinding (owner
+	// decision 3, quick plan 260927-way): with goswitch as the only input
+	// source that binding only churns/disables the engine context — install
+	// clears it, uninstall restores the saved value.
+	gsettingsKeySwitch = "switch-input-source"
 )
 
 // ownerSourcesSet is the D-40 single-owner takeover value: goswitch becomes
 // the ONLY input source. fallbackSources is the ASVS V5 safe restore when
 // the saved state cannot be trusted — a plain xkb US keyboard, so an
-// uninstall never leaves the desktop without input. systemComponentDir is
+// uninstall never leaves the desktop without input. clearedSwitchBindings
+// is the handover value of the switch-input-source binding (owner decision
+// 3): set unconditionally on install, idempotent. fallbackSwitchBindings is
+// the ASVS V5 restore when the saved switch binding cannot be trusted — the
+// distro default (live-verified on the owner's desktop 2026-09-27), so an
+// uninstall never silently rebinds the layout switch. systemComponentDir is
 // the FHS ibus component dir: the env-carrying write-cache must keep it in
 // the scan path (see componentPathEnv).
 const (
-	ownerSourcesSet    = "[('ibus', 'goswitch-en')]"
-	fallbackSources    = "[('xkb', 'us')]"
-	systemComponentDir = "/usr/share/ibus/component"
+	ownerSourcesSet        = "[('ibus', 'goswitch-en')]"
+	fallbackSources        = "[('xkb', 'us')]"
+	clearedSwitchBindings  = "[]"
+	fallbackSwitchBindings = "['<Alt>Shift_L', '<Super>space']"
+	systemComponentDir     = "/usr/share/ibus/component"
 )
 
 // Static errors (err113): every one names the failing step and the fix.
@@ -149,9 +161,12 @@ type Installer struct {
 }
 
 // installState is the on-disk restore contract between install and
-// uninstall: the pre-install gsettings sources string, verbatim.
+// uninstall: the pre-install gsettings sources string AND the pre-install
+// switch-input-source binding (owner decision 3, quick plan 260927-way),
+// both verbatim.
 type installState struct {
-	Sources string `json:"sources"`
+	Sources           string `json:"sources"`
+	SwitchInputSource string `json:"switch_input_source"`
 }
 
 // componentXML is the rendered component document: the wire identity of
@@ -306,6 +321,9 @@ func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	if err := i.takeoverSources(ctx); err != nil {
 		return nil, err
 	}
+	if err := i.clearSwitchBinding(ctx); err != nil {
+		return nil, err
+	}
 	if err := i.activateEngine(ctx, engineEN); err != nil {
 		return nil, err
 	}
@@ -345,6 +363,10 @@ func (i *Installer) Uninstall(ctx context.Context, purge bool) ([]string, error)
 	}
 
 	lines, err := i.restoreSources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	lines, err = i.restoreSwitchBinding(ctx, lines)
 	if err != nil {
 		return nil, err
 	}
@@ -392,16 +414,23 @@ func (i *Installer) resolveDaemon() (string, error) {
 	return path, nil
 }
 
-// saveState reads the current sources and stores them verbatim — unless a
-// state file already exists, in which case it is LEFT UNTOUCHED: the FIRST
-// install's backup is sacred (an install-over-install must never save the
-// post-takeover goswitch-only desktop over the owner's original values).
+// saveState reads the current sources AND the current switch-input-source
+// binding (owner decision 3, quick plan 260927-way) and stores both
+// verbatim — unless a state file already exists, in which case it is LEFT
+// UNTOUCHED: the FIRST install's backup is sacred (an install-over-install
+// must never save the post-takeover goswitch-only desktop — nor the
+// post-handover cleared switch binding — over the owner's original values).
 func (i *Installer) saveState(ctx context.Context) (string, error) {
 	out, err := i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKey)
 	if err != nil {
 		return "", fmt.Errorf("read current sources: %w", err)
 	}
 	prior := strings.TrimSpace(string(out))
+	out, err = i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKeySwitch)
+	if err != nil {
+		return "", fmt.Errorf("read current switch-input-source binding: %w", err)
+	}
+	priorSwitch := strings.TrimSpace(string(out))
 
 	path := i.path(stateDirRel, stateFile)
 	if _, err := os.Stat(path); err == nil {
@@ -409,7 +438,7 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("stat state file: %w", err)
 	}
-	data, err := json.Marshal(installState{Sources: prior})
+	data, err := json.Marshal(installState{Sources: prior, SwitchInputSource: priorSwitch})
 	if err != nil {
 		return "", fmt.Errorf("marshal install state: %w", err)
 	}
@@ -574,6 +603,22 @@ func (i *Installer) takeoverSources(ctx context.Context) error {
 	return nil
 }
 
+// clearSwitchBinding hands the GNOME layout-switch binding over to goswitch
+// (owner decision 3, quick plan 260927-way): with a single input source the
+// binding only churns/disables the engine context (the live finding — a
+// Super+Space press disabled the engine and keys silently bypassed
+// goswitch), so install sets the CLEARED value unconditionally — idempotent,
+// the pre-install binding already saved by saveState. Runs right after the
+// sources takeover.
+func (i *Installer) clearSwitchBinding(ctx context.Context) error {
+	_, err := i.call(ctx, binGSettings, "set", gsettingsSchema, gsettingsKeySwitch, clearedSwitchBindings)
+	if err != nil {
+		return fmt.Errorf("clear %s: %w", gsettingsKeySwitch, err)
+	}
+
+	return nil
+}
+
 // activateEngine sets the global engine (SetGlobalEngine via `ibus engine`):
 // the activation path the GNOME shell actually honors (the runtime
 // gsettings `current` write is ignored — Phase 1 live finding).
@@ -597,6 +642,7 @@ func (i *Installer) report(daemonPath string) []string {
 		"unit: daemon-reload + enable --now done",
 		"engine: registered live (ListActiveEngines)",
 		"sources: single owner " + ownerSourcesSet,
+		"switch-input-source: cleared (previous value saved)",
 		"engine: activated " + engineEN,
 	}
 }
@@ -651,6 +697,53 @@ func (i *Installer) appendActivation(ctx context.Context, lines []string, value 
 	}
 
 	return append(lines, "engine: activated "+name)
+}
+
+// restoreSwitchBinding puts the saved switch-input-source binding back
+// (owner decision 3, quick plan 260927-way) — the uninstall half of the
+// handover, run BEFORE the state file is removed. The saved value is
+// shape-validated BEFORE it reaches gsettings (the savedSources/ASVS V5
+// T-04-01-02 discipline: a forged or pre-batch state file must never brick
+// the keyboard bindings silently) — anything not shaped like a GVariant
+// array (an empty `[]` IS legitimate: the binding may have been cleared
+// before goswitch ever installed) restores the DISTRO DEFAULT, and the
+// substitution is REPORTED, never silent.
+func (i *Installer) restoreSwitchBinding(ctx context.Context, lines []string) ([]string, error) {
+	value, trusted := savedSwitchBindings(i.path(stateDirRel, stateFile))
+	if !trusted {
+		value = fallbackSwitchBindings
+	}
+	if _, err := i.call(ctx, binGSettings, "set", gsettingsSchema, gsettingsKeySwitch, value); err != nil {
+		return nil, fmt.Errorf("%w: set %s: %w", errRestoreFailed, value, err)
+	}
+	if trusted {
+		return append(lines, "switch-input-source: restored "+value), nil
+	}
+
+	return append(lines, "switch-input-source: fallback "+fallbackSwitchBindings+
+		" (saved state unreadable or malformed — safe default applied)"), nil
+}
+
+// savedSwitchBindings reads the state file and returns its
+// switch_input_source value only when the file parses AND the value passes
+// the shape check (trimmed, '[' … ']'). Unlike savedSources the EMPTY array
+// `[]` is a legitimate saved binding here — install snapshots whatever the
+// desktop carried, and a pre-cleared binding must restore as-is.
+func savedSwitchBindings(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var st installState
+	if err := json.Unmarshal(data, &st); err != nil {
+		return "", false
+	}
+	v := strings.TrimSpace(st.SwitchInputSource)
+	if !strings.HasPrefix(v, "[") || !strings.HasSuffix(v, "]") {
+		return "", false
+	}
+
+	return v, true
 }
 
 // purgeDirs removes the user-owned config dir and the state dir (--purge,
