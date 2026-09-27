@@ -108,10 +108,12 @@ type Actor struct {
 	// timer-arming comparison both read it (CR-01: the documented
 	// hotkeys.tap_key is wiring-live, not validation-only). tapKeyName is
 	// its parse cache, the comboName precedent; comboName is the resolved
-	// document's combo binding name.
+	// document's combo binding name; chordName is the mode-switch chord's
+	// parse cache (the same precedent, with the empty-disables twist).
 	tapKeyval  uint32
 	tapKeyName string
 	comboName  string
+	chordName  string
 	// MACR state (plan 03-05, ADR-005): the Super-hold window of the
 	// consumed-upstream detect (b.2) with its letter witness, the pending
 	// remap awaiting the hold's end, the layer's counters (the goswitchctl
@@ -150,10 +152,14 @@ type Actor struct {
 // config.Defaults sets flip_after_correction true (the daemon wiring
 // passes it through SetOptions; an attached document overrides it live per
 // applySnapshot) — plus the D-36 word-layout combo binding (the zero
-// Binding selects the built-in Shift+Control_R default) and the MACR-01
-// Super→Ctrl layer of ADR-005 (plan 03-05): OFF at the zero value, with an
-// empty letter set, no per-app list and NO alternative modifier (b.3 — not
-// introduced by default).
+// Binding selects the built-in Shift+Control_R default), the mode-switch
+// chord binding of owner decision 2 (quick plan 260927-way: the ZERO
+// Binding is the DISABLED state — unlike the combo there is no built-in
+// fallback; the daemon wiring feeds config.Defaults' super+space through
+// SetOptions and an attached document folds it live, empty = off) and the
+// MACR-01 Super→Ctrl layer of ADR-005 (plan 03-05): OFF at the zero value,
+// with an empty letter set, no per-app list and NO alternative modifier
+// (b.3 — not introduced by default).
 type Options struct {
 	BackspaceCap        int
 	ClipboardRung       bool
@@ -733,6 +739,20 @@ func (a *Actor) applySnapshot() {
 			a.comboName = name
 		}
 	}
+	if name := snap.Hotkeys.ModeSwitchChord; name != a.chordName {
+		// The EMPTY-DISABLES twist: "" is the chord's off state, not a
+		// failed parse — the fold must clear the binding on the empty
+		// document value (never keep last-good), while a NON-empty name
+		// that fails to parse — impossible from a validated document —
+		// keeps the last-good chord (the D-32 discipline).
+		if name == "" {
+			a.chordName = name
+			a.opts.ModeSwitchChord = hotkey.Binding{}
+		} else if binding, err := hotkey.ParseBinding(name); err == nil {
+			a.opts.ModeSwitchChord = binding
+			a.chordName = name
+		}
+	}
 	a.opts.MACREnabled = snap.MACR.Enabled
 	a.opts.MACRApps = snap.MACR.Apps
 	a.opts.MACRAltModifier = snap.MACR.AltModifier
@@ -1256,27 +1276,35 @@ func (a *Actor) modeSymbol() string {
 // feedKey decides one press: whether the engine consumes the key and which
 // rune the buffer takes — the script-true invariant made branch-local (a
 // rune that reaches the field also reaches the buffer, whatever delivered
-// it). The MACR interception (MACR-01, ADR-005, Pattern 6) is recognized
-// FIRST of all, above the combo and every mode branch: a configured letter
-// press carrying Mod4 — the press-side wire truth of the live probe: the
-// letter arrives Latin with Mod4 in EVERY internal mode — is consumed and
-// replayed as the Ctrl+letter forward burst, so the RU commit can never
-// fire on a Super chord and the buffer is never fed. The word-layout combo
-// (D-36) is recognized next, above every mode branch: a press of the bound
-// combo key under its bound HELD modifiers — the press's state word
-// carries only the modifiers held before the key (live finding
-// 2026-09-15: a Control_R press under Shift arrives with Shift|NumLock,
-// its own Control bit rides only on the release), so the match compares
-// Binding.ModMask with the key's own family bit cleared — latch-tolerant
-// through &, the NumLock precedent of 02-04 — kills the tap series with a
-// deliberate Reset (Pitfall 4: left to the FSM the Control_R press would
-// silently die as modifier use) and launches the word pipeline of the
-// Double semantics with the flip deferred to its settlement
-// (comboPending/settleCombo). The combo press itself transits: a bare
-// modifier chord puts no rune in the field, and the transit keeps the
-// client's press/release pairing intact. The CORR-09 reset keyvals (Enter
-// and its keypad variant, Tab, Escape) end the phrase instead of feeding
-// it. The caller holds the mutex.
+// it). The branch order is the branch's contract. The MACR interception
+// (MACR-01, ADR-005, Pattern 6) is recognized FIRST of all, above the
+// chords and every mode branch: a configured letter press carrying Mod4 —
+// the press-side wire truth of the live probe: the letter arrives Latin
+// with Mod4 in EVERY internal mode — is consumed and replayed as the
+// Ctrl+letter forward burst, so the RU commit can never fire on a Super
+// chord and the buffer is never fed. The word-layout combo (D-36) is
+// recognized next, above every mode branch: a press of the bound combo key
+// under its bound HELD modifiers — the press's state word carries only the
+// modifiers held before the key (live finding 2026-09-15: a Control_R
+// press under Shift arrives with Shift|NumLock, its own Control bit rides
+// only on the release), so the match compares Binding.ModMask with the
+// key's own family bit cleared — latch-tolerant through &, the NumLock
+// precedent of 02-04 — kills the tap series with a deliberate Reset
+// (Pitfall 4: left to the FSM the Control_R press would silently die as
+// modifier use) and launches the word pipeline of the Double semantics
+// with the flip deferred to its settlement (comboPending/settleCombo).
+// The combo press itself transits: a bare modifier chord puts no rune in
+// the field, and the transit keeps the client's press/release pairing
+// intact. The mode-switch chord (owner decision 2, quick plan 260927-way)
+// sits AFTER the combo (the combo wins a collision) and BEFORE the mode
+// branches: a press of the bound chord key under its held modifiers flips
+// the script mode IMMEDIATELY, consumes the press (no space lands in the
+// field), kills any pending tap series, and marks the Super hold as
+// WITNESSED — goswitch itself consumed the chord, nothing went upstream,
+// so the MACR consumed-upstream detect stays silent (the MACR layer is
+// unaffected: space is not a letter, macrIntercept owns the hold window).
+// The CORR-09 reset keyvals (Enter and its keypad variant, Tab, Escape)
+// end the phrase instead of feeding it. The caller holds the mutex.
 func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 	if a.macrIntercept(ev) {
 		return true
@@ -1293,6 +1321,10 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 
 			return false
 		}
+	}
+
+	if a.modeSwitchChord(ev) {
+		return true
 	}
 
 	switch {
@@ -1336,6 +1368,32 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 
 		return false
 	}
+}
+
+// modeSwitchChord is the mode-switch chord branch of feedKey (owner
+// decision 2, quick plan 260927-way): a press of the bound chord key under
+// its held modifiers — the same press-side held-mask rule as the combo
+// above (space has no family bit, so held is exactly the chord's Mod4) —
+// flips the script mode IMMEDIATELY and reports the press consumed. The
+// Super hold is marked WITNESSED (goswitch consumed the chord itself,
+// nothing was swallowed upstream — the MACR consumed-upstream detect must
+// not fire on the release), any pending tap series dies with the
+// deliberate Reset (Pitfall 4), and the panel symbol rides the flip. A
+// zero chord binding (disabled) never matches. The caller holds the mutex.
+func (a *Actor) modeSwitchChord(ev engine.EngineEvent) bool {
+	c := a.opts.ModeSwitchChord
+	if c.Keyval == 0 || ev.Keyval != c.Keyval {
+		return false
+	}
+	if held := c.ModMask &^ hotkey.FamilyMask(c.Keyval); ev.Mods&held != held {
+		return false
+	}
+	a.macrSawLetter = true
+	a.fsm.Feed(hotkey.Reset{}, a.elapsed())
+	slog.Info("combo", "kind", "mode-switch-chord")
+	a.flipScript()
+
+	return true
 }
 
 // startCorrection launches the correction of the Double decision: with an

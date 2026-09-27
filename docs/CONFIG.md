@@ -24,6 +24,7 @@ start — the completeness discipline is on the document's author.
 |-----|------|---------|--------------------|---------|
 | `hotkeys.tap_key` | string | `shift_r` | closed name table (below) | the key whose tap series (single/double/triple) drives switch/correct-word/correct-phrase |
 | `hotkeys.word_layout_combo` | string | `shift+ctrl_r` | closed name table (below) | the combo «correct the last word, then switch the layout» (D-36) |
+| `hotkeys.mode_switch_chord` | string | `super+space` | closed name table (below); empty = disabled | flips the script mode directly — goswitch owns Super+Space (install clears the GNOME switch-input-source binding) |
 | `timeouts.tap_window_ms` | int | `300` | (0, 2000] | tap disambiguation window; all decisions fire at window expiry (ADR-002) |
 | `timeouts.verify_wait_ms` | int | `100` | (0, 2000] | wait for a fresh surrounding-text push when verifying the correction (ADR-004) |
 | `correction.backspace_cap` | int | `50` | [1, 500] | cap of the Backspace ladder series (D-27); over-cap corrections are refused silently, not half-deleted |
@@ -41,11 +42,18 @@ in the table rejects the whole config. Combos are `"+"`-joined with the
 **key last**, the rest are held modifiers:
 
 - keys: `shift_l`, `shift_r`, `ctrl_l`, `ctrl_r`, `alt_l`, `alt_r`,
-  `super_l`, `super_r` (keyvals from `ibuskeysyms.h`, verified verbatim)
+  `super_l`, `super_r`, `space` (keyvals from `ibuskeysyms.h`, verified
+  verbatim)
 - modifiers: `shift`, `ctrl`, `alt`, `super`
 
 Examples: `shift_r` (a tap of the right Shift), `shift+ctrl_r` (hold
-Shift, press right Ctrl — the D-36 default combo).
+Shift, press right Ctrl — the D-36 default combo), `super+space` (the
+default mode-switch chord).
+
+Tradeoff to know: documents written before `hotkeys.mode_switch_chord`
+existed load with the chord **disabled** (a missing key decodes as empty
+= off, not defaulted on) — the completeness discipline is on the
+document's author, the same rule as every other key.
 
 ## Example
 
@@ -55,6 +63,7 @@ A complete file (the documented defaults):
 hotkeys:
   tap_key: shift_r
   word_layout_combo: shift+ctrl_r
+  mode_switch_chord: super+space
 timeouts:
   tap_window_ms: 300
   verify_wait_ms: 100
@@ -75,6 +84,7 @@ An activated MACR layer over Chromium only, with the alternative modifier:
 hotkeys:
   tap_key: shift_r
   word_layout_combo: shift+ctrl_r
+  mode_switch_chord: super+space
 timeouts:
   tap_window_ms: 300
   verify_wait_ms: 100
@@ -121,6 +131,7 @@ to the Caramba settings that serve the same purpose:
 |--------------|-------------------------------|-------|
 | `hotkeys.tap_key` | переключение раскладки / горячая клавиша (their one-tap switch) | ours: one key carries 1/2/3-tap actions at window expiry (ADR-002); theirs: the first tap switches immediately |
 | `hotkeys.word_layout_combo` | «исправить и переключить»-класс комбинаций | ours: correct the word FIRST, then switch (D-36 order, fixed by the SPEC action name) |
+| `hotkeys.mode_switch_chord` | their Super+Space-style direct switch binding | ours: flips the script mode immediately, no window; install hands GNOME's `switch-input-source` binding over to goswitch |
 | `timeouts.tap_window_ms` | their tap/series timing interval | theirs tunes a first-tap switch delay; ours the multi-tap discrimination window (default 300 ms) |
 | `correction.backspace_cap` | (no direct counterpart) | D-27 bound on the destructive Backspace ladder series |
 | `correction.clipboard_rung` | (no direct counterpart) | opt-in selection replacement through the clipboard (D-28) |

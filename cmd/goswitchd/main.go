@@ -19,6 +19,7 @@ import (
 	"github.com/Djarvur/goswitch/internal/activate"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
+	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/logging"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -125,10 +126,19 @@ func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 	window := time.Duration(cfg.Timeouts.TapWindowMs) * time.Millisecond
 	actor := session.NewActor(window)
 	actor.SetVersion(version)
+	// The mode-switch chord binding resolves here (owner decision 2, quick
+	// plan 260927-way): validated documents never error and Defaults always
+	// parses, so a failure is a wiring bug — WARNed and the chord stays
+	// disabled (the zero Binding), never a daemon start failure.
+	chord, err := hotkey.ParseBinding(cfg.Hotkeys.ModeSwitchChord)
+	if err != nil {
+		slog.Warn("mode switch chord disabled", "reason", err.Error())
+	}
 	actor.SetOptions(session.Options{
 		BackspaceCap:        cfg.Correction.BackspaceCap,
 		ClipboardRung:       cfg.Correction.ClipboardRung,
 		FlipAfterCorrection: cfg.Correction.FlipAfterCorrection,
+		ModeSwitchChord:     chord,
 	})
 	if watcher != nil {
 		actor.AttachConfig(watcher)

@@ -3551,10 +3551,11 @@ func TestActor_SuperSpaceChordFlipsMode(t *testing.T) {
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	line := "abc abc"
+	line := "done abc"
 	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 	if !strings.Contains(buf.String(), `"source":"abc"`) {
-		t.Errorf("the corrected token is not the clean \"abc\" — a space leaked into the buffer; log:\n%s", buf.String())
+		t.Errorf("the corrected token is not the clean \"abc\" — a space leaked into the buffer; log:\n%s",
+			buf.String())
 	}
 }
 
@@ -3641,7 +3642,8 @@ func TestActor_SuperSpaceChordGateOff(t *testing.T) {
 			t.Fatalf("Mod2-only space consumed — the held mask requires Mod4")
 		}
 		if got := countModeRecords(buf); got != 0 {
-			t.Errorf("mode records = %d, want 0 — NumLock-only space is a keystroke, not the chord; log:\n%s", got, buf.String())
+			t.Errorf("mode records = %d, want 0 — NumLock-only space is a keystroke, not the chord; log:\n%s",
+				got, buf.String())
 		}
 	})
 }

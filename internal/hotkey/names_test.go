@@ -116,7 +116,8 @@ func TestParseBinding_SuperSpace(t *testing.T) {
 	}
 	want := hotkey.Binding{Keyval: 0x020, ModMask: hotkey.MaskMod4}
 	if got != want {
-		t.Errorf("ParseBinding(super+space) = %+v, want %+v (space carries no family bit — held mask is exactly Mod4)", got, want)
+		t.Errorf("ParseBinding(super+space) = %+v, want %+v (space carries no family bit — held mask is Mod4)",
+			got, want)
 	}
 	if hotkey.FamilyMask(0x020) != 0 {
 		t.Errorf("FamilyMask(space) = %#x, want 0 — space is not a modifier", hotkey.FamilyMask(0x020))

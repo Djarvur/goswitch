@@ -51,7 +51,8 @@ func TestDefaults(t *testing.T) {
 		t.Errorf("hotkeys.word_layout_combo = %q, want %q", got.Hotkeys.WordLayoutCombo, defCombo)
 	}
 	if got.Hotkeys.ModeSwitchChord != defChord {
-		t.Errorf("%s = %q, want %q (owner decision 2: goswitch owns Super+Space)", fieldChord, got.Hotkeys.ModeSwitchChord, defChord)
+		t.Errorf("%s = %q, want %q (owner decision 2: goswitch owns Super+Space)",
+			fieldChord, got.Hotkeys.ModeSwitchChord, defChord)
 	}
 	if got.Timeouts.TapWindowMs != 300 {
 		t.Errorf("%s = %d, want 300", fieldTapWindow, got.Timeouts.TapWindowMs)
@@ -406,7 +407,8 @@ func TestLoad_ModeSwitchChord(t *testing.T) {
 			t.Fatalf("Load(pre-batch doc): %v", err)
 		}
 		if cfg.Hotkeys.ModeSwitchChord != "" {
-			t.Errorf("%s = %q, want %q — a missing key decodes disabled, never defaulted", fieldChord, cfg.Hotkeys.ModeSwitchChord, "")
+			t.Errorf("%s = %q, want %q — a missing key decodes disabled, never defaulted",
+				fieldChord, cfg.Hotkeys.ModeSwitchChord, "")
 		}
 	})
 

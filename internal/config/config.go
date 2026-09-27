@@ -60,9 +60,9 @@ func altModifierCandidates() []string {
 // strings resolved by hotkey.ParseBinding (D-31: name strings, combos
 // "+"-joined with the key last).
 type Hotkeys struct {
-	TapKey           string `yaml:"tap_key"`
-	WordLayoutCombo  string `yaml:"word_layout_combo"`
-	ModeSwitchChord  string `yaml:"mode_switch_chord"`
+	TapKey          string `yaml:"tap_key"`
+	WordLayoutCombo string `yaml:"word_layout_combo"`
+	ModeSwitchChord string `yaml:"mode_switch_chord"`
 }
 
 // Timeouts are the timing parameters, in milliseconds.
@@ -110,6 +110,7 @@ func Defaults() Config {
 		Hotkeys: Hotkeys{
 			TapKey:          defTapKey,
 			WordLayoutCombo: defCombo,
+			ModeSwitchChord: defModeSwitchChord,
 		},
 		Timeouts: Timeouts{
 			TapWindowMs:  defaultTapWindowMs,
@@ -131,8 +132,9 @@ func Defaults() Config {
 
 // The documented default binding names (shared with the corpus).
 const (
-	defTapKey = "shift_r"
-	defCombo  = "shift+ctrl_r"
+	defTapKey          = "shift_r"
+	defCombo           = "shift+ctrl_r"
+	defModeSwitchChord = "super+space"
 )
 
 // Validate enforces the ranges and closed vocabularies; every error names
@@ -168,6 +170,16 @@ func (h Hotkeys) validate() error {
 	}
 	if _, err := hotkey.ParseBinding(h.WordLayoutCombo); err != nil {
 		return fmt.Errorf("hotkeys.word_layout_combo %q: %w", h.WordLayoutCombo, err)
+	}
+	if h.ModeSwitchChord == "" {
+		// The chord is DISABLED by an empty value — the missing-key
+		// compatibility rule (the macr.alt_modifier empty precedent):
+		// documents written before the key exist load unchanged with the
+		// chord off, never defaulted on.
+		return nil
+	}
+	if _, err := hotkey.ParseBinding(h.ModeSwitchChord); err != nil {
+		return fmt.Errorf("hotkeys.mode_switch_chord %q: %w", h.ModeSwitchChord, err)
 	}
 
 	return nil
