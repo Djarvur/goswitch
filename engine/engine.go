@@ -72,6 +72,7 @@ type Emitter interface {
 	DeleteSurroundingText(offset int32, nchars uint32)
 	ForwardKeyEvent(keyval, keycode, state uint32)
 	CommitText(text IBusText)
+	UpdateModeSymbol(symbol string)
 }
 
 // EventHandler is the seam the rest of the daemon plugs into (hotkey FSM,
@@ -429,6 +430,12 @@ func (e *Engine) ForwardKeyEvent(keyval, keycode, state uint32) {
 		slog.Error("forward key event emit failed", "error", err)
 	}
 }
+
+// UpdateModeSymbol emits the org.freedesktop.IBus.Engine.UpdateProperty
+// signal for the mode-indicator panel property (owner decision 1, quick
+// plan 260927-way): the GNOME input indicator's dynamic icon (EngineDesc
+// icon_prop_key) follows the daemon's script mode.
+func (e *Engine) UpdateModeSymbol(symbol string) {} // RED scaffolding: emit lands with the GREEN commit.
 
 // lifecycle forwards a lifecycle event to the handler, if installed.
 func (e *Engine) lifecycle(kind LifecycleKind) {

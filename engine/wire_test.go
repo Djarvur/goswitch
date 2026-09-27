@@ -74,6 +74,27 @@ func TestWire_FieldOrder(t *testing.T) {
 		"AttrList",
 	)
 
+	// The panel property pair (owner decision 1, quick plan 260927-way):
+	// Property is the ibusproperty.h:159-167 ctor order with Symbol
+	// APPENDED LAST (the goibus reference + the appended-field convention);
+	// PropList is the RegisterProperties container.
+	propertyWant := withHeader(
+		"Key",       // modePropKey — the panel icon key
+		"Type",      // PropTypeNormal (u)
+		"Label",     // variant-wrapped IBusText
+		"Icon",      // "" — the symbol carries the mode
+		"Tooltip",   // variant-wrapped IBusText
+		"Sensitive", // b
+		"Visible",   // b
+		"State",     // PropStateUnchecked (u)
+		"SubProps",  // variant-wrapped PropList
+		"Symbol",    // variant-wrapped IBusText — appended LAST
+	)
+
+	proplistWant := withHeader(
+		"Properties", // av of variant-wrapped Property values
+	)
+
 	t.Run("Component", func(t *testing.T) {
 		t.Parallel()
 
@@ -97,5 +118,17 @@ func TestWire_FieldOrder(t *testing.T) {
 		t.Parallel()
 
 		assertFieldOrder(t, reflect.TypeOf(engine.IBusText{}), textWant)
+	})
+
+	t.Run("Property", func(t *testing.T) {
+		t.Parallel()
+
+		assertFieldOrder(t, reflect.TypeOf(engine.Property{}), propertyWant)
+	})
+
+	t.Run("PropList", func(t *testing.T) {
+		t.Parallel()
+
+		assertFieldOrder(t, reflect.TypeOf(engine.PropList{}), proplistWant)
 	})
 }

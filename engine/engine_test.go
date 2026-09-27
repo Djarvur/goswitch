@@ -259,6 +259,7 @@ func TestEmitters_DetachedQuiet(t *testing.T) {
 	eng.DeleteSurroundingText(-6, 6)
 	eng.CommitText(engine.NewIBusText("quiet"))
 	eng.ForwardKeyEvent(engine.KeyBackSpace, 14, 0)
+	eng.UpdateModeSymbol("quiet") // the mode-indicator emitter is quiet too (the conn-nil guard)
 }
 
 // TestEngine_DecodeState pins the one-shot decode of the raw IBus state

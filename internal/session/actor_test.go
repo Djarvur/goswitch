@@ -110,15 +110,18 @@ type forwardCall struct {
 // pins the ORDER of the calls (the burst→commit sequence of the ladder).
 // forwardHook, when set, fires inside ForwardKeyEvent so a test can
 // interleave the sink's records with another guarded recorder (the
-// clipboard rung's subprocess log).
+// clipboard rung's subprocess log); modeHook plays the same role for
+// UpdateModeSymbol (the panel-symbol corpus pins the emit-after-log order).
 type fakeSink struct {
 	mu          sync.Mutex
 	requires    int
 	deletes     []deleteCall
 	commits     []string
 	forwards    []forwardCall
+	modes       []string
 	ops         []string
 	forwardHook func(forwardCall)
+	modeHook    func(symbol string)
 }
 
 // RequireSurroundingText records the verification request.
@@ -160,6 +163,28 @@ func (f *fakeSink) ForwardKeyEvent(keyval, keycode, state uint32) {
 	if hook != nil {
 		hook(call)
 	}
+}
+
+// UpdateModeSymbol records the panel-symbol update with its argument — the
+// mode-indicator emit of owner decision 1 (quick plan 260927-way).
+func (f *fakeSink) UpdateModeSymbol(symbol string) {
+	f.mu.Lock()
+	f.modes = append(f.modes, symbol)
+	f.ops = append(f.ops, "mode("+symbol+")")
+	hook := f.modeHook
+	f.mu.Unlock()
+
+	if hook != nil {
+		hook(symbol)
+	}
+}
+
+// modeSymbols snapshots the recorded panel-symbol updates.
+func (f *fakeSink) modeSymbols() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.modes...)
 }
 
 // requireCount snapshots the verification-request count.
@@ -1077,9 +1102,13 @@ func flipMode(a *session.Actor) {
 
 // TestActor_FlipOnSingle pins the ADR-001 Option B flip: a single-tap series
 // resolved at window expiry switches the actor's internal script mode EN→RU
-// and back RU→EN, each switch logging the exact INFO mode record — and the
-// flip is purely internal: zero calls of any kind on the sink (the XKB group
-// of the session is not touched, D-01 verdict).
+// and back RU→EN, each switch logging the exact INFO mode record — the flip
+// is still purely internal toward the FIELD (the XKB group of the session is
+// not touched, D-01 verdict; zero CommitText/DeleteSurroundingText/
+// ForwardKeyEvent on a bare flip), but each switch now refreshes the panel
+// symbol (owner decision 1, quick plan 260927-way): exactly one
+// UpdateModeSymbol per flip, "ru" then "en" — reconciled deliberately from
+// the vu8-era zero-sink-call pin, decision 1 cited.
 func TestActor_FlipOnSingle(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
@@ -1097,6 +1126,9 @@ func TestActor_FlipOnSingle(t *testing.T) {
 	if strings.Index(logged, `"to":"ru"`) > strings.Index(logged, `"to":"en"`) {
 		t.Errorf("mode records out of order (ru must precede en); log:\n%s", logged)
 	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en] (one per flip, owner decision 1)", got)
+	}
 	if got := sink.requireCount(); got != 0 {
 		t.Errorf("flip made %d RequireSurroundingText calls, want 0", got)
 	}
@@ -1105,6 +1137,59 @@ func TestActor_FlipOnSingle(t *testing.T) {
 	}
 	if texts := sink.commitTexts(); len(texts) != 0 {
 		t.Errorf("flip committed %q, want nothing", texts)
+	}
+	if calls := sink.forwardCalls(); len(calls) != 0 {
+		t.Errorf("flip forwarded %+v, want nothing", calls)
+	}
+}
+
+// TestActor_FlipEmitsPanelSymbol pins the ORDER of the mode-indicator emit
+// (owner decision 1, quick plan 260927-way): the panel symbol update lands
+// strictly AFTER the flip's INFO mode record — the e2e sequencing contract
+// extended, the mode log record stays the flip's observable — and the
+// flip-back emits "en" with the same shape.
+func TestActor_FlipEmitsPanelSymbol(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	var emittedAfterLog bool
+	sink.modeHook = func(symbol string) {
+		// At the emit instant the flip's own INFO record must already be in
+		// the log — the emit fires after it, under the same mutex hold.
+		emittedAfterLog = strings.Contains(buf.String(), `"msg":"mode","to":"`+symbol+`"`)
+	}
+
+	flipMode(a) // EN → RU
+	if !emittedAfterLog {
+		t.Errorf("UpdateModeSymbol(ru) fired before the mode log record — the D-36-style order is violated; log:\n%s", buf.String())
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Fatalf("panel symbols after the first flip = %q, want exactly [ru]", got)
+	}
+
+	flipMode(a) // RU → EN
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols after the flip-back = %q, want exactly [ru en]", got)
+	}
+}
+
+// TestActor_FocusInReassertsModeSymbol pins the self-heal of the indicator
+// (owner decision 1, quick plan 260927-way): engine objects are minted per
+// input context, so every FocusIn re-emits the CURRENT mode symbol — a newly
+// minted engine context must not resurrect the stale EN registration of the
+// factory's RegisterProperties while the actor sits in RU.
+func TestActor_FocusInReassertsModeSymbol(t *testing.T) {
+	a, sink := wiredActor()
+
+	a.HandleLifecycle(engine.LifecycleFocusIn) // EN at start: re-assert "en"
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"en"}) {
+		t.Fatalf("FocusIn symbols at start = %q, want exactly [en]", got)
+	}
+
+	flipMode(a) // EN → RU
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"en", "ru", "ru"}) {
+		t.Errorf("FocusIn symbols after the flip = %q, want [en ru ru] — the fresh context must see RU", got)
 	}
 }
 
@@ -3212,9 +3297,10 @@ func TestActor_FlipAfterWordCorrection(t *testing.T) {
 	if iDone > iMode {
 		t.Errorf("mode flip preceded the settled done record (done@%d > mode@%d) — D-36 order extended", iDone, iMode)
 	}
-	// The flip itself made zero sink calls: the pipeline shape is exactly
-	// the pre-existing one (mode is internal state — the FlipOnSingle
-	// zero-call contract).
+	// The flip itself makes zero FIELD calls — the pipeline shape is exactly
+	// the pre-existing one (mode is internal state); reconciled deliberately
+	// from the vu8-era zero-sink-call pin (owner decision 1, quick plan
+	// 260927-way): the flip's ONLY sink call is the panel-symbol update.
 	if calls := sink.deleteCalls(); len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
 		t.Errorf("deletions = %+v, want exactly one (-6,6) — the flip adds none", calls)
 	}
@@ -3223,6 +3309,9 @@ func TestActor_FlipAfterWordCorrection(t *testing.T) {
 	}
 	if got := sink.requireCount(); got != 2 {
 		t.Errorf("require calls = %d, want 2 (pre-round + verify-after) — the flip requires nothing", got)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] (owner decision 1: the indicator follows the flip)", got)
 	}
 }
 
