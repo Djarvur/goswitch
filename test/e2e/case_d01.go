@@ -435,7 +435,7 @@ func appendJournalRow(probe, cmd, observed, verdict string) error {
 	}
 	defer f.Close() //nolint:errcheck // append-only evidence log; the row write's error is the one that matters
 	observed = strings.NewReplacer("|", "/").Replace(observed)
-	row := fmt.Sprintf("| %s | `%s` | %s | %s |\n", probe, cmd, observed, verdict)
+	row := fmt.Sprintf("| %s | %#q | %s | %s |\n", probe, cmd, observed, verdict)
 	if _, err := f.WriteString(row); err != nil {
 		return fmt.Errorf("append journal row: %w", err)
 	}
