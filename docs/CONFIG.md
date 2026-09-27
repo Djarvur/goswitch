@@ -29,7 +29,7 @@ start — the completeness discipline is on the document's author.
 | `timeouts.verify_wait_ms` | int | `100` | (0, 2000] | wait for a fresh surrounding-text push when verifying the correction (ADR-004) |
 | `correction.backspace_cap` | int | `50` | [1, 500] | cap of the Backspace ladder series (D-27); over-cap corrections are refused silently, not half-deleted |
 | `correction.clipboard_rung` | bool | `false` | — | opt-in clipboard replacement rung for selections (D-28); OFF by default |
-| `correction.flip_after_correction` | bool | `true` | — | flip the script mode after a successful correction that changed the text (word and phrase paths); ON by default |
+| `correction.flip_after_correction` | bool | `true` | — | flip the script mode after a successful correction that changed the text (word, phrase, and selection paths); ON by default |
 | `macr.enabled` | bool | `false` | — | global switch of the Super→Ctrl remapping layer (ADR-005) |
 | `macr.letters` | string | `""` | comma-separated single letters `a`–`z` | the remapped letter set; required (non-empty) when `macr.enabled` is true |
 | `macr.apps` | list | `[]` | at most 64 entries | per-app allow list (ADR-005); empty list = the rule set applies everywhere |
