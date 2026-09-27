@@ -104,7 +104,9 @@ func TestConvertRuns_HomogeneousWholesale(t *testing.T) {
 		// The register pin on a MIXED range: the foreign run converts with
 		// its own per-rune register (G→П, f→а, b→и).
 		{name: "register per rune on the foreign run", in: "Gfb" + wordRU, want: "Паи" + wordRU},
-		{name: "punctuation of the token rides along", in: wordENComma, want: wordRU + ","},
+		// Full by-position conversion (owner directive 2026-09-28): the
+		// token's punctuation converts with it — the comma is the 'б' key.
+		{name: "punctuation converts with the token", in: wordENComma, want: wordRU + "б"},
 		// Owner decision 1 (260927-vu8): in a WHOLESALE single-script range
 		// the allow-set bracket-row symbol converts with the token — the
 		// run-level form of the live defect «несколько дополнительны[».

@@ -3852,3 +3852,39 @@ func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
 		}
 	})
 }
+
+// TestActor_FlipAfterSelectionCorrection extends the owner decision-2 flip
+// to the SELECTION path (owner report 2026-09-28): a settled CHANGED
+// selection correction flips the internal script
+// mode exactly once, strictly after the done record, mirroring the word
+// path. The combo path still flips via settleCombo exactly once.
+func TestActor_FlipAfterSelectionCorrection(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(flipOnOptions())
+
+	field := wordEN + " " + wordRU
+	a.HandleSurroundingText(field, 6, 0) // selection [0,6), right-to-left
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
+		t.Fatalf("INFO completion record missing; log:\n%s", logged)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after a changed selection correction = %d, want exactly 1; log:\n%s", got, logged)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("mode record is not the EN→RU flip; log:\n%s", logged)
+	}
+	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iDone > iMode {
+		t.Errorf("mode flip preceded the settled done record (done@%d > mode@%d)", iDone, iMode)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru]", got)
+	}
+}

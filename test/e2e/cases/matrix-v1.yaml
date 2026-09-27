@@ -59,7 +59,7 @@ mode: en
 steps:
   - {type: "ghbdtn,"}
   - {tap: double}
-expect_text: "привет,"  # D-14: adjacent punctuation is inside the replacement range, rides along identically
+expect_text: "приветб"  # full by-position conversion (owner directive 2026-09-28): the comma is the б key
 ---
 name: word-digits
 surface: zenity
