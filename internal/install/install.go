@@ -80,11 +80,16 @@ const (
 
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
-	// gsettingsKeySwitch is the GNOME layout-switch keybinding (owner
-	// decision 3, quick plan 260927-way): with goswitch as the only input
-	// source that binding only churns/disables the engine context — install
-	// clears it, uninstall restores the saved value.
-	gsettingsKeySwitch = "switch-input-source"
+	// The layout-switch keybinding lives in the WINDOW-MANAGER keybindings
+	// schema, not in desktop.input-sources (live finding 2026-09-27: the
+	// desktop.input-sources schema carries no switch key at all — a
+	// gsettings get answers "No such key"). Owner decision 3, quick plan
+	// 260927-way: with goswitch as the only input source that binding only
+	// churns/disables the engine context — install clears both switch
+	// chords, uninstall restores the saved values.
+	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
+	gsettingsKeySwitch         = "switch-input-source"
+	gsettingsKeySwitchBackward = "switch-input-source-backward"
 )
 
 // ownerSourcesSet is the D-40 single-owner takeover value: goswitch becomes
@@ -102,8 +107,12 @@ const (
 	ownerSourcesSet        = "[('ibus', 'goswitch-en')]"
 	fallbackSources        = "[('xkb', 'us')]"
 	clearedSwitchBindings  = "[]"
-	fallbackSwitchBindings = "['<Alt>Shift_L', '<Super>space']"
-	systemComponentDir     = "/usr/share/ibus/component"
+	fallbackSwitchBindings = "['<Super>space', 'XF86Keyboard']"
+	// fallbackSwitchBindingsBackward is the distro default of the backward
+	// switch chord (live-verified on the owner's desktop 2026-09-27), the
+	// safe restore when its saved value cannot be trusted.
+	fallbackSwitchBindingsBackward = "['<Shift><Super>space', '<Shift>XF86Keyboard']"
+	systemComponentDir             = "/usr/share/ibus/component"
 )
 
 // Static errors (err113): every one names the failing step and the fix.
@@ -162,11 +171,12 @@ type Installer struct {
 
 // installState is the on-disk restore contract between install and
 // uninstall: the pre-install gsettings sources string AND the pre-install
-// switch-input-source binding (owner decision 3, quick plan 260927-way),
-// both verbatim.
+// switch chords of the window-manager keybindings schema (owner decision 3,
+// quick plan 260927-way), all verbatim.
 type installState struct {
-	Sources           string `json:"sources"`
-	SwitchInputSource string `json:"switch_input_source"`
+	Sources             string `json:"sources"`
+	SwitchInputSource   string `json:"switch_input_source"`
+	SwitchInputSourceBw string `json:"switch_input_source_backward"`
 }
 
 // componentXML is the rendered component document: the wire identity of
@@ -426,11 +436,16 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("read current sources: %w", err)
 	}
 	prior := strings.TrimSpace(string(out))
-	out, err = i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKeySwitch)
+	out, err = i.call(ctx, binGSettings, "get", gsettingsKeybindingsSchema, gsettingsKeySwitch)
 	if err != nil {
 		return "", fmt.Errorf("read current switch-input-source binding: %w", err)
 	}
 	priorSwitch := strings.TrimSpace(string(out))
+	out, err = i.call(ctx, binGSettings, "get", gsettingsKeybindingsSchema, gsettingsKeySwitchBackward)
+	if err != nil {
+		return "", fmt.Errorf("read current switch-input-source-backward binding: %w", err)
+	}
+	priorSwitchBw := strings.TrimSpace(string(out))
 
 	path := i.path(stateDirRel, stateFile)
 	if _, err := os.Stat(path); err == nil {
@@ -438,7 +453,11 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("stat state file: %w", err)
 	}
-	data, err := json.Marshal(installState{Sources: prior, SwitchInputSource: priorSwitch})
+	data, err := json.Marshal(installState{
+		Sources:             prior,
+		SwitchInputSource:   priorSwitch,
+		SwitchInputSourceBw: priorSwitchBw,
+	})
 	if err != nil {
 		return "", fmt.Errorf("marshal install state: %w", err)
 	}
@@ -611,9 +630,11 @@ func (i *Installer) takeoverSources(ctx context.Context) error {
 // the pre-install binding already saved by saveState. Runs right after the
 // sources takeover.
 func (i *Installer) clearSwitchBinding(ctx context.Context) error {
-	_, err := i.call(ctx, binGSettings, "set", gsettingsSchema, gsettingsKeySwitch, clearedSwitchBindings)
-	if err != nil {
-		return fmt.Errorf("clear %s: %w", gsettingsKeySwitch, err)
+	for _, key := range []string{gsettingsKeySwitch, gsettingsKeySwitchBackward} {
+		args := []string{"set", gsettingsKeybindingsSchema, key, clearedSwitchBindings}
+		if _, err := i.call(ctx, binGSettings, args...); err != nil {
+			return fmt.Errorf("clear %s: %w", key, err)
+		}
 	}
 
 	return nil
@@ -699,51 +720,81 @@ func (i *Installer) appendActivation(ctx context.Context, lines []string, value 
 	return append(lines, "engine: activated "+name)
 }
 
-// restoreSwitchBinding puts the saved switch-input-source binding back
-// (owner decision 3, quick plan 260927-way) — the uninstall half of the
-// handover, run BEFORE the state file is removed. The saved value is
-// shape-validated BEFORE it reaches gsettings (the savedSources/ASVS V5
-// T-04-01-02 discipline: a forged or pre-batch state file must never brick
-// the keyboard bindings silently) — anything not shaped like a GVariant
-// array (an empty `[]` IS legitimate: the binding may have been cleared
-// before goswitch ever installed) restores the DISTRO DEFAULT, and the
-// substitution is REPORTED, never silent.
+// restoreSwitchBinding puts the saved switch chords back (owner decision 3,
+// quick plan 260927-way) — the uninstall half of the handover, run BEFORE
+// the state file is removed. Each saved value is shape-validated BEFORE it
+// reaches gsettings (the savedSources/ASVS V5 T-04-01-02 discipline: a
+// forged or pre-batch state file must never brick the keyboard bindings
+// silently) — anything not shaped like a GVariant array (an empty `[]` IS
+// legitimate: the binding may have been cleared before goswitch ever
+// installed) restores the DISTRO DEFAULT, and the substitution is
+// REPORTED, never silent.
 func (i *Installer) restoreSwitchBinding(ctx context.Context, lines []string) ([]string, error) {
-	value, trusted := savedSwitchBindings(i.path(stateDirRel, stateFile))
-	if !trusted {
-		value = fallbackSwitchBindings
-	}
-	if _, err := i.call(ctx, binGSettings, "set", gsettingsSchema, gsettingsKeySwitch, value); err != nil {
-		return nil, fmt.Errorf("%w: set %s: %w", errRestoreFailed, value, err)
-	}
-	if trusted {
-		return append(lines, "switch-input-source: restored "+value), nil
+	savedForward, savedBackward, trusted := savedSwitchBindings(i.path(stateDirRel, stateFile))
+	for _, k := range []struct {
+		key      string
+		value    string
+		fallback string
+		label    string
+	}{
+		{
+			key:      gsettingsKeySwitch,
+			value:    savedForward,
+			fallback: fallbackSwitchBindings,
+			label:    "switch-input-source",
+		},
+		{
+			key:      gsettingsKeySwitchBackward,
+			value:    savedBackward,
+			fallback: fallbackSwitchBindingsBackward,
+			label:    "switch-input-source-backward",
+		},
+	} {
+		value, substituted := k.value, trusted
+		if !trusted {
+			value, substituted = k.fallback, false
+		}
+		if _, err := i.call(ctx, binGSettings, "set", gsettingsKeybindingsSchema, k.key, value); err != nil {
+			return nil, fmt.Errorf("%w: set %s: %w", errRestoreFailed, value, err)
+		}
+		if substituted {
+			lines = append(lines, k.label+": restored "+value)
+
+			continue
+		}
+		lines = append(lines, k.label+": fallback "+k.fallback+
+			" (saved state unreadable or malformed — safe default applied)")
 	}
 
-	return append(lines, "switch-input-source: fallback "+fallbackSwitchBindings+
-		" (saved state unreadable or malformed — safe default applied)"), nil
+	return lines, nil
 }
 
-// savedSwitchBindings reads the state file and returns its
-// switch_input_source value only when the file parses AND the value passes
-// the shape check (trimmed, '[' … ']'). Unlike savedSources the EMPTY array
-// `[]` is a legitimate saved binding here — install snapshots whatever the
-// desktop carried, and a pre-cleared binding must restore as-is.
-func savedSwitchBindings(path string) (string, bool) {
+// savedSwitchBindings reads the state file and returns its switch chord
+// values only when the file parses AND each present value passes the shape
+// check (trimmed, '[' … ']'). Unlike savedSources the EMPTY array `[]` is
+// a legitimate saved binding here — install snapshots whatever the desktop
+// carried, and a pre-cleared binding must restore as-is.
+func savedSwitchBindings(path string) (forward, backward string, trusted bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	var st installState
 	if err := json.Unmarshal(data, &st); err != nil {
-		return "", false
+		return "", "", false
 	}
-	v := strings.TrimSpace(st.SwitchInputSource)
-	if !strings.HasPrefix(v, "[") || !strings.HasSuffix(v, "]") {
-		return "", false
+	shaped := func(v string) (string, bool) {
+		v = strings.TrimSpace(v)
+
+		return v, strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]")
+	}
+	forward, okF := shaped(st.SwitchInputSource)
+	backward, okB := shaped(st.SwitchInputSourceBw)
+	if !okF || !okB {
+		return "", "", false
 	}
 
-	return v, true
+	return forward, backward, true
 }
 
 // purgeDirs removes the user-owned config dir and the state dir (--purge,

@@ -148,3 +148,15 @@ None. Every emit path, config knob and install step is fully wired; the stub sca
 - Commits measured from the ledger: 6 (`gsd-plan-head-before-260927-way` = f679b95).
 - No tracked-file deletions in the range (`git diff --diff-filter=D` empty).
 - `mise run ci` green at HEAD.
+
+## Fix round 2 (orchestrator, 2026-09-27)
+
+Live finding on the owner desktop: the handover schema in the original Task 3 was wrong —
+`org.gnome.desktop.input-sources` carries NO `switch-input-source` key at all ("No such key");
+the binding lives in `org.gnome.desktop.wm.keybindings` (`switch-input-source`,
+`switch-input-source-backward`), live values `['<Super>space', 'XF86Keyboard']` /
+`['<Shift><Super>space', '<Shift>XF86Keyboard']`. The wrong schema came from the orchestrator's
+plan prompt (the STACK research line quoted the key without its schema). Fix: install clears BOTH
+wm.keybindings chords, uninstall restores both with per-key distro-default fallbacks; corpus and
+fixtures moved to the real schema (installCallCount 10→12); defaultReply refactored under the
+cyclop ceiling. `mise run ci` green. Deferred live checks unchanged.

@@ -21,14 +21,16 @@ import (
 // live switch-input-source binding of the owner's desktop (verified
 // 2026-09-27) — the value install snapshots and uninstall restores.
 const (
-	ownerSources           = `[('xkb', 'us'), ('xkb', 'ru')]`
-	goswitchSources        = `[('ibus', 'goswitch-en')]`
-	fallbackSources        = `[('xkb', 'us')]`
-	ownerSwitchBindings    = `['<Alt>Shift_L', '<Super>space']`
-	clearedSwitchBindings  = `[]`
-	fallbackSwitchBindings = `['<Alt>Shift_L', '<Super>space']`
-	listEngineOut          = "goswitch-en - goswitch English (US)\ngoswitch-ru - goswitch Русская\n"
-	markerSources          = "MARKER-ORIGINAL"
+	ownerSources                   = `[('xkb', 'us'), ('xkb', 'ru')]`
+	goswitchSources                = `[('ibus', 'goswitch-en')]`
+	fallbackSources                = `[('xkb', 'us')]`
+	ownerSwitchBindings            = `['<Super>space', 'XF86Keyboard']`
+	ownerSwitchBindingsBackward    = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
+	clearedSwitchBindings          = `[]`
+	fallbackSwitchBindings         = `['<Super>space', 'XF86Keyboard']`
+	fallbackSwitchBindingsBackward = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
+	listEngineOut                  = "goswitch-en - goswitch English (US)\ngoswitch-ru - goswitch Русская\n"
+	markerSources                  = "MARKER-ORIGINAL"
 )
 
 // The pinned binary/operation names the corpus asserts on (goconst: named
@@ -48,10 +50,13 @@ const (
 const (
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
-	// gsettingsKeySwitch is the GNOME switch-input-source key (owner
-	// decision 3, quick plan 260927-way): install clears it, uninstall
-	// restores the saved value.
-	gsettingsKeySwitch = "switch-input-source"
+	// gsettingsKeybindingsSchema hosts the GNOME layout-switch chords (live
+	// finding 2026-09-27: NOT desktop.input-sources — that schema carries
+	// no switch key at all). Owner decision 3, quick plan 260927-way:
+	// install clears both, uninstall restores the saved values.
+	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
+	gsettingsKeySwitch         = "switch-input-source"
+	gsettingsKeySwitchBackward = "switch-input-source-backward"
 	// derivedActivation is the engine name the first ('xkb', 'us') tuple of
 	// ownerSources restores to (the fallbackEngine derivation).
 	derivedActivation = "xkb:us::eng"
@@ -99,13 +104,17 @@ func (f *fakeRunner) snapshot() []instCall {
 // owner sources and the owner's live switch binding, ibus list-engine
 // already lists goswitch.
 func defaultReply(name string, args []string) ([]byte, error) {
-	if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
+	gsettingsGet := func(key string) bool {
+		return name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == key
+	}
+	switch {
+	case gsettingsGet(gsettingsKey):
 		return []byte(ownerSources), nil
-	}
-	if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKeySwitch {
+	case gsettingsGet(gsettingsKeySwitch):
 		return []byte(ownerSwitchBindings), nil
-	}
-	if name == binIbus && len(args) > 0 && args[0] == "list-engine" {
+	case gsettingsGet(gsettingsKeySwitchBackward):
+		return []byte(ownerSwitchBindingsBackward), nil
+	case name == binIbus && len(args) > 0 && args[0] == "list-engine":
 		return []byte(listEngineOut), nil
 	}
 
@@ -232,14 +241,17 @@ func TestInstall_Sequence(t *testing.T) {
 	// restart), and the daemon-view list-engine gate runs AFTER the restart.
 	assertCallSequence(t, f.snapshot(), []struct{ name, args string }{
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
-		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKeySwitch},
+		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
+		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
 		{binIbus, opWriteCache},
 		{binSystemctl, "--user daemon-reload"},
 		{binSystemctl, "--user enable --now goswitchd"},
 		{binIbus, "restart"},
 		{binIbus, "list-engine"},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + goswitchSources},
-		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKeySwitch + " " + clearedSwitchBindings},
+		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + clearedSwitchBindings},
+		{binGSettings, "set " + gsettingsKeybindingsSchema + " " +
+			gsettingsKeySwitchBackward + " " + clearedSwitchBindings},
 		{binIbus, "engine goswitch-en"},
 	})
 
@@ -263,6 +275,16 @@ func TestInstall_Sequence(t *testing.T) {
 	if st.SwitchInputSource != ownerSwitchBindings {
 		t.Errorf("state switch_input_source = %q, want the pre-install binding VERBATIM %q",
 			st.SwitchInputSource, ownerSwitchBindings)
+	}
+	var stBw struct {
+		SwitchInputSourceBackward string `json:"switch_input_source_backward"`
+	}
+	if err := json.Unmarshal([]byte(readAll(t, statePath)), &stBw); err != nil {
+		t.Fatalf("parse install state (backward): %v", err)
+	}
+	if stBw.SwitchInputSourceBackward != ownerSwitchBindingsBackward {
+		t.Errorf("state switch_input_source_backward = %q, want the pre-install binding VERBATIM %q",
+			stBw.SwitchInputSourceBackward, ownerSwitchBindingsBackward)
 	}
 	if !slices.ContainsFunc(report, func(line string) bool {
 		return strings.Contains(line, "switch-input-source: cleared")
@@ -477,7 +499,7 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 			if args[2] == gsettingsKey {
 				return []byte(goswitchSources), nil
 			}
-			if args[2] == gsettingsKeySwitch {
+			if args[2] == gsettingsKeySwitch || args[2] == gsettingsKeySwitchBackward {
 				return []byte(clearedSwitchBindings), nil
 			}
 		}
@@ -531,12 +553,19 @@ func TestUninstall_FullRollback(t *testing.T) {
 		{binIbus, "restart"},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + ownerSources},
 		{binIbus, "engine " + derivedActivation},
-		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKeySwitch + " " + ownerSwitchBindings},
+		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + ownerSwitchBindings},
+		{binGSettings, "set " + gsettingsKeybindingsSchema + " " +
+			gsettingsKeySwitchBackward + " " + ownerSwitchBindingsBackward},
 	})
 	if !slices.ContainsFunc(report, func(line string) bool {
 		return strings.Contains(line, "switch-input-source: restored "+ownerSwitchBindings)
 	}) {
 		t.Errorf("report %v does not name the restored switch binding", report)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "switch-input-source-backward: restored "+ownerSwitchBindingsBackward)
+	}) {
+		t.Errorf("report %v does not name the restored backward switch binding", report)
 	}
 
 	xmlPath, unitPath, statePath := installPaths(home)
@@ -554,7 +583,7 @@ func TestUninstall_FullRollback(t *testing.T) {
 // FullRollback corpus asserts the uninstall suffix of the recording): two
 // gsettings gets (sources + switch binding), two ibus cache steps, three
 // systemctl steps, list-engine, two gsettings sets, engine activation.
-const installCallCount = 10
+const installCallCount = 12
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did
@@ -578,6 +607,7 @@ type corruptSwitchCase struct {
 	plant        string
 	wantSources  string
 	wantSwitch   string
+	wantSwitchBw string
 	wantFallback bool
 }
 
@@ -589,24 +619,36 @@ func corruptSwitchCases() map[string]corruptSwitchCase {
 			plant:        `{"sources":"garbage"}`,
 			wantSources:  fallbackSources,
 			wantSwitch:   fallbackSwitchBindings, // field absent → distro default
+			wantSwitchBw: fallbackSwitchBindingsBackward,
 			wantFallback: true,
 		},
 		"unparsable": {
 			plant:        "\x00not json",
 			wantSources:  fallbackSources,
 			wantSwitch:   fallbackSwitchBindings,
+			wantSwitchBw: fallbackSwitchBindingsBackward,
 			wantFallback: true,
 		},
 		"switch field absent (pre-batch JSON)": {
 			plant:        `{"sources":"` + ownerSources + `"}`,
 			wantSources:  ownerSources, // valid sources restore VERBATIM
 			wantSwitch:   fallbackSwitchBindings,
+			wantSwitchBw: fallbackSwitchBindingsBackward,
 			wantFallback: true,
 		},
 		"switch field garbage": {
 			plant:        `{"sources":"` + ownerSources + `","switch_input_source":"garbage"}`,
 			wantSources:  ownerSources,
 			wantSwitch:   fallbackSwitchBindings,
+			wantSwitchBw: fallbackSwitchBindingsBackward,
+			wantFallback: true,
+		},
+		"backward field garbage": {
+			plant: `{"sources":"` + ownerSources + `","switch_input_source":"` + ownerSwitchBindings +
+				`","switch_input_source_backward":"garbage"}`,
+			wantSources:  ownerSources,
+			wantSwitch:   fallbackSwitchBindings,
+			wantSwitchBw: fallbackSwitchBindingsBackward,
 			wantFallback: true,
 		},
 	}
@@ -640,8 +682,9 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 			}
 
 			wantSets := map[string]string{
-				gsettingsKey:       tc.wantSources,
-				gsettingsKeySwitch: tc.wantSwitch,
+				gsettingsKey:               tc.wantSources,
+				gsettingsKeySwitch:         tc.wantSwitch,
+				gsettingsKeySwitchBackward: tc.wantSwitchBw,
 			}
 			for _, c := range uninstallCalls(t, f) {
 				if c.name != binGSettings || len(c.args) != 4 || c.args[0] != "set" {
