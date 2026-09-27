@@ -6,7 +6,13 @@ bin/
 # NOTE: no `dist/` entry here on purpose — dist/ holds tracked packaging
 # sources (systemd unit, plan 01-05), not build output.
 
+# goreleaser build output — .goreleaser.yaml redirects dist here so a
+# --clean run can never wipe the tracked dist/ packaging sources (04-03).
+.goreleaser-dist/
+
 # Test and coverage output
+e2e-report.txt
+perf-report.txt
 *.coverprofile
 coverage.out
 coverage.html
@@ -16,6 +22,9 @@ coverage.html
 .gocache/
 .gomodcache/
 
+# Python bytecode from the e2e AT-SPI helper runs
+__pycache__/
+
 # mise local overrides (mise.toml itself is tracked)
 .mise.local.toml
 
@@ -24,3 +33,6 @@ coverage.html
 .vscode/
 *.swp
 .DS_Store
+
+# go build output of the e2e stand (go build -o e2e ./test/e2e)
+/e2e

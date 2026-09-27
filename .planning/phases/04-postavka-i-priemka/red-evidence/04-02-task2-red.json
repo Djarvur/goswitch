@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/install/ -race -count=1 (transcribed to node-test TAP)",
+  "exitCode": 1,
+  "targetTest": "TestSelfcheck_AllGreen",
+  "failingTest": "TestSelfcheck_AllGreen",
+  "expected": "The six D-41 live steps print ok verdicts in order (version, component-visible, unit-active, engine-registered, config, input-source), the env-cache repair runs exactly once on a missing component, every red path prints FAIL with its fix hint, a missing config is green defaults, and the version verdict follows the ctlStatus seam",
+  "actual": "The stub Selfcheck returns nil and writes nothing: all 6 top-level selfcheck tests (11 subtests) fail on assertions — no transcript lines, no FAIL verdicts, no repair counting; all 15 pre-existing install tests pass",
+  "output": "not ok 1 - TestSelfcheck_AllGreen\nnot ok 2 - TestSelfcheck_ComponentRepair\nnot ok 3 - TestSelfcheck_ComponentRedAfterRepair\nnot ok 4 - TestSelfcheck_EachRedPath\nnot ok 5 - TestSelfcheck_EachRedPath/version:_daemon_not_answering\nnot ok 6 - TestSelfcheck_EachRedPath/unit_inactive\nnot ok 7 - TestSelfcheck_EachRedPath/engine_not_registered\nnot ok 8 - TestSelfcheck_EachRedPath/config_invalid:_path_and_parse_reason\nnot ok 9 - TestSelfcheck_EachRedPath/input_source_not_the_goswitch_owner\nnot ok 10 - TestSelfcheck_ConfigNoFileGreen\nnot ok 11 - TestSelfcheck_ConfigNoFileGreen/valid_explicit_config_is_green_with_its_path\nnot ok 12 - TestSelfcheck_StatusProbeSeam\nnot ok 14 - TestSelfcheck_StatusProbeSeam/reply_without_version=_is_red\nnot ok 15 - TestSelfcheck_StatusProbeSeam/healthy_reply_is_green\n# tests 14\n# pass 0\n# fail 14"
+}

@@ -83,7 +83,7 @@ func runKill9Survive(ctx context.Context, s *stand) error {
 			return err
 		}
 	}
-	registrations := s.countSub("component registered")
+	registrations := s.countSub(componentRegisteredMark)
 
 	if err := s.killAndType(ctx); err != nil {
 		_ = s.closeEntrySurface(ctx, kind)
@@ -126,7 +126,7 @@ func (s *stand) respawnAndWait(ctx context.Context, registrations int) error {
 	if err := s.startDaemon(); err != nil {
 		return err
 	}
-	if err := s.waitForNew(ctx, "component registered", registrations+1, respawnWait); err != nil {
+	if err := s.waitForNew(ctx, componentRegisteredMark, registrations+1, respawnWait); err != nil {
 		return fmt.Errorf("INTEG-05 respawn registration: %w", err)
 	}
 
@@ -162,6 +162,20 @@ func (s *stand) kill9Oracle(ctx context.Context, kind surfaceKind, charsBefore i
 				out, got, len(kill9Text))
 		}
 
+		return nil
+	case surfaceChromium:
+		// Driver-managed surface (surface.go): resilience cases stay on the
+		// entry surfaces.
+		return nil
+	case surfaceGnomeTextEditor:
+		// Driver-managed surface (surface.go): same as chromium — resilience
+		// cases stay on the entry surfaces.
+		return nil
+	case surfaceGedit:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return nil
+	case surfaceChromiumX11:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
 		return nil
 	}
 

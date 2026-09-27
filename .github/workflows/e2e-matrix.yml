@@ -1,17 +1,36 @@
-# e2e-matrix — живая YAML-матрица v1 на столе владельца (D-19, TEST-04).
+# e2e-matrix — живая YAML-матрица на столе владельца (D-19, TEST-04).
 #
-# Прогоняет полный корпус D-18 (16 кейсов, zenity + chromium +
-# gnome-text-editor) той же mise-задачей, что и локальный цикл:
-# `mise run e2e-matrix` (D-09 — CI вызывает ровно те же задачи, что и
-# владелец; прецедент pr-sanity.yml). Отчёт дублируется в e2e-report.txt
-# и выгружается артефактом при любом исходе (if: always()).
+# По умолчанию прогоняет матрицу v3 (04-05: superset v2 — gedit +
+# chromium-x11); path-инпут сохраняет регрессии (явное указание файла
+# v1/v2 запускает mise-задачу v1/v2). Задачи прогона — те же, что и
+# локальный цикл (D-09 — CI вызывает ровно те же задачи, что и владелец;
+# прецедент pr-sanity.yml). Отчёт дублируется в e2e-report.txt и
+# выгружается артефактом при любом исходе (if: always()).
 #
-# Триггер — ТОЛЬКО workflow_dispatch, сознательно (T-02-07-01). Раннер
-# живёт ВНУТРИ графической сессии владельца, стенд печатает на живом
-# столе: событие из форка или ветки никогда не должно уметь его запустить.
-# Диспатчить могут только роли с правом write.
+# ДВОЙНОЙ ПРОГОН — гейт D-48 (план 04-06): «Матрица зелёная дважды
+# подряд на нетронутой сессии» = прогон №1 → сразу прогон №2, БЕЗ
+# пересоздания сессии и ручного вмешательства между прогонами. Суть
+# проверки в том, что первый прогон НЕ портит состояние для второго —
+# любой шаг очистки/пересоздания между прогонами подменил бы проверку.
+# Любое падение любого прогона краснит job (exit ≠ 0).
 #
-# Один прогон за раз (Pitfall 8): concurrency-группа e2e-gnome БЕЗ
+# Свежесть сессии — вход fresh_session (bool, default false): true
+# включает префлайт, сверяющий возраст GNOME-сессии раннера (loginctl)
+# с порогом 30 минут; превышение = падение job с подсказкой перелогина
+# (операционализация «нетронутой сессии», research A8/Open Question 2 —
+# заявленная свежесть обязана сверяться с фактом, T-04-06-01). Процедура
+# гейта владельца — docs/ci-runner.md («D-48 double-run gate»): механика
+# двойного прогона доказывается на текущей сессии (fresh_session=false);
+# формальный свежесессионный прогон — шаг приёмки фазы.
+#
+# Триггеры — workflow_dispatch + ночной schedule (G-4-2, план 04-09).
+# Соображение T-02-07-01 в силе: push/PR-триггеров по-прежнему нет —
+# событие из форка или ветки никогда не должно уметь запустить раннер,
+# живущий ВНУТРИ графической сессии владельца (стенд печатает на живом
+# столе). Schedule исполняет ТОЛЬКО определение защищённого default
+# branch (изменения через PR); диспатч — право ролей с write.
+#
+# Один прогон job'а за раз (Pitfall 8): concurrency-группа e2e-gnome БЕЗ
 # cancel-in-progress — второй диспатч встаёт в очередь, а не отменяет
 # бегущий; два стенда, печатающие на одном столе, запрещены планом.
 #
@@ -19,9 +38,31 @@
 # systemd user unit внутри графической сессии).
 name: e2e-matrix
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      matrix:
+        description: "matrix file to run (v3 default; v1/v2 keep the regression paths)"
+        default: test/e2e/cases/matrix-v3.yaml
+        type: string
+      fresh_session:
+        description: "D-48 gate: set true only after owner relogin"
+        default: false
+        type: boolean
+  schedule:
+    # cron в UTC. Ночной автономный гейт D-48 (G-4-2, план 04-09).
+    # Scheduled workflows исполняют ОПРЕДЕЛЕНИЕ default branch — триггер
+    # активируется после мержа фазы в main; до мержа гейт диспатчит
+    # machine-side диспетчер из docs/ci-runner.md («Автономный ночной
+    # гейт (D-48 v2)») через D48_REF. Слот выровнен под root-таймер 03:50
+    # machine-local (UTC+3) из документации — ~20 минут после
+    # autologin-входа, внутри 30-минутного окна свежести. Schedule
+    # подразумевает fresh_session-семантику (префлайт ниже).
+    - cron: "10 1 * * *"
 
 # Минимальные права токена (T-02-07-01); секретов workflow не использует.
+# contents: write здесь не появляется — release.yml один владеет записью
+# (греп-гейт 04-03, T-04-06-03).
 permissions:
   contents: read
 
@@ -31,13 +72,42 @@ concurrency:
 
 jobs:
   e2e:
-    name: matrix v1 (live GNOME session)
+    name: matrix (live GNOME session)
     runs-on: [self-hosted, gnome]
-    # Watchdog кейса — 180 с; 16 кейсов + сборка демона укладываются
-    # с запасом. Потолок защищает стол от зависшего прогона.
+    # Watchdog кейса — 180 с; ДВА прогона 31 кейса v3 + сборка демона
+    # укладываются с запасом. Потолок защищает стол от зависшего прогона.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      # idle-desktop preflight (G-4-2, план 04-09): вопрос «занят ли стол»
+      # решается ДО fresh-session-префлайта и установки инструментов —
+      # /usr/bin/python3 + python3-gi машинные, ставить mise ради
+      # вердикта о занятости не нужно. Один и тот же AT-SPI-примитив
+      # (focused-app, фреймы-до-спуска) отвечает за 31 кейс матрицы и за
+      # быстрый вердикт: сфокусированный фрейм = реальное окно держит
+      # стол. Исполняется для ВСЕХ триггеров (без if:): занятый стол
+      # роняет диспатч БЫСТРО и внятно вместо 31 непонятного
+      # witness-падения; для schedule — мягкий режим (warning + пропуск
+      # прогонов, нейтральный ночной исход), диспатч сохраняет жёсткий
+      # гейт. Триггер через env GITHUB_EVENT_NAME — канон WR-04, без
+      # ${{ }}-интерполяции в shell.
+      - name: idle-desktop preflight (G-4-2)
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -eu
+          app=$(/usr/bin/python3 test/e2e/focus_helper.py focused-app)
+          if [ "$app" != "(none)" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+              echo "::warning::desktop busy: ${app} holds focus — the matrix needs an idle desktop (scheduled soft mode: matrix runs skipped, nightly outcome stays neutral)"
+              echo "D48_SKIP=1" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "::error::desktop busy: ${app} holds focus — the matrix needs an idle desktop"
+            exit 1
+          fi
+          echo "desktop idle"
 
       # Официальный инсталлятор mise (прецедент pr-sanity: mise.run —
       # каноническая точка раздачи jdx/mise; contents: read, без секретов).
@@ -52,14 +122,105 @@ jobs:
       - name: Install tools from mise.toml
         run: mise install
 
-      # Локальный и CI-прогон — одна и та же задача (D-09).
-      # Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
-      - name: e2e matrix v1
-        run: mise run e2e-matrix
+      # Префлайт свежести сессии (D-48, A8): при fresh_session=true ИЛИ
+      # ночном schedule (G-4-2 — schedule подразумевает fresh_session-
+      # семантику) сверяем ФАКТИЧЕСКИЙ возраст графической сессии раннера
+      # с порогом — заявка свежести без проверки была бы декларацией, а
+      # не гейтом.
+      - name: fresh-session preflight (D-48)
+        if: inputs.fresh_session == true || github.event_name == 'schedule'
+        env:
+          # 30 минут с момента входа — порог «нетронутой сессии» (D-48);
+          # смена порога — осознанное решение владельца через эту константу.
+          D48_MAX_SESSION_AGE_SEC: 1800
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -eu
+          # Единая точка отказа трёх проверок ниже (канон WR-04 — триггер
+          # приходит через env, не интерполяцией): schedule — нейтральный
+          # ночной исход (мягкий режим: warning + D48_SKIP, прогоны
+          # пропущены — машинная настройка ещё не применена), диспатч —
+          # прежний жёсткий гейт. Тексты причин без изменений семантики.
+          preflight_fail() {
+            if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+              echo "::warning::${1} (scheduled soft mode: matrix runs skipped, nightly outcome stays neutral)"
+              echo "D48_SKIP=1" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "::error::${1}"
+            exit 1
+          }
+          sid=""
+          while read -r id _uid name _rest; do
+            [ "$name" = "$USER" ] || continue
+            case "$(loginctl show-session "$id" -p Type --value 2>/dev/null)" in
+              wayland|x11) sid="$id"; break ;;
+            esac
+          done < <(loginctl list-sessions --no-legend 2>/dev/null)
+          if [ -z "$sid" ]; then
+            preflight_fail "no graphical session for $USER — owner relogin required (D-48)"
+          fi
+          # loginctl отдаёт момент входа свойством Timestamp в ЧЕЛОВЕЧЕСКОМ
+          # формате (живая находка 04-06: `-p Since` свойством не является,
+          # usec-значения show-session не отдаёт) — парсим GNU date.
+          since=$(loginctl show-session "$sid" -p Timestamp --value)
+          ts_epoch=$(date -d "$since" +%s 2>/dev/null || true)
+          if [ -z "$ts_epoch" ]; then
+            preflight_fail "cannot parse session start time (${since}) — owner relogin required (D-48)"
+          fi
+          age_sec=$(( $(date +%s) - ts_epoch ))
+          echo "session $sid since: $since (age ${age_sec}s, threshold ${D48_MAX_SESSION_AGE_SEC}s)"
+          if [ "$age_sec" -gt "$D48_MAX_SESSION_AGE_SEC" ]; then
+            preflight_fail "session age ${age_sec}s > ${D48_MAX_SESSION_AGE_SEC}s — owner relogin required (D-48)"
+          fi
+
+      # Локальный и CI-прогон — одна и та же задача (D-09). Path-инпут
+      # выбирает задачу: v1-файл — v1-регрессия, v2 — v2, иначе v3
+      # (дефолт). Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
+      # Инпут идёт через env, не через интерполяцию в shell — каноническая
+      # защита от expression-injection (WR-04): раннер живёт в графической
+      # сессии владельца, и `$(…)` в диспатч-инпуте не должен исполняться.
+      # ПРОГОН №1 из двух (D-48). Гейт мягкого режима (G-4-2): префлайты
+      # поставили D48_SKIP=1 (занятый стол/несвежая сессия на schedule) —
+      # прогоны пропущены, job нейтрально зелёный. Падение САМИХ прогонов
+      # мягкий режим не ловит: при пройденных префлайтах любой красный
+      # прогон краснит job при любом триггере (ночной красный =
+      # регрессионный сигнал, не шум).
+      - name: matrix v3 run #1 (${{ inputs.matrix }})
+        if: env.D48_SKIP != '1'
+        env:
+          MATRIX: ${{ inputs.matrix }}
+        run: |
+          if [ "$MATRIX" = "test/e2e/cases/matrix-v1.yaml" ]; then
+            mise run e2e-matrix
+          elif [ "$MATRIX" = "test/e2e/cases/matrix-v2.yaml" ]; then
+            mise run e2e-matrix-v2
+          else
+            mise run e2e-matrix-v3
+          fi
+
+      # ПРОГОН №2 СРАЗУ после №1 (D-48): между прогонами НЕТ шагов
+      # очистки/пересоздания/сброса окружения — проверяется, что первый
+      # прогон не портит состояние для второго (T-04-06-02); вмешательство
+      # между прогонами = подмена проверки D-48.
+      - name: matrix v3 run #2 (${{ inputs.matrix }})
+        if: env.D48_SKIP != '1'
+        env:
+          MATRIX: ${{ inputs.matrix }}
+        run: |
+          if [ "$MATRIX" = "test/e2e/cases/matrix-v1.yaml" ]; then
+            mise run e2e-matrix
+          elif [ "$MATRIX" = "test/e2e/cases/matrix-v2.yaml" ]; then
+            mise run e2e-matrix-v2
+          else
+            mise run e2e-matrix-v3
+          fi
 
       # Отчёт — даже с упавшего прогона: FAIL-строки и есть диагностика.
+      # Мягкий режим (G-4-2) пропускает и его: upload-artifact v4 упал бы
+      # на отсутствующем файле и окрасил нейтральный scheduled-прогон.
       - name: Upload e2e report
-        if: always()
+        if: always() && env.D48_SKIP != '1'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-report

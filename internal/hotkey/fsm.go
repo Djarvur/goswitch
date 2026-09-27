@@ -10,8 +10,9 @@ import "time"
 // Phase 3.
 const DefaultWindow = 300 * time.Millisecond
 
-// KeyvalShiftR is the IBus keyval of the right Shift key
-// (/usr/include/ibus-1.0/ibuskeysyms.h — verified verbatim).
+// KeyvalShiftR is the IBus keyval of the right Shift key — the documented
+// default tap key of NewFSM (/usr/include/ibus-1.0/ibuskeysyms.h — verified
+// verbatim).
 const KeyvalShiftR = 0xffe2
 
 // MaxTaps caps a series: a fourth tap inside the window stays at three so
@@ -48,18 +49,45 @@ type Event = any
 // FSM is the Right Shift tap state machine: pure and deterministic — no
 // goroutines, no real clock, no channels. The adapter feeds key events with
 // injected timestamps and re-enters TimerExpired when its window timer
-// fires.
+// fires. The series key is configurable through the constructor (D-35:
+// mechanics only — the corpus of fsm_test.go is the executed ADR-002 and
+// its expectations are untouchable).
 type FSM struct {
-	window  time.Duration
-	taps    int
-	held    bool
-	sawKey  bool
-	lastTap time.Duration
+	window    time.Duration
+	tapKeyval uint32
+	taps      int
+	held      bool
+	sawKey    bool
+	lastTap   time.Duration
 }
 
-// NewFSM returns an FSM with the given tap disambiguation window.
-func NewFSM(window time.Duration) *FSM {
-	return &FSM{window: window}
+// NewFSM returns an FSM deciding tap series of the given key inside the
+// given disambiguation window.
+func NewFSM(window time.Duration, tapKeyval uint32) *FSM {
+	return &FSM{window: window, tapKeyval: tapKeyval}
+}
+
+// SetWindow replaces the disambiguation window — the hot-reload seam
+// (CONF-02, Pitfall 8): the new window governs series armed AFTER the
+// change (gap and expiry checks), while an adapter timer already armed
+// keeps its own deadline; the stale-timer guard of expired absorbs the
+// difference, so a reload never re-arms or cancels a live decision.
+func (f *FSM) SetWindow(window time.Duration) {
+	f.window = window
+}
+
+// SetTapKey replaces the series key — the hot-reload seam of the config's
+// hotkeys.tap_key (CR-01/CONF-02): a CHANGED key disarms any in-flight
+// series (its taps belonged to the replaced key and must never decide as
+// the new key's), while setting the same key is a no-op that keeps the
+// series — the Pitfall-8 window precedent adapted to the key identity.
+// The adapter's already-armed timer is absorbed by expired's stale guard.
+func (f *FSM) SetTapKey(tapKeyval uint32) {
+	if tapKeyval == f.tapKeyval {
+		return
+	}
+	f.tapKeyval = tapKeyval
+	f.disarm()
 }
 
 // Feed advances the machine by one event at the given injected time and
@@ -80,10 +108,11 @@ func (f *FSM) Feed(ev Event, now time.Duration) []Action {
 	return nil
 }
 
-// keyPress arms a Shift_R hold or, for any other key, either marks modifier
-// use (while held) or silently cancels a pending series.
+// keyPress arms a hold of the configured tap key or, for any other key,
+// either marks modifier use (while held) or silently cancels a pending
+// series.
 func (f *FSM) keyPress(e KeyPress) {
-	if e.Keyval == KeyvalShiftR {
+	if e.Keyval == f.tapKeyval {
 		f.held = true
 		f.sawKey = false
 
@@ -97,10 +126,10 @@ func (f *FSM) keyPress(e KeyPress) {
 	f.taps = 0
 }
 
-// keyRelease routes Shift_R releases through the tap logic; any other
+// keyRelease routes tap-key releases through the tap logic; any other
 // release between taps silently cancels a pending series.
 func (f *FSM) keyRelease(e KeyRelease, now time.Duration) {
-	if e.Keyval == KeyvalShiftR {
+	if e.Keyval == f.tapKeyval {
 		f.releaseShift(now)
 
 		return

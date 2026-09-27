@@ -3,6 +3,10 @@
 [tools]
 go = "1.23"
 golangci-lint = "2"
+# Release tool (D-38) — CI/билд-инструмент, НЕ зависимость демона (go.mod не
+# меняется). Пин здесь — единый источник версий локально и в CI (D-09/D-11,
+# Pitfall 10): release.yml ставит его тем же `mise install`.
+goreleaser = "2.18.1"
 
 [env]
 # Deterministic build/test paths
@@ -49,3 +53,103 @@ run = "go run ./test/e2e -case kill9-survive"
 [tasks.e2e-d01]
 description = "e2e: D-01 probe matrix — source-switch experiment, appends verdicts to docs/adr/d01-experiment-log.md (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case d01-probe"
+
+[tasks.e2e-chromium-smoke]
+description = "e2e: 02-02 chromium surface smoke — fresh-instance driver proof (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case chromium-smoke"
+
+[tasks.e2e-gte-smoke]
+description = "e2e: 02-02 gnome-text-editor surface smoke — standalone-instance driver proof (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case gte-smoke"
+
+[tasks.e2e-word]
+description = "e2e: 02-03 word-correction tracer — ghbdtn→привет in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-en-ru"
+
+[tasks.e2e-word-space]
+description = "e2e: 02-03 word-after-space D-13 geometry — ghbdtn␠→привет␠ in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-after-space"
+
+[tasks.e2e-word-ru]
+description = "e2e: 02-04 RU→EN correction — flip→RU typing привет→double tap→ghbdtn in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-ru-en"
+
+[tasks.e2e-word-mixed]
+description = "e2e: 02-04 mixed word D-16 — gfbпривет untouched after double tap in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case word-mixed"
+
+[tasks.e2e-phrase]
+description = "e2e: 03-01 phrase tracer — ghbdtn ghbdtn→привет привет by triple Right Shift in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case phrase-en-ru"
+
+[tasks.e2e-phrase-mixed]
+description = "e2e: 03-01 mixed phrase D-26 — ghbdtn привет→привет привет by triple Right Shift in zenity (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case phrase-mixed"
+
+[tasks.e2e-ladder-chromium]
+description = "e2e: 02-05 ladder actual level in chromium — ghbdtn→привет, level+verify-after pinned from -debug log (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case ladder-chromium"
+
+[tasks.e2e-reset-escape]
+description = "e2e: 02-05 CORR-09 reset by Escape — ghbdtn kept untouched, empty-buffer refusal in the log (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case reset-escape"
+
+[tasks.e2e-matrix]
+description = "e2e: 02-06 YAML case matrix v1 — per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v1.yaml"
+
+[tasks.e2e-matrix-v2]
+description = "e2e: 03-07 YAML case matrix v2 — full phase-3 breadth (phrases/selection/combo/reload/MACR), per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v2.yaml"
+
+[tasks.e2e-matrix-v3]
+description = "e2e: 04-06 YAML case matrix v3 — superset v2 (gedit + chromium-x11, D-48 double-run base), per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v3.yaml"
+
+[tasks.e2e-select-smoke]
+description = "e2e: 03-03 selection spike — anchor push + actual replacement rung pinned per surface (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case select-smoke"
+
+[tasks.e2e-select-correct]
+description = "e2e: 03-03 selection correction — double Right Shift under ctrl+a selection converts the selected range in gnome-text-editor (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case select-correct"
+
+[tasks.e2e-select-clipboard]
+description = "e2e: 03-03 clipboard rung — daemon -config spawn with clipboard_rung on + live wl-copy/wl-paste round-trip through the daemon's client (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case select-clipboard"
+
+[tasks.e2e-combo]
+description = "e2e: 03-04 combo word-layout — Shift+RightCtrl corrects ghbdtn→привет then flips the mode, order pinned from -debug log (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case combo-word-layout"
+
+[tasks.e2e-layout-single]
+description = "e2e: 03-04 SWCH-01 — single Right Shift flips the internal mode en→ru→en, daemon mode records the only oracle (D-34) (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case layout-single"
+
+[tasks.e2e-super-space]
+description = "e2e: 03-04 SWCH-03 — native super+space leaves the daemon alive: name owner kept, correction works after (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case super-space-alive"
+
+[tasks.e2e-macr-probe]
+description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case macr-probe"
+
+[tasks.e2e-macr-super-letter]
+description = "e2e: 03-05 MACR-01 — super+x intercepted live as the Ctrl+x burst under -config, ibus relay pinned from the wire (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case macr-super-letter"
+
+[tasks.e2e-macr-per-app]
+description = "e2e: 03-05 per-app MACR — live a11y observer (A4) feeds macr.apps, interception under the matched focus; unavailable observer = documented degradation verdict (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case macr-per-app"
+
+[tasks.e2e-ctl]
+description = "e2e: 03-06 INST-02 — goswitchctl status/reload/correct against a live -config daemon, last-good error visible in status (D-32) (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case ctl-smoke"
+
+[tasks.e2e-install-cycle]
+description = "e2e: 04-01 INST-01 — goswitchctl install → correction ghbdtn→привет through the UNIT daemon → status → reinstall → uninstall → desktop restored to snapshot (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case install-cycle"
+
+[tasks.e2e-perf]
+description = "e2e: 04-04 INST-03 — dedicated perf run: 40 homogeneous combo hot-case repeats (correct+flip chord), resident AT-SPI event witness, p50/p95/p99 + VmRSS/VmHWM report, budget gate exit≠0, perf-report.txt (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case perf"

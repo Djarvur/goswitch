@@ -28,11 +28,19 @@ var errNotPrimaryOwner = errors.New("another instance owns the goswitch name")
 var errBusClosed = errors.New("ibus bus connection closed")
 
 // Config carries everything Run needs: the component identity, the engines
-// to register and the optional event seam.
+// to register and the optional seams.
 type Config struct {
 	Component Component
 	Engines   []EngineDesc
 	Handler   EventHandler // may be nil — observer-only engine.
+
+	// PostRegister is the optional self-reactivation seam (SY8): invoked
+	// synchronously after EVERY successful RegisterComponent — generation 0
+	// and every reconnect generation. nil = no-op. It must be cheap and
+	// non-fatal: serve runs it inline before waitBusLoss, so a hang here
+	// stalls the generation (the activate package's 10 s per-call timeout
+	// bounds it).
+	PostRegister func(ctx context.Context, generation int)
 }
 
 // signalBufferSize keeps the registered signal channel from dropping into
@@ -120,6 +128,9 @@ func serve(ctx context.Context, cfg *Config, generation int) error {
 		slog.Info("component registered", "engines", len(cfg.Engines))
 	} else {
 		slog.Info("re-registered", "generation", generation, "engines", len(cfg.Engines))
+	}
+	if cfg.PostRegister != nil {
+		cfg.PostRegister(ctx, generation)
 	}
 
 	return waitBusLoss(ctx, conn)

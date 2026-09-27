@@ -1,0 +1,3 @@
+## Deferred Items
+
+- combo-word-layout flaked twice on its FINAL post-reload single-tap assertion (2026-09-16, during the 04-04 diagnostic runs): after closeZenity no input context holds focus on the desktop, so the tap never reaches the engine and the expected second `"mode","to":"en"` record never lands. The case is historically green; the failure needs an unusual desktop focus state. Out of scope for 04-04 — the perf case avoids the class entirely (its flip-back taps run BEFORE the surface close). Candidate remedy if it recurs: hold the surface open across the post-reload tap, or re-focus a stand surface first.

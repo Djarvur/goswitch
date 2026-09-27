@@ -26,10 +26,29 @@ const (
 	KeyTab       = 0xff09
 	KeyReturn    = 0xff0d
 	KeyEscape    = 0xff1b
-	KeyShiftL    = 0xffe1
-	KeyShiftR    = 0xffe2
-	KeyControlL  = 0xffe3
-	KeySpace     = 0x020
+	// KeyKPEnter is the keypad variant of Enter (XK_KP_Enter) — a CORR-09
+	// reset trigger in its own right: the numpad Enter must clear the buffer
+	// exactly like the main-row one (plan 02-05).
+	KeyKPEnter  = 0xff8b
+	KeyShiftL   = 0xffe1
+	KeyShiftR   = 0xffe2
+	KeyControlL = 0xffe3
+	// KeyControlR is the right Ctrl key — the default combo key of the
+	// word-layout gesture (SWCH-02/D-36; ibuskeysyms.h:191
+	// "#define IBUS_KEY_Control_R 0xffe4", verified verbatim — never from
+	// memory, the 02-05 class trap). The resolved binding itself lives in
+	// the pure hotkey package as KeyvalCtrlR.
+	KeyControlR = 0xffe4
+	// KeySuperL/KeySuperR are the Super/Windows modifier keysyms
+	// (ibuskeysyms.h "#define IBUS_KEY_Super_L 0xffeb" / Super_R 0xffec,
+	// verified verbatim) — the press/release pair the MACR layer tracks for
+	// its consumed-upstream detect (ADR-005 b.1/b.2).
+	KeySuperL = 0xffeb
+	KeySuperR = 0xffec
+	KeySpace  = 0x020
+	// KeyV is the Latin-1 'v' — the paste half of the clipboard rung's
+	// Ctrl+V forward burst (plan 03-03, D-28).
+	KeyV = 0x076
 )
 
 // modsMask isolates the low modifier byte of the IBus state word; the

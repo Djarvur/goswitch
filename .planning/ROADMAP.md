@@ -14,8 +14,8 @@
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: ADR-пакет и каркас IBus-движка** - Архитектурные решения по всем развилкам + работающий engine на godbus: регистрация, перехват клавиш, устойчивость к рестартам и паникам (M0+M1) (completed 2026-09-11)
-- [ ] **Phase 2: Коррекция слова EN↔RU** - Двойной Right Shift исправляет последнее слово в любой раскладке с сохранением регистра, точно по диапазону; e2e-матрица v1 зелёная (M2)
-- [ ] **Phase 3: Фразы, выделение, переключение и конфигурация** - Полный набор жестов коррекции, переключение раскладки, YAML-конфиг с hot reload и goswitchctl; e2e-матрица v2 зелёная (M3)
+- [x] **Phase 2: Коррекция слова EN↔RU** - Двойной Right Shift исправляет последнее слово в любой раскладке с сохранением регистра, точно по диапазону; e2e-матрица v1 зелёная (M2) (completed 2026-09-15)
+- [x] **Phase 3: Фразы, выделение, переключение и конфигурация** - Полный набор жестов коррекции, переключение раскладки, YAML-конфиг с hot reload и goswitchctl; e2e-матрица v2 зелёная (M3) (completed 2026-09-15)
 - [ ] **Phase 4: Поставка и приёмка** - Установка без root, производительность (<50 мс / <50 МБ), полная матрица дважды зелёная, ручная приёмка владельца (M4)
 
 ## Phase Details
@@ -70,7 +70,32 @@ Plans:
   4. Буфер очищается по Enter, Tab, Escape и смене фокуса окна — поведение подтверждено эмпирически e2e-кейсами на клиентских классах (GTK/Chromium)
   5. e2e-матрица v1 зелёная: YAML-кейсы «ввод → ожидание» (gnome-text-editor + Chromium), отчёт PASS/FAIL по кейсам, код выхода ≠ 0 при падении
 
-**Plans**: TBD
+**Plans**: 7/7 planned
+Plans:
+**Wave 1**
+
+- [x] 02-01-PLAN.md — Чистый пакет internal/correct: буфер-фраза/направление/конверсия/сверка/арифметика лестницы обоих уровней (headless корпус) — CORR-04, CORR-05, CORR-07
+- [x] 02-02-PLAN.md — Поверхности стенда: драйверы chromium + gnome-text-editor (fixtures, префлайт, smoke-кейсы) — TEST-04
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 02-03-PLAN.md — Трассер: двойной Right Shift исправляет ghbdtn→привет сквозным конвейером (буфер→направление→сверка→лестница ур.1) + слово после пробела живьём (D-13) — CORR-01, CORR-07
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 02-04-PLAN.md — Флип-режим EN↔RU (Single→флип, потребление+коммит кириллицы, script-true буфер во всех ветвях), RU→EN-коррекция, смешанное слово нетронуто (D-16) — CORR-01, CORR-04
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 02-05-PLAN.md — Лестница ур.2 (Backspace×N по рунам), verify-after, триггеры сброса буфера (CORR-09), живой ladder-chromium на драйвере 02-02 — CORR-07, CORR-09
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 02-06-PLAN.md — YAML-матрица v1: полный словесный набор D-18 (16 кейсов, изоляция кейса свежим демоном, три регистра на gnome-text-editor) — TEST-04
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 02-07-PLAN.md — Self-hosted GNOME-раннер (systemd user unit, ярлык gnome) + workflow e2e-matrix (dispatch-only, bootstrap-регистрация), первый зелёный CI-прогон — TEST-04, D-19
 
 ### Phase 3: Фразы, выделение, переключение и конфигурация
 
@@ -86,7 +111,32 @@ Plans:
   4. Все горячие клавиши, таймауты тапов и параметры задаются в YAML-конфиге (схема биндингов Caramba-совместима по мере возможности); изменения применяются без перезапуска демона (hot reload); `goswitchctl` показывает статус, перечитывает конфиг и корректирует принудительно
   5. e2e-матрица v2 зелёная во всей широте (фразы, выделение, смешанный текст, регистры, разные приложения); MACR-01 реализован — замена Super+Буква → Ctrl+Буква по механизму ADR-005 (в v1, внутри goswitch — решение D-12)
 
-**Plans**: TBD
+**Plans**: 7/7 planned
+Plans:
+**Wave 1**
+
+- [x] 03-01-PLAN.md — Трассер: тройной тап исправляет фразу (живой e2e) + run-конвейер смешанного текста D-22..D-24 с золотым корпусом + кап Backspace D-27 — CORR-02, CORR-06
+- [x] 03-02-PLAN.md — internal/config: YAML-схема (hotkeys/timeouts/correction/macr), strict-декод D-33, fsnotify hot reload + last-good D-32, -config у демона, docs/CONFIG.md + таблица Caramba — CONF-01..03, SWCH-04
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 03-03-PLAN.md — Выделение: anchorPos-seam, спайк фактической ступени per-surface, геометрия в обе стороны D-30, clipboard-ступень opt-in D-28/D-29 — CORR-03
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 03-04-PLAN.md — Комбо Shift+RightCtrl (слово→флип D-36), живое потребление конфиг-снапшотов (hot reload CONF-02), layout-single/super-space кейсы D-34 — SWCH-01..03, CONF-02
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 03-05-PLAN.md — MACR-01 по ADR-005: спайк доставки Super+Буква, перехват Super→Ctrl, consumed-upstream, per-app appid с деградацией — MACR-01
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 03-06-PLAN.md — internal/ctlsvc (session bus org.djarvur.goswitch) + cmd/goswitchctl status/reload/correct, last-good видимость D-32 — INST-02
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 03-07-PLAN.md — Матрица v2 полной широты (шаги select/combo/reload, три поверхности, живой стол + раннер green106) — приёмка M3, пере-доказывает CORR-02/03/06, SWCH-01..03, CONF-02, MACR-01, INST-02
 
 ### Phase 4: Поставка и приёмка
 
@@ -101,7 +151,34 @@ Plans:
   3. Производительность подтверждена измерением: p95 реакции на горячую клавишу < 50 мс (таймстемпы ydotool→AT-SPI в e2e-отчёте), потребление памяти демона < 50 МБ
   4. Ручная приёмка владельца пройдена (одна сессия по §7.2 спеки); README и инструкция установки опубликованы
 
-**Plans**: TBD
+**Plans**: 7/7 planned
+Plans:
+
+- [x] 04-09-PLAN.md
+
+- [x] 04-08-PLAN.md
+
+**Wave 1**
+
+- [x] 04-01-PLAN.md — Трассер: internal/install + goswitchctl install/uninstall («один хозяин», env-cache, полный откат) + живой install-cycle — INST-01, D-39/D-40/D-42
+- [x] 04-05-PLAN.md — Матрица v3: спайки + драйверы gedit (GTK3) и chromium-x11, словарь/префлайт, matrix-v3.yaml (superset v2, v2 заморожена) — D-47, критерий №2
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 04-02-PLAN.md — goswitchctl selfcheck (шесть шагов D-41, ремонт env-cache) + прошивка версии (var version, -version, status version=) — INST-01, D-37/D-41
+- [x] 04-04-PLAN.md — Perf-приёмка: резидентный событийный свидетель AT-SPI, perf-кейс N=40 комбо-аккорда, p50/p95/p99 + VmHWM, бюджет-гейт exit≠0 — INST-03, D-43/D-44/D-45
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 04-03-PLAN.md — Релизный конвейер: .goreleaser.yaml (дефолтная прошивка), release.yml (тег v*, contents:write только здесь), goreleaser-пин mise — INST-01, D-37/D-38
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 04-06-PLAN.md — Двойной прогон D-48: mise e2e-matrix-v3 + workflow (два прогона подряд, fresh_session-префлайт loginctl) + процедура в docs/ci-runner.md — критерий №2
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 04-07-PLAN.md — Двуязычный README + perf-таблица (D-50/D-46), docs/ACCEPTANCE.md (D-49), сверка WINDOWS-ledger, релиз v1.0.0 (тег → ассеты → каналы; гейт T3 требует доказанного двойного прогона 04-06) — INST-01, критерий №4
 
 ## Progress
 
@@ -111,9 +188,9 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. ADR-пакет и каркас IBus-движка | 5/5 | Complete    | 2026-09-11 |
-| 2. Коррекция слова EN↔RU | 0/? | Not started | - |
-| 3. Фразы, выделение, переключение и конфигурация | 0/? | Not started | - |
-| 4. Поставка и приёмка | 0/? | Not started | - |
+| 2. Коррекция слова EN↔RU | 7/7 | Complete    | 2026-09-15 |
+| 3. Фразы, выделение, переключение и конфигурация | 7/7 | Complete    | 2026-09-15 |
+| 4. Поставка и приёмка | 9/9 | In Progress|  |
 
 ## Coverage
 

@@ -1,0 +1,65 @@
+# Release pipeline for goswitch (D-38, plan 04-03).
+#
+# goreleaser builds and publishes releases: GitHub Releases assets (one
+# tar.gz carrying BOTH binaries — goswitchctl install needs the pair side
+# by side — plus checksums.txt) and the `go install
+# github.com/Djarvur/goswitch/cmd/goswitchd@vX.Y.Z` channel (the module
+# as-is; no config needed here).
+#
+# goreleaser is a CI/build TOOL, not a daemon dependency — go.mod/go.sum
+# must never change because of it (D-38; the runtime stays
+# "stdlib + godbus + minimum", Pitfall 10 / T-04-03-03: the tool version
+# is pinned in mise.toml [tools], CI installs it with `mise install`).
+#
+# Version stamping (D-37) rides goreleaser's DEFAULT ldflags — they inject
+# -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date=
+# {{.Date}} -X main.builtBy=goreleaser — so there is deliberately NO
+# custom ldflags field here: cmd/goswitchd's version/commit/date vars
+# (plan 04-02) are the stamping receivers. `go install` builds skip the
+# stamping and honestly report the "dev" fallback (D-37).
+#
+# Discretion decisions (CONTEXT A7, owner delegated to planner):
+#   - linux/amd64 only for v1 — the target platform is Ubuntu 24.04 amd64;
+#     add arm64 here (+ nothing else) on owner request.
+#   - tag scheme is semver, first release v1.0.0 (tag is pushed by plan
+#     04-07 after the green gates).
+#   - asset format: tar.gz + sha256 checksums (T-04-03-01).
+#
+# NOTE: dist is redirected from the default ./dist ON PURPOSE — ./dist in
+# this repo holds TRACKED packaging sources (dist/systemd/user/), which a
+# goreleaser --clean run would wipe. Build output lives in
+# .goreleaser-dist/ (gitignored).
+version: 2
+
+dist: .goreleaser-dist
+
+builds:
+  - id: goswitchd
+    main: ./cmd/goswitchd
+    binary: goswitchd
+    goos: [linux] # default is [darwin, linux, windows] — the daemon targets GNOME Wayland
+    goarch: [amd64] # default is [386, amd64, arm64] — +arm64 on owner request (A7)
+  - id: goswitchctl
+    main: ./cmd/goswitchctl
+    binary: goswitchctl
+    goos: [linux]
+    goarch: [amd64]
+
+archives:
+  - formats: [tar.gz] # discretion A7 (tar.gz vs bare binaries); default naming
+    # puts ALL builds of the platform into ONE archive — goswitchd and
+    # goswitchctl ship together (install resolves the daemon through
+    # dirname(os.Executable)).
+
+checksum:
+  name_template: "checksums.txt" # sha256 — the artifact-integrity channel (T-04-03-01)
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:"]
+
+release:
+  # GitHub Releases is goreleaser's default publish target under
+  # GITHUB_TOKEN — release.yml scopes contents:write to that workflow only
+  # (Pitfall 10 / T-04-03-02).

@@ -395,6 +395,20 @@ func (s *stand) readBackText(ctx context.Context, kind surfaceKind) string {
 		_ = s.pressKey(ctx, "Escape")
 
 		return fmt.Sprintf("(length-only oracle: chars=%d, err=%v)", after, err)
+	case surfaceChromium:
+		// Driver-managed surface (surface.go): readback goes through the
+		// focused-text bridge, not the entry-surface oracle.
+		return ""
+	case surfaceGnomeTextEditor:
+		// Driver-managed surface (surface.go): same as chromium — the
+		// focused-text bridge owns the readback.
+		return ""
+	case surfaceGedit:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return ""
+	case surfaceChromiumX11:
+		// Driver-managed surface (surface.go): same as chromium (04-05).
+		return ""
 	}
 
 	return ""
@@ -421,7 +435,7 @@ func appendJournalRow(probe, cmd, observed, verdict string) error {
 	}
 	defer f.Close() //nolint:errcheck // append-only evidence log; the row write's error is the one that matters
 	observed = strings.NewReplacer("|", "/").Replace(observed)
-	row := fmt.Sprintf("| %s | `%s` | %s | %s |\n", probe, cmd, observed, verdict)
+	row := fmt.Sprintf("| %s | %#q | %s | %s |\n", probe, cmd, observed, verdict)
 	if _, err := f.WriteString(row); err != nil {
 		return fmt.Errorf("append journal row: %w", err)
 	}

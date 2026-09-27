@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./test/e2e/ -race -count=1 -v",
+  "exitCode": 1,
+  "targetTest": "TestMatrixDecode_Valid",
+  "failingTest": "TestMatrixDecode_Valid",
+  "expected": "loadMatrixCases decodes the Pattern 5 corpus into 2 cases with exact field values (steps carry type/key/tap kinds, expect_text \"привет \" with trailing space, expect_level 1)",
+  "actual": "loader is the RED stub: loadMatrixCases returns \"matrix loader not implemented (RED stub)\" so TestMatrixDecode_Valid and TestMatrixDecode_MultiDoc fail on the err != nil assertion; TestMatrixReport_ExitCode fails on the stub counts (0 failed / 0 passed, want 1/1) and exitCode (0, want 1 with one FAIL); the error-expecting tests (UnknownField/MissingRequired/StepValidation) pass against the always-erroring stub, as intended for the stub phase",
+  "output": "not ok 1 - TestMatrixDecode_Valid\nnot ok 2 - TestMatrixDecode_MultiDoc\nnot ok 3 - TestMatrixReport_ExitCode\nok 4 - TestMatrixDecode_UnknownFieldRejected\nok 5 - TestMatrixDecode_MissingRequiredRejected (5 subtests)\nok 6 - TestMatrixStepValidation (5 subtests)\n# tests 6\n# fail 3\n"
+}

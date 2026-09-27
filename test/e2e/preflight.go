@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"syscall"
@@ -25,24 +26,34 @@ const registrationWait = 10 * time.Second
 
 // preflight runs the fail-fast environment checks (TEST-02). Each check
 // carries a named diagnostic so a missing prerequisite prints one line a
-// human can act on before the stand exits 1.
+// human can act on before the stand exits 1. Standalone cases (no stand
+// daemon — install-cycle) run the environment core only: the daemon-bound
+// and surface-driver checks presuppose the stand's own daemon/surfaces.
 func preflight(ctx context.Context, s *stand) error {
-	checks := []struct {
+	type check struct {
 		name string
 		run  func(context.Context, *stand) error
-	}{
+	}
+	checks := []check{
 		{"injection-selftest", checkInjectionSelfTest},
 		{"ibus-address", checkIbusAddress},
 		{"uinput-writable", checkUinputWritable},
 		{"python-gi", checkPythonGI},
-		{"engine-registered", checkEngineRegistered},
-		{"daemon-log-heartbeat", checkLogHeartbeat},
 	}
-	for _, check := range checks {
-		if err := check.run(ctx, s); err != nil {
-			return fmt.Errorf("preflight %s: %w", check.name, err)
+	if !s.standalone {
+		checks = append(checks,
+			check{"engine-registered", checkEngineRegistered},
+			check{"daemon-log-heartbeat", checkLogHeartbeat},
+			check{"chromium-launch", checkChromiumLaunch},
+			check{"gnome-text-editor-launch", checkGnomeTextEditorLaunch},
+			check{"gedit-launch", checkGeditLaunch},
+		)
+	}
+	for _, c := range checks {
+		if err := c.run(ctx, s); err != nil {
+			return fmt.Errorf("preflight %s: %w", c.name, err)
 		}
-		fmt.Printf("preflight %s: ok\n", check.name)
+		fmt.Printf("preflight %s: ok\n", c.name)
 	}
 
 	return nil
@@ -101,7 +112,7 @@ func checkPythonGI(ctx context.Context, _ *stand) error {
 // for the registration log line and then queries ListActiveEngines on the
 // private bus.
 func checkEngineRegistered(ctx context.Context, s *stand) error {
-	if err := s.waitForLog(ctx, "component registered", registrationWait); err != nil {
+	if err := s.waitForLog(ctx, componentRegisteredMark, registrationWait); err != nil {
 		return fmt.Errorf("%w (did the daemon reach RegisterComponent?)", err)
 	}
 	found, err := listActiveEnginesContain(ctx, "goswitch-en")
@@ -118,11 +129,78 @@ func checkEngineRegistered(ctx context.Context, s *stand) error {
 // checkLogHeartbeat proves the daemon log is alive: both startup records
 // arrived, so the file is the assertion surface the cases grep.
 func checkLogHeartbeat(_ context.Context, s *stand) error {
-	for _, want := range []string{`"msg":"connected"`, "component registered"} {
+	for _, want := range []string{`"msg":"connected"`, componentRegisteredMark} {
 		if s.countSub(want) == 0 {
 			return fmt.Errorf("daemon log misses startup record %q", want)
 		}
 	}
+
+	return nil
+}
+
+// checkChromiumLaunch proves the Chromium surface driver's happy path: the
+// pinned binary exists, a fresh instance opens the fixture page, the page
+// input takes focus per the witness, and the PID close cleans up. One
+// actionable diagnostic line when the binary is missing (plan 02-02).
+func checkChromiumLaunch(ctx context.Context, s *stand) error {
+	if _, err := exec.LookPath(chromiumBin); err != nil {
+		return fmt.Errorf("%s not in PATH: %w (install google-chrome or chromium)", chromiumBin, err)
+	}
+	if err := s.startChromium(ctx); err != nil {
+		return err
+	}
+	if err := s.waitChromiumInput(ctx, 0); err != nil {
+		s.closeChromium()
+
+		return fmt.Errorf("%w (does the fixture window open and take focus?)", err)
+	}
+	s.closeChromium()
+
+	return nil
+}
+
+// checkGnomeTextEditorLaunch proves the GTE surface driver's happy path:
+// the binary exists, the standalone instance with its isolated data dir
+// opens a new empty document, the witness sees the editor focused, and
+// the PID close cleans up. One actionable diagnostic line when the binary
+// is missing (plan 02-02).
+func checkGnomeTextEditorLaunch(ctx context.Context, s *stand) error {
+	if _, err := exec.LookPath(gteBin); err != nil {
+		return fmt.Errorf("%s not in PATH: %w (install gnome-text-editor)", gteBin, err)
+	}
+	if err := s.startGTE(ctx); err != nil {
+		return err
+	}
+	if err := s.waitGTEInput(ctx, 0); err != nil {
+		s.closeGTE()
+
+		return fmt.Errorf("%w (does the new-document window open and take focus?)", err)
+	}
+	s.closeGTE()
+
+	return nil
+}
+
+// checkGeditLaunch proves the gedit surface driver's happy path (plan
+// 04-05): the binary exists, the standalone instance with its isolated
+// XDG dirs opens an empty document, the witness sees the editor focused,
+// and the PID close cleans up. One actionable diagnostic line when the
+// binary is missing — gedit is NOT part of the default Ubuntu GNOME
+// install, so its absence is the expected failure this check exists to
+// name (the research Fall-6 warning-sign detector).
+func checkGeditLaunch(ctx context.Context, s *stand) error {
+	if _, err := exec.LookPath(geditBin); err != nil {
+		return fmt.Errorf("%s not in PATH: %w (sudo apt install gedit — universe repo)", geditBin, err)
+	}
+	if err := s.startGedit(ctx); err != nil {
+		return err
+	}
+	if err := s.waitGeditInput(ctx, 0); err != nil {
+		s.closeGedit()
+
+		return fmt.Errorf("%w (does the new-document window open and take focus?)", err)
+	}
+	s.closeGedit()
 
 	return nil
 }

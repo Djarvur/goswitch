@@ -47,10 +47,24 @@ const (
 
 // config is the stand's CLI surface.
 type config struct {
-	caseName string
-	pacing   int
-	logPath  string
-	helper   string
+	caseName   string
+	pacing     int
+	logPath    string
+	helper     string
+	matrixPath string
+}
+
+// caseSpec is one registry entry: the case body plus the stand-shape flag.
+// standalone cases (install-cycle) run WITHOUT the stand daemon — the
+// single-instance ctlsvc name and the IBus registration belong to the
+// daemon the case itself installs as a systemd unit. A non-zero watchdog
+// overrides the default case deadline (perf: N × its repeat budget —
+// raised, never removed: a live-session stand must never strand the
+// owner's desktop).
+type caseSpec struct {
+	fn         func(context.Context, *stand) error
+	standalone bool
+	watchdog   time.Duration
 }
 
 // desktopSnapshot is the live-desktop state the teardown restores.
@@ -63,19 +77,48 @@ type desktopSnapshot struct {
 // stand owns the per-run environment: the daemon subprocess, its log file,
 // the stand's input surface and the captured desktop state.
 type stand struct {
-	cfg       config
-	daemonBin string
-	tmpDir    string
-	logPath   string
-	logFile   *os.File
-	daemon    *exec.Cmd
-	zenity    *exec.Cmd
-	zenityOut *bytes.Buffer
-	snap      desktopSnapshot
+	cfg         config
+	daemonBin   string
+	tmpDir      string
+	logPath     string
+	logFile     *os.File
+	daemon      *exec.Cmd
+	standalone  bool // no stand daemon: the case owns the bus (install-cycle)
+	zenity      *exec.Cmd
+	zenityOut   *bytes.Buffer
+	chromium    *exec.Cmd
+	chromiumX11 *exec.Cmd // the x11/XWayland window-mode instance (04-05)
+	gte         *exec.Cmd
+	gedit       *exec.Cmd // the GTK3-generation editor instance (04-05)
+	snap        desktopSnapshot
+	caseCfgPath string // the matrix case's -config doc ("" until a reload step establishes it)
 }
 
 func main() {
 	os.Exit(run())
+}
+
+// run wires the whole stand: registry, setup, preflight, the case and the
+// caseListUsage is the -case help text: every registry name, "|" joined.
+func caseListUsage() string {
+	return "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke" +
+		" | gedit-smoke | x11-smoke" +
+		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
+		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
+		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
+		" | macr-per-app | ctl-smoke | install-cycle | perf"
+}
+
+// parseFlags fills the stand's CLI surface from os.Args.
+func parseFlags(cfg *config) {
+	flag.StringVar(&cfg.caseName, "case", "", caseListUsage())
+	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
+		"milliseconds between injected keystrokes (raise on a loaded machine)")
+	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
+	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py", "path to the AT-SPI helper script")
+	flag.StringVar(&cfg.matrixPath, "matrix", "",
+		"YAML case matrix to run (multi-doc cases; every case gets a fresh daemon)")
+	flag.Parse()
 }
 
 // run wires the whole stand: registry, setup, preflight, the case and the
@@ -85,14 +128,19 @@ func main() {
 // and may downgrade a PASS to FAIL through the named return.
 func run() (exit int) {
 	var cfg config
-	flag.StringVar(&cfg.caseName, "case", "", "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe")
-	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
-		"milliseconds between injected keystrokes (raise on a loaded machine)")
-	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
-	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py", "path to the AT-SPI helper script")
-	flag.Parse()
+	parseFlags(&cfg)
 
-	caseFn, err := pickCase(cfg.caseName)
+	// The matrix branch owns its whole stand lifecycle: case isolation needs
+	// a setupStand → case → teardown cycle PER CASE (02-06), so the single
+	// shared stand of the -case path must not wrap it.
+	if cfg.matrixPath != "" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		return runMatrixFile(ctx, cfg, cfg.matrixPath)
+	}
+
+	spec, err := pickCase(cfg.caseName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
@@ -102,7 +150,7 @@ func run() (exit int) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	s, err := setupStand(ctx, cfg)
+	s, err := setupStand(ctx, cfg, spec.standalone)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL %s: stand setup: %v\n", cfg.caseName, err)
 
@@ -122,7 +170,9 @@ func run() (exit int) {
 		return 1
 	}
 
-	if err := runCaseWatchdog(ctx, cfg.caseName, caseFn, s); err != nil {
+	// Zero watchdog means the default: runCaseWatchdog resolves it
+	// (watchdogLimit) — the same convention the matrix path relies on.
+	if err := runCaseWatchdog(ctx, cfg.caseName, spec.fn, s, spec.watchdog); err != nil {
 		s.printLogExcerpt()
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
@@ -134,16 +184,35 @@ func run() (exit int) {
 	return 0
 }
 
-// runCaseWatchdog runs the case body under a hard deadline (caseTimeout) and
-// cancels its context on expiry: a live-session stand must never strand the
-// owner's desktop. A stuck case fails fast, names the case, and control
-// falls through to the teardown contract (restore + machine verification).
+// watchdogLimit resolves the case deadline: zero is the REQUEST for the
+// default (the caseSpec.watchdog convention — "a non-zero watchdog
+// overrides the default case deadline"), never a zero-length budget. The
+// matrix runner passes 0 for exactly this meaning; the 04-04 signature
+// change briefly turned it into a literal time.After(0) that failed every
+// matrix case instantly (live finding of the first D-48 dispatch, run
+// 35107406144) — the resolution lives HERE so no caller can re-trip it.
+func watchdogLimit(explicit time.Duration) time.Duration {
+	if explicit == 0 {
+		return caseTimeout
+	}
+
+	return explicit
+}
+
+// runCaseWatchdog runs the case body under a hard deadline (the case's own
+// watchdog override, or the default caseTimeout — see watchdogLimit) and
+// cancels its context on expiry: a live-session stand must never strand
+// the owner's desktop. A stuck case fails fast, names the case, and
+// control falls through to the teardown contract (restore + machine
+// verification).
 func runCaseWatchdog(
 	ctx context.Context,
 	name string,
 	fn func(context.Context, *stand) error,
 	s *stand,
+	limit time.Duration,
 ) error {
+	limit = watchdogLimit(limit)
 	caseCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -153,40 +222,70 @@ func runCaseWatchdog(
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(caseTimeout):
+	case <-time.After(limit):
 		cancel()
 
-		return fmt.Errorf("watchdog: case %q did not complete within %v", name, caseTimeout)
+		return fmt.Errorf("watchdog: case %q did not complete within %v", name, limit)
 	}
 }
 
 // pickCase resolves the case name through the registry; the registry is
 // built per call (no mutable globals).
-func pickCase(name string) (func(context.Context, *stand) error, error) {
-	registry := map[string]func(context.Context, *stand) error{
-		"m1-gate":       runM1Gate,
-		"ibus-restart":  runIbusRestart,
-		"kill9-survive": runKill9Survive,
-		"d01-probe":     runD01Probe,
+func pickCase(name string) (caseSpec, error) {
+	registry := map[string]caseSpec{
+		"m1-gate":           {fn: runM1Gate},
+		"ibus-restart":      {fn: runIbusRestart},
+		"kill9-survive":     {fn: runKill9Survive},
+		"d01-probe":         {fn: runD01Probe},
+		"chromium-smoke":    {fn: runChromiumSmoke},
+		"gte-smoke":         {fn: runGTESmoke},
+		"gedit-smoke":       {fn: runGeditSmoke},
+		"x11-smoke":         {fn: runChromiumX11Smoke},
+		"word-en-ru":        {fn: runWordENRU},
+		"word-after-space":  {fn: runWordAfterSpace},
+		"word-ru-en":        {fn: runWordRUEN},
+		"word-mixed":        {fn: runWordMixed},
+		"phrase-en-ru":      {fn: runPhraseENRU},
+		"phrase-mixed":      {fn: runPhraseMixed},
+		"ladder-chromium":   {fn: runLadderChromium},
+		"reset-escape":      {fn: runResetEscape},
+		"select-smoke":      {fn: runSelectSmoke},
+		"select-correct":    {fn: runSelectCorrect},
+		"select-clipboard":  {fn: runSelectClipboard},
+		"combo-word-layout": {fn: runComboWordLayout},
+		"layout-single":     {fn: runLayoutSingle},
+		"super-space-alive": {fn: runSuperSpaceAlive},
+		"macr-probe":        {fn: runMacrProbe},
+		"macr-super-letter": {fn: runMacrSuperLetter},
+		"macr-per-app":      {fn: runMacrPerApp},
+		"ctl-smoke":         {fn: runCtlSmoke},
+		"install-cycle":     {fn: runInstallCycle, standalone: true},
+		"perf":              {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
 	}
-	fn, ok := registry[name]
+	spec, ok := registry[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
-			" d01-probe)", name)
+		return caseSpec{}, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
+			" d01-probe, chromium-smoke, gte-smoke, gedit-smoke, x11-smoke, word-en-ru,"+
+			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
+			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
+			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
+			" ctl-smoke, install-cycle, perf)", name)
 	}
 
-	return fn, nil
+	return spec, nil
 }
 
 // setupStand builds the daemon, snapshots the desktop and starts the
 // daemon subprocess with -debug and both std streams into the log file
-// (T-03-03: the log lives in $TMPDIR and is removed unless -log pinned it).
-func setupStand(ctx context.Context, cfg config) (*stand, error) {
+// (T-03-03: the log lives in $TMPDIR and is removed unless -log pinned
+// it). A standalone case (install-cycle) skips the START — the daemon
+// binary is still built, because the installed unit runs it.
+func setupStand(ctx context.Context, cfg config, standalone bool) (*stand, error) {
 	tmpDir, err := os.MkdirTemp("", "goswitch-e2e-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
-	s := &stand{cfg: cfg, tmpDir: tmpDir, daemonBin: filepath.Join(tmpDir, "goswitchd")}
+	s := &stand{cfg: cfg, tmpDir: tmpDir, daemonBin: filepath.Join(tmpDir, "goswitchd"), standalone: standalone}
 
 	logFile, err := createLog(cfg.logPath)
 	if err != nil {
@@ -211,10 +310,12 @@ func setupStand(ctx context.Context, cfg config) (*stand, error) {
 	}
 	s.snap = snap
 
-	if err := s.startDaemon(); err != nil {
-		s.discardLog(logFile)
+	if !standalone {
+		if err := s.startDaemon(); err != nil {
+			s.discardLog(logFile)
 
-		return nil, err
+			return nil, err
+		}
 	}
 
 	return s, nil
@@ -267,10 +368,17 @@ func buildDaemon(ctx context.Context, bin string) error {
 //
 // it only AFTER the desktop state is restored — a CommandContext kill would
 // fire on Ctrl-C before that restore runs.
+func (s *stand) startDaemon() error {
+	return s.startDaemonArgs()
+}
+
+// startDaemonArgs spawns the daemon with -debug plus extra arguments — the
+// config-dependent cases append their -config after writing it.
 //
 //nolint:noctx // the daemon must outlive the run context: teardown SIGTERMs
-func (s *stand) startDaemon() error {
-	cmd := exec.Command(s.daemonBin, "-debug")
+func (s *stand) startDaemonArgs(args ...string) error {
+	argv := append([]string{"-debug"}, args...)
+	cmd := exec.Command(s.daemonBin, argv...)
 	cmd.Stdout = s.logFile
 	cmd.Stderr = s.logFile
 	if err := cmd.Start(); err != nil {
@@ -279,6 +387,32 @@ func (s *stand) startDaemon() error {
 	s.daemon = cmd
 
 	return nil
+}
+
+// startDaemonPlain spawns the daemon WITHOUT -debug — the production form
+// the perf run measures (T-04-04-03: the -debug trace would be neither
+// honest nor private; the acceptance numbers come from the prod shape).
+//
+//nolint:noctx // the daemon must outlive the run context: teardown SIGTERMs
+func (s *stand) startDaemonPlain() error {
+	cmd := exec.Command(s.daemonBin)
+	cmd.Stdout = s.logFile
+	cmd.Stderr = s.logFile
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start goswitchd (prod form): %w", err)
+	}
+	s.daemon = cmd
+
+	return nil
+}
+
+// restartDaemonWithArgs stops the running daemon and spawns a fresh one
+// with extra arguments: the config cases build their command line after
+// setup has already started the default daemon.
+func (s *stand) restartDaemonWithArgs(args ...string) error {
+	s.stopDaemon()
+
+	return s.startDaemonArgs(args...)
 }
 
 // stopDaemon terminates the daemon with a bounded graceful wait.
@@ -322,6 +456,8 @@ func (s *stand) teardown() {
 	s.stopDaemon()
 	s.restoreEngine(ctx)
 	s.reapZenity()
+	s.closeChromium()
+	s.closeGTE()
 	_ = s.logFile.Close()
 	if s.cfg.logPath == "" {
 		_ = os.Remove(s.logPath)

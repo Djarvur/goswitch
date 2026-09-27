@@ -38,6 +38,12 @@ func (f *factory) CreateEngine(name string) (path dbus.ObjectPath, err *dbus.Err
 	eng := NewEngine(f.handler, name)
 	eng.conn = f.conn
 	eng.path = path
+	if f.handler != nil {
+		// The handler (session.Actor) corrects through this engine's
+		// emitters — the sink must be the bound object, so the attachment
+		// happens exactly here, after conn and path are set (plan 02-03).
+		f.handler.AttachEngine(eng)
+	}
 	for _, iface := range []string{ifaceEngine, ifaceService, ifaceProps} {
 		if exportErr := f.conn.Export(eng, path, iface); exportErr != nil {
 			slog.Error("engine export failed", "path", string(path), "error", exportErr)
