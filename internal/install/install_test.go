@@ -16,13 +16,18 @@ import (
 
 // The corpus's desktop stand-ins: the gsettings raw values (the exact shape
 // gsettings get prints and set accepts) and the list-engine reply that
-// proves the component entered the registry.
+// proves the component entered the registry. ownerSwitchBindings is the
+// live switch-input-source binding of the owner's desktop (verified
+// 2026-09-27) — the value install snapshots and uninstall restores.
 const (
-	ownerSources    = `[('xkb', 'us'), ('xkb', 'ru')]`
-	goswitchSources = `[('ibus', 'goswitch-en')]`
-	fallbackSources = `[('xkb', 'us')]`
-	listEngineOut   = "goswitch-en - goswitch English (US)\ngoswitch-ru - goswitch Русская\n"
-	markerSources   = "MARKER-ORIGINAL"
+	ownerSources           = `[('xkb', 'us'), ('xkb', 'ru')]`
+	goswitchSources        = `[('ibus', 'goswitch-en')]`
+	fallbackSources        = `[('xkb', 'us')]`
+	ownerSwitchBindings    = `['<Alt>Shift_L', '<Super>space']`
+	clearedSwitchBindings  = `[]`
+	fallbackSwitchBindings = `['<Alt>Shift_L', '<Super>space']`
+	listEngineOut          = "goswitch-en - goswitch English (US)\ngoswitch-ru - goswitch Русская\n"
+	markerSources          = "MARKER-ORIGINAL"
 )
 
 // The pinned binary/operation names the corpus asserts on (goconst: named
@@ -36,11 +41,16 @@ const (
 	engineENName = "goswitch-en"
 )
 
-// The gsettings schema key of the input sources (D-40's single-owner
-// takeover writes and D-42's restore rewrites it).
+// The gsettings schema keys of the input sources (D-40's single-owner
+// takeover writes and D-42's restore rewrites the sources; owner decision 3
+// hands the switch-input-source binding over to goswitch).
 const (
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
+	// gsettingsKeySwitch is the GNOME switch-input-source key (owner
+	// decision 3, quick plan 260927-way): install clears it, uninstall
+	// restores the saved value.
+	gsettingsKeySwitch = "switch-input-source"
 	// derivedActivation is the engine name the first ('xkb', 'us') tuple of
 	// ownerSources restores to (the fallbackEngine derivation).
 	derivedActivation = "xkb:us::eng"
@@ -85,10 +95,14 @@ func (f *fakeRunner) snapshot() []instCall {
 }
 
 // defaultReply answers the happy-path desktop: gsettings get returns the
-// owner sources, ibus list-engine already lists goswitch.
+// owner sources and the owner's live switch binding, ibus list-engine
+// already lists goswitch.
 func defaultReply(name string, args []string) ([]byte, error) {
 	if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
 		return []byte(ownerSources), nil
+	}
+	if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKeySwitch {
+		return []byte(ownerSwitchBindings), nil
 	}
 	if name == binIbus && len(args) > 0 && args[0] == "list-engine" {
 		return []byte(listEngineOut), nil
@@ -200,28 +214,31 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 }
 
 // TestInstall_Sequence pins the D-39/D-40 subprocess order end to end over
-// the fake desktop: sources snapshot → state save → XML → env-carrying
-// write-cache → list-engine verification → unit → daemon-reload →
-// enable --now → ibus restart → live-registration wait → single-owner
-// sources set → engine activation.
+// the fake desktop: sources + switch-binding snapshot → state save → XML →
+// env-carrying write-cache → list-engine verification → unit →
+// daemon-reload → enable --now → ibus restart → live-registration wait →
+// single-owner sources set → switch-binding clear (owner decision 3) →
+// engine activation.
 func TestInstall_Sequence(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
 	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{"xkb:us::eng", engineENName})
 
-	runInstall(t, i)
+	report := runInstall(t, i)
 
 	// The live-true order (first install-cycle run): the cache-file probe
 	// verifies write-cache immediately (list-engine stays stale until the
 	// restart), and the daemon-view list-engine gate runs AFTER the restart.
 	assertCallSequence(t, f.snapshot(), []struct{ name, args string }{
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
+		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKeySwitch},
 		{binIbus, opWriteCache},
 		{binSystemctl, "--user daemon-reload"},
 		{binSystemctl, "--user enable --now goswitchd"},
 		{binIbus, "restart"},
 		{binIbus, "list-engine"},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + goswitchSources},
+		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKeySwitch + " " + clearedSwitchBindings},
 		{binIbus, "engine goswitch-en"},
 	})
 
@@ -230,6 +247,17 @@ func TestInstall_Sequence(t *testing.T) {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("install artifact %s missing: %v", p, err)
 		}
+	}
+	// Owner decision 3: the state carries the read switch binding VERBATIM
+	// beside the sources, and the report names the handover.
+	state := readAll(t, statePath)
+	if !strings.Contains(state, ownerSwitchBindings) {
+		t.Errorf("state %q does not carry the pre-install switch binding VERBATIM (%q)", state, ownerSwitchBindings)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "switch-input-source: cleared")
+	}) {
+		t.Errorf("report %v does not name the cleared switch binding", report)
 	}
 }
 
@@ -415,6 +443,9 @@ func TestInstall_StateFileOutsideConfigDir(t *testing.T) {
 // TestInstall_SecondInstallKeepsOriginalBackup pins the idempotency core:
 // an existing state file is never overwritten — the FIRST install's backup
 // is sacred, so repeated installs cannot destroy the pre-goswitch desktop.
+// Owner decision 3 extends the rule to the switch binding: the over-install
+// reads the POST-HANDOVER cleared binding and must never save it over the
+// original.
 func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
@@ -429,10 +460,16 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	}
 
 	// The second install sees the post-takeover desktop (goswitch-only
-	// sources) — exactly the state it must NOT save over the marker.
+	// sources, the cleared switch binding) — exactly the state it must NOT
+	// save over the marker.
 	f.stub = func(name string, args []string) ([]byte, error) {
-		if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
-			return []byte(goswitchSources), nil
+		if name == binGSettings && len(args) == 3 && args[0] == opGet {
+			if args[2] == gsettingsKey {
+				return []byte(goswitchSources), nil
+			}
+			if args[2] == gsettingsKeySwitch {
+				return []byte(clearedSwitchBindings), nil
+			}
 		}
 
 		return defaultReply(name, args)
@@ -443,9 +480,9 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-read state: %v", err)
 	}
-	if !strings.Contains(string(data), markerSources) {
-		t.Errorf("second install overwrote the original backup: state = %q, want %q intact",
-			data, markerSources)
+	if string(data) != marker {
+		t.Errorf("second install overwrote the original backup: state = %q, want %q byte-intact"+
+			" (the cleared binding must never be saved over it)", data, marker)
 	}
 }
 
@@ -474,6 +511,8 @@ func TestUninstall_FullRollback(t *testing.T) {
 		t.Fatalf("Uninstall() err = %v (report %v), want the full rollback to succeed", err, report)
 	}
 
+	// Owner decision 3: the saved switch binding goes back BEFORE the state
+	// file dies, and the report names the restored value.
 	assertCallSequence(t, uninstallCalls(t, f), []struct{ name, args string }{
 		{binSystemctl, "--user stop goswitchd"},
 		{binSystemctl, "--user disable goswitchd"},
@@ -482,7 +521,13 @@ func TestUninstall_FullRollback(t *testing.T) {
 		{binIbus, "restart"},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + ownerSources},
 		{binIbus, "engine " + derivedActivation},
+		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKeySwitch + " " + ownerSwitchBindings},
 	})
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "switch-input-source: restored "+ownerSwitchBindings)
+	}) {
+		t.Errorf("report %v does not name the restored switch binding", report)
+	}
 
 	xmlPath, unitPath, statePath := installPaths(home)
 	for _, p := range []string{xmlPath, unitPath, statePath} {
@@ -496,8 +541,10 @@ func TestUninstall_FullRollback(t *testing.T) {
 }
 
 // installCallCount is the subprocess count of one happy-path install (the
-// FullRollback corpus asserts the uninstall suffix of the recording).
-const installCallCount = 8
+// FullRollback corpus asserts the uninstall suffix of the recording): two
+// gsettings gets (sources + switch binding), two ibus cache steps, three
+// systemctl steps, list-engine, two gsettings sets, engine activation.
+const installCallCount = 10
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did
@@ -513,15 +560,20 @@ func uninstallCalls(t *testing.T, f *fakeRunner) []instCall {
 	return calls[installCallCount:]
 }
 
-// TestUninstall_CorruptStateFallsBack pins the ASVS V5 guard: a state file
-// whose value fails the shape check never reaches gsettings verbatim — the
-// restore substitutes the safe xkb fallback, REPORTS it, and the rollback
-// still completes (a corrupt backup must not brick the keyboard or abort
-// the uninstall).
+// TestUninstall_CorruptStateFallsBack pins the ASVS V5 guard (T-04-01-02):
+// state values that fail the shape check never reach gsettings verbatim —
+// the restore substitutes the safe fallbacks, REPORTS them, and the
+// rollback still completes (a corrupt backup must not brick the keyboard
+// or abort the uninstall). Owner decision 3 extends the discipline to the
+// switch binding: a state file whose switch field is absent (a pre-batch
+// JSON) or malformed restores the DISTRO DEFAULT binding with the
+// substitution reported.
 func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 	for name, plant := range map[string]string{
-		"garbage value": `{"sources":"garbage"}`,
-		"unparsable":    "\x00not json",
+		"garbage value":                        `{"sources":"garbage"}`,
+		"unparsable":                           "\x00not json",
+		"switch field absent (pre-batch JSON)": `{"sources":"` + ownerSources + `"}`,
+		"switch field garbage":                 `{"sources":"` + ownerSources + `","switch_input_source":"garbage"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeRunner{}
@@ -540,19 +592,25 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 					err, report)
 			}
 
-			var restore *instCall
+			wantSets := map[string]string{
+				gsettingsKey:       fallbackSources,
+				gsettingsKeySwitch: fallbackSwitchBindings,
+			}
 			for _, c := range uninstallCalls(t, f) {
-				if c.name == binGSettings && len(c.args) == 4 && c.args[0] == "set" {
-					restore = &c
-
-					break
+				if c.name != binGSettings || len(c.args) != 4 || c.args[0] != "set" {
+					continue
 				}
+				want, ok := wantSets[c.args[2]]
+				if !ok {
+					continue
+				}
+				if c.args[3] != want {
+					t.Errorf("restore of %s set %q, want the safe fallback %q", c.args[2], c.args[3], want)
+				}
+				delete(wantSets, c.args[2])
 			}
-			if restore == nil {
-				t.Fatal("no gsettings set recorded — the fallback must still restore a usable source")
-			}
-			if restore.args[3] != fallbackSources {
-				t.Errorf("restore set %q, want the safe fallback %q", restore.args[3], fallbackSources)
+			for key := range wantSets {
+				t.Errorf("no gsettings set recorded for %s — the fallback must still restore a usable binding", key)
 			}
 			if !slices.ContainsFunc(report, func(line string) bool { return strings.Contains(line, "fallback") }) {
 				t.Errorf("report %v does not mention the fallback — the substitution must be visible", report)
