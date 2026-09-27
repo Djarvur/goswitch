@@ -1,4 +1,4 @@
-//nolint:testpackage // drives the unexported retry knobs (activationAttempts/activationRetryDelay) — the sanctioned in-package corpus seam
+//nolint:testpackage // drives the unexported retry knobs — the sanctioned in-package corpus seam
 package activate
 
 import (
@@ -87,6 +87,9 @@ func stubDesktop(sources, current string, ibusErrs ...error) func(string, []stri
 
 			return []byte(current), nil
 		}
+		if len(ibusErrs) == 0 {
+			return []byte(""), nil
+		}
 		i := min(attempt, len(ibusErrs)-1)
 		attempt++
 
@@ -131,17 +134,18 @@ func withRetry(t *testing.T, attempts int, delay time.Duration) {
 	})
 }
 
-// runIfOwned drives IfOwned through the fake and returns the elapsed wall
-// time, the recorded ibus calls and the total subprocess count.
-func runIfOwned(t *testing.T, ctx context.Context, reply func(string, []string) ([]byte, error)) (time.Duration, []string, int) {
+// runIfOwned drives IfOwned through the fake on the background context and
+// returns the elapsed wall time and the recorded ibus calls.
+func runIfOwned(t *testing.T, reply func(string, []string) ([]byte, error),
+) (elapsed time.Duration, ibusCalls []string) {
 	t.Helper()
 
 	f := &fakeRunner{reply: reply}
 	start := time.Now()
-	IfOwned(ctx, f.run)
-	elapsed := time.Since(start)
+	IfOwned(context.Background(), f.run)
+	elapsed = time.Since(start)
 
-	return elapsed, f.ibusCalls(), f.totalCalls()
+	return elapsed, f.ibusCalls()
 }
 
 // assertIBus compares the recorded ibus calls with the expected list.
@@ -180,7 +184,7 @@ func TestIfOwnedActivatesOwned(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			withRetry(t, 0, time.Millisecond)
 
-			_, got, _ := runIfOwned(t, context.Background(), stubDesktop(tc.sources, tc.current))
+			_, got := runIfOwned(t, stubDesktop(tc.sources, tc.current))
 
 			assertIBus(t, got, tc.want)
 		})
@@ -203,7 +207,7 @@ func TestIfOwnedForeignCurrentSkipped(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			withRetry(t, 0, time.Millisecond)
 
-			_, got, _ := runIfOwned(t, context.Background(), stubDesktop(tc.sources, tc.current))
+			_, got := runIfOwned(t, stubDesktop(tc.sources, tc.current))
 
 			assertIBus(t, got, nil)
 		})
@@ -230,7 +234,7 @@ func TestIfOwnedMalformedSkipped(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			withRetry(t, 0, time.Millisecond)
 
-			_, got, _ := runIfOwned(t, context.Background(), stubDesktop(tc.sources, tc.current))
+			_, got := runIfOwned(t, stubDesktop(tc.sources, tc.current))
 
 			assertIBus(t, got, nil)
 		})
@@ -252,7 +256,7 @@ func TestIfOwnedGSettingsFailureSkipped(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			withRetry(t, 0, time.Millisecond)
 
-			_, got, _ := runIfOwned(t, context.Background(), stubGSettingsDown(tc.failSources))
+			_, got := runIfOwned(t, stubGSettingsDown(tc.failSources))
 
 			assertIBus(t, got, nil)
 		})
@@ -267,8 +271,7 @@ func TestIfOwnedActivationRetry(t *testing.T) {
 		const attempts = 3
 		withRetry(t, attempts, time.Millisecond)
 
-		_, got, _ := runIfOwned(t, context.Background(),
-			stubDesktop(sourcesOwnerSingle, current0, errIBusDown))
+		_, got := runIfOwned(t, stubDesktop(sourcesOwnerSingle, current0, errIBusDown))
 
 		assertIBus(t, got, []string{callEN, callEN, callEN})
 	})
@@ -276,8 +279,7 @@ func TestIfOwnedActivationRetry(t *testing.T) {
 	t.Run("first attempt flaky", func(t *testing.T) {
 		withRetry(t, 0, time.Millisecond)
 
-		_, got, _ := runIfOwned(t, context.Background(),
-			stubDesktop(sourcesOwnerSingle, current0, errIBusDown, nil))
+		_, got := runIfOwned(t, stubDesktop(sourcesOwnerSingle, current0, errIBusDown, nil))
 
 		assertIBus(t, got, []string{callEN, callEN})
 	})
@@ -291,12 +293,15 @@ func TestIfOwnedCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	elapsed, _, total := runIfOwned(t, ctx, stubDesktop(sourcesOwnerSingle, current0))
+	f := &fakeRunner{reply: stubDesktop(sourcesOwnerSingle, current0)}
+	start := time.Now()
+	IfOwned(ctx, f.run)
+	elapsed := time.Since(start)
 
 	if elapsed > 400*time.Millisecond {
 		t.Errorf("IfOwned with a pre-cancelled context took %s — it slept past cancellation", elapsed)
 	}
-	if total != 0 {
+	if total := f.totalCalls(); total != 0 {
 		t.Errorf("subprocess calls = %d, want 0", total)
 	}
 }
