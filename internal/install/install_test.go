@@ -226,7 +226,7 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 // TestInstall_Sequence pins the D-39/D-40 subprocess order end to end over
 // the fake desktop: sources + switch-binding snapshot → state save → XML →
 // env-carrying write-cache → list-engine verification → unit →
-// daemon-reload → enable --now → ibus restart → live-registration wait →
+// daemon-reload → enable + restart → ibus restart → live-registration wait →
 // single-owner sources set → switch-binding clear (owner decision 3) →
 // engine activation.
 func TestInstall_Sequence(t *testing.T) {
@@ -244,10 +244,11 @@ func TestInstall_Sequence(t *testing.T) {
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
 		{binIbus, opWriteCache},
-		{binSystemctl, "--user daemon-reload"},
-		{binSystemctl, "--user enable --now goswitchd"},
 		{binIbus, "restart"},
 		{binIbus, "list-engine"},
+		{binSystemctl, "--user daemon-reload"},
+		{binSystemctl, "--user enable goswitchd"},
+		{binSystemctl, "--user restart goswitchd"},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + goswitchSources},
 		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + clearedSwitchBindings},
 		{binGSettings, "set " + gsettingsKeybindingsSchema + " " +
@@ -583,7 +584,7 @@ func TestUninstall_FullRollback(t *testing.T) {
 // FullRollback corpus asserts the uninstall suffix of the recording): two
 // gsettings gets (sources + switch binding), two ibus cache steps, three
 // systemctl steps, list-engine, two gsettings sets, engine activation.
-const installCallCount = 12
+const installCallCount = 13
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did

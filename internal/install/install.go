@@ -297,8 +297,8 @@ func WithCtlStatus(fn CtlStatus) func(*Installer) {
 // report (paths and verdicts only — never user text, D-20/D-21):
 // preflight the daemon binary → save prior sources → component XML →
 // env-carrying write-cache + registry verification → user unit →
-// daemon-reload → enable --now → ibus restart → bounded-wait live
-// registration → single-owner sources → engine activation.
+// ibus restart → bounded-wait registry → daemon-reload → enable + restart →
+// bounded-wait live registration → single-owner sources → engine activation.
 func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	daemonPath, err := i.resolveDaemon()
 	if err != nil {
@@ -316,13 +316,20 @@ func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	if err := i.writeUnit(daemonPath); err != nil {
 		return nil, err
 	}
-	if err := i.startUnit(ctx); err != nil {
-		return nil, err
-	}
+	// The ibus restart refreshes the component registry BEFORE the unit
+	// (re)start (ordering fix 2026-09-28): restarting the unit FIRST made
+	// the fresh daemon register against the about-to-die ibus and fire its
+	// self-reactivation into the restart window (the `ibus engine` client
+	// hung on the dying bus and died by its own timeout, 3×WARN), and the
+	// live-registration wait raced the reconnect. Restarting ibus first
+	// gives the new daemon one clean bus to register and reactivate on.
 	if _, err := i.call(ctx, binIbus, "restart"); err != nil {
 		return nil, fmt.Errorf("ibus restart: %w", err)
 	}
 	if err := i.waitListEngine(ctx); err != nil {
+		return nil, err
+	}
+	if err := i.startUnit(ctx); err != nil {
 		return nil, err
 	}
 	if err := i.waitRegistration(ctx); err != nil {
@@ -576,14 +583,23 @@ func (i *Installer) writeUnit(daemonPath string) error {
 	return writeVerified(i.path(unitDirRel, unitFile), renderUnit(daemonPath), permPublic)
 }
 
-// startUnit reloads the user manager and enables+starts the unit.
+// startUnit reloads the user manager, enables the unit and (RE)STARTS it:
+// a plain `enable --now` is a NO-OP on an already-active unit, so an
+// install-over-a-running-daemon left the OLD binary serving the desktop
+// and an upgrade never took effect until a manual restart (live finding
+// 2026-09-27 21:46→01:25, quick-task 260927-way follow-up). `restart`
+// starts a stopped unit too, so one call covers first install and upgrade
+// alike — safe mid-session because the daemon re-registers and
+// self-reactivates the owned engine (quick task 260927-sy8).
 func (i *Installer) startUnit(ctx context.Context) error {
 	if _, err := i.call(ctx, binSystemctl, "--user", "daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload: %w", err)
 	}
-	_, err := i.call(ctx, binSystemctl, "--user", "enable", "--now", daemonBinary)
-	if err != nil {
-		return fmt.Errorf("systemctl enable --now %s: %w (is the user systemd manager running?)", daemonBinary, err)
+	if _, err := i.call(ctx, binSystemctl, "--user", "enable", daemonBinary); err != nil {
+		return fmt.Errorf("systemctl enable %s: %w (is the user systemd manager running?)", daemonBinary, err)
+	}
+	if _, err := i.call(ctx, binSystemctl, "--user", "restart", daemonBinary); err != nil {
+		return fmt.Errorf("systemctl restart %s: %w", daemonBinary, err)
 	}
 
 	return nil
@@ -660,7 +676,7 @@ func (i *Installer) report(daemonPath string) []string {
 		"component: " + i.path(componentDirRel, componentFile) + " content verified (read-back)",
 		"registry: goswitch visible after write-cache",
 		"unit: " + i.path(unitDirRel, unitFile) + " content verified (read-back)",
-		"unit: daemon-reload + enable --now done",
+		"unit: daemon-reload + enable + restart done",
 		"engine: registered live (ListActiveEngines)",
 		"sources: single owner " + ownerSourcesSet,
 		"switch-input-source: cleared (previous value saved)",
