@@ -165,6 +165,19 @@ keycode, modifiers, press/release) is written to the log at DEBUG level.
 - **A config edit "does not apply".** An invalid document is rejected as
   a whole — the daemon keeps running on the last good configuration, and
   `goswitchctl status` shows the parse reason in `config_error=`.
+- **Correction now survives daemon restarts by itself.** After every
+  (re)registration goswitchd re-activates its engine — as long as goswitch
+  owns the current input source — so a daemon restart
+  (`systemctl --user restart goswitchd`) or an ibus-daemon restart no
+  longer silently disables correction. The journal line
+  `engine reactivated` confirms it.
+- **The input source switched away and correction stopped, yet the daemon
+  is still alive.** With goswitch as the ONLY input source, the native
+  Super+Space switch can drop the engine context while the daemon keeps
+  running (the name owner stays — e2e super-space-alive); goswitch does
+  not currently detect this live state. Remedy: `ibus engine goswitch-en`
+  (or restart the unit — self-reactivation then re-applies the owned
+  source). Check `journalctl --user -u goswitchd` for the WARN/INFO lines.
 
 ## Uninstall
 
