@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/activate"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
 	"github.com/Djarvur/goswitch/internal/logging"
@@ -140,6 +141,12 @@ func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 // window flows from the actor's startup wiring above (SWCH-04/D-35):
 // without -config the built-in default equals hotkey.DefaultWindow
 // (pinned by config.TestDefaults).
+//
+// PostRegister re-activates the owned engine after every (re)registration
+// (SY8): the closure receives the serving generation's context — the
+// daemon's signal lineage — and the activate package is void by contract,
+// degrading every failure to journal lines. A double activation after
+// `goswitchctl install` is harmless: SetGlobalEngine is idempotent.
 func engineConfig(actor *session.Actor) engine.Config {
 	engines := []engine.EngineDesc{
 		engine.NewEngineDesc("goswitch-en", "goswitch English (US)", "en", "us", "en"),
@@ -150,5 +157,8 @@ func engineConfig(actor *session.Actor) engine.Config {
 		Component: engine.NewComponent(engines),
 		Engines:   engines,
 		Handler:   actor, // decides consumption (RU script mode) at the key; tap decisions at window expiry.
+		PostRegister: func(ctx context.Context, _ int) {
+			activate.IfOwned(ctx, activate.NewExecRunner())
+		},
 	}
 }
