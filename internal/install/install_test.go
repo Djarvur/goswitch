@@ -306,8 +306,12 @@ func TestInstall_ComponentXMLMirrorsWireIdentity(t *testing.T) {
 		// Owner decision 1 (quick plan 260927-way): every engine desc names
 		// the mode-indicator property — the XML mirrors the wire
 		// EngineDesc.icon_prop_key end to end.
+		if e.IconPropKey != "InputMode" {
+			t.Errorf("wire engine %q IconPropKey = %q, want %q", e.EngineName, e.IconPropKey, "InputMode")
+		}
 		if !strings.Contains(xml, "<icon_prop_key>InputMode</icon_prop_key>") {
-			t.Errorf("component XML misses <icon_prop_key>InputMode</icon_prop_key> — the panel icon key must reach the on-disk identity")
+			t.Errorf("component XML misses the panel icon key <icon_prop_key>InputMode</icon_prop_key>" +
+				" — it must reach the on-disk identity")
 		}
 	}
 	if !strings.Contains(xml, "<exec></exec>") {

@@ -23,9 +23,12 @@ type Component struct {
 	EngineList    []dbus.Variant // MakeVariant of each EngineDesc value.
 }
 
-// EngineDesc mirrors the serialized IBusEngineDesc wire struct (18 fields:
-// s, a{sv}, s×8, u, s×7 — Layout at index 9 drives mutter XKB for the
-// two-engine experiment, Symbol at index 12 is the GNOME indicator label).
+// EngineDesc mirrors the serialized IBusEngineDesc wire struct (19 fields:
+// s, a{sv}, s×8, u, s×8 — Layout at index 9 drives mutter XKB for the
+// two-engine experiment, Symbol at index 12 is the GNOME indicator label,
+// and IconPropKey appended LAST (19th, ibusenginedesc.h:335 appended-field
+// order) names the engine property whose SYMBOL becomes the panel's dynamic
+// icon — the mode-indicator key of owner decision 1, quick plan 260927-way).
 type EngineDesc struct {
 	Name          string                  // "IBusEngineDesc".
 	Attachments   map[string]dbus.Variant // {}.
@@ -45,6 +48,7 @@ type EngineDesc struct {
 	LayoutOption  string
 	Version       string
 	Textdomain    string
+	IconPropKey   string // modePropKey — the dynamic panel icon property.
 }
 
 // AttrList mirrors the serialized IBusAttrList wire struct; Attributes is
@@ -196,5 +200,6 @@ func NewEngineDesc(name, longName, language, layout, symbol string) EngineDesc {
 		LayoutOption:  "",
 		Version:       "0.1.0",
 		Textdomain:    "",
+		IconPropKey:   modePropKey,
 	}
 }

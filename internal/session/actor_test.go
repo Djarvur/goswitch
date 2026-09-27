@@ -1161,7 +1161,8 @@ func TestActor_FlipEmitsPanelSymbol(t *testing.T) {
 
 	flipMode(a) // EN → RU
 	if !emittedAfterLog {
-		t.Errorf("UpdateModeSymbol(ru) fired before the mode log record — the D-36-style order is violated; log:\n%s", buf.String())
+		t.Errorf("UpdateModeSymbol(ru) fired before the mode log record — the D-36-style order is violated; log:\n%s",
+			buf.String())
 	}
 	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
 		t.Fatalf("panel symbols after the first flip = %q, want exactly [ru]", got)

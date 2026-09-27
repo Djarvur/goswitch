@@ -54,6 +54,20 @@ func (f *factory) CreateEngine(name string) (path dbus.ObjectPath, err *dbus.Err
 			}
 		}
 	}
+	// The mode indicator registers at engine creation (owner decision 1,
+	// quick plan 260927-way): the panel property with the daemon's start
+	// symbol is emitted BEFORE the CreateEngine reply — every engine
+	// registers its properties inside CreateEngine, and a fresh input
+	// context must not start with a stale panel registration. Fire-and-
+	// forget like every engine signal: a failed emit is error-logged, never
+	// a registration failure.
+	if err := f.conn.Emit(path, ifaceEngine+".RegisterProperties", dbus.MakeVariant(PropList{
+		Name:        "IBusPropList",
+		Attachments: map[string]dbus.Variant{},
+		Properties:  []dbus.Variant{dbus.MakeVariant(NewModeProperty(initialModeSymbol))},
+	})); err != nil {
+		slog.Error("register properties emit failed", "path", string(path), "error", err)
+	}
 	slog.Info("engine created", "path", string(path), "name", name)
 
 	return path, nil

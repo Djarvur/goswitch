@@ -512,6 +512,14 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		}
 	case engine.LifecycleFocusIn, engine.LifecycleEnable, engine.LifecycleDisable:
 		slog.Debug("lifecycle", "kind", kind.String())
+		if kind == engine.LifecycleFocusIn && a.eng != nil {
+			// The panel indicator self-heals on every focus gain (owner
+			// decision 1, quick plan 260927-way): engine objects are minted
+			// per input context, so a freshly minted context re-asserts the
+			// CURRENT mode symbol — it must not resurrect the factory's
+			// initial EN registration while the actor sits in another mode.
+			a.eng.UpdateModeSymbol(a.modeSymbol())
+		}
 	}
 }
 
@@ -1213,20 +1221,35 @@ func (a *Actor) backspaceCap() int {
 
 // flipScript toggles the internal output-script mode (ADR-001 Option B):
 // the switch is daemon state only — the session's XKB group is never
-// touched and the flip itself emits nothing on the sink. The INFO mode
+// touched and the flip makes no FIELD call on the sink. The INFO mode
 // record is the e2e sequencing contract: the stand waits for it after a
 // single tap before typing in the new script, because the flip fires at
-// window expiry, not inside the tap (Pitfall 5). The caller holds the
-// mutex.
+// window expiry, not inside the tap (Pitfall 5). Right after the record the
+// flip refreshes the panel symbol (owner decision 1, quick plan 260927-way):
+// exactly one UpdateModeSymbol per flip, strictly after the log record —
+// fire-and-forget (the CommitText precedent; the caller holds the mutex).
 func (a *Actor) flipScript() {
 	if a.mode == modeEN {
 		a.mode = modeRU
 		slog.Info("mode", "to", "ru")
-
-		return
+	} else {
+		a.mode = modeEN
+		slog.Info("mode", "to", "en")
 	}
-	a.mode = modeEN
-	slog.Info("mode", "to", "en")
+	if a.eng != nil {
+		a.eng.UpdateModeSymbol(a.modeSymbol())
+	}
+}
+
+// modeSymbol returns the panel symbol of the current script mode — the
+// glyph the mode-indicator property carries (owner decision 1). The caller
+// holds the mutex.
+func (a *Actor) modeSymbol() string {
+	if a.mode == modeRU {
+		return "ru"
+	}
+
+	return "en"
 }
 
 // feedKey decides one press: whether the engine consumes the key and which

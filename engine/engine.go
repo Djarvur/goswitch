@@ -434,8 +434,17 @@ func (e *Engine) ForwardKeyEvent(keyval, keycode, state uint32) {
 // UpdateModeSymbol emits the org.freedesktop.IBus.Engine.UpdateProperty
 // signal for the mode-indicator panel property (owner decision 1, quick
 // plan 260927-way): the GNOME input indicator's dynamic icon (EngineDesc
-// icon_prop_key) follows the daemon's script mode.
-func (e *Engine) UpdateModeSymbol(symbol string) {} // RED scaffolding: emit lands with the GREEN commit.
+// icon_prop_key) follows the daemon's script mode. Fire-and-forget like
+// every engine signal, quiet on a detached engine.
+func (e *Engine) UpdateModeSymbol(symbol string) {
+	if e.conn == nil {
+		return
+	}
+	prop := dbus.MakeVariant(NewModeProperty(symbol))
+	if err := e.conn.Emit(e.path, ifaceEngine+".UpdateProperty", prop); err != nil {
+		slog.Error("mode symbol emit failed", "error", err)
+	}
+}
 
 // lifecycle forwards a lifecycle event to the handler, if installed.
 func (e *Engine) lifecycle(kind LifecycleKind) {

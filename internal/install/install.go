@@ -171,7 +171,10 @@ type componentXML struct {
 	Engines     []xmlEngine `xml:"engines>engine"`
 }
 
-// xmlEngine is one engine entry of componentXML, mirroring EngineDesc.
+// xmlEngine is one engine entry of componentXML, mirroring EngineDesc. The
+// icon_prop_key tag spelling is pinned by the owner's live component XMLs
+// (punto-switcher.xml, test-shift.xml) and carries the mode-indicator
+// property key (owner decision 1, quick plan 260927-way).
 type xmlEngine struct {
 	Name        string `xml:"name"`
 	Language    string `xml:"language"`
@@ -180,6 +183,7 @@ type xmlEngine struct {
 	Description string `xml:"description"`
 	Symbol      string `xml:"symbol"`
 	Rank        uint32 `xml:"rank"`
+	IconPropKey string `xml:"icon_prop_key"`
 }
 
 // New returns the production installer over os/exec and the real $HOME;
@@ -706,6 +710,7 @@ func renderComponentXML() ([]byte, error) {
 			Description: e.Description,
 			Symbol:      e.Symbol,
 			Rank:        e.Rank,
+			IconPropKey: e.IconPropKey, // the wire identity's on-disk shape (owner decision 1)
 		})
 	}
 	data, err := xml.MarshalIndent(doc, "", "  ")
