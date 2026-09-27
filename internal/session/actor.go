@@ -149,13 +149,14 @@ type Actor struct {
 // (plan 03-05): OFF at the zero value, with an empty letter set, no per-app
 // list and NO alternative modifier (b.3 — not introduced by default).
 type Options struct {
-	BackspaceCap    int
-	ClipboardRung   bool
-	WordLayoutCombo hotkey.Binding
-	MACREnabled     bool
-	MACRLetters     map[rune]bool
-	MACRApps        []string
-	MACRAltModifier string
+	BackspaceCap        int
+	ClipboardRung       bool
+	FlipAfterCorrection bool
+	WordLayoutCombo     hotkey.Binding
+	MACREnabled         bool
+	MACRLetters         map[rune]bool
+	MACRApps            []string
+	MACRAltModifier     string
 }
 
 // MACRStats are the Super→Ctrl layer's counters (ADR-005 b.2) — the status

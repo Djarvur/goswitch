@@ -71,10 +71,12 @@ type Timeouts struct {
 }
 
 // Correction carries the replacement-ladder parameters: the D-27 Backspace
-// series cap and the D-28 opt-in clipboard rung.
+// series cap, the D-28 opt-in clipboard rung and the post-correction script
+// flip switch (owner decision 2, quick plan 260927-vu8).
 type Correction struct {
-	BackspaceCap  int  `yaml:"backspace_cap"`
-	ClipboardRung bool `yaml:"clipboard_rung"`
+	BackspaceCap        int  `yaml:"backspace_cap"`
+	ClipboardRung       bool `yaml:"clipboard_rung"`
+	FlipAfterCorrection bool `yaml:"flip_after_correction"`
 }
 
 // MACR is the Super→Ctrl remapping layer (ADR-005): a global switch, the
