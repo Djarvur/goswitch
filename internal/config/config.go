@@ -60,8 +60,9 @@ func altModifierCandidates() []string {
 // strings resolved by hotkey.ParseBinding (D-31: name strings, combos
 // "+"-joined with the key last).
 type Hotkeys struct {
-	TapKey          string `yaml:"tap_key"`
-	WordLayoutCombo string `yaml:"word_layout_combo"`
+	TapKey           string `yaml:"tap_key"`
+	WordLayoutCombo  string `yaml:"word_layout_combo"`
+	ModeSwitchChord  string `yaml:"mode_switch_chord"`
 }
 
 // Timeouts are the timing parameters, in milliseconds.

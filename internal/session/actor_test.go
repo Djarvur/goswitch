@@ -3477,6 +3477,232 @@ func TestActor_RefusalsNeverFlip(t *testing.T) {
 	})
 }
 
+// Mode-switch chord corpus (owner decision 2, quick plan 260927-way):
+// Super+Space becomes a configurable goswitch-owned chord
+// (hotkeys.mode_switch_chord, default super+space, empty = disabled). The
+// live trace 2026-09-27 20:31 is the wire truth: Super+Space arrives as the
+// SPACE keyval with mods 0x50 — Mod4|NumLock — and (with GNOME's own
+// switch-input-source binding cleared) reaches the daemon's key path. The
+// chord branch sits AFTER the word-layout combo and BEFORE the mode
+// branches; the MACR layer is unaffected: space is not a letter, and the
+// chord marks the Super hold as witnessed so the consumed-upstream detect
+// stays silent.
+
+// numLockLatch is the IBUS_MOD2_MASK latched NumLock bit every chord press
+// carries on this desktop (the live trace 0x50 = Mod4|NumLock).
+const numLockLatch = 0x10
+
+// superSpaceChord returns the corpus's chord binding: a literal wire-equal
+// to hotkey.ParseBinding("super+space") — the defaultComboBinding idiom
+// (a literal, no corpus error handling). Keyval 0x020 with Mod4 as the FULL
+// ModMask: space carries no family bit, so the held mask is exactly Mod4.
+func superSpaceChord() hotkey.Binding {
+	return hotkey.Binding{Keyval: 0x020, ModMask: hotkey.MaskMod4}
+}
+
+// pressSuperSpace feeds the chord press exactly as the wire delivers it and
+// returns the consumption verdict.
+func pressSuperSpace(a *session.Actor) bool {
+	return a.HandleKey(engine.EngineEvent{Keyval: engine.KeySpace, Mods: engine.MaskMod4 | numLockLatch})
+}
+
+// TestActor_SuperSpaceChordFlipsMode pins the chord itself: a Super+Space
+// press flips the script mode IMMEDIATELY (no ExpiryAt — the chord is not a
+// tap), CONSUMES the press (no space lands in the field), emits exactly one
+// panel-symbol update through flipScript (Task 1) and commits nothing; the
+// buffer stays clean — typing "abc" afterwards yields the token "abc" with
+// no leading space.
+func TestActor_SuperSpaceChordFlipsMode(t *testing.T) {
+	buf := captureLogsLevel(t, slog.LevelDebug)
+	a, sink := wiredActor()
+	a.SetOptions(session.Options{ModeSwitchChord: superSpaceChord()})
+
+	if consume := pressSuperSpace(a); !consume {
+		t.Fatalf("super+space press transited — the chord must own and consume it (owner decision 2)")
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"combo","kind":"mode-switch-chord"`) {
+		t.Errorf("chord entry record missing; log:\n%s", logged)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after the chord press = %d, want exactly 1 (immediate, no expiry)", got)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("the chord did not flip EN→RU; log:\n%s", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] (Task 1 through flipScript)", got)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("chord commits = %q, want none — the press never lands in the field", texts)
+	}
+
+	// The buffer stays clean: flip back with a second chord (RU → EN) and
+	// type — the chord press fed no rune, so the corrected token is exactly
+	// "abc" with no leading space.
+	pressSuperSpace(a)
+	if got := countModeRecords(buf); got != 2 {
+		t.Fatalf("mode records after the flip-back = %d, want 2; log:\n%s", got, buf.String())
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en]", got)
+	}
+	typeWord(a, "abc")
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	line := "abc abc"
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	if !strings.Contains(buf.String(), `"source":"abc"`) {
+		t.Errorf("the corrected token is not the clean \"abc\" — a space leaked into the buffer; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_SuperSpaceChordKillsPendingTap pins the Pitfall-4 Reset: a tap
+// series armed when the chord press lands DIES with the chord's deliberate
+// FSM Reset — after the window expires exactly ONE mode record exists (the
+// chord's), and no tap decision ever fires.
+func TestActor_SuperSpaceChordKillsPendingTap(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.SetOptions(session.Options{ModeSwitchChord: superSpaceChord()})
+
+	tapShift(a) // series armed — the single-tap decision is pending
+	pressSuperSpace(a)
+	a.ExpiryAt(expiryAfterWindow) // the armed window closes on a dead series
+
+	if got := countActions(buf); got != 0 {
+		t.Errorf("actions after the killed series = %d, want 0 — the pending tap decision must die", got)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records = %d, want exactly 1 (the chord's flip, never a tap flip)", got)
+	}
+}
+
+// TestActor_SuperSpaceChordWitnessesSuperHold pins the MACR contract of the
+// chord (decision 2: space is not a letter — the interception order must
+// not disturb MACR): with MACR enabled, a bare Super press followed by the
+// chord press leaves BOTH counters at zero and logs no consumed-upstream
+// WARN — the chord marked the hold as witnessed (goswitch itself consumed
+// the press, nothing was swallowed upstream). The existing MACR corpus
+// (super+b intercepted, burst on release) passes unmodified.
+func TestActor_SuperSpaceChordWitnessesSuperHold(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(session.Options{
+		MACREnabled:     true,
+		MACRLetters:     map[rune]bool{'b': true},
+		ModeSwitchChord: superSpaceChord(),
+	})
+
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL}) // the hold opens
+	if consume := pressSuperSpace(a); !consume {
+		t.Fatalf("super+space transited under MACR — the chord branch must sit above the mode branches")
+	}
+	releaseSuper(a)
+
+	if got := a.MACRCounters(); got.SuperIntercepted != 0 || got.ConsumedUpstream != 0 {
+		t.Errorf("counters = %+v, want zeros — space is not a MACR letter and the hold WAS witnessed", got)
+	}
+	if strings.Contains(buf.String(), `"msg":"super combo skipped"`) {
+		t.Errorf("consumed-upstream WARN after a chord-witnessed hold; log:\n%s", buf.String())
+	}
+	if calls := sink.forwardCalls(); len(calls) != 0 {
+		t.Errorf("chord forwarded %+v, want none — the chord is not a MACR remap", calls)
+	}
+}
+
+// TestActor_SuperSpaceChordGateOff pins the off readings: at the zero-value
+// Options (the no-config world) the chord press transits untouched — no
+// consumption, no mode record, no sink call — and with the chord set, a
+// Mod2-only space (NumLock without Mod4) never matches.
+func TestActor_SuperSpaceChordGateOff(t *testing.T) {
+	t.Run("zero-value options", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		if consume := pressSuperSpace(a); consume {
+			t.Fatalf("chord press consumed with no chord configured — the zero value must be disabled")
+		}
+		if got := countModeRecords(buf); got != 0 {
+			t.Errorf("mode records = %d, want 0; log:\n%s", got, buf.String())
+		}
+		if got := len(sink.modeSymbols()); got != 0 {
+			t.Errorf("panel symbols = %d, want 0 — a transiting space emits nothing", got)
+		}
+	})
+
+	t.Run("Mod2-only space never matches", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		a.SetOptions(session.Options{ModeSwitchChord: superSpaceChord()})
+
+		if consume := a.HandleKey(engine.EngineEvent{Keyval: engine.KeySpace, Mods: numLockLatch}); consume {
+			t.Fatalf("Mod2-only space consumed — the held mask requires Mod4")
+		}
+		if got := countModeRecords(buf); got != 0 {
+			t.Errorf("mode records = %d, want 0 — NumLock-only space is a keystroke, not the chord; log:\n%s", got, buf.String())
+		}
+	})
+}
+
+// TestActor_SuperSpaceChordLosesToCombo pins the branch order: with
+// ModeSwitchChord EQUAL to the word-layout combo binding, the combo branch
+// wins (the chord branch sits after it) — the word pipeline launches and
+// the gesture still settles with exactly one flip, never a double.
+func TestActor_SuperSpaceChordLosesToCombo(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	combo := reloadCfg(300, "shift+ctrl_r").Hotkeys.WordLayoutCombo
+	binding, err := hotkey.ParseBinding(combo)
+	if err != nil {
+		t.Fatalf("ParseBinding(%q): %v", combo, err)
+	}
+	a.SetOptions(session.Options{WordLayoutCombo: binding, ModeSwitchChord: binding})
+
+	typeWord(a, wordEN)
+	pressComboDefault(a)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("combo require calls = %d, want 1 — the combo branch must own the press", got)
+	}
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records = %d, want exactly 1 — no double flip on a chord/combo collision", got)
+	}
+}
+
+// TestActor_HotReloadModeSwitchChord pins the CONF-02 wiring of the chord
+// (the applySnapshot fold with the EMPTY-DISABLES twist): the document's
+// mode_switch_chord is folded per snapshot — "super+space" arms the chord,
+// an explicit "" DISABLES it (transit, not last-good), and a document back
+// restores it. No restart, no SetOptions.
+func TestActor_HotReloadModeSwitchChord(t *testing.T) {
+	a, _ := wiredActor()
+	src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")} // the default document carries super+space
+	a.AttachConfig(src)
+
+	if consume := pressSuperSpace(a); !consume {
+		t.Fatalf("chord press transited under the default document — the chord must be live")
+	}
+
+	src.set(func() config.Config {
+		cfg := reloadCfg(300, "shift+ctrl_r")
+		cfg.Hotkeys.ModeSwitchChord = "" // explicit disable
+
+		return cfg
+	}())
+	if consume := pressSuperSpace(a); consume {
+		t.Fatalf("chord consumed after the empty reload — empty must DISABLE, not keep last-good")
+	}
+
+	src.set(reloadCfg(300, "shift+ctrl_r"))
+	if consume := pressSuperSpace(a); !consume {
+		t.Fatalf("chord press transited after the restore reload — the chord must come back")
+	}
+}
+
 // TestActor_ComboStillSingleFlipWithCorrectionFlip pins the single-flip
 // contract of the gesture: with the option ON, a combo over a correctable
 // word STILL produces exactly one mode record — the combo's settleCombo

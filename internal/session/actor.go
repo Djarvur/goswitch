@@ -159,6 +159,7 @@ type Options struct {
 	ClipboardRung       bool
 	FlipAfterCorrection bool
 	WordLayoutCombo     hotkey.Binding
+	ModeSwitchChord     hotkey.Binding
 	MACREnabled         bool
 	MACRLetters         map[rune]bool
 	MACRApps            []string
