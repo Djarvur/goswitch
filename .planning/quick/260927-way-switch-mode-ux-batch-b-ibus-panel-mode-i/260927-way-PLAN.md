@@ -157,7 +157,6 @@ Working tree is on branch `gsd/quick-correction-ux` with the 260927-vu8 sibling 
   <verify>
     <automated>cd /home/nil/DiskD/W/Djarvur/goswitch && go test -race -count=1 ./internal/hotkey/ ./internal/config/ ./internal/session/ && mise run ci</automated>
   </verify>
-  </verify>
   <done>
     super+space parses (Keyval 0x020, held Mod4), defaults carry it, empty disables, garbage refuses; the chord flips immediately, consumes the press, keeps the buffer clean, kills the pending tap series, leaves MACR counters at zero with the hold witnessed, transits when off, loses to the combo on collision, hot-reloads live; CONFIG.md and SPEC §4.1 document it; corpora and mise run ci green. Commit: feat(session): configurable super+space mode-switch chord (mode_switch_chord).
   </done>
