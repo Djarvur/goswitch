@@ -101,8 +101,9 @@ type Config struct {
 // Defaults returns the documented built-in defaults: the daemon runs on
 // them when -config is absent, so they must equal the Phase 2 behavior —
 // the tap window is ADR-002's DefaultWindow (300 ms), the Backspace cap
-// D-27's 50, the clipboard rung off (D-28) and MACR off with no
-// alternative modifier (ADR-005 b.3).
+// D-27's 50, the clipboard rung off (D-28), MACR off with no
+// alternative modifier (ADR-005 b.3) and the post-correction script flip
+// ON (owner decision 2, 2026-09-27: the mode follows a changed correction).
 func Defaults() Config {
 	return Config{
 		Hotkeys: Hotkeys{
@@ -114,8 +115,9 @@ func Defaults() Config {
 			VerifyWaitMs: defaultVerifyWaitMs,
 		},
 		Correction: Correction{
-			BackspaceCap:  defaultBackspaceCap,
-			ClipboardRung: false,
+			BackspaceCap:        defaultBackspaceCap,
+			ClipboardRung:       false,
+			FlipAfterCorrection: true,
 		},
 		MACR: MACR{
 			Enabled:     false,

@@ -82,10 +82,12 @@ func countActions(buf *syncBuffer) int {
 }
 
 // Corpus words of the correction pipeline (the 02-01 corpus pair — named
-// once, goconst).
+// once, goconst). mismatchLine is the non-matching surrounding push of the
+// refusal corpus — it ends with neither layout's token.
 const (
-	wordEN = "ghbdtn"
-	wordRU = "привет"
+	wordEN       = "ghbdtn"
+	wordRU       = "привет"
+	mismatchLine = "abc другойтекст"
 )
 
 // deleteCall is one recorded DeleteSurroundingText emission.
@@ -368,7 +370,7 @@ func TestActor_VerifyPaths(t *testing.T) {
 		tapShift(a)
 		tapShift(a)
 		a.ExpiryAt(expiryAfterWindow)
-		mismatch := "abc другойтекст"
+		mismatch := mismatchLine
 		a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch)) // does not end with the token
 
 		if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
@@ -683,7 +685,7 @@ func TestActor_PhraseVerifyMismatch(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	mismatch := "abc другойтекст"
+	mismatch := mismatchLine
 	a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch)) // does not end with the phrase
 
 	if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
@@ -3199,7 +3201,7 @@ func TestActor_FlipAfterWordCorrection(t *testing.T) {
 		t.Fatalf("INFO completion record missing; log:\n%s", logged)
 	}
 	if got := countModeRecords(buf); got != 1 {
-		t.Fatalf("mode records after a changed word correction = %d, want exactly 1 (owner decision 2); log:\n%s", got, logged)
+		t.Fatalf("mode records after a changed word correction = %d, want exactly 1; log:\n%s", got, logged)
 	}
 	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
 		t.Errorf("mode record is not the EN→RU flip; log:\n%s", logged)
@@ -3322,83 +3324,66 @@ func TestActor_FlipGateOff(t *testing.T) {
 	})
 }
 
+// refusalFlipProbe runs one correction attempt that must refuse, with the
+// flip ON, and pins the refusal half of owner decision 2: the D-20 reason
+// record lands and the mode is never flipped.
+func refusalFlipProbe(t *testing.T, wantReason string, run func(a *session.Actor)) {
+	t.Helper()
+
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.SetOptions(flipOnOptions())
+	run(a)
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"reason":"`+wantReason+`"`) {
+		t.Errorf("%s record missing; log:\n%s", wantReason, logged)
+	}
+	if got := countModeRecords(buf); got != 0 {
+		t.Errorf("the %s refusal flipped the mode %d times, want 0", wantReason, got)
+	}
+}
+
 // TestActor_RefusalsNeverFlip pins the refusal half of owner decision 2:
 // with the option ON, every D-20 refusal and only refusals leave the mode
 // untouched — empty-buffer, no-letters, verify-mismatch and verify-timeout
 // each log their reason and zero mode records.
 func TestActor_RefusalsNeverFlip(t *testing.T) {
 	t.Run("empty buffer", func(t *testing.T) {
-		buf := captureLogs(t)
-		a, _ := wiredActor()
-		a.SetOptions(flipOnOptions())
-
-		tapShift(a)
-		tapShift(a)
-		a.ExpiryAt(expiryAfterWindow)
-
-		if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
-			t.Errorf("empty-buffer record missing; log:\n%s", buf.String())
-		}
-		if got := countModeRecords(buf); got != 0 {
-			t.Errorf("refusal flipped the mode %d times, want 0", got)
-		}
+		refusalFlipProbe(t, "empty-buffer", func(a *session.Actor) {
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+		})
 	})
 
 	t.Run("no letters", func(t *testing.T) {
-		buf := captureLogs(t)
-		a, _ := wiredActor()
-		a.SetOptions(flipOnOptions())
-
-		typeWord(a, "2026")
-		tapShift(a)
-		tapShift(a)
-		a.ExpiryAt(expiryAfterWindow)
-
-		if !strings.Contains(buf.String(), `"reason":"no-letters"`) {
-			t.Errorf("no-letters record missing; log:\n%s", buf.String())
-		}
-		if got := countModeRecords(buf); got != 0 {
-			t.Errorf("refusal flipped the mode %d times, want 0", got)
-		}
+		refusalFlipProbe(t, "no-letters", func(a *session.Actor) {
+			typeWord(a, "2026")
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+		})
 	})
 
 	t.Run("verify mismatch", func(t *testing.T) {
-		buf := captureLogs(t)
-		a, _ := wiredActor()
-		a.SetOptions(flipOnOptions())
-
-		typeWord(a, wordEN)
-		tapShift(a)
-		tapShift(a)
-		a.ExpiryAt(expiryAfterWindow)
-		mismatch := "abc другойтекст"
-		a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch))
-
-		if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
-			t.Errorf("verify-mismatch record missing; log:\n%s", buf.String())
-		}
-		if got := countModeRecords(buf); got != 0 {
-			t.Errorf("refusal flipped the mode %d times, want 0", got)
-		}
+		refusalFlipProbe(t, "verify-mismatch", func(a *session.Actor) {
+			typeWord(a, wordEN)
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+			a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
+		})
 	})
 
 	t.Run("verify timeout", func(t *testing.T) {
-		buf := captureLogs(t)
-		a, _ := wiredActor()
-		a.SetOptions(flipOnOptions())
-
-		typeWord(a, wordEN)
-		tapShift(a)
-		tapShift(a)
-		a.ExpiryAt(expiryAfterWindow)
-		a.VerifyExpiry()
-
-		if !strings.Contains(buf.String(), `"reason":"verify-timeout"`) {
-			t.Errorf("verify-timeout record missing; log:\n%s", buf.String())
-		}
-		if got := countModeRecords(buf); got != 0 {
-			t.Errorf("refusal flipped the mode %d times, want 0", got)
-		}
+		refusalFlipProbe(t, "verify-timeout", func(a *session.Actor) {
+			typeWord(a, wordEN)
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+			a.VerifyExpiry()
+		})
 	})
 }
 
@@ -3422,7 +3407,7 @@ func TestActor_ComboStillSingleFlipWithCorrectionFlip(t *testing.T) {
 		t.Fatalf("INFO completion record missing; log:\n%s", logged)
 	}
 	if got := countModeRecords(buf); got != 1 {
-		t.Fatalf("mode records after a combo correction with the option ON = %d, want exactly 1 (single flip per gesture); log:\n%s", got, logged)
+		t.Fatalf("combo correction mode records = %d, want exactly 1 (single flip per gesture); log:\n%s", got, logged)
 	}
 	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
 	iMode := strings.Index(logged, `"msg":"mode"`)
@@ -3434,23 +3419,61 @@ func TestActor_ComboStillSingleFlipWithCorrectionFlip(t *testing.T) {
 	}
 }
 
+// pressEnter feeds the CORR-09 reset trigger: Enter hard-resets the phrase
+// buffer — the way the field ends a correction episode between episodes.
+func pressEnter(a *session.Actor) {
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeyReturn})
+}
+
+// flipDoc builds a reload document with the given flip_after_correction
+// value over the documented defaults.
+func flipDoc(on bool) config.Config {
+	cfg := reloadCfg(300, "shift+ctrl_r")
+	cfg.Correction.FlipAfterCorrection = on
+
+	return cfg
+}
+
+// flipSrc builds the reload source of the flip corpus serving the given
+// flip_after_correction value over the documented defaults.
+func flipSrc(on bool) *reloadSource {
+	return &reloadSource{cfg: flipDoc(on)}
+}
+
+// assertNoFlipAfterLastDone pins that no mode record follows the LAST done
+// record in logged — the reloaded-off gate must stop the flip.
+func assertNoFlipAfterLastDone(t *testing.T, logged string) {
+	t.Helper()
+
+	iLastDone := strings.LastIndex(logged, `"msg":"correction","outcome":"done"`)
+	iLastMode := strings.LastIndex(logged, `"msg":"mode"`)
+	if iLastMode > iLastDone {
+		t.Errorf("the post-reload correction flipped (last mode@%d > last done@%d)", iLastMode, iLastDone)
+	}
+}
+
+// settleRUWordCorrection drives one full word correction episode typed in
+// RU mode: the RU commits feed the buffer script-true Cyrillic, so the
+// field push carries wordRU and the correction converts RU→EN.
+func settleRUWordCorrection(a *session.Actor) {
+	pressEnter(a)
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+}
+
 // TestActor_HotReloadFlipAfterCorrection pins the CONF-02 wiring of the flip
 // gate: the document's correction.flip_after_correction is folded per
 // snapshot, so a reload true→false stops the flip for the NEXT correction
 // and false→true restores it — no restart, no SetOptions.
 func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
-	// resetBuffer ends a correction episode the way the field does: the
-	// CORR-09 Enter trigger hard-resets the phrase buffer.
-	resetBuffer := func(a *session.Actor) {
-		a.HandleKey(engine.EngineEvent{Keyval: engine.KeyReturn})
-	}
-
 	t.Run("on: the attached document flips", func(t *testing.T) {
 		buf := captureLogs(t)
 		a, _ := wiredActor()
-		src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")}
-		src.cfg.Correction.FlipAfterCorrection = true
-		a.AttachConfig(src)
+		a.AttachConfig(flipSrc(true))
 
 		settleWordCorrection(a)
 
@@ -3462,20 +3485,17 @@ func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
 	t.Run("true to false stops the flip", func(t *testing.T) {
 		buf := captureLogs(t)
 		a, _ := wiredActor()
-		src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")}
-		src.cfg.Correction.FlipAfterCorrection = true
+		src := flipSrc(true)
 		a.AttachConfig(src)
 
-		settleWordCorrection(a)
+		settleWordCorrection(a) // EN mode: done + one flip (the mode is now RU)
 		if got := countModeRecords(buf); got != 1 {
 			t.Fatalf("mode records before the reload = %d, want exactly 1; log:\n%s", got, buf.String())
 		}
 
-		off := reloadCfg(300, "shift+ctrl_r")
-		off.Correction.FlipAfterCorrection = false
+		off := flipDoc(false)
 		src.set(off)
-		resetBuffer(a)
-		settleWordCorrection(a)
+		settleRUWordCorrection(a)
 
 		logged := buf.String()
 		if got := strings.Count(logged, `"msg":"correction","outcome":"done"`); got != 2 {
@@ -3484,17 +3504,13 @@ func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
 		if got := countModeRecords(buf); got != 1 {
 			t.Errorf("mode records after the true→false reload = %d, want 1 (the pre-reload flip only)", got)
 		}
-		iLastDone := strings.LastIndex(logged, `"msg":"correction","outcome":"done"`)
-		iLastMode := strings.LastIndex(logged, `"msg":"mode"`)
-		if iLastMode > iLastDone {
-			t.Errorf("the post-reload correction flipped (last mode@%d > last done@%d)", iLastMode, iLastDone)
-		}
+		assertNoFlipAfterLastDone(t, logged)
 	})
 
 	t.Run("false to true restores the flip", func(t *testing.T) {
 		buf := captureLogs(t)
 		a, _ := wiredActor()
-		src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")} // Defaults: flip off until the document says otherwise
+		src := flipSrc(false) // explicit off — the built-in default is ON
 		a.AttachConfig(src)
 
 		settleWordCorrection(a)
@@ -3502,11 +3518,10 @@ func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
 			t.Fatalf("mode records before the reload = %d, want 0; log:\n%s", got, buf.String())
 		}
 
-		on := reloadCfg(300, "shift+ctrl_r")
-		on.Correction.FlipAfterCorrection = true
+		on := flipDoc(true)
 		src.set(on)
-		resetBuffer(a)
-		settleWordCorrection(a)
+		pressEnter(a)
+		settleWordCorrection(a) // the mode is still EN (no flip happened above)
 
 		logged := buf.String()
 		if got := countModeRecords(buf); got != 1 {

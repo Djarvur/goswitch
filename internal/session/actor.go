@@ -143,11 +143,17 @@ type Actor struct {
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
 // D-27 Backspace series cap and the D-28 opt-in clipboard rung switch —
-// OFF at the zero value, which is the default configuration — plus the
-// D-36 word-layout combo binding (the zero Binding selects the built-in
-// Shift+Control_R default) and the MACR-01 Super→Ctrl layer of ADR-005
-// (plan 03-05): OFF at the zero value, with an empty letter set, no per-app
-// list and NO alternative modifier (b.3 — not introduced by default).
+// OFF at the zero value, which is the default configuration — the
+// post-correction script flip of owner decision 2 (260927-vu8):
+// FlipAfterCorrection is OFF at the zero value (the unit corpus and the
+// no-SetOptions path) and ON when fed from the built-in defaults, whose
+// config.Defaults sets flip_after_correction true (the daemon wiring
+// passes it through SetOptions; an attached document overrides it live per
+// applySnapshot) — plus the D-36 word-layout combo binding (the zero
+// Binding selects the built-in Shift+Control_R default) and the MACR-01
+// Super→Ctrl layer of ADR-005 (plan 03-05): OFF at the zero value, with an
+// empty letter set, no per-app list and NO alternative modifier (b.3 — not
+// introduced by default).
 type Options struct {
 	BackspaceCap        int
 	ClipboardRung       bool
@@ -626,6 +632,29 @@ func (a *Actor) settleCombo() {
 	a.flipScript()
 }
 
+// settleCorrectionFlip applies owner decision 2 (quick plan 260927-vu8,
+// 2026-09-27): after a successful correction that CHANGED the text, the
+// internal script mode flips — the mode follows the correction (the owner
+// works in a correct-then-type flow). Exactly two sites call it — the
+// word/phrase level-1 success (executeCorrection) and the level-2 success
+// (executeLevel2) — each AFTER logCorrectionDone and BEFORE settleCombo,
+// so the settled done record precedes every flip (the D-36 order extended)
+// and the comboPending guard reads the flag before settleCombo clears it.
+// The helper no-ops when the gesture was a combo (the combo's own
+// settleCombo flip covers it — exactly one flip per gesture) and when
+// correction.flip_after_correction is off (the zero-value Options of the
+// unit corpus and the no-SetOptions path stays off; the daemon's built-in
+// defaults feed it ON — CorrectNow's forced word pipeline flips on success
+// exactly like the double tap it reuses). The D-24 done-without-change
+// outcome, the skipCorrection refusals and the selection path never reach
+// it. The caller holds the mutex.
+func (a *Actor) settleCorrectionFlip() {
+	if a.comboPending || !a.opts.FlipAfterCorrection {
+		return
+	}
+	a.flipScript()
+}
+
 // skipCorrection records one D-20 refusal: the INFO reason record (one
 // line, the reason slug, nothing touched) and the counters the control
 // surface reports. The caller holds the mutex.
@@ -688,6 +717,7 @@ func (a *Actor) applySnapshot() {
 	}
 	a.opts.BackspaceCap = snap.Correction.BackspaceCap
 	a.opts.ClipboardRung = snap.Correction.ClipboardRung
+	a.opts.FlipAfterCorrection = snap.Correction.FlipAfterCorrection
 	if name := snap.Hotkeys.WordLayoutCombo; name != a.comboName {
 		if binding, err := hotkey.ParseBinding(name); err == nil {
 			a.opts.WordLayoutCombo = binding
@@ -1490,7 +1520,8 @@ func (a *Actor) executeCorrection() {
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
 	a.logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
-	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
+	a.settleCorrectionFlip() // owner decision 2: the mode follows a changed word/phrase correction
+	a.settleCombo()          // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerify(p.converted, p.rng.tail)
 }
 
@@ -1539,6 +1570,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
+	a.settleCorrectionFlip() // owner decision 2: the mode follows a changed correction, any ladder level
 	a.settleCombo()
 }
 

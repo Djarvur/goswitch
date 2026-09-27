@@ -126,8 +126,9 @@ func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 	actor := session.NewActor(window)
 	actor.SetVersion(version)
 	actor.SetOptions(session.Options{
-		BackspaceCap:  cfg.Correction.BackspaceCap,
-		ClipboardRung: cfg.Correction.ClipboardRung,
+		BackspaceCap:        cfg.Correction.BackspaceCap,
+		ClipboardRung:       cfg.Correction.ClipboardRung,
+		FlipAfterCorrection: cfg.Correction.FlipAfterCorrection,
 	})
 	if watcher != nil {
 		actor.AttachConfig(watcher)

@@ -64,7 +64,8 @@ func TestDefaults(t *testing.T) {
 		t.Error("correction.clipboard_rung = true, want false (D-28 opt-in)")
 	}
 	if !got.Correction.FlipAfterCorrection {
-		t.Error("correction.flip_after_correction = false, want true (owner decision 2: the mode follows a changed correction)")
+		// Owner decision 2: the mode follows a changed correction.
+		t.Error("correction.flip_after_correction = false, want true")
 	}
 	if got.MACR.Enabled {
 		t.Error("macr.enabled = true, want false")

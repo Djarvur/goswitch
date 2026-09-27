@@ -15,7 +15,10 @@ The file has exactly four sections — `hotkeys`, `timeouts`, `correction`,
 `macr`. Every key of every section is listed here; the document must be
 complete (missing keys are validation errors, not silently defaulted) and
 **strict**: a typo'd key invalidates the whole file (D-33), so a setting can
-never appear applied while it actually is not.
+never appear applied while it actually is not. Documents written before
+`correction.flip_after_correction` existed must add the key: a missing key
+decodes as `false` (off, not the built-in default) instead of refusing to
+start — the completeness discipline is on the document's author.
 
 | Key | Type | Default | Range / vocabulary | Meaning |
 |-----|------|---------|--------------------|---------|
@@ -25,6 +28,7 @@ never appear applied while it actually is not.
 | `timeouts.verify_wait_ms` | int | `100` | (0, 2000] | wait for a fresh surrounding-text push when verifying the correction (ADR-004) |
 | `correction.backspace_cap` | int | `50` | [1, 500] | cap of the Backspace ladder series (D-27); over-cap corrections are refused silently, not half-deleted |
 | `correction.clipboard_rung` | bool | `false` | — | opt-in clipboard replacement rung for selections (D-28); OFF by default |
+| `correction.flip_after_correction` | bool | `true` | — | flip the script mode after a successful correction that changed the text (word and phrase paths); ON by default |
 | `macr.enabled` | bool | `false` | — | global switch of the Super→Ctrl remapping layer (ADR-005) |
 | `macr.letters` | string | `""` | comma-separated single letters `a`–`z` | the remapped letter set; required (non-empty) when `macr.enabled` is true |
 | `macr.apps` | list | `[]` | at most 64 entries | per-app allow list (ADR-005); empty list = the rule set applies everywhere |
@@ -57,6 +61,7 @@ timeouts:
 correction:
   backspace_cap: 50
   clipboard_rung: false
+  flip_after_correction: true
 macr:
   enabled: false
   letters: ""
@@ -76,6 +81,7 @@ timeouts:
 correction:
   backspace_cap: 50
   clipboard_rung: false
+  flip_after_correction: true
 macr:
   enabled: true
   letters: "c,v,t"
@@ -118,6 +124,7 @@ to the Caramba settings that serve the same purpose:
 | `timeouts.tap_window_ms` | their tap/series timing interval | theirs tunes a first-tap switch delay; ours the multi-tap discrimination window (default 300 ms) |
 | `correction.backspace_cap` | (no direct counterpart) | D-27 bound on the destructive Backspace ladder series |
 | `correction.clipboard_rung` | (no direct counterpart) | opt-in selection replacement through the clipboard (D-28) |
+| `correction.flip_after_correction` | «исправить и переключить»-класс поведения (switch after correction) | owner decision 2026-09-27: a successful correction that changed the text flips the script mode (word and phrase paths); the done-without-change outcome never flips |
 | `macr.enabled`, `macr.letters`, `macr.apps`, `macr.alt_modifier` | their macro/app rules | ADR-005 mechanism: Super+letter → Ctrl+letter, per-app lists |
 
 ## Privacy
