@@ -1,4 +1,8 @@
-# Phase 5: Автокоррекция опционально - Research
+# Phase 6: Автокоррекция опционально - Research
+
+(ренумерация 2026-09-28: фаза вставилась как 6-я после новой Фазы 5 «Интеграция с
+GNOME» по директиве владельца; артефакты перенесены 05→06, ADR автокоррекции
+ренумерован 006→007 — ADR-006 занят ревизией ADR-001 двухисточниковой схемы)
 
 **Researched:** 2026-09-27
 **Domain:** wrong-layout detection (dictionary + trigram scoring), AT-SPI role-based safety policy (app × role), config/status surface, e2e negative cases (password/terminal), licensing of donor algorithms and dictionary data
@@ -14,18 +18,18 @@ Phase 5 возвращает осознанно отвергнутую в v1 а�
 
 **Политика безопасности (D-53).** Живая проверка AT-SPI на этой машине дала критический факт: **роль парольного поля не различается между тулкитами**. GTK4 `GtkPasswordEntry` честно отдаёт `password-text` (40), но GTK3-пароль (zenity --password, GtkEntry visibility=off) отдаёт роль 61 «text box» — неотличимую от обычного поля. Следствие: ролевый фильтр necessary-but-not-sufficient; безопасность фичи держится на конъюнкции D-53 в целом — white-list приложений (default пустой = выключено везде) + роль + surrounding-text + уверенность детектора. wezterm вообще отсутствует на a11y-шине (в перечне 25 приложений его нет) → «нет AT-SPI-дерева → молчание» работает для него автоматически. Живой вызов GetRole по пути из фокус-события верифицирован: `org.a11y.atspi.Accessible.GetRole` на `/org/gnome/Zenity/a11y/<uuid>` из другого соединения отвечает мгновенно — расширение `internal/appid` (хранить sender+path последнего фокус-события) и шов `RoleSource` — прямая дорога.
 
-**Primary recommendation:** spec-delta + ADR-006 до кода (D-55); затем генератор `layouts/dictgen` (hunspell → golden sorted slices, полный ru 146k + полный en 79k), pure-пакет `internal/detect` (словарный путь + своя триграммная модель + golden-корпус), расширение `internal/appid` живым GetRole, конфиг-секция `autocorrect` (enabled:false, apps:[]) + ctl-счётчики, хук в `feedKey` на границе слова с деградацией в молчание, e2e-кейсы с GTK4-фикстурой парольного поля (gir1.2-gtk-4.0 установлен; фиксatura ~30 строк python3 проверена живьём в этом исследовании) и терминальным негативом через счётчики ctl.
+**Primary recommendation:** spec-delta + ADR-007 (ADR-006 занят Фазой 5) до кода (D-55); затем генератор `layouts/dictgen` (hunspell → golden sorted slices, полный ru 146k + полный en 79k), pure-пакет `internal/detect` (словарный путь + своя триграммная модель + golden-корпус), расширение `internal/appid` живым GetRole, конфиг-секция `autocorrect` (enabled:false, apps:[]) + ctl-счётчики, хук в `feedKey` на границе слова с деградацией в молчание, e2e-кейсы с GTK4-фикстурой парольного поля (gir1.2-gtk-4.0 установлен; фиксatura ~30 строк python3 проверена живьём в этом исследовании) и терминальным негативом через счётчики ctl.
 
 <user_constraints>
 ## User Constraints (from CONTEXT.md)
 
-### Locked Decisions (D-51..D-55, дословно по `.planning/phases/05-avtokorrekcija-opcionalno/05-CONTEXT.md`)
+### Locked Decisions (D-51..D-55, дословно по `.planning/phases/06-avtokorrekcija-opcionalno/06-CONTEXT.md (ранее 05-CONTEXT.md)`)
 
 - **D-51:** Автокоррекция открывает milestone v1.1.0 — не фаза внутри v1.0.0 (спека v1 автокоррекцию исключает). Формальный new-milestone-переключатель (PROJECT.md/STATE/архивация фаз) выполняется при complete-milestone v1.0.0; до тех пор артефакты v1.1 ведутся аддитивно (ROADMAP-секция, папка 05).
 - **D-52:** Гибридный детектор, решение владельца 2026-09-27: (а) словарный путь — на границе слова «набранное слово НЕ в словаре текущей раскладки И его ремап по таблице ЙЦУКЕН↔QWERTY ЕСТЬ в словаре другой» → высокая уверенность ошибки; (б) триграммный скоринг как fallback для OOV-слов (имена, опечатки) — сравнение правдоподобия слова в обеих раскладках. Доноры: xneur (GPL — ТОЛЬКО референс алгоритма, goibus-прецедент, код не копируется), Easy Switcher (GPL-2.0-only — тоже только референс), whatlanggo (MIT — допустим как зависимость; финальное решение «своя мини-модель vs зависимость» — за research по размеру/аудиту). Словарные данные (hunspell ru/en, частотные списки) запекаются go:generate-генератором в golden-паттерне таблиц Фазы 1; лицензии конкретных источников проверяет research ДО выбора.
 - **D-53:** Политика срабатывания — конъюнкция ВСЕХ условий: (1) приложение в white-list политики (по bridge-namespace из internal/appid), (2) роль сфокусированного AT-SPI-объекта — текстовый ввод (entry/document text; НЕ password text, НЕ terminal, НЕ canvas), (3) приложение отдаёт surrounding text (verify-rung применим), (4) детектор дал уверенный вердикт, (5) слово ≥ минимальной длины. ЛЮБОЕ «неизвестно» (нет AT-SPI-дерева, нет фокус-события, роль неопределима) → молчание. Роль запрашивается живым GetRole по объекту из фокус-события В МОМЕНТ решения — кэш appid (последнее известное приложение) advisory, не основание для срабатывания.
 - **D-54:** Default off везде: конфиг-секция `autocorrect` в YAML-схеме (strict decode D-33, hot reload D-32 распространяются автоматически), вшитые дефолты — enabled: false + пустой white-list. goswitchctl status показывает состояние автокоррекции (enabled/политика/последние счётчики срабатываний — аналогично MACRStats). Публичный конфиг-контракт docs/CONFIG.md дополняется.
-- **D-55:** SPEC правится spec-delta внутри фазы ДО кода детектора: §2 (класс 3 больше не «вне объёма»), §10 (снять пункт), §11 (записать решение возврата: opt-in, default off, white/black list — как предписано; новая дата решения владельца). ADR-006 — механика: AT-SPI роль источником решения, отказ от кэш-семантики, лицензионная позиция по донорам.
+- **D-55:** SPEC правится spec-delta внутри фазы ДО кода детектора (ADR нумерация обновлена: 006→007): §2 (класс 3 больше не «вне объёма»), §10 (снять пункт), §11 (записать решение возврата: opt-in, default off, white/black list — как предписано; новая дата решения владельца). ADR-007 (ренумерован с 006) — механика: AT-SPI роль источником решения, отказ от кэш-семантики, лицензионная позиция по донорам.
 
 ### Claude's Discretion (дословно)
 - Имена конфиг-ключей секции autocorrect, форма white/black list (flat list vs map app→roles) — в рамках D-31..D-33/D-54
@@ -50,7 +54,7 @@ Phase 5 возвращает осознанно отвергнутую в v1 а�
 | AC-02 | Политика app×role на AT-SPI-данных, unknown → молчание | Живые роли GNOME 46: GTK4 password-text=40 vs GTK3 password → 61 «text box» (не различимо!); wezterm отсутствует на a11y-шине; GetRole по пути фокус-события работает из любого соединения (busctl live); шов AppidSource (actor.go:301-303) расширяется RoleSource |
 | AC-03 | Конфиг `autocorrect` (strict decode, hot reload) + ctl-статус с счётчиками | Образцы: MACR-секция config.go:83-88 + Defaults:118-123; applySnapshot/SetOptions (actor.go:277,659); MACRCounters (actor.go:348) как шаблон; docs/CONFIG.md:60-84 — форма секции |
 | AC-04 | e2e-доказательства безопасности (пароль/терминал НЕ трогаются) | Реестр кейсов caseSpec (main.go:66-79); GTK4-фикстура GtkPasswordEntry проверена живьём (~30 строк python3, role password-text); zenity --password для ролевого гейта непригоден (роль 61); терминальный негатив — через счётчики ctl + -debug-лог |
-| AC-05 | spec-delta §2/§10/§11 + ADR-006 | Текст §10/§11 прочитан (SPEC.md:177-188); лицензионная позиция по донорам собрана (таблица ниже) |
+| AC-05 | spec-delta §2/§10/§11 + ADR-007 | Текст §10/§11 прочитан (SPEC.md:177-188); лицензионная позиция по донорам собрана (таблица ниже) |
 </phase_requirements>
 
 ## Project Constraints (from AGENTS.md / CONVENTIONS.md — no CLAUDE.md exists)
@@ -74,7 +78,7 @@ Phase 5 возвращает осознанно отвергнутую в v1 а�
 | Замена слова | Daemon (`internal/correct` plan/verify/ladder) | — | Единственный путь замены (D-52 reuse); никакого второго механизма |
 | Конфиг + ctl-поверхность | Daemon (`internal/config`, `internal/ctlsvc`) + ctl | — | Секция autocorrect по образцу macr; счётчики по образцу MACRStats |
 | Негативные e2e-кейсы | e2e stand (`test/e2e/case_autocorrect.go` + GTK4-фикстура) | goswitchctl status (счётчики-оракул) | Стенд уже умеет spawn/focus/witness; новых механизмов нет |
-| Spec-delta + ADR-006 | docs (`docs/SPEC.md`, `docs/adr/ADR-006-*.md`) | — | D-55: до кода детектора |
+| Spec-delta + ADR-007 | docs (`docs/SPEC.md`, `docs/adr/ADR-007-*.md`) | — | D-55: до кода детектора |
 
 ## Standard Stack
 
@@ -148,7 +152,7 @@ sudo apt install hunspell-ru hunspell-en-us   # уже установлены н
 
 ### Q1b. Easy Switcher: словарного слоя НЕТ (коррекция премиссы D-52)
 
-Репо `freemind001/easy-switcher` (Pascal, GPL-2.0, 121 звезда, push 2025-02-03; единственный исходник `easy-switcher.lpr`, 1139 строк, прочитан) `[VERIFIED: gh api + raw fetch]`. Это **ручной** корректор по горячей клавише (Pause/Break): буфер сканкодов evdev, `GetBufferAction` → KeepBuffer при <2 клавишах, ReplaceWord/ReplaceAll по последовательностям нажатия replace-key и Shift. Греп по `dict|dictionary|wordlist` — ноль вхождений. Архитектура uinput (собственный known-bug: «Doesn't work correctly together with key remappers such as keyd»). **Для детектора автокоррекции донорских уроков не даёт** — кроме подтверждения нижней границы «слово < 2 символов не трогаем». Отметить в ADR-006 честно: референс просмотрен, словарного алгоритма не содержит.
+Репо `freemind001/easy-switcher` (Pascal, GPL-2.0, 121 звезда, push 2025-02-03; единственный исходник `easy-switcher.lpr`, 1139 строк, прочитан) `[VERIFIED: gh api + raw fetch]`. Это **ручной** корректор по горячей клавише (Pause/Break): буфер сканкодов evdev, `GetBufferAction` → KeepBuffer при <2 клавишах, ReplaceWord/ReplaceAll по последовательностям нажатия replace-key и Shift. Греп по `dict|dictionary|wordlist` — ноль вхождений. Архитектура uinput (собственный known-bug: «Doesn't work correctly together with key remappers such as keyd»). **Для детектора автокоррекции донорских уроков не даёт** — кроме подтверждения нижней границы «слово < 2 символов не трогаем». Отметить в ADR-007 честно: референс просмотрен, словарного алгоритма не содержит.
 
 ### Q2. Триграммный fallback: whatlanggo vs своя мини-модель
 
@@ -262,7 +266,7 @@ Observer выбрасывает сигнал после извлечения и�
 
 **Горячий путь**: решение происходит только на границе слова (не на каждой клавише). Стоимость: binary-search по 146k ≈ микросекунды; GetRole = один D-Bus round-trip по unix-сокету ≈ доли мс (живые вызовы мгновенны); триграммы — только при словарном miss. Граничная клавиша транзитит как раньше (семантика CORR-09: «the reset is engine state, never consumption», actor.go:1249-1252). Бюджет SPEC §5 < 50 мс не под угрозой.
 
-**Деградация — направление инвертировано относительно MACR**: macrTargetActive при недоступности appid ДЕГРАДИРУЕТ К ГЛОБАЛЬНОМУ правилу (permissive, actor.go:1045-1066) с WARN-once «app identity unavailable» (actor.go:1071-1082). Автокоррекция при ЛЮБОМ неизвестном обязана молчать (D-53) — переносится паттерн warn-once (по эпизоду, не на клавише), НЕ переносится ранг деградации. Направление безопаснее: fail-closed вместо fail-open; в ADR-006 зафиксировать отличия.
+**Деградация — направление инвертировано относительно MACR**: macrTargetActive при недоступности appid ДЕГРАДИРУЕТ К ГЛОБАЛЬНОМУ правилу (permissive, actor.go:1045-1066) с WARN-once «app identity unavailable» (actor.go:1071-1082). Автокоррекция при ЛЮБОМ неизвестном обязана молчать (D-53) — переносится паттерн warn-once (по эпизоду, не на клавише), НЕ переносится ранг деградации. Направление безопаснее: fail-closed вместо fail-open; в ADR-007 зафиксировать отличия.
 
 ### Q6. e2e-поверхность негативных кейсов
 
@@ -343,7 +347,7 @@ internal/session/         # + хук границы слова в feedKey, ко�
 internal/config/          # + секция autocorrect (enabled/apps/пороги, валидация, дефолты off)
 internal/ctlsvc/ + cmd/goswitchctl/  # + autocorrect-статус (образец MACRStats)
 docs/CONFIG.md            # + секция autocorrect (D-54)
-docs/adr/ADR-006-*.md     # механика (D-55): роль как источник решения, fail-closed, лицензии
+docs/adr/ADR-007-*.md     # механика (D-55): роль как источник решения, fail-closed, лицензии
 docs/SPEC.md              # spec-delta §2/§10/§11 (D-55) — ДО кода детектора
 test/e2e/case_autocorrect.go        # кейсы: fires / password-silent / terminal-silent
 test/e2e/fixtures/password_entry.py # GTK4-фикстура (проверена живьём, см. Q6)
@@ -390,7 +394,7 @@ test/e2e/fixtures/input.html        # + password input для chromium-пове�
 ### Pitfall 1: GTK3-парольное поле проходит ролевый гейт
 **What goes wrong:** авто-коррекция срабатывает в GTK3-пароле white-list-приложения.
 **Why:** GTK3 GtkEntry visibility=off отдаёт роль 61 «text box» (живой факт Q4).
-**How to avoid:** рассматривать роль как necessary-not-sufficient; white-list держать узким; документировать ограничение в ADR-006 и CONFIG.md; e2e-фикстура — GTK4 (там роль честная).
+**How to avoid:** рассматривать роль как necessary-not-sufficient; white-list держать узким; документировать ограничение в ADR-007 и CONFIG.md; e2e-фикстура — GTK4 (там роль честная).
 **Warning signs:** желание «упростить» политику до одной роли.
 
 ### Pitfall 2: Срабатывание на корректных словах с OOV-именами
@@ -501,7 +505,7 @@ print(f"FINAL:{secret.get_text()}", flush=True)
 |--------------|------------------|--------------|--------|
 | xneur: proto-списки + опциональный spellchecker | Полноценные словари, запечённые в бинарник + триграммы | этот этап | Ноль рантайм-зависимостей (enchant/aspell не нужны), детерминизм для тестов |
 | Ручные корректоры (Easy Switcher, буфер сканкодов + клавиша) | Автокоррекция за конъюнкцией политик | этот этап | Клавиатурный буфер не нужен — границу слова видит сам IME |
-| Кэш приложения как основа решения | Живой AT-SPI GetRole в момент решения | D-53 | Отказ от кэш-семантики фиксируется в ADR-006 |
+| Кэш приложения как основа решения | Живой AT-SPI GetRole в момент решения | D-53 | Отказ от кэш-семантики фиксируется в ADR-007 |
 | whatlanggo как «дефолт» триграмм в Go | Своя 2-язычная мини-модель под короткие слова | это исследование | −750 КБ бинарника, −1900 LOC аудита, пороги под корпус |
 
 **Deprecated/outdated:**
@@ -525,7 +529,7 @@ print(f"FINAL:{secret.get_text()}", flush=True)
 1. **Бюджет размера бинарника (+7.9 МБ за полные словари)** — Discretion явно отдаёт предложение research, пинирует планировщик/владелец. Что известно: числа измерены; полнота словаря = безопасность. Рекомендация: принять полные словари; checkpoint:human-verify на выбор владельца, если важнее компактность.
 2. **Оракул терминального негатива** — счётчики ctl vs AT-SPI (wezterm нечитаем). Рекомендация: счётчики + -debug; планировщик фиксирует в кейсе.
 3. **Ё-нормализация** — генератором (ё→е) или дубль-формами; решит golden-корпус (Pitfall 3).
-4. **Порядок spec-delta vs detector-package** — Discretion планировщика; D-55 требует «ДО кода детектора» только для spec-правок, ADR-006 может идти параллельно с dictgen.
+4. **Порядок spec-delta vs detector-package** — Discretion планировщика; D-55 требует «ДО кода детектора» только для spec-правок, ADR-007 может идти параллельно с dictgen.
 
 ## Environment Availability
 
@@ -602,7 +606,7 @@ print(f"FINAL:{secret.get_text()}", flush=True)
 ## Implications for Planning
 
 **Рекомендуемая нарезка** (порядок: spec-delta первым — D-55):
-1. **План A (docs):** spec-delta §2/§10/§11 + ADR-006 (роль как источник решения; отказ от кэша; fail-closed; лицензионная позиция: hunspell BSD/SCOWL, доноры GPL read-only, whatlanggo отклонён технически) + docs/CONFIG.md-секция.
+1. **План A (docs):** spec-delta §2/§10/§11 + ADR-007 (роль как источник решения; отказ от кэша; fail-closed; лицензионная позиция: hunspell BSD/SCOWL, доноры GPL read-only, whatlanggo отклонён технически) + docs/CONFIG.md-секция.
 2. **План B (данные):** `layouts/dictgen` — генератор (hunspell-парсер: снять флаги, len≥2, сортировка, ё-нормализация) → golden `dict_ru.go`/`dict_en.go`/триграммные таблицы + golden-тесты; mise-задача regen.
 3. **План C (детектор):** `internal/detect` — чистый Verdict/Check + golden-корпус (корпус обязателен по Discretion; включает OOV/имена/ё/mixed).
 4. **План D (роль):** appid хранит (sender,path)+Role-запрос (шов `UseAppidStarter`-стиль); тесты на синтетическом фиде.
