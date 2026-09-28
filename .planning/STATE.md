@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 04 — Поставка и приёмка
 Plan: 9 of 9
-Status: Executed — UAT test 2 pending owner (D-48 fresh-session double-run)
+Status: Executed — D-48 tonight (real run after dispatcher-PATH + shell-idle fixes; PR #8 merged)
 Last activity: 2026-09-27 — Quick task 260927-vu8: correction UX batch A (bracket-row allow-set + flip_after_correction, needs-review); live e2e acceptance deferred to orchestrator
 
 Progress: [████████░░] 75%
@@ -94,6 +94,12 @@ Progress: [████████░░] 75%
 | Phase 04 P09 | 9 min | 3 tasks | 4 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 5 added (2026-09-28, owner directive «починить индикацию и интеграцию с gnome»): Интеграция с GNOME — индикация и двухисточниковое переключение (ревизия ADR-001 → ADR-006; решения D-52..D-54 в 05-CONTEXT.md).
+- Phase 6 added (2026-09-28): Система автокоррекции (артефакты переименованы 05→06, ADR 006→007; решения D-51..D-55, research HIGH готов).
+
 
 ### Decisions
 
