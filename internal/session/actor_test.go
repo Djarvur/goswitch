@@ -3888,3 +3888,53 @@ func TestActor_FlipAfterSelectionCorrection(t *testing.T) {
 		t.Errorf("panel symbols = %q, want exactly [ru]", got)
 	}
 }
+
+// TestActor_FlipDirectionFollowsConvertedScript pins the owner rule
+// (2026-09-28): after a correction the mode is SET to the script of the
+// CONVERTED result, not toggled — correcting a Cyrillic selection while
+// in EN mode leaves the mode EN (the text is Latin now), and correcting a
+// Latin word to Cyrillic makes it RU.
+func TestActor_FlipDirectionFollowsConvertedScript(t *testing.T) {
+	t.Run("cyr-to-lat while EN stays EN silently", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		a.SetOptions(flipOnOptions())
+
+		field := wordRU + " " + wordRU
+		a.HandleSurroundingText(field, 6, 0) // selection [0,6) of привет
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if got := countModeRecords(buf); got != 0 {
+			t.Fatalf("mode records = %d, want 0 (set-by-script, not a toggle); log:\n%s",
+				got, buf.String())
+		}
+		if got := sink.modeSymbols(); len(got) != 0 {
+			t.Errorf("panel symbols = %q, want none (no transition)", got)
+		}
+	})
+
+	t.Run("cyr-to-lat while RU flips to EN", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		a.SetOptions(flipOnOptions())
+
+		// Enter RU mode first (single tap = manual toggle).
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		field := wordRU + " " + wordRU
+		a.HandleSurroundingText(field, 6, 0)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if got := countModeRecords(buf); got != 2 {
+			t.Fatalf("mode records = %d, want 2 (manual + correction); log:\n%s", got, buf.String())
+		}
+		if !strings.Contains(buf.String(), `"msg":"mode","to":"en"`) {
+			t.Errorf("the correction's record must set en (the converted script); log:\n%s", buf.String())
+		}
+	})
+}

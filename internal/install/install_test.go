@@ -57,7 +57,6 @@ const (
 	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
 	gsettingsKeySwitch         = "switch-input-source"
 	gsettingsKeySwitchBackward = "switch-input-source-backward"
-	gsettingsKeyShowAll        = "show-all-sources"
 	// derivedActivation is the engine name the first ('xkb', 'us') tuple of
 	// ownerSources restores to (the fallbackEngine derivation).
 	derivedActivation = "xkb:us::eng"
@@ -115,8 +114,6 @@ func defaultReply(name string, args []string) ([]byte, error) {
 		return []byte(ownerSwitchBindings), nil
 	case gsettingsGet(gsettingsKeySwitchBackward):
 		return []byte(ownerSwitchBindingsBackward), nil
-	case gsettingsGet(gsettingsKeyShowAll):
-		return []byte("false"), nil
 	case name == binIbus && len(args) > 0 && args[0] == "list-engine":
 		return []byte(listEngineOut), nil
 	}
@@ -246,7 +243,6 @@ func TestInstall_Sequence(t *testing.T) {
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
-		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKeyShowAll},
 		{binIbus, opWriteCache},
 		{binIbus, "restart"},
 		{binIbus, "list-engine"},
@@ -257,7 +253,6 @@ func TestInstall_Sequence(t *testing.T) {
 		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + clearedSwitchBindings},
 		{binGSettings, "set " + gsettingsKeybindingsSchema + " " +
 			gsettingsKeySwitchBackward + " " + clearedSwitchBindings},
-		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKeyShowAll + " true"},
 		{binIbus, "engine goswitch-en"},
 	})
 
@@ -508,9 +503,6 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 			if args[2] == gsettingsKeySwitch || args[2] == gsettingsKeySwitchBackward {
 				return []byte(clearedSwitchBindings), nil
 			}
-			if args[2] == gsettingsKeyShowAll {
-				return []byte("true"), nil
-			}
 		}
 
 		return defaultReply(name, args)
@@ -565,7 +557,6 @@ func TestUninstall_FullRollback(t *testing.T) {
 		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + ownerSwitchBindings},
 		{binGSettings, "set " + gsettingsKeybindingsSchema + " " +
 			gsettingsKeySwitchBackward + " " + ownerSwitchBindingsBackward},
-		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKeyShowAll + " false"},
 	})
 	if !slices.ContainsFunc(report, func(line string) bool {
 		return strings.Contains(line, "switch-input-source: restored "+ownerSwitchBindings)
@@ -593,7 +584,7 @@ func TestUninstall_FullRollback(t *testing.T) {
 // FullRollback corpus asserts the uninstall suffix of the recording): two
 // gsettings gets (sources + switch binding), two ibus cache steps, three
 // systemctl steps, list-engine, two gsettings sets, engine activation.
-const installCallCount = 15
+const installCallCount = 13
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did

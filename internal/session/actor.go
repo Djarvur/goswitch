@@ -664,11 +664,44 @@ func (a *Actor) settleCombo() {
 // selection correction (owner report 2026-09-28: «при коррекции выделения
 // — нет» fixed). The D-24 done-without-change outcome and the
 // skipCorrection refusals never reach it. The caller holds the mutex.
-func (a *Actor) settleCorrectionFlip() {
+func (a *Actor) settleCorrectionFlip(converted []rune) {
 	if a.comboPending || !a.opts.FlipAfterCorrection {
 		return
 	}
-	a.flipScript()
+	// The mode is SET to the converted text's script, never toggled (owner
+	// rule 2026-09-28): a cyr→lat correction leaves the layout Latin, a
+	// lat→cyr one makes it Cyrillic — the layout you now intend to type in.
+	switch scriptOf(converted) {
+	case modeEN:
+		a.setScriptMode(a.mode == modeRU)
+	case modeRU:
+		a.setScriptMode(a.mode == modeEN)
+	}
+}
+
+// setScriptMode applies one script-mode transition when the mode actually
+// differs, reusing the flip's whole body (the mode record, the panel
+// symbol update); a same-mode call is a no-op.
+func (a *Actor) setScriptMode(transition bool) {
+	if transition {
+		a.flipScript()
+	}
+}
+
+// scriptOf reports the script of the first letter of the converted range —
+// the layout the corrected text now lives in. A letterless range (digits,
+// punctuation only) keeps the current mode.
+func scriptOf(converted []rune) scriptMode {
+	for _, r := range converted {
+		if unicode.Is(unicode.Cyrillic, r) {
+			return modeRU
+		}
+		if unicode.Is(unicode.Latin, r) {
+			return modeEN
+		}
+	}
+
+	return modeEN // letterless — the caller's transition is false either way
 }
 
 // skipCorrection records one D-20 refusal: the INFO reason record (one
@@ -1603,8 +1636,8 @@ func (a *Actor) executeCorrection() {
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
 	a.logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
-	a.settleCorrectionFlip() // owner decision 2: the mode follows a changed word/phrase correction
-	a.settleCombo()          // D-36: the flip lands strictly after the settled completion record
+	a.settleCorrectionFlip(p.converted) // owner rule 2026-09-28: the mode follows the converted script
+	a.settleCombo()                     // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerify(p.converted, p.rng.tail)
 }
 
@@ -1623,12 +1656,19 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 	// 2^31 runes; on the 64-bit target an int always holds a uint32.
 	offset := int32(sel.start) - int32(sel.cursor)
 	nchars := sel.end - sel.start
+	// Geometry only, never field content (D-20/D-21): the live hunt for
+	// the «correction corrupts text outside the selection» defect.
+	slog.Debug("selection geometry",
+		"offset", offset, "nchars", nchars,
+		"cursor", sel.cursor, "anchor", a.sel.anchor,
+		"start", sel.start, "end", sel.end,
+		"field_len", len(a.sel.full))
 	a.eng.DeleteSurroundingText(offset, nchars)
 	a.eng.CommitText(engine.NewIBusText(string(p.converted)))
 	a.buf.HardReset() // the buffer can no longer mirror the replaced field
 	a.logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
-	a.settleCorrectionFlip() // owner report 2026-09-28: the selection path flips like the word path
-	a.settleCombo()          // D-36: the flip lands strictly after the settled completion record
+	a.settleCorrectionFlip(p.converted) // owner rule 2026-09-28: the mode follows the converted script
+	a.settleCombo()                     // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerifyRange(p.converted, sel.start)
 }
 
@@ -1654,7 +1694,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
-	a.settleCorrectionFlip() // owner decision 2: the mode follows a changed correction, any ladder level
+	a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
 	a.settleCombo()
 }
 
