@@ -406,22 +406,27 @@ Two-source check: both `('ibus', 'goswitch-en')` and `('ibus', 'goswitch-ru')` p
    - What we know: upstream code says no; ADR-001's live experiment falsified the XKB half on this machine; Ubuntu carries no compensating patch.
    - What's unclear: nothing code-level — but the locked D-52 expects "индикатор нативный", so the LIVE verdict on the exact target desktop decides the plan's shape.
    - Recommendation: Wave-1 tracer spike with reversible desktop mutation; pick D-52-as-is or a fallback WITH the owner before Wave 2.
+   - **Status: RESOLVED (routed — no planning-time answer by design).** The mandatory Wave-1 spike `switch-spike` (plan 05-01 Task 1, probes P1–P4 + owner indicator observation in the P3 pauses) feeds the blocking owner checkpoint 05-01 Task 2 (options d52-literal / sources-rewrite / d52-plus-mru-seed); ADR-006 (05-01 Task 3) records the live verdict and its criterion-2 semantics.
 2. **mru-sources seeding policy (login restore)**
    - What we know: the shell reads mru-sources only when its internal MRU is empty (session start); it also writes the key on interactive switches (keyboard.js `_updateMruSettings`).
    - What's unclear: whether the daemon should persist its last engine into mru-sources at flip time (races the shell's writes) or leave login state alone.
    - Recommendation: leave alone in v1 unless the spike shows post-restart mode loss matters to the owner; document as a known behavior.
+   - **Status: RESOLVED — untouched in v1.** No plan writes `mru-sources`; seeding appears ONLY as the optional checkpoint add-on `d52-plus-mru-seed` (05-01 Task 2 option 3), off the default path of every plan; known-behavior documentation lands in README (05-05 Task 2).
 3. **Lifecycle seam shape for engine identity**
    - What we know: `HandleLifecycle(kind engine.LifecycleKind)` carries NO engine name [VERIFIED: engine/engine.go:83-97 — `HandleLifecycle(kind LifecycleKind)`]; FocusIn logs the name but drops it at the seam.
    - What's unclear: extend the lifecycle event with the engine name (interface change rippling to test doubles) vs a separate engine-identity callback.
    - Recommendation: smallest ripple — a dedicated sync entry point fed from the subscription and from FocusIn's name, keeping EventHandler's existing signatures.
+   - **Status: RESOLVED by plan 05-04.** Dedicated sync entry point `Actor.SyncEngine(name)` (05-04 Task 2) fed from the GlobalEngineChanged dispatch and FocusIn's engine name (05-04 Task 1); `EventHandler.HandleLifecycle` signatures unchanged — pinned by TestFocusInForwardsEngineName.
 4. **Wrap input resolution on already-wrapped desktops (Pitfall 7)**
    - What we know: live sources are goswitch-owned today; install-state.json holds the original pair.
    - What's unclear: exact precedence (live pair → saved original → refuse) and whether a half-wrapped list (one goswitch + one xkb) should be re-wrapped or refused.
    - Recommendation: planner pins the table of cases as unit corpus; refusal messages name the failing tuple type (D-20-safe: types only).
+   - **Status: RESOLVED by plan 05-02.** Precedence pinned as live xkb pair → saved original from install-state.json → honest refusal; half-wrapped list = refusal `errMixedSources` (never re-wrapped); encoded as the unit corpus TestWrapSourcesRefusalTable / TestWrapSourcesAlreadyOwnedUpgrade / TestInstall_RefusalBeforeAnyWrite (05-02 Task 1); refusal messages name the tuple TYPE only.
 5. **ADR-006 wording under a fallback outcome**
    - What we know: ADR-006 must record Option B→A with live findings; the format follows ADR-001 (Status/Context/Decision/Consequences/Reversibility).
    - What's unclear: if the spike forces fallback 2 (engine-truth flip, indicator reflects user-driven switches only), criterion 2's wording needs an owner amendment (small spec-delta).
    - Recommendation: draft ADR-006 AFTER the spike verdict, in the same plan that lands the chosen mechanism.
+   - **Status: RESOLVED by plans 05-01/05-05.** ADR-006 is drafted strictly AFTER the spike verdict (05-01 Task 3, Status: Proposed with the owner's chosen variant and its criterion-2 wording — the one-line spec-delta for d52-literal is written there); promoted to Accepted after the live mechanism proof (05-05 Task 2).
 
 ## Environment Availability
 
