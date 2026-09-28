@@ -1701,9 +1701,12 @@ func TestActor_DoubleTapSelectionCorrects(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
+	// No DeleteSurroundingText on the selection path (2026-09-28 fix): the
+	// commit itself replaces the ACTIVE selection — the delete+commit pair
+	// double-applied in Chromium (live corruption hunt, verify timeout).
 	calls := sink.deleteCalls()
-	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
-		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the selection range, tail not touched", calls)
+	if len(calls) != 0 {
+		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU {
@@ -1732,8 +1735,8 @@ func TestActor_SelectionLeftToRight(t *testing.T) {
 	a.ExpiryAt(expiryAfterWindow)
 
 	calls := sink.deleteCalls()
-	if len(calls) != 1 || calls[0] != (deleteCall{offset: 0, nchars: 6}) {
-		t.Fatalf("deletions = %+v, want exactly one (0,6) — offset 0, the range is right of the cursor", calls)
+	if len(calls) != 0 {
+		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU {
@@ -1779,8 +1782,8 @@ func TestActor_SelectionMixedConverts(t *testing.T) {
 	a.ExpiryAt(expiryAfterWindow)
 
 	calls := sink.deleteCalls()
-	if len(calls) != 1 || calls[0] != (deleteCall{offset: -9, nchars: 9}) {
-		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole selected range", calls)
+	if len(calls) != 0 {
+		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != "паи"+wordRU {

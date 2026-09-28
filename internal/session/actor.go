@@ -810,6 +810,11 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 
 	a.surr = beforeCursor(text, cursorPos)
 	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
+	// -debug only, same sensitivity class as the key trace (diagnosis mode
+	// is opt-in and short-lived); the live hunt needs the pushed field
+	// text to see what a correction actually left behind (2026-09-28).
+	slog.Debug("surrounding push", "text", text,
+		"cursor", cursorPos, "anchor", anchorPos)
 	if a.pending != nil {
 		if !a.pendingVerdict() {
 			a.resolvePending()
@@ -1652,18 +1657,18 @@ func (a *Actor) executeCorrection() {
 // range-anchored. The caller holds the mutex and pending != nil.
 func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 	sel := p.sel
-	// #nosec G115 -- both positions index a real input field, far below
-	// 2^31 runes; on the 64-bit target an int always holds a uint32.
-	offset := int32(sel.start) - int32(sel.cursor)
-	nchars := sel.end - sel.start
-	// Geometry only, never field content (D-20/D-21): the live hunt for
-	// the «correction corrupts text outside the selection» defect.
+	// NO DeleteSurroundingText here (2026-09-28 fix): the client's
+	// selection is ACTIVE — a CommitText replaces an active selection by
+	// the OS input-method contract (GTK, Chromium/Electron, Qt alike), so
+	// the former delete+commit pair double-applied and corrupted the field
+	// around the selection (live hunt 2026-09-28: Chromium answered with a
+	// cursor position no correct delete+commit ordering can produce, the
+	// verify-after timed out — 25→24-rune correction). Geometry only,
+	// never field content (D-20/D-21).
 	slog.Debug("selection geometry",
-		"offset", offset, "nchars", nchars,
 		"cursor", sel.cursor, "anchor", a.sel.anchor,
 		"start", sel.start, "end", sel.end,
 		"field_len", len(a.sel.full))
-	a.eng.DeleteSurroundingText(offset, nchars)
 	a.eng.CommitText(engine.NewIBusText(string(p.converted)))
 	a.buf.HardReset() // the buffer can no longer mirror the replaced field
 	a.logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
