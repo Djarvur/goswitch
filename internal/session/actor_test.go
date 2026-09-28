@@ -82,10 +82,12 @@ func countActions(buf *syncBuffer) int {
 }
 
 // Corpus words of the correction pipeline (the 02-01 corpus pair — named
-// once, goconst).
+// once, goconst). mismatchLine is the non-matching surrounding push of the
+// refusal corpus — it ends with neither layout's token.
 const (
-	wordEN = "ghbdtn"
-	wordRU = "привет"
+	wordEN       = "ghbdtn"
+	wordRU       = "привет"
+	mismatchLine = "abc другойтекст"
 )
 
 // deleteCall is one recorded DeleteSurroundingText emission.
@@ -108,15 +110,18 @@ type forwardCall struct {
 // pins the ORDER of the calls (the burst→commit sequence of the ladder).
 // forwardHook, when set, fires inside ForwardKeyEvent so a test can
 // interleave the sink's records with another guarded recorder (the
-// clipboard rung's subprocess log).
+// clipboard rung's subprocess log); modeHook plays the same role for
+// UpdateModeSymbol (the panel-symbol corpus pins the emit-after-log order).
 type fakeSink struct {
 	mu          sync.Mutex
 	requires    int
 	deletes     []deleteCall
 	commits     []string
 	forwards    []forwardCall
+	modes       []string
 	ops         []string
 	forwardHook func(forwardCall)
+	modeHook    func(symbol string)
 }
 
 // RequireSurroundingText records the verification request.
@@ -158,6 +163,28 @@ func (f *fakeSink) ForwardKeyEvent(keyval, keycode, state uint32) {
 	if hook != nil {
 		hook(call)
 	}
+}
+
+// UpdateModeSymbol records the panel-symbol update with its argument — the
+// mode-indicator emit of owner decision 1 (quick plan 260927-way).
+func (f *fakeSink) UpdateModeSymbol(symbol string) {
+	f.mu.Lock()
+	f.modes = append(f.modes, symbol)
+	f.ops = append(f.ops, "mode("+symbol+")")
+	hook := f.modeHook
+	f.mu.Unlock()
+
+	if hook != nil {
+		hook(symbol)
+	}
+}
+
+// modeSymbols snapshots the recorded panel-symbol updates.
+func (f *fakeSink) modeSymbols() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.modes...)
 }
 
 // requireCount snapshots the verification-request count.
@@ -368,7 +395,7 @@ func TestActor_VerifyPaths(t *testing.T) {
 		tapShift(a)
 		tapShift(a)
 		a.ExpiryAt(expiryAfterWindow)
-		mismatch := "abc другойтекст"
+		mismatch := mismatchLine
 		a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch)) // does not end with the token
 
 		if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
@@ -683,7 +710,7 @@ func TestActor_PhraseVerifyMismatch(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	mismatch := "abc другойтекст"
+	mismatch := mismatchLine
 	a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch)) // does not end with the phrase
 
 	if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
@@ -1075,9 +1102,13 @@ func flipMode(a *session.Actor) {
 
 // TestActor_FlipOnSingle pins the ADR-001 Option B flip: a single-tap series
 // resolved at window expiry switches the actor's internal script mode EN→RU
-// and back RU→EN, each switch logging the exact INFO mode record — and the
-// flip is purely internal: zero calls of any kind on the sink (the XKB group
-// of the session is not touched, D-01 verdict).
+// and back RU→EN, each switch logging the exact INFO mode record — the flip
+// is still purely internal toward the FIELD (the XKB group of the session is
+// not touched, D-01 verdict; zero CommitText/DeleteSurroundingText/
+// ForwardKeyEvent on a bare flip), but each switch now refreshes the panel
+// symbol (owner decision 1, quick plan 260927-way): exactly one
+// UpdateModeSymbol per flip, "ru" then "en" — reconciled deliberately from
+// the vu8-era zero-sink-call pin, decision 1 cited.
 func TestActor_FlipOnSingle(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
@@ -1095,6 +1126,9 @@ func TestActor_FlipOnSingle(t *testing.T) {
 	if strings.Index(logged, `"to":"ru"`) > strings.Index(logged, `"to":"en"`) {
 		t.Errorf("mode records out of order (ru must precede en); log:\n%s", logged)
 	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en] (one per flip, owner decision 1)", got)
+	}
 	if got := sink.requireCount(); got != 0 {
 		t.Errorf("flip made %d RequireSurroundingText calls, want 0", got)
 	}
@@ -1103,6 +1137,60 @@ func TestActor_FlipOnSingle(t *testing.T) {
 	}
 	if texts := sink.commitTexts(); len(texts) != 0 {
 		t.Errorf("flip committed %q, want nothing", texts)
+	}
+	if calls := sink.forwardCalls(); len(calls) != 0 {
+		t.Errorf("flip forwarded %+v, want nothing", calls)
+	}
+}
+
+// TestActor_FlipEmitsPanelSymbol pins the ORDER of the mode-indicator emit
+// (owner decision 1, quick plan 260927-way): the panel symbol update lands
+// strictly AFTER the flip's INFO mode record — the e2e sequencing contract
+// extended, the mode log record stays the flip's observable — and the
+// flip-back emits "en" with the same shape.
+func TestActor_FlipEmitsPanelSymbol(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	var emittedAfterLog bool
+	sink.modeHook = func(symbol string) {
+		// At the emit instant the flip's own INFO record must already be in
+		// the log — the emit fires after it, under the same mutex hold.
+		emittedAfterLog = strings.Contains(buf.String(), `"msg":"mode","to":"`+symbol+`"`)
+	}
+
+	flipMode(a) // EN → RU
+	if !emittedAfterLog {
+		t.Errorf("UpdateModeSymbol(ru) fired before the mode log record — the D-36-style order is violated; log:\n%s",
+			buf.String())
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Fatalf("panel symbols after the first flip = %q, want exactly [ru]", got)
+	}
+
+	flipMode(a) // RU → EN
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols after the flip-back = %q, want exactly [ru en]", got)
+	}
+}
+
+// TestActor_FocusInReassertsModeSymbol pins the self-heal of the indicator
+// (owner decision 1, quick plan 260927-way): engine objects are minted per
+// input context, so every FocusIn re-emits the CURRENT mode symbol — a newly
+// minted engine context must not resurrect the stale EN registration of the
+// factory's RegisterProperties while the actor sits in RU.
+func TestActor_FocusInReassertsModeSymbol(t *testing.T) {
+	a, sink := wiredActor()
+
+	a.HandleLifecycle(engine.LifecycleFocusIn) // EN at start: re-assert "en"
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"en"}) {
+		t.Fatalf("FocusIn symbols at start = %q, want exactly [en]", got)
+	}
+
+	flipMode(a) // EN → RU
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"en", "ru", "ru"}) {
+		t.Errorf("FocusIn symbols after the flip = %q, want [en ru ru] — the fresh context must see RU", got)
 	}
 }
 
@@ -1613,9 +1701,12 @@ func TestActor_DoubleTapSelectionCorrects(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
+	// No DeleteSurroundingText on the selection path (2026-09-28 fix): the
+	// commit itself replaces the ACTIVE selection — the delete+commit pair
+	// double-applied in Chromium (live corruption hunt, verify timeout).
 	calls := sink.deleteCalls()
-	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
-		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the selection range, tail not touched", calls)
+	if len(calls) != 0 {
+		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU {
@@ -1644,8 +1735,8 @@ func TestActor_SelectionLeftToRight(t *testing.T) {
 	a.ExpiryAt(expiryAfterWindow)
 
 	calls := sink.deleteCalls()
-	if len(calls) != 1 || calls[0] != (deleteCall{offset: 0, nchars: 6}) {
-		t.Fatalf("deletions = %+v, want exactly one (0,6) — offset 0, the range is right of the cursor", calls)
+	if len(calls) != 0 {
+		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU {
@@ -1691,8 +1782,8 @@ func TestActor_SelectionMixedConverts(t *testing.T) {
 	a.ExpiryAt(expiryAfterWindow)
 
 	calls := sink.deleteCalls()
-	if len(calls) != 1 || calls[0] != (deleteCall{offset: -9, nchars: 9}) {
-		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole selected range", calls)
+	if len(calls) != 0 {
+		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != "паи"+wordRU {
@@ -3146,4 +3237,707 @@ func TestStatusCarriesVersion(t *testing.T) {
 	if st := a.StatusSnapshot(); st.Version != "v1.2.3" {
 		t.Errorf("snapshot Version = %q, want v1.2.3", st.Version)
 	}
+}
+
+// The flip_after_correction corpus of quick plan 260927-vu8 (owner decision
+// 2, 2026-09-27): a successful correction that CHANGED the text flips the
+// internal script mode exactly once, strictly after the settled done record
+// (the D-36 order extended); the D-24 done-without-change outcome and every
+// refusal never flip; a combo gesture still flips exactly once — the
+// correction flip never doubles it. The gate is Options.FlipAfterCorrection,
+// fed from correction.flip_after_correction (default ON via config.Defaults,
+// OFF at the zero value).
+
+// flipOnOptions is the Options shape under test: the post-correction flip
+// enabled.
+func flipOnOptions() session.Options {
+	return session.Options{FlipAfterCorrection: true}
+}
+
+// countModeRecords counts the INFO mode records in the captured log — the
+// observable of every flip (the Single tap, the combo settle, the
+// post-correction flip).
+func countModeRecords(buf *syncBuffer) int {
+	return strings.Count(buf.String(), `"msg":"mode"`)
+}
+
+// settleWordCorrection drives one full word correction on a: type wordEN,
+// double tap, settle on the matching surrounding push. Returns the log's
+// done-record presence to the caller's judgment.
+func settleWordCorrection(a *session.Actor) {
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+}
+
+// TestActor_FlipAfterWordCorrection pins the owner decision 2 word path: a
+// settled CHANGED word correction flips the internal script mode exactly
+// once, strictly after the done record — and the flip itself is pure daemon
+// state: zero extra calls on the sink beyond the established pipeline shape
+// (one delete, one commit, the pre-round plus the verify-after Require).
+func TestActor_FlipAfterWordCorrection(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(flipOnOptions())
+
+	settleWordCorrection(a)
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
+		t.Fatalf("INFO completion record missing; log:\n%s", logged)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after a changed word correction = %d, want exactly 1; log:\n%s", got, logged)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("mode record is not the EN→RU flip; log:\n%s", logged)
+	}
+	// D-36 order extended: the flip lands strictly AFTER the settled done.
+	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iDone > iMode {
+		t.Errorf("mode flip preceded the settled done record (done@%d > mode@%d) — D-36 order extended", iDone, iMode)
+	}
+	// The flip itself makes zero FIELD calls — the pipeline shape is exactly
+	// the pre-existing one (mode is internal state); reconciled deliberately
+	// from the vu8-era zero-sink-call pin (owner decision 1, quick plan
+	// 260927-way): the flip's ONLY sink call is the panel-symbol update.
+	if calls := sink.deleteCalls(); len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
+		t.Errorf("deletions = %+v, want exactly one (-6,6) — the flip adds none", calls)
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Errorf("commits = %q, want exactly one %q — the flip commits nothing", texts, wordRU)
+	}
+	if got := sink.requireCount(); got != 2 {
+		t.Errorf("require calls = %d, want 2 (pre-round + verify-after) — the flip requires nothing", got)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] (owner decision 1: the indicator follows the flip)", got)
+	}
+}
+
+// TestActor_FlipAfterPhraseCorrection pins the owner decision 2 phrase path:
+// the same single flip strictly after the done record, over a triple tap.
+func TestActor_FlipAfterPhraseCorrection(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(flipOnOptions())
+
+	typeWord(a, wordEN)
+	pressSpace(a)
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	line := "abc " + phraseEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
+		t.Fatalf("INFO completion record missing; log:\n%s", logged)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after a changed phrase correction = %d, want exactly 1; log:\n%s", got, logged)
+	}
+	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iDone > iMode {
+		t.Errorf("mode flip preceded the settled phrase done (done@%d > mode@%d)", iDone, iMode)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 1 || calls[0] != (deleteCall{offset: -13, nchars: 13}) {
+		t.Errorf("deletions = %+v, want exactly one (-13,13)", calls)
+	}
+}
+
+// TestActor_FlipAfterLevel2Correction pins the owner decision 2 level-2
+// path: a Backspace-level success flips after its done record too — the
+// ladder level does not matter, the CHANGED settlement does.
+func TestActor_FlipAfterLevel2Correction(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActorCaps(0) // no surrounding-text capability: ladder level 2
+	a.SetOptions(flipOnOptions())
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // level 2 executes at the decision itself
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
+		t.Fatalf("INFO completion record missing; log:\n%s", logged)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after a changed level-2 correction = %d, want exactly 1; log:\n%s", got, logged)
+	}
+	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iDone > iMode {
+		t.Errorf("mode flip preceded the settled level-2 done (done@%d > mode@%d)", iDone, iMode)
+	}
+}
+
+// TestActor_FlipGateOff pins the off reading of the gate: at the zero-value
+// Options (the bare wiredActor path — every pre-existing test's world) and
+// at the explicit false, a settled CHANGED correction logs done and NO mode
+// record.
+func TestActor_FlipGateOff(t *testing.T) {
+	t.Run("zero-value options (no SetOptions)", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+
+		settleWordCorrection(a)
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
+			t.Fatalf("INFO completion record missing; log:\n%s", logged)
+		}
+		if got := countModeRecords(buf); got != 0 {
+			t.Errorf("mode records with the gate off = %d, want 0; log:\n%s", got, logged)
+		}
+	})
+
+	t.Run("explicit false", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		a.SetOptions(session.Options{FlipAfterCorrection: false})
+
+		settleWordCorrection(a)
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
+			t.Fatalf("INFO completion record missing; log:\n%s", logged)
+		}
+		if got := countModeRecords(buf); got != 0 {
+			t.Errorf("mode records with flip_after_correction: false = %d, want 0; log:\n%s", got, logged)
+		}
+	})
+}
+
+// refusalFlipProbe runs one correction attempt that must refuse, with the
+// flip ON, and pins the refusal half of owner decision 2: the D-20 reason
+// record lands and the mode is never flipped.
+func refusalFlipProbe(t *testing.T, wantReason string, run func(a *session.Actor)) {
+	t.Helper()
+
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.SetOptions(flipOnOptions())
+	run(a)
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"reason":"`+wantReason+`"`) {
+		t.Errorf("%s record missing; log:\n%s", wantReason, logged)
+	}
+	if got := countModeRecords(buf); got != 0 {
+		t.Errorf("the %s refusal flipped the mode %d times, want 0", wantReason, got)
+	}
+}
+
+// TestActor_RefusalsNeverFlip pins the refusal half of owner decision 2:
+// with the option ON, every D-20 refusal and only refusals leave the mode
+// untouched — empty-buffer, no-letters, verify-mismatch and verify-timeout
+// each log their reason and zero mode records.
+func TestActor_RefusalsNeverFlip(t *testing.T) {
+	t.Run("empty buffer", func(t *testing.T) {
+		refusalFlipProbe(t, "empty-buffer", func(a *session.Actor) {
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+		})
+	})
+
+	t.Run("no letters", func(t *testing.T) {
+		refusalFlipProbe(t, "no-letters", func(a *session.Actor) {
+			typeWord(a, "2026")
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+		})
+	})
+
+	t.Run("verify mismatch", func(t *testing.T) {
+		refusalFlipProbe(t, "verify-mismatch", func(a *session.Actor) {
+			typeWord(a, wordEN)
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+			a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
+		})
+	})
+
+	t.Run("verify timeout", func(t *testing.T) {
+		refusalFlipProbe(t, "verify-timeout", func(a *session.Actor) {
+			typeWord(a, wordEN)
+			tapShift(a)
+			tapShift(a)
+			a.ExpiryAt(expiryAfterWindow)
+			a.VerifyExpiry()
+		})
+	})
+}
+
+// Mode-switch chord corpus (owner decision 2, quick plan 260927-way):
+// Super+Space becomes a configurable goswitch-owned chord
+// (hotkeys.mode_switch_chord, default super+space, empty = disabled). The
+// live trace 2026-09-27 20:31 is the wire truth: Super+Space arrives as the
+// SPACE keyval with mods 0x50 — Mod4|NumLock — and (with GNOME's own
+// switch-input-source binding cleared) reaches the daemon's key path. The
+// chord branch sits AFTER the word-layout combo and BEFORE the mode
+// branches; the MACR layer is unaffected: space is not a letter, and the
+// chord marks the Super hold as witnessed so the consumed-upstream detect
+// stays silent.
+
+// numLockLatch is the IBUS_MOD2_MASK latched NumLock bit every chord press
+// carries on this desktop (the live trace 0x50 = Mod4|NumLock).
+const numLockLatch = 0x10
+
+// superSpaceChord returns the corpus's chord binding: a literal wire-equal
+// to hotkey.ParseBinding("super+space") — the defaultComboBinding idiom
+// (a literal, no corpus error handling). Keyval 0x020 with Mod4 as the FULL
+// ModMask: space carries no family bit, so the held mask is exactly Mod4.
+func superSpaceChord() hotkey.Binding {
+	return hotkey.Binding{Keyval: 0x020, ModMask: hotkey.MaskMod4}
+}
+
+// pressSuperSpace feeds the chord press exactly as the wire delivers it and
+// returns the consumption verdict.
+func pressSuperSpace(a *session.Actor) bool {
+	return a.HandleKey(engine.EngineEvent{Keyval: engine.KeySpace, Mods: engine.MaskMod4 | numLockLatch})
+}
+
+// TestActor_SuperSpaceChordFlipsMode pins the chord itself: a Super+Space
+// press flips the script mode IMMEDIATELY (no ExpiryAt — the chord is not a
+// tap), CONSUMES the press (no space lands in the field), emits exactly one
+// panel-symbol update through flipScript (Task 1) and commits nothing; the
+// buffer stays clean — typing "abc" afterwards yields the token "abc" with
+// no leading space.
+func TestActor_SuperSpaceChordFlipsMode(t *testing.T) {
+	buf := captureLogsLevel(t, slog.LevelDebug)
+	a, sink := wiredActor()
+	a.SetOptions(session.Options{ModeSwitchChord: superSpaceChord()})
+
+	if consume := pressSuperSpace(a); !consume {
+		t.Fatalf("super+space press transited — the chord must own and consume it (owner decision 2)")
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"combo","kind":"mode-switch-chord"`) {
+		t.Errorf("chord entry record missing; log:\n%s", logged)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after the chord press = %d, want exactly 1 (immediate, no expiry)", got)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("the chord did not flip EN→RU; log:\n%s", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] (Task 1 through flipScript)", got)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("chord commits = %q, want none — the press never lands in the field", texts)
+	}
+
+	// The buffer stays clean: flip back with a second chord (RU → EN) and
+	// type — the chord press fed no rune, so the corrected token is exactly
+	// "abc" with no leading space.
+	pressSuperSpace(a)
+	if got := countModeRecords(buf); got != 2 {
+		t.Fatalf("mode records after the flip-back = %d, want 2; log:\n%s", got, buf.String())
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en]", got)
+	}
+	typeWord(a, "abc")
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	line := "done abc"
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	if !strings.Contains(buf.String(), `"source":"abc"`) {
+		t.Errorf("the corrected token is not the clean \"abc\" — a space leaked into the buffer; log:\n%s",
+			buf.String())
+	}
+}
+
+// TestActor_SuperSpaceChordKillsPendingTap pins the Pitfall-4 Reset: a tap
+// series armed when the chord press lands DIES with the chord's deliberate
+// FSM Reset — after the window expires exactly ONE mode record exists (the
+// chord's), and no tap decision ever fires.
+func TestActor_SuperSpaceChordKillsPendingTap(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.SetOptions(session.Options{ModeSwitchChord: superSpaceChord()})
+
+	tapShift(a) // series armed — the single-tap decision is pending
+	pressSuperSpace(a)
+	a.ExpiryAt(expiryAfterWindow) // the armed window closes on a dead series
+
+	if got := countActions(buf); got != 0 {
+		t.Errorf("actions after the killed series = %d, want 0 — the pending tap decision must die", got)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records = %d, want exactly 1 (the chord's flip, never a tap flip)", got)
+	}
+}
+
+// TestActor_SuperSpaceChordWitnessesSuperHold pins the MACR contract of the
+// chord (decision 2: space is not a letter — the interception order must
+// not disturb MACR): with MACR enabled, a bare Super press followed by the
+// chord press leaves BOTH counters at zero and logs no consumed-upstream
+// WARN — the chord marked the hold as witnessed (goswitch itself consumed
+// the press, nothing was swallowed upstream). The existing MACR corpus
+// (super+b intercepted, burst on release) passes unmodified.
+func TestActor_SuperSpaceChordWitnessesSuperHold(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(session.Options{
+		MACREnabled:     true,
+		MACRLetters:     map[rune]bool{'b': true},
+		ModeSwitchChord: superSpaceChord(),
+	})
+
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeySuperL}) // the hold opens
+	if consume := pressSuperSpace(a); !consume {
+		t.Fatalf("super+space transited under MACR — the chord branch must sit above the mode branches")
+	}
+	releaseSuper(a)
+
+	if got := a.MACRCounters(); got.SuperIntercepted != 0 || got.ConsumedUpstream != 0 {
+		t.Errorf("counters = %+v, want zeros — space is not a MACR letter and the hold WAS witnessed", got)
+	}
+	if strings.Contains(buf.String(), `"msg":"super combo skipped"`) {
+		t.Errorf("consumed-upstream WARN after a chord-witnessed hold; log:\n%s", buf.String())
+	}
+	if calls := sink.forwardCalls(); len(calls) != 0 {
+		t.Errorf("chord forwarded %+v, want none — the chord is not a MACR remap", calls)
+	}
+}
+
+// TestActor_SuperSpaceChordGateOff pins the off readings: at the zero-value
+// Options (the no-config world) the chord press transits untouched — no
+// consumption, no mode record, no sink call — and with the chord set, a
+// Mod2-only space (NumLock without Mod4) never matches.
+func TestActor_SuperSpaceChordGateOff(t *testing.T) {
+	t.Run("zero-value options", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		if consume := pressSuperSpace(a); consume {
+			t.Fatalf("chord press consumed with no chord configured — the zero value must be disabled")
+		}
+		if got := countModeRecords(buf); got != 0 {
+			t.Errorf("mode records = %d, want 0; log:\n%s", got, buf.String())
+		}
+		if got := len(sink.modeSymbols()); got != 0 {
+			t.Errorf("panel symbols = %d, want 0 — a transiting space emits nothing", got)
+		}
+	})
+
+	t.Run("Mod2-only space never matches", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		a.SetOptions(session.Options{ModeSwitchChord: superSpaceChord()})
+
+		if consume := a.HandleKey(engine.EngineEvent{Keyval: engine.KeySpace, Mods: numLockLatch}); consume {
+			t.Fatalf("Mod2-only space consumed — the held mask requires Mod4")
+		}
+		if got := countModeRecords(buf); got != 0 {
+			t.Errorf("mode records = %d, want 0 — NumLock-only space is a keystroke, not the chord; log:\n%s",
+				got, buf.String())
+		}
+	})
+}
+
+// TestActor_SuperSpaceChordLosesToCombo pins the branch order: with
+// ModeSwitchChord EQUAL to the word-layout combo binding, the combo branch
+// wins (the chord branch sits after it) — the word pipeline launches and
+// the gesture still settles with exactly one flip, never a double.
+func TestActor_SuperSpaceChordLosesToCombo(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	combo := reloadCfg(300, "shift+ctrl_r").Hotkeys.WordLayoutCombo
+	binding, err := hotkey.ParseBinding(combo)
+	if err != nil {
+		t.Fatalf("ParseBinding(%q): %v", combo, err)
+	}
+	a.SetOptions(session.Options{WordLayoutCombo: binding, ModeSwitchChord: binding})
+
+	typeWord(a, wordEN)
+	pressComboDefault(a)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("combo require calls = %d, want 1 — the combo branch must own the press", got)
+	}
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records = %d, want exactly 1 — no double flip on a chord/combo collision", got)
+	}
+}
+
+// TestActor_HotReloadModeSwitchChord pins the CONF-02 wiring of the chord
+// (the applySnapshot fold with the EMPTY-DISABLES twist): the document's
+// mode_switch_chord is folded per snapshot — "super+space" arms the chord,
+// an explicit "" DISABLES it (transit, not last-good), and a document back
+// restores it. No restart, no SetOptions.
+func TestActor_HotReloadModeSwitchChord(t *testing.T) {
+	a, _ := wiredActor()
+	src := &reloadSource{cfg: reloadCfg(300, "shift+ctrl_r")} // the default document carries super+space
+	a.AttachConfig(src)
+
+	if consume := pressSuperSpace(a); !consume {
+		t.Fatalf("chord press transited under the default document — the chord must be live")
+	}
+
+	src.set(func() config.Config {
+		cfg := reloadCfg(300, "shift+ctrl_r")
+		cfg.Hotkeys.ModeSwitchChord = "" // explicit disable
+
+		return cfg
+	}())
+	if consume := pressSuperSpace(a); consume {
+		t.Fatalf("chord consumed after the empty reload — empty must DISABLE, not keep last-good")
+	}
+
+	src.set(reloadCfg(300, "shift+ctrl_r"))
+	if consume := pressSuperSpace(a); !consume {
+		t.Fatalf("chord press transited after the restore reload — the chord must come back")
+	}
+}
+
+// TestActor_ComboStillSingleFlipWithCorrectionFlip pins the single-flip
+// contract of the gesture: with the option ON, a combo over a correctable
+// word STILL produces exactly one mode record — the combo's settleCombo
+// flip; the correction flip skips (the comboPending guard) so the gesture
+// never doubles. TestActor_ComboWordThenFlip keeps its zero-Options world.
+func TestActor_ComboStillSingleFlipWithCorrectionFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(flipOnOptions())
+
+	typeWord(a, wordEN)
+	pressComboDefault(a)
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
+		t.Fatalf("INFO completion record missing; log:\n%s", logged)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("combo correction mode records = %d, want exactly 1 (single flip per gesture); log:\n%s", got, logged)
+	}
+	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iDone > iMode {
+		t.Errorf("combo flip preceded the settled done (done@%d > mode@%d) — D-36 order", iDone, iMode)
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Errorf("commits = %q, want exactly one %q", texts, wordRU)
+	}
+}
+
+// pressEnter feeds the CORR-09 reset trigger: Enter hard-resets the phrase
+// buffer — the way the field ends a correction episode between episodes.
+func pressEnter(a *session.Actor) {
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeyReturn})
+}
+
+// flipDoc builds a reload document with the given flip_after_correction
+// value over the documented defaults.
+func flipDoc(on bool) config.Config {
+	cfg := reloadCfg(300, "shift+ctrl_r")
+	cfg.Correction.FlipAfterCorrection = on
+
+	return cfg
+}
+
+// flipSrc builds the reload source of the flip corpus serving the given
+// flip_after_correction value over the documented defaults.
+func flipSrc(on bool) *reloadSource {
+	return &reloadSource{cfg: flipDoc(on)}
+}
+
+// assertNoFlipAfterLastDone pins that no mode record follows the LAST done
+// record in logged — the reloaded-off gate must stop the flip.
+func assertNoFlipAfterLastDone(t *testing.T, logged string) {
+	t.Helper()
+
+	iLastDone := strings.LastIndex(logged, `"msg":"correction","outcome":"done"`)
+	iLastMode := strings.LastIndex(logged, `"msg":"mode"`)
+	if iLastMode > iLastDone {
+		t.Errorf("the post-reload correction flipped (last mode@%d > last done@%d)", iLastMode, iLastDone)
+	}
+}
+
+// settleRUWordCorrection drives one full word correction episode typed in
+// RU mode: the RU commits feed the buffer script-true Cyrillic, so the
+// field push carries wordRU and the correction converts RU→EN.
+func settleRUWordCorrection(a *session.Actor) {
+	pressEnter(a)
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+}
+
+// TestActor_HotReloadFlipAfterCorrection pins the CONF-02 wiring of the flip
+// gate: the document's correction.flip_after_correction is folded per
+// snapshot, so a reload true→false stops the flip for the NEXT correction
+// and false→true restores it — no restart, no SetOptions.
+func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
+	t.Run("on: the attached document flips", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		a.AttachConfig(flipSrc(true))
+
+		settleWordCorrection(a)
+
+		if got := countModeRecords(buf); got != 1 {
+			t.Fatalf("mode records under a flip-on document = %d, want exactly 1; log:\n%s", got, buf.String())
+		}
+	})
+
+	t.Run("true to false stops the flip", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		src := flipSrc(true)
+		a.AttachConfig(src)
+
+		settleWordCorrection(a) // EN mode: done + one flip (the mode is now RU)
+		if got := countModeRecords(buf); got != 1 {
+			t.Fatalf("mode records before the reload = %d, want exactly 1; log:\n%s", got, buf.String())
+		}
+
+		off := flipDoc(false)
+		src.set(off)
+		settleRUWordCorrection(a)
+
+		logged := buf.String()
+		if got := strings.Count(logged, `"msg":"correction","outcome":"done"`); got != 2 {
+			t.Fatalf("done records = %d, want 2; log:\n%s", got, logged)
+		}
+		if got := countModeRecords(buf); got != 1 {
+			t.Errorf("mode records after the true→false reload = %d, want 1 (the pre-reload flip only)", got)
+		}
+		assertNoFlipAfterLastDone(t, logged)
+	})
+
+	t.Run("false to true restores the flip", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		src := flipSrc(false) // explicit off — the built-in default is ON
+		a.AttachConfig(src)
+
+		settleWordCorrection(a)
+		if got := countModeRecords(buf); got != 0 {
+			t.Fatalf("mode records before the reload = %d, want 0; log:\n%s", got, buf.String())
+		}
+
+		on := flipDoc(true)
+		src.set(on)
+		pressEnter(a)
+		settleWordCorrection(a) // the mode is still EN (no flip happened above)
+
+		logged := buf.String()
+		if got := countModeRecords(buf); got != 1 {
+			t.Fatalf("mode records after the false→true reload = %d, want exactly 1; log:\n%s", got, logged)
+		}
+		iLastDone := strings.LastIndex(logged, `"msg":"correction","outcome":"done"`)
+		iLastMode := strings.LastIndex(logged, `"msg":"mode"`)
+		if iLastDone > iLastMode {
+			t.Errorf("the restored flip preceded the done record (done@%d > mode@%d)", iLastDone, iLastMode)
+		}
+	})
+}
+
+// TestActor_FlipAfterSelectionCorrection extends the owner decision-2 flip
+// to the SELECTION path (owner report 2026-09-28): a settled CHANGED
+// selection correction flips the internal script
+// mode exactly once, strictly after the done record, mirroring the word
+// path. The combo path still flips via settleCombo exactly once.
+func TestActor_FlipAfterSelectionCorrection(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(flipOnOptions())
+
+	field := wordEN + " " + wordRU
+	a.HandleSurroundingText(field, 6, 0) // selection [0,6), right-to-left
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
+		t.Fatalf("INFO completion record missing; log:\n%s", logged)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after a changed selection correction = %d, want exactly 1; log:\n%s", got, logged)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("mode record is not the EN→RU flip; log:\n%s", logged)
+	}
+	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iDone > iMode {
+		t.Errorf("mode flip preceded the settled done record (done@%d > mode@%d)", iDone, iMode)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru]", got)
+	}
+}
+
+// TestActor_FlipDirectionFollowsConvertedScript pins the owner rule
+// (2026-09-28): after a correction the mode is SET to the script of the
+// CONVERTED result, not toggled — correcting a Cyrillic selection while
+// in EN mode leaves the mode EN (the text is Latin now), and correcting a
+// Latin word to Cyrillic makes it RU.
+func TestActor_FlipDirectionFollowsConvertedScript(t *testing.T) {
+	t.Run("cyr-to-lat while EN stays EN silently", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		a.SetOptions(flipOnOptions())
+
+		field := wordRU + " " + wordRU
+		a.HandleSurroundingText(field, 6, 0) // selection [0,6) of привет
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if got := countModeRecords(buf); got != 0 {
+			t.Fatalf("mode records = %d, want 0 (set-by-script, not a toggle); log:\n%s",
+				got, buf.String())
+		}
+		if got := sink.modeSymbols(); len(got) != 0 {
+			t.Errorf("panel symbols = %q, want none (no transition)", got)
+		}
+	})
+
+	t.Run("cyr-to-lat while RU flips to EN", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _ := wiredActor()
+		a.SetOptions(flipOnOptions())
+
+		// Enter RU mode first (single tap = manual toggle).
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		field := wordRU + " " + wordRU
+		a.HandleSurroundingText(field, 6, 0)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if got := countModeRecords(buf); got != 2 {
+			t.Fatalf("mode records = %d, want 2 (manual + correction); log:\n%s", got, buf.String())
+		}
+		if !strings.Contains(buf.String(), `"msg":"mode","to":"en"`) {
+			t.Errorf("the correction's record must set en (the converted script); log:\n%s", buf.String())
+		}
+	})
 }

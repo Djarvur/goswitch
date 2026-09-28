@@ -47,6 +47,15 @@ func TestConvertRuns_GoldenCorpus(t *testing.T) {
 			want: wordRU + "2026" + wordRU,
 			why:  "D-15/D-22",
 		},
+		{
+			// Owner decision 1 (260927-vu8): '[' stays scriptNeutral — it
+			// shifts no anchor and rides as typed in a MIXED range; only a
+			// wholesale single-script range converts it.
+			name: "allow-set bracket is neutral to the mixed anchor",
+			in:   "gfb" + wordRU + "[",
+			want: "паи" + wordRU + "[",
+			why:  "owner decision 1 (260927-vu8): bracket-row neutrality",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,7 +104,16 @@ func TestConvertRuns_HomogeneousWholesale(t *testing.T) {
 		// The register pin on a MIXED range: the foreign run converts with
 		// its own per-rune register (G→П, f→а, b→и).
 		{name: "register per rune on the foreign run", in: "Gfb" + wordRU, want: "Паи" + wordRU},
-		{name: "punctuation of the token rides along", in: wordENComma, want: wordRU + ","},
+		// Full by-position conversion (owner directive 2026-09-28): the
+		// token's punctuation converts with it — the comma is the 'б' key.
+		{name: "punctuation converts with the token", in: wordENComma, want: wordRU + "б"},
+		// Owner decision 1 (260927-vu8): in a WHOLESALE single-script range
+		// the allow-set bracket-row symbol converts with the token — the
+		// run-level form of the live defect «несколько дополнительны[».
+		{name: "bracket converts with the token wholesale", in: wordEN + "[", want: wordRU + "х"},
+		// The RU direction has no '[' entry — an intentional EN symbol rides
+		// as typed (the allow-set converts EN→RU only).
+		{name: "en bracket rides in the ru direction", in: wordRU + "[", want: wordEN + "["},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,10 +140,23 @@ func TestConvertRuns_Refusals(t *testing.T) {
 		t.Parallel()
 		out, _, ok := correct.ConvertRuns([]rune("2026 ,.!"))
 		if ok {
-			t.Fatalf("ConvertRuns(letterless) ok = true, want false — no direction to convert to")
+			t.Fatalf("ConvertRuns(letterless) ok = false, want false — no direction to convert to")
 		}
 		if out != nil {
 			t.Errorf("ConvertRuns(letterless) out = %q, want nil — nothing was converted", string(out))
+		}
+	})
+
+	t.Run("lone bracket is no letters", func(t *testing.T) {
+		t.Parallel()
+		// Owner decision 1 (260927-vu8): even an allow-set symbol alone has
+		// nothing to anchor on — the D-20 no-letters refusal stands.
+		out, _, ok := correct.ConvertRuns([]rune("["))
+		if ok {
+			t.Fatalf("ConvertRuns(lone '[') ok = true, want false — no letters, no anchor")
+		}
+		if out != nil {
+			t.Errorf("ConvertRuns(lone '[') out = %q, want nil — nothing was converted", string(out))
 		}
 	})
 

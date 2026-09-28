@@ -20,6 +20,7 @@ timeouts:
 correction:
   backspace_cap: 50
   clipboard_rung: false
+  flip_after_correction: true
 macr:
   enabled: false
   letters: ""
@@ -65,6 +66,9 @@ func TestLoad_ValidDoc(t *testing.T) {
 	}
 	if cfg.Correction.ClipboardRung {
 		t.Error("correction.clipboard_rung = true, want false")
+	}
+	if !cfg.Correction.FlipAfterCorrection {
+		t.Error("correction.flip_after_correction = false, want true")
 	}
 	if cfg.MACR.Enabled {
 		t.Error("macr.enabled = true, want false")
@@ -153,5 +157,31 @@ func TestLoad_RangeViolationRejected(t *testing.T) {
 	corpus := strings.Replace(fullDocYAML, "tap_window_ms: 300", "tap_window_ms: 100000000", 1)
 	if _, err := config.Load(writeConfig(t, corpus)); err == nil {
 		t.Fatal("giant tap_window_ms accepted at load, want range rejection")
+	}
+}
+
+// TestLoad_FlipAfterCorrectionDecode pins the decode round-trip of the
+// post-correction flip switch (owner decision 2, 260927-vu8): a document
+// carrying `flip_after_correction: false` decodes false, `true` decodes
+// true — a plain bool, no range to validate.
+func TestLoad_FlipAfterCorrectionDecode(t *testing.T) {
+	t.Parallel()
+
+	offDoc := strings.Replace(fullDocYAML, "flip_after_correction: true", "flip_after_correction: false", 1)
+	cfg, err := config.Load(writeConfig(t, offDoc))
+	if err != nil {
+		t.Fatalf("Load (flip off): %v", err)
+	}
+	if cfg.Correction.FlipAfterCorrection {
+		t.Error("correction.flip_after_correction = true, want false (the document's value)")
+	}
+
+	onDoc := fullDocYAML
+	cfg, err = config.Load(writeConfig(t, onDoc))
+	if err != nil {
+		t.Fatalf("Load (flip on): %v", err)
+	}
+	if !cfg.Correction.FlipAfterCorrection {
+		t.Error("correction.flip_after_correction = false, want true (the document's value)")
 	}
 }

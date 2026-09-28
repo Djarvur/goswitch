@@ -22,6 +22,7 @@ const (
 
 // ctlConfigYAML is the COMPLETE config document of the ctl-smoke case (the
 // 03-02 strict-parse rule: no defaults overlay) with the given tap window.
+// It is also the reload step's base document of the matrix (matrix.go).
 func ctlConfigYAML(windowMs int) string {
 	return fmt.Sprintf(`hotkeys:
   tap_key: shift_r
@@ -32,6 +33,7 @@ timeouts:
 correction:
   backspace_cap: 50
   clipboard_rung: false
+  flip_after_correction: false # pins the pre-batch (pre-260927-vu8) semantics
 macr:
   enabled: false
   letters: ""
@@ -53,6 +55,7 @@ timeouts:
 correction:
   backspace_cap: 50
   clipboard_rung: false
+  flip_after_correction: false # pins the pre-batch (pre-260927-vu8) semantics
 macr:
   enabled: false
   letters: ""

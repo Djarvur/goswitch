@@ -14,9 +14,11 @@ import (
 const (
 	defTapKey        = "shift_r"
 	defCombo         = "shift+ctrl_r"
+	defChord         = "super+space"
 	fieldTapWindow   = "timeouts.tap_window_ms"
 	fieldVerifyWait  = "timeouts.verify_wait_ms"
 	fieldTapKey      = "hotkeys.tap_key"
+	fieldChord       = "hotkeys.mode_switch_chord"
 	fieldMACRLetters = "macr.letters"
 	fieldMACRApps    = "macr.apps"
 	fieldMACRAltMod  = "macr.alt_modifier"
@@ -48,6 +50,10 @@ func TestDefaults(t *testing.T) {
 	if got.Hotkeys.WordLayoutCombo != defCombo {
 		t.Errorf("hotkeys.word_layout_combo = %q, want %q", got.Hotkeys.WordLayoutCombo, defCombo)
 	}
+	if got.Hotkeys.ModeSwitchChord != defChord {
+		t.Errorf("%s = %q, want %q (owner decision 2: goswitch owns Super+Space)",
+			fieldChord, got.Hotkeys.ModeSwitchChord, defChord)
+	}
 	if got.Timeouts.TapWindowMs != 300 {
 		t.Errorf("%s = %d, want 300", fieldTapWindow, got.Timeouts.TapWindowMs)
 	}
@@ -62,6 +68,10 @@ func TestDefaults(t *testing.T) {
 	}
 	if got.Correction.ClipboardRung {
 		t.Error("correction.clipboard_rung = true, want false (D-28 opt-in)")
+	}
+	if !got.Correction.FlipAfterCorrection {
+		// Owner decision 2: the mode follows a changed correction.
+		t.Error("correction.flip_after_correction = false, want true")
 	}
 	if got.MACR.Enabled {
 		t.Error("macr.enabled = true, want false")
@@ -312,4 +322,105 @@ func TestValidate_MACRAltModifier(t *testing.T) {
 	if err := accepted.Validate(); err != nil {
 		t.Errorf("valid MACR block rejected: %v", err)
 	}
+}
+
+// chordDocYAML renders a complete document with the given
+// hotkeys.mode_switch_chord YAML value — the decode corpus's template (the
+// clipboard_rung idiom: full document, one key under test).
+func chordDocYAML(value string) string {
+	return `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+  mode_switch_chord: ` + value + `
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+`
+}
+
+// chordDocNoKeyYAML is the same document WITHOUT the mode_switch_chord key
+// — every pre-existing document's shape.
+const chordDocNoKeyYAML = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+`
+
+// TestLoad_ModeSwitchChord pins the decode/validation surface of the chord
+// key (owner decision 2, quick plan 260927-way): an explicit value decodes
+// and validates, an EXPLICIT empty string decodes "" and validates (chord
+// disabled — the missing-key compatibility rule of the vu8 batch, the
+// macr.alt_modifier empty precedent, so every pre-existing document loads
+// unchanged), and a garbage value refuses the WHOLE document (D-33).
+func TestLoad_ModeSwitchChord(t *testing.T) {
+	t.Parallel()
+
+	t.Run("explicit value decodes and validates", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := config.Load(writeConfig(t, chordDocYAML("ctrl+space")))
+		if err != nil {
+			t.Fatalf("Load(ctrl+space doc): %v", err)
+		}
+		if cfg.Hotkeys.ModeSwitchChord != "ctrl+space" {
+			t.Errorf("%s = %q, want %q", fieldChord, cfg.Hotkeys.ModeSwitchChord, "ctrl+space")
+		}
+	})
+
+	t.Run("explicit empty disables", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := config.Load(writeConfig(t, chordDocYAML(`""`)))
+		if err != nil {
+			t.Fatalf("Load(empty doc): %v", err)
+		}
+		if cfg.Hotkeys.ModeSwitchChord != "" {
+			t.Errorf("%s = %q, want %q (empty = the chord is disabled)", fieldChord, cfg.Hotkeys.ModeSwitchChord, "")
+		}
+	})
+
+	t.Run("document without the key loads unchanged", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := config.Load(writeConfig(t, chordDocNoKeyYAML))
+		if err != nil {
+			t.Fatalf("Load(pre-batch doc): %v", err)
+		}
+		if cfg.Hotkeys.ModeSwitchChord != "" {
+			t.Errorf("%s = %q, want %q — a missing key decodes disabled, never defaulted",
+				fieldChord, cfg.Hotkeys.ModeSwitchChord, "")
+		}
+	})
+
+	t.Run("garbage refuses the whole document", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := config.Load(writeConfig(t, chordDocYAML("super+spaces")))
+		if err == nil {
+			t.Fatalf("Load(garbage chord) = nil error, want a whole-document rejection (D-33)")
+		}
+		if !strings.Contains(err.Error(), fieldChord) {
+			t.Errorf("error %q does not name the field %q", err, fieldChord)
+		}
+	})
 }

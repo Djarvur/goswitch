@@ -52,6 +52,11 @@ func dirOf(kind scriptKind) Dir {
 //     foreign-script letters converts independently through Convert — own
 //     runs stay as typed, neutrals ride along unchanged.
 //
+// The allow-set bracket-row symbols of Convert (owner decision 1,
+// 260927-vu8) stay scriptNeutral: they shift no anchor and ride as typed
+// inside a MIXED range, and convert only inside a WHOLESALE single-script
+// range (the run-level form of «несколько дополнительны[»→«…ныхх»).
+//
 // changed=false with ok=true is the D-24 success-without-changes outcome
 // ("все буквы уже в якорной раскладке" — a successful operation, never a
 // refusal or a WARN). Under the уточнение the word and phrase ranges of

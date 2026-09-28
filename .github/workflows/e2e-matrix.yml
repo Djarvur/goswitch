@@ -98,6 +98,14 @@ jobs:
         run: |
           set -eu
           app=$(/usr/bin/python3 test/e2e/focus_helper.py focused-app)
+          # gnome-shell itself focused = the fresh autologin desktop with no
+          # app window raised yet (live finding 2026-09-28: the first nightly
+          # soft-skipped exactly on this) — an IDLE desktop, not a busy one.
+          # Any real application (including the owner's terminal) still
+          # fails the preflight as before.
+          if [ "$app" = "gnome-shell" ]; then
+            app="(none)"
+          fi
           if [ "$app" != "(none)" ]; then
             if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
               echo "::warning::desktop busy: ${app} holds focus — the matrix needs an idle desktop (scheduled soft mode: matrix runs skipped, nightly outcome stays neutral)"

@@ -257,3 +257,147 @@ func TestEmitters_ForwardKeyEvent(t *testing.T) {
 		}
 	}
 }
+
+// wantModeUpdate fails unless sig is the UpdateProperty signal carrying the
+// mode property whose Symbol text is wantSym — the shared shape pin of
+// TestEmitters_ModeProperty.
+func wantModeUpdate(t *testing.T, sig capturedSignal, wantSym string) {
+	t.Helper()
+	wantEngineSignal(t, sig, "UpdateProperty")
+	if len(sig.body) != 1 {
+		t.Fatalf("body has %d args, want 1: %+v", len(sig.body), sig.body)
+	}
+	variant, ok := sig.body[0].(dbus.Variant)
+	if !ok {
+		t.Fatalf("arg0 = %T, want dbus.Variant", sig.body[0])
+	}
+	prop, ok := variant.Value().(Property)
+	if !ok {
+		t.Fatalf("variant payload = %T, want engine.Property", variant.Value())
+	}
+	if prop.Key != modePropKey {
+		t.Errorf("property Key = %q, want %q (the EngineDesc icon_prop_key)", prop.Key, modePropKey)
+	}
+	if prop.Type != PropTypeNormal {
+		t.Errorf("property Type = %d, want PropTypeNormal — a plain label, never a toggle", prop.Type)
+	}
+	if prop.State != PropStateUnchecked {
+		t.Errorf("property State = %d, want PropStateUnchecked", prop.State)
+	}
+	if !prop.Sensitive || !prop.Visible {
+		t.Errorf("property Sensitive/Visible = %t/%t, want true/true", prop.Sensitive, prop.Visible)
+	}
+	sub, ok := prop.SubProps.Value().(PropList)
+	if !ok {
+		t.Fatalf("SubProps payload = %T, want engine.PropList", prop.SubProps.Value())
+	}
+	if len(sub.Properties) != 0 {
+		t.Errorf("SubProps carries %d properties, want an empty list", len(sub.Properties))
+	}
+	sym, ok := prop.Symbol.Value().(IBusText)
+	if !ok {
+		t.Fatalf("Symbol payload = %T, want engine.IBusText", prop.Symbol.Value())
+	}
+	if sym.Text != wantSym {
+		t.Errorf("Symbol text = %q, want %q", sym.Text, wantSym)
+	}
+}
+
+// wantOneUpdate asserts the recorder holds exactly one signal and returns
+// it — the single-emit pin of the UpdateModeSymbol subtests.
+func wantOneUpdate(t *testing.T, rec *emitRecorder, call string) capturedSignal {
+	t.Helper()
+
+	sigs := rec.snapshot()
+	if len(sigs) != 1 {
+		t.Fatalf("%s emitted %d signals, want exactly 1", call, len(sigs))
+	}
+
+	return sigs[0]
+}
+
+// TestEmitters_ModeProperty pins the wire contract of the mode-indicator
+// panel property (owner decision 1, quick plan 260927-way): UpdateModeSymbol
+// emits EXACTLY ONE UpdateProperty signal on the engine interface whose body
+// is one variant wrapping the Property struct — Key = modePropKey, a plain
+// normal property (never a toggle), unchecked, sensitive, visible, an empty
+// sub-list, and the Symbol's inner IBusText carrying the given script symbol.
+// The factory subtest pins the registration half: CreateEngine emits exactly
+// one RegisterProperties signal carrying a one-property list with the
+// daemon's start symbol (ADR-001: EN at start) — emission inside
+// CreateEngine is the proven engine pattern.
+func TestEmitters_ModeProperty(t *testing.T) {
+	t.Parallel()
+
+	t.Run("update mode symbol ru", func(t *testing.T) {
+		t.Parallel()
+
+		eng, rec := newBoundEngine(t)
+		eng.UpdateModeSymbol("ru")
+		wantModeUpdate(t, wantOneUpdate(t, rec, "UpdateModeSymbol(ru)"), "ru")
+	})
+
+	t.Run("update mode symbol en", func(t *testing.T) {
+		t.Parallel()
+
+		eng, rec := newBoundEngine(t)
+		eng.UpdateModeSymbol("en")
+		wantModeUpdate(t, wantOneUpdate(t, rec, "UpdateModeSymbol(en)"), "en")
+	})
+
+	t.Run("factory registers the initial property", func(t *testing.T) {
+		t.Parallel()
+
+		rec := newEmitRecorder(t)
+		f := factory{conn: rec.conn}
+		if _, ferr := f.CreateEngine("goswitch-en"); ferr != nil {
+			t.Fatalf("CreateEngine() err = %v, want nil", ferr)
+		}
+		wantFactoryRegistration(t, rec)
+	})
+}
+
+// wantFactoryRegistration pins the registration half of the mode indicator:
+// the recorder holds exactly one RegisterProperties signal at the minted
+// engine path, carrying a one-property PropList whose Symbol text is the
+// daemon's start mode (ADR-001: EN at start).
+func wantFactoryRegistration(t *testing.T, rec *emitRecorder) {
+	t.Helper()
+
+	var registered []capturedSignal
+	for _, sig := range rec.snapshot() {
+		if sig.iface == ifaceEngine && sig.member == "RegisterProperties" {
+			registered = append(registered, sig)
+		}
+	}
+	if len(registered) != 1 {
+		t.Fatalf("CreateEngine emitted %d RegisterProperties signals, want exactly 1", len(registered))
+	}
+	sig := registered[0]
+	if sig.path != emitterPath {
+		t.Errorf("RegisterProperties path = %q, want %q", sig.path, emitterPath)
+	}
+	if len(sig.body) != 1 {
+		t.Fatalf("body has %d args, want 1: %+v", len(sig.body), sig.body)
+	}
+	variant, ok := sig.body[0].(dbus.Variant)
+	if !ok {
+		t.Fatalf("arg0 = %T, want dbus.Variant", sig.body[0])
+	}
+	list, ok := variant.Value().(PropList)
+	if !ok {
+		t.Fatalf("variant payload = %T, want engine.PropList", variant.Value())
+	}
+	if len(list.Properties) != 1 {
+		t.Fatalf("RegisterProperties carries %d properties, want exactly 1", len(list.Properties))
+	}
+	prop, ok := list.Properties[0].Value().(Property)
+	if !ok {
+		t.Fatalf("property payload = %T, want engine.Property", list.Properties[0].Value())
+	}
+	sym, ok := prop.Symbol.Value().(IBusText)
+	if !ok || sym.Text != initialModeSymbol {
+		t.Errorf("initial Symbol = %v, want IBusText %q (the daemon's start mode, ADR-001)",
+			prop.Symbol.Value(), initialModeSymbol)
+	}
+}

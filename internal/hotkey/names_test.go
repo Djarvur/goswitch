@@ -101,6 +101,29 @@ func TestParseBinding_Combos(t *testing.T) {
 	}
 }
 
+// TestParseBinding_SuperSpace pins the mode-switch chord binding (owner
+// decision 2, quick plan 260927-way): "super+space" resolves to the space
+// keyval (0x020, ibuskeysyms.h:376 "IBUS_KEY_space 0x020", verified
+// verbatim) with Mod4 as the FULL ModMask — space carries NO family bit of
+// its own (it is not a modifier), so the press-side held mask is exactly
+// Mod4. The key table stays closed: non-table keys still reject.
+func TestParseBinding_SuperSpace(t *testing.T) {
+	t.Parallel()
+
+	got, err := hotkey.ParseBinding("super+space")
+	if err != nil {
+		t.Fatalf("ParseBinding(super+space): %v", err)
+	}
+	want := hotkey.Binding{Keyval: 0x020, ModMask: hotkey.MaskMod4}
+	if got != want {
+		t.Errorf("ParseBinding(super+space) = %+v, want %+v (space carries no family bit — held mask is Mod4)",
+			got, want)
+	}
+	if hotkey.FamilyMask(0x020) != 0 {
+		t.Errorf("FamilyMask(space) = %#x, want 0 — space is not a modifier", hotkey.FamilyMask(0x020))
+	}
+}
+
 // TestParseBinding_Rejected pins the closed-vocabulary refusals (D-33): an
 // empty name or an unknown token anywhere in the binding is an error, never
 // a silent fallback.

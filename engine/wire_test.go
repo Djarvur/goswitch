@@ -23,13 +23,10 @@ func assertFieldOrder(t *testing.T, typ reflect.Type, want []string) {
 	}
 }
 
-// TestWire_FieldOrder pins the serialized field order of the IBus wire
-// structs: godbus marshals exported fields in declaration order and
-// ibus-daemon deserializes positionally, so any reorder is a silent
-// protocol break. Expected sequences per 01-RESEARCH.md §Pattern 1.
-func TestWire_FieldOrder(t *testing.T) {
-	t.Parallel()
-
+// wireFieldWants builds the expected field sequences of every pinned wire
+// struct — the wants of TestWire_FieldOrder, extracted so the test itself
+// stays under the funlen ceiling.
+func wireFieldWants() (component, engineDesc, text, property, proplist []string) {
 	// header opens every serialized IBus struct: the magic name string and
 	// the attachments map.
 	header := []string{"Name", "Attachments"}
@@ -37,7 +34,7 @@ func TestWire_FieldOrder(t *testing.T) {
 		return append(append([]string{}, header...), fields...)
 	}
 
-	componentWant := withHeader(
+	component = withHeader(
 		"ComponentName", // "org.freedesktop.IBus.goswitch"
 		"Description",
 		"Version",
@@ -50,7 +47,7 @@ func TestWire_FieldOrder(t *testing.T) {
 		"EngineList",    // av
 	)
 
-	engineWant := withHeader(
+	engineDesc = withHeader(
 		"EngineName", // "goswitch-en" / "goswitch-ru"
 		"LongName",
 		"Description",
@@ -67,12 +64,46 @@ func TestWire_FieldOrder(t *testing.T) {
 		"LayoutOption",
 		"Version",
 		"Textdomain",
+		"IconPropKey", // 19th, appended LAST — the dynamic panel icon key
 	)
 
-	textWant := withHeader(
+	text = withHeader(
 		"Text",
 		"AttrList",
 	)
+
+	// The panel property pair (owner decision 1, quick plan 260927-way):
+	// Property is the ibusproperty.h:159-167 ctor order with Symbol
+	// APPENDED LAST (the goibus reference + the appended-field convention);
+	// PropList is the RegisterProperties container.
+	property = withHeader(
+		"Key",       // modePropKey — the panel icon key
+		"Type",      // PropTypeNormal (u)
+		"Label",     // variant-wrapped IBusText
+		"Icon",      // "" — the symbol carries the mode
+		"Tooltip",   // variant-wrapped IBusText
+		"Sensitive", // b
+		"Visible",   // b
+		"State",     // PropStateUnchecked (u)
+		"SubProps",  // variant-wrapped PropList
+		"Symbol",    // variant-wrapped IBusText — appended LAST
+	)
+
+	proplist = withHeader(
+		"Properties", // av of variant-wrapped Property values
+	)
+
+	return component, engineDesc, text, property, proplist
+}
+
+// TestWire_FieldOrder pins the serialized field order of the IBus wire
+// structs: godbus marshals exported fields in declaration order and
+// ibus-daemon deserializes positionally, so any reorder is a silent
+// protocol break. Expected sequences per 01-RESEARCH.md §Pattern 1.
+func TestWire_FieldOrder(t *testing.T) {
+	t.Parallel()
+
+	componentWant, engineWant, textWant, propertyWant, proplistWant := wireFieldWants()
 
 	t.Run("Component", func(t *testing.T) {
 		t.Parallel()
@@ -97,5 +128,17 @@ func TestWire_FieldOrder(t *testing.T) {
 		t.Parallel()
 
 		assertFieldOrder(t, reflect.TypeOf(engine.IBusText{}), textWant)
+	})
+
+	t.Run("Property", func(t *testing.T) {
+		t.Parallel()
+
+		assertFieldOrder(t, reflect.TypeOf(engine.Property{}), propertyWant)
+	})
+
+	t.Run("PropList", func(t *testing.T) {
+		t.Parallel()
+
+		assertFieldOrder(t, reflect.TypeOf(engine.PropList{}), proplistWant)
 	})
 }

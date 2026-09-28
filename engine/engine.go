@@ -72,6 +72,7 @@ type Emitter interface {
 	DeleteSurroundingText(offset int32, nchars uint32)
 	ForwardKeyEvent(keyval, keycode, state uint32)
 	CommitText(text IBusText)
+	UpdateModeSymbol(symbol string)
 }
 
 // EventHandler is the seam the rest of the daemon plugs into (hotkey FSM,
@@ -427,6 +428,21 @@ func (e *Engine) ForwardKeyEvent(keyval, keycode, state uint32) {
 	}
 	if err := e.conn.Emit(e.path, ifaceEngine+".ForwardKeyEvent", keyval, keycode, state); err != nil {
 		slog.Error("forward key event emit failed", "error", err)
+	}
+}
+
+// UpdateModeSymbol emits the org.freedesktop.IBus.Engine.UpdateProperty
+// signal for the mode-indicator panel property (owner decision 1, quick
+// plan 260927-way): the GNOME input indicator's dynamic icon (EngineDesc
+// icon_prop_key) follows the daemon's script mode. Fire-and-forget like
+// every engine signal, quiet on a detached engine.
+func (e *Engine) UpdateModeSymbol(symbol string) {
+	if e.conn == nil {
+		return
+	}
+	prop := dbus.MakeVariant(NewModeProperty(symbol))
+	if err := e.conn.Emit(e.path, ifaceEngine+".UpdateProperty", prop); err != nil {
+		slog.Error("mode symbol emit failed", "error", err)
 	}
 }
 

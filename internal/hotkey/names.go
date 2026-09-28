@@ -24,7 +24,7 @@ type Binding struct {
 }
 
 // Keyvals of the bindable keys, verified verbatim against
-// /usr/include/ibus-1.0/ibuskeysyms.h:188-199 — values are never written
+// /usr/include/ibus-1.0/ibuskeysyms.h:188-199,376 — values are never written
 // from memory (the 02-05 class trap: a name is not a key). Duplicated into
 // this pure package instead of importing the D-Bus-bound engine — the
 // precedent is KeyvalShiftR (fsm.go); the dependency direction stays
@@ -37,6 +37,7 @@ const (
 	KeyvalAltR   = 0xffea // Alt_R, ibuskeysyms.h:197.
 	KeyvalSuperL = 0xffeb // Super_L, ibuskeysyms.h:198.
 	KeyvalSuperR = 0xffec // Super_R, ibuskeysyms.h:199.
+	KeyvalSpace  = 0x020  // space, ibuskeysyms.h:376 "#define IBUS_KEY_space 0x020".
 )
 
 // Modifier masks of the binding grammar, duplicated from engine/keys.go:5-12
@@ -63,6 +64,7 @@ func keyNameValues() map[string]uint32 {
 		"alt_r":   KeyvalAltR,
 		"super_l": KeyvalSuperL,
 		"super_r": KeyvalSuperR,
+		"space":   KeyvalSpace,
 	}
 }
 
@@ -79,7 +81,10 @@ func modifierMasks() map[string]uint32 {
 
 // keyFamilyMasks maps each bindable key to the modifier bit its own press
 // carries on the wire (pressing Shift_R sets the Shift bit in the IBus
-// state word). A function for the same no-mutable-globals reason.
+// state word). A function for the same no-mutable-globals reason. "space"
+// deliberately has NO entry: it is not a modifier, so FamilyMask's default
+// 0 is the correct press-side behavior — the held mask of super+space is
+// exactly Mod4 (the mode-switch chord, quick plan 260927-way).
 func keyFamilyMasks() map[string]uint32 {
 	return map[string]uint32{
 		"shift_l": MaskShift,

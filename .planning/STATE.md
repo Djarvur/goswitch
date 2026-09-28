@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 Phase: 04 — Поставка и приёмка
 Plan: 9 of 9
 Status: Executed — UAT test 2 pending owner (D-48 fresh-session double-run)
-Last activity: 2026-09-27 — Quick task 260927-sy8: engine self-reactivation fix (needs-review); live checks pending
+Last activity: 2026-09-27 — Quick task 260927-vu8: correction UX batch A (bracket-row allow-set + flip_after_correction, needs-review); live e2e acceptance deferred to orchestrator
 
 Progress: [████████░░] 75%
 
@@ -202,6 +202,7 @@ None yet.
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 260927-sy8 | engine self-reactivation: re-activate the global IBus engine on daemon (re)registration when goswitch owns the current input source | 2026-09-27 | c543d2b | Needs Review | [260927-sy8-engine-self-reactivation-re-activate-the](./quick/260927-sy8-engine-self-reactivation-re-activate-the/) |
+| 260927-vu8 | correction UX batch A: convert the bracket-row punctuation during correction (allow-set, SPEC §4.2, owner decision 1 revised) + flip the script mode after a changed correction (flip_after_correction, default ON, owner decision 2) | 2026-09-27 | f679b95 | Needs Review | [260927-vu8-correction-ux-batch-a-convert-letter-map](./quick/260927-vu8-correction-ux-batch-a-convert-letter-map/) |
 
 ## Deferred Items
 

@@ -80,18 +80,39 @@ const (
 
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
+	// The layout-switch keybinding lives in the WINDOW-MANAGER keybindings
+	// schema, not in desktop.input-sources (live finding 2026-09-27: the
+	// desktop.input-sources schema carries no switch key at all — a
+	// gsettings get answers "No such key"). Owner decision 3, quick plan
+	// 260927-way: with goswitch as the only input source that binding only
+	// churns/disables the engine context — install clears both switch
+	// chords, uninstall restores the saved values.
+	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
+	gsettingsKeySwitch         = "switch-input-source"
+	gsettingsKeySwitchBackward = "switch-input-source-backward"
 )
 
 // ownerSourcesSet is the D-40 single-owner takeover value: goswitch becomes
 // the ONLY input source. fallbackSources is the ASVS V5 safe restore when
 // the saved state cannot be trusted — a plain xkb US keyboard, so an
-// uninstall never leaves the desktop without input. systemComponentDir is
+// uninstall never leaves the desktop without input. clearedSwitchBindings
+// is the handover value of the switch-input-source binding (owner decision
+// 3): set unconditionally on install, idempotent. fallbackSwitchBindings is
+// the ASVS V5 restore when the saved switch binding cannot be trusted — the
+// distro default (live-verified on the owner's desktop 2026-09-27), so an
+// uninstall never silently rebinds the layout switch. systemComponentDir is
 // the FHS ibus component dir: the env-carrying write-cache must keep it in
 // the scan path (see componentPathEnv).
 const (
-	ownerSourcesSet    = "[('ibus', 'goswitch-en')]"
-	fallbackSources    = "[('xkb', 'us')]"
-	systemComponentDir = "/usr/share/ibus/component"
+	ownerSourcesSet        = "[('ibus', 'goswitch-en')]"
+	fallbackSources        = "[('xkb', 'us')]"
+	clearedSwitchBindings  = "[]"
+	fallbackSwitchBindings = "['<Super>space', 'XF86Keyboard']"
+	// fallbackSwitchBindingsBackward is the distro default of the backward
+	// switch chord (live-verified on the owner's desktop 2026-09-27), the
+	// safe restore when its saved value cannot be trusted.
+	fallbackSwitchBindingsBackward = "['<Shift><Super>space', '<Shift>XF86Keyboard']"
+	systemComponentDir             = "/usr/share/ibus/component"
 )
 
 // Static errors (err113): every one names the failing step and the fix.
@@ -149,9 +170,13 @@ type Installer struct {
 }
 
 // installState is the on-disk restore contract between install and
-// uninstall: the pre-install gsettings sources string, verbatim.
+// uninstall: the pre-install gsettings sources string AND the pre-install
+// switch chords of the window-manager keybindings schema (owner decision 3,
+// quick plan 260927-way), all verbatim.
 type installState struct {
-	Sources string `json:"sources"`
+	Sources             string `json:"sources"`
+	SwitchInputSource   string `json:"switch_input_source"`
+	SwitchInputSourceBw string `json:"switch_input_source_backward"`
 }
 
 // componentXML is the rendered component document: the wire identity of
@@ -171,7 +196,10 @@ type componentXML struct {
 	Engines     []xmlEngine `xml:"engines>engine"`
 }
 
-// xmlEngine is one engine entry of componentXML, mirroring EngineDesc.
+// xmlEngine is one engine entry of componentXML, mirroring EngineDesc. The
+// icon_prop_key tag spelling is pinned by the owner's live component XMLs
+// (punto-switcher.xml, test-shift.xml) and carries the mode-indicator
+// property key (owner decision 1, quick plan 260927-way).
 type xmlEngine struct {
 	Name        string `xml:"name"`
 	Language    string `xml:"language"`
@@ -180,6 +208,7 @@ type xmlEngine struct {
 	Description string `xml:"description"`
 	Symbol      string `xml:"symbol"`
 	Rank        uint32 `xml:"rank"`
+	IconPropKey string `xml:"icon_prop_key"`
 }
 
 // New returns the production installer over os/exec and the real $HOME;
@@ -268,8 +297,8 @@ func WithCtlStatus(fn CtlStatus) func(*Installer) {
 // report (paths and verdicts only — never user text, D-20/D-21):
 // preflight the daemon binary → save prior sources → component XML →
 // env-carrying write-cache + registry verification → user unit →
-// daemon-reload → enable --now → ibus restart → bounded-wait live
-// registration → single-owner sources → engine activation.
+// ibus restart → bounded-wait registry → daemon-reload → enable + restart →
+// bounded-wait live registration → single-owner sources → engine activation.
 func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	daemonPath, err := i.resolveDaemon()
 	if err != nil {
@@ -287,19 +316,29 @@ func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	if err := i.writeUnit(daemonPath); err != nil {
 		return nil, err
 	}
-	if err := i.startUnit(ctx); err != nil {
-		return nil, err
-	}
+	// The ibus restart refreshes the component registry BEFORE the unit
+	// (re)start (ordering fix 2026-09-28): restarting the unit FIRST made
+	// the fresh daemon register against the about-to-die ibus and fire its
+	// self-reactivation into the restart window (the `ibus engine` client
+	// hung on the dying bus and died by its own timeout, 3×WARN), and the
+	// live-registration wait raced the reconnect. Restarting ibus first
+	// gives the new daemon one clean bus to register and reactivate on.
 	if _, err := i.call(ctx, binIbus, "restart"); err != nil {
 		return nil, fmt.Errorf("ibus restart: %w", err)
 	}
 	if err := i.waitListEngine(ctx); err != nil {
 		return nil, err
 	}
+	if err := i.startUnit(ctx); err != nil {
+		return nil, err
+	}
 	if err := i.waitRegistration(ctx); err != nil {
 		return nil, err
 	}
 	if err := i.takeoverSources(ctx); err != nil {
+		return nil, err
+	}
+	if err := i.clearSwitchBinding(ctx); err != nil {
 		return nil, err
 	}
 	if err := i.activateEngine(ctx, engineEN); err != nil {
@@ -341,6 +380,10 @@ func (i *Installer) Uninstall(ctx context.Context, purge bool) ([]string, error)
 	}
 
 	lines, err := i.restoreSources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	lines, err = i.restoreSwitchBinding(ctx, lines)
 	if err != nil {
 		return nil, err
 	}
@@ -388,16 +431,28 @@ func (i *Installer) resolveDaemon() (string, error) {
 	return path, nil
 }
 
-// saveState reads the current sources and stores them verbatim — unless a
-// state file already exists, in which case it is LEFT UNTOUCHED: the FIRST
-// install's backup is sacred (an install-over-install must never save the
-// post-takeover goswitch-only desktop over the owner's original values).
+// saveState reads the current sources AND the current switch-input-source
+// binding (owner decision 3, quick plan 260927-way) and stores both
+// verbatim — unless a state file already exists, in which case it is LEFT
+// UNTOUCHED: the FIRST install's backup is sacred (an install-over-install
+// must never save the post-takeover goswitch-only desktop — nor the
+// post-handover cleared switch binding — over the owner's original values).
 func (i *Installer) saveState(ctx context.Context) (string, error) {
 	out, err := i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKey)
 	if err != nil {
 		return "", fmt.Errorf("read current sources: %w", err)
 	}
 	prior := strings.TrimSpace(string(out))
+	out, err = i.call(ctx, binGSettings, "get", gsettingsKeybindingsSchema, gsettingsKeySwitch)
+	if err != nil {
+		return "", fmt.Errorf("read current switch-input-source binding: %w", err)
+	}
+	priorSwitch := strings.TrimSpace(string(out))
+	out, err = i.call(ctx, binGSettings, "get", gsettingsKeybindingsSchema, gsettingsKeySwitchBackward)
+	if err != nil {
+		return "", fmt.Errorf("read current switch-input-source-backward binding: %w", err)
+	}
+	priorSwitchBw := strings.TrimSpace(string(out))
 
 	path := i.path(stateDirRel, stateFile)
 	if _, err := os.Stat(path); err == nil {
@@ -405,7 +460,11 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("stat state file: %w", err)
 	}
-	data, err := json.Marshal(installState{Sources: prior})
+	data, err := json.Marshal(installState{
+		Sources:             prior,
+		SwitchInputSource:   priorSwitch,
+		SwitchInputSourceBw: priorSwitchBw,
+	})
 	if err != nil {
 		return "", fmt.Errorf("marshal install state: %w", err)
 	}
@@ -524,14 +583,23 @@ func (i *Installer) writeUnit(daemonPath string) error {
 	return writeVerified(i.path(unitDirRel, unitFile), renderUnit(daemonPath), permPublic)
 }
 
-// startUnit reloads the user manager and enables+starts the unit.
+// startUnit reloads the user manager, enables the unit and (RE)STARTS it:
+// a plain `enable --now` is a NO-OP on an already-active unit, so an
+// install-over-a-running-daemon left the OLD binary serving the desktop
+// and an upgrade never took effect until a manual restart (live finding
+// 2026-09-27 21:46→01:25, quick-task 260927-way follow-up). `restart`
+// starts a stopped unit too, so one call covers first install and upgrade
+// alike — safe mid-session because the daemon re-registers and
+// self-reactivates the owned engine (quick task 260927-sy8).
 func (i *Installer) startUnit(ctx context.Context) error {
 	if _, err := i.call(ctx, binSystemctl, "--user", "daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload: %w", err)
 	}
-	_, err := i.call(ctx, binSystemctl, "--user", "enable", "--now", daemonBinary)
-	if err != nil {
-		return fmt.Errorf("systemctl enable --now %s: %w (is the user systemd manager running?)", daemonBinary, err)
+	if _, err := i.call(ctx, binSystemctl, "--user", "enable", daemonBinary); err != nil {
+		return fmt.Errorf("systemctl enable %s: %w (is the user systemd manager running?)", daemonBinary, err)
+	}
+	if _, err := i.call(ctx, binSystemctl, "--user", "restart", daemonBinary); err != nil {
+		return fmt.Errorf("systemctl restart %s: %w", daemonBinary, err)
 	}
 
 	return nil
@@ -570,6 +638,24 @@ func (i *Installer) takeoverSources(ctx context.Context) error {
 	return nil
 }
 
+// clearSwitchBinding hands the GNOME layout-switch binding over to goswitch
+// (owner decision 3, quick plan 260927-way): with a single input source the
+// binding only churns/disables the engine context (the live finding — a
+// Super+Space press disabled the engine and keys silently bypassed
+// goswitch), so install sets the CLEARED value unconditionally — idempotent,
+// the pre-install binding already saved by saveState. Runs right after the
+// sources takeover.
+func (i *Installer) clearSwitchBinding(ctx context.Context) error {
+	for _, key := range []string{gsettingsKeySwitch, gsettingsKeySwitchBackward} {
+		args := []string{"set", gsettingsKeybindingsSchema, key, clearedSwitchBindings}
+		if _, err := i.call(ctx, binGSettings, args...); err != nil {
+			return fmt.Errorf("clear %s: %w", key, err)
+		}
+	}
+
+	return nil
+}
+
 // activateEngine sets the global engine (SetGlobalEngine via `ibus engine`):
 // the activation path the GNOME shell actually honors (the runtime
 // gsettings `current` write is ignored — Phase 1 live finding).
@@ -590,9 +676,10 @@ func (i *Installer) report(daemonPath string) []string {
 		"component: " + i.path(componentDirRel, componentFile) + " content verified (read-back)",
 		"registry: goswitch visible after write-cache",
 		"unit: " + i.path(unitDirRel, unitFile) + " content verified (read-back)",
-		"unit: daemon-reload + enable --now done",
+		"unit: daemon-reload + enable + restart done",
 		"engine: registered live (ListActiveEngines)",
 		"sources: single owner " + ownerSourcesSet,
+		"switch-input-source: cleared (previous value saved)",
 		"engine: activated " + engineEN,
 	}
 }
@@ -647,6 +734,83 @@ func (i *Installer) appendActivation(ctx context.Context, lines []string, value 
 	}
 
 	return append(lines, "engine: activated "+name)
+}
+
+// restoreSwitchBinding puts the saved switch chords back (owner decision 3,
+// quick plan 260927-way) — the uninstall half of the handover, run BEFORE
+// the state file is removed. Each saved value is shape-validated BEFORE it
+// reaches gsettings (the savedSources/ASVS V5 T-04-01-02 discipline: a
+// forged or pre-batch state file must never brick the keyboard bindings
+// silently) — anything not shaped like a GVariant array (an empty `[]` IS
+// legitimate: the binding may have been cleared before goswitch ever
+// installed) restores the DISTRO DEFAULT, and the substitution is
+// REPORTED, never silent.
+func (i *Installer) restoreSwitchBinding(ctx context.Context, lines []string) ([]string, error) {
+	savedForward, savedBackward, trusted := savedSwitchBindings(i.path(stateDirRel, stateFile))
+	for _, k := range []struct {
+		key      string
+		value    string
+		fallback string
+		label    string
+	}{
+		{
+			key:      gsettingsKeySwitch,
+			value:    savedForward,
+			fallback: fallbackSwitchBindings,
+			label:    "switch-input-source",
+		},
+		{
+			key:      gsettingsKeySwitchBackward,
+			value:    savedBackward,
+			fallback: fallbackSwitchBindingsBackward,
+			label:    "switch-input-source-backward",
+		},
+	} {
+		value, substituted := k.value, trusted
+		if !trusted {
+			value, substituted = k.fallback, false
+		}
+		if _, err := i.call(ctx, binGSettings, "set", gsettingsKeybindingsSchema, k.key, value); err != nil {
+			return nil, fmt.Errorf("%w: set %s: %w", errRestoreFailed, value, err)
+		}
+		if substituted {
+			lines = append(lines, k.label+": restored "+value)
+
+			continue
+		}
+		lines = append(lines, k.label+": fallback "+k.fallback+
+			" (saved state unreadable or malformed — safe default applied)")
+	}
+
+	return lines, nil
+}
+
+// savedSwitchBindings reads the state file and returns its switch chord
+// values only when the file parses AND each present value passes the shape
+// check (trimmed, '[' … ']'). Unlike savedSources the EMPTY array `[]` is
+// a legitimate saved binding here — install snapshots whatever the desktop
+// carried, and a pre-cleared binding must restore as-is.
+func savedSwitchBindings(path string) (forward, backward string, trusted bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", false
+	}
+	var st installState
+	if err := json.Unmarshal(data, &st); err != nil {
+		return "", "", false
+	}
+	shaped := func(v string) (string, bool) {
+		v = strings.TrimSpace(v)
+
+		return v, strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]")
+	}
+	forward, okF := shaped(st.SwitchInputSource)
+	backward, okB := shaped(st.SwitchInputSourceBw)
+	if !okF || !okB {
+		return "", "", false
+	}
+
+	return forward, backward, true
 }
 
 // purgeDirs removes the user-owned config dir and the state dir (--purge,
@@ -706,6 +870,7 @@ func renderComponentXML() ([]byte, error) {
 			Description: e.Description,
 			Symbol:      e.Symbol,
 			Rank:        e.Rank,
+			IconPropKey: e.IconPropKey, // the wire identity's on-disk shape (owner decision 1)
 		})
 	}
 	data, err := xml.MarshalIndent(doc, "", "  ")

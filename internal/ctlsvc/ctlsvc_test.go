@@ -90,6 +90,11 @@ func (c *ctlSink) DeleteSurroundingText(offset int32, nchars uint32) {
 // emits none.
 func (c *ctlSink) ForwardKeyEvent(keyval, keycode, state uint32) {}
 
+// UpdateModeSymbol records nothing the corpus asserts on — the forced
+// correction's pipeline makes no flip (the interface grew in quick plan
+// 260927-way).
+func (c *ctlSink) UpdateModeSymbol(string) {}
+
 // CommitText records the committed payload.
 func (c *ctlSink) CommitText(text engine.IBusText) {
 	c.mu.Lock()

@@ -108,10 +108,12 @@ type Actor struct {
 	// timer-arming comparison both read it (CR-01: the documented
 	// hotkeys.tap_key is wiring-live, not validation-only). tapKeyName is
 	// its parse cache, the comboName precedent; comboName is the resolved
-	// document's combo binding name.
+	// document's combo binding name; chordName is the mode-switch chord's
+	// parse cache (the same precedent, with the empty-disables twist).
 	tapKeyval  uint32
 	tapKeyName string
 	comboName  string
+	chordName  string
 	// MACR state (plan 03-05, ADR-005): the Super-hold window of the
 	// consumed-upstream detect (b.2) with its letter witness, the pending
 	// remap awaiting the hold's end, the layer's counters (the goswitchctl
@@ -143,19 +145,31 @@ type Actor struct {
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
 // D-27 Backspace series cap and the D-28 opt-in clipboard rung switch —
-// OFF at the zero value, which is the default configuration — plus the
-// D-36 word-layout combo binding (the zero Binding selects the built-in
-// Shift+Control_R default) and the MACR-01 Super→Ctrl layer of ADR-005
-// (plan 03-05): OFF at the zero value, with an empty letter set, no per-app
-// list and NO alternative modifier (b.3 — not introduced by default).
+// OFF at the zero value, which is the default configuration — the
+// post-correction script flip of owner decision 2 (260927-vu8):
+// FlipAfterCorrection is OFF at the zero value (the unit corpus and the
+// no-SetOptions path) and ON when fed from the built-in defaults, whose
+// config.Defaults sets flip_after_correction true (the daemon wiring
+// passes it through SetOptions; an attached document overrides it live per
+// applySnapshot) — plus the D-36 word-layout combo binding (the zero
+// Binding selects the built-in Shift+Control_R default), the mode-switch
+// chord binding of owner decision 2 (quick plan 260927-way: the ZERO
+// Binding is the DISABLED state — unlike the combo there is no built-in
+// fallback; the daemon wiring feeds config.Defaults' super+space through
+// SetOptions and an attached document folds it live, empty = off) and the
+// MACR-01 Super→Ctrl layer of ADR-005 (plan 03-05): OFF at the zero value,
+// with an empty letter set, no per-app list and NO alternative modifier
+// (b.3 — not introduced by default).
 type Options struct {
-	BackspaceCap    int
-	ClipboardRung   bool
-	WordLayoutCombo hotkey.Binding
-	MACREnabled     bool
-	MACRLetters     map[rune]bool
-	MACRApps        []string
-	MACRAltModifier string
+	BackspaceCap        int
+	ClipboardRung       bool
+	FlipAfterCorrection bool
+	WordLayoutCombo     hotkey.Binding
+	ModeSwitchChord     hotkey.Binding
+	MACREnabled         bool
+	MACRLetters         map[rune]bool
+	MACRApps            []string
+	MACRAltModifier     string
 }
 
 // MACRStats are the Super→Ctrl layer's counters (ADR-005 b.2) — the status
@@ -505,6 +519,14 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		}
 	case engine.LifecycleFocusIn, engine.LifecycleEnable, engine.LifecycleDisable:
 		slog.Debug("lifecycle", "kind", kind.String())
+		if kind == engine.LifecycleFocusIn && a.eng != nil {
+			// The panel indicator self-heals on every focus gain (owner
+			// decision 1, quick plan 260927-way): engine objects are minted
+			// per input context, so a freshly minted context re-asserts the
+			// CURRENT mode symbol — it must not resurrect the factory's
+			// initial EN registration while the actor sits in another mode.
+			a.eng.UpdateModeSymbol(a.modeSymbol())
+		}
 	}
 }
 
@@ -625,6 +647,63 @@ func (a *Actor) settleCombo() {
 	a.flipScript()
 }
 
+// settleCorrectionFlip applies owner decision 2 (quick plan 260927-vu8,
+// 2026-09-27): after a successful correction that CHANGED the text, the
+// internal script mode flips — the mode follows the correction (the owner
+// works in a correct-then-type flow). Exactly two sites call it — the
+// word/phrase level-1 success (executeCorrection) and the level-2 success
+// (executeLevel2) — each AFTER logCorrectionDone and BEFORE settleCombo,
+// so the settled done record precedes every flip (the D-36 order extended)
+// and the comboPending guard reads the flag before settleCombo clears it.
+// The helper no-ops when the gesture was a combo (the combo's own
+// settleCombo flip covers it — exactly one flip per gesture) and when
+// correction.flip_after_correction is off (the zero-value Options of the
+// unit corpus and the no-SetOptions path stays off; the daemon's built-in
+// defaults feed it ON — CorrectNow's forced word pipeline flips on success
+// exactly like the double tap it reuses) and after a settled CHANGED
+// selection correction (owner report 2026-09-28: «при коррекции выделения
+// — нет» fixed). The D-24 done-without-change outcome and the
+// skipCorrection refusals never reach it. The caller holds the mutex.
+func (a *Actor) settleCorrectionFlip(converted []rune) {
+	if a.comboPending || !a.opts.FlipAfterCorrection {
+		return
+	}
+	// The mode is SET to the converted text's script, never toggled (owner
+	// rule 2026-09-28): a cyr→lat correction leaves the layout Latin, a
+	// lat→cyr one makes it Cyrillic — the layout you now intend to type in.
+	switch scriptOf(converted) {
+	case modeEN:
+		a.setScriptMode(a.mode == modeRU)
+	case modeRU:
+		a.setScriptMode(a.mode == modeEN)
+	}
+}
+
+// setScriptMode applies one script-mode transition when the mode actually
+// differs, reusing the flip's whole body (the mode record, the panel
+// symbol update); a same-mode call is a no-op.
+func (a *Actor) setScriptMode(transition bool) {
+	if transition {
+		a.flipScript()
+	}
+}
+
+// scriptOf reports the script of the first letter of the converted range —
+// the layout the corrected text now lives in. A letterless range (digits,
+// punctuation only) keeps the current mode.
+func scriptOf(converted []rune) scriptMode {
+	for _, r := range converted {
+		if unicode.Is(unicode.Cyrillic, r) {
+			return modeRU
+		}
+		if unicode.Is(unicode.Latin, r) {
+			return modeEN
+		}
+	}
+
+	return modeEN // letterless — the caller's transition is false either way
+}
+
 // skipCorrection records one D-20 refusal: the INFO reason record (one
 // line, the reason slug, nothing touched) and the counters the control
 // surface reports. The caller holds the mutex.
@@ -687,10 +766,25 @@ func (a *Actor) applySnapshot() {
 	}
 	a.opts.BackspaceCap = snap.Correction.BackspaceCap
 	a.opts.ClipboardRung = snap.Correction.ClipboardRung
+	a.opts.FlipAfterCorrection = snap.Correction.FlipAfterCorrection
 	if name := snap.Hotkeys.WordLayoutCombo; name != a.comboName {
 		if binding, err := hotkey.ParseBinding(name); err == nil {
 			a.opts.WordLayoutCombo = binding
 			a.comboName = name
+		}
+	}
+	if name := snap.Hotkeys.ModeSwitchChord; name != a.chordName {
+		// The EMPTY-DISABLES twist: "" is the chord's off state, not a
+		// failed parse — the fold must clear the binding on the empty
+		// document value (never keep last-good), while a NON-empty name
+		// that fails to parse — impossible from a validated document —
+		// keeps the last-good chord (the D-32 discipline).
+		if name == "" {
+			a.chordName = name
+			a.opts.ModeSwitchChord = hotkey.Binding{}
+		} else if binding, err := hotkey.ParseBinding(name); err == nil {
+			a.opts.ModeSwitchChord = binding
+			a.chordName = name
 		}
 	}
 	a.opts.MACREnabled = snap.MACR.Enabled
@@ -716,6 +810,11 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 
 	a.surr = beforeCursor(text, cursorPos)
 	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
+	// -debug only, same sensitivity class as the key trace (diagnosis mode
+	// is opt-in and short-lived); the live hunt needs the pushed field
+	// text to see what a correction actually left behind (2026-09-28).
+	slog.Debug("surrounding push", "text", text,
+		"cursor", cursorPos, "anchor", anchorPos)
 	if a.pending != nil {
 		if !a.pendingVerdict() {
 			a.resolvePending()
@@ -1182,46 +1281,69 @@ func (a *Actor) backspaceCap() int {
 
 // flipScript toggles the internal output-script mode (ADR-001 Option B):
 // the switch is daemon state only — the session's XKB group is never
-// touched and the flip itself emits nothing on the sink. The INFO mode
+// touched and the flip makes no FIELD call on the sink. The INFO mode
 // record is the e2e sequencing contract: the stand waits for it after a
 // single tap before typing in the new script, because the flip fires at
-// window expiry, not inside the tap (Pitfall 5). The caller holds the
-// mutex.
+// window expiry, not inside the tap (Pitfall 5). Right after the record the
+// flip refreshes the panel symbol (owner decision 1, quick plan 260927-way):
+// exactly one UpdateModeSymbol per flip, strictly after the log record —
+// fire-and-forget (the CommitText precedent; the caller holds the mutex).
 func (a *Actor) flipScript() {
 	if a.mode == modeEN {
 		a.mode = modeRU
 		slog.Info("mode", "to", "ru")
-
-		return
+	} else {
+		a.mode = modeEN
+		slog.Info("mode", "to", "en")
 	}
-	a.mode = modeEN
-	slog.Info("mode", "to", "en")
+	if a.eng != nil {
+		a.eng.UpdateModeSymbol(a.modeSymbol())
+	}
+}
+
+// modeSymbol returns the panel symbol of the current script mode — the
+// glyph the mode-indicator property carries (owner decision 1). The caller
+// holds the mutex.
+func (a *Actor) modeSymbol() string {
+	if a.mode == modeRU {
+		return "ru"
+	}
+
+	return "en"
 }
 
 // feedKey decides one press: whether the engine consumes the key and which
 // rune the buffer takes — the script-true invariant made branch-local (a
 // rune that reaches the field also reaches the buffer, whatever delivered
-// it). The MACR interception (MACR-01, ADR-005, Pattern 6) is recognized
-// FIRST of all, above the combo and every mode branch: a configured letter
-// press carrying Mod4 — the press-side wire truth of the live probe: the
-// letter arrives Latin with Mod4 in EVERY internal mode — is consumed and
-// replayed as the Ctrl+letter forward burst, so the RU commit can never
-// fire on a Super chord and the buffer is never fed. The word-layout combo
-// (D-36) is recognized next, above every mode branch: a press of the bound
-// combo key under its bound HELD modifiers — the press's state word
-// carries only the modifiers held before the key (live finding
-// 2026-09-15: a Control_R press under Shift arrives with Shift|NumLock,
-// its own Control bit rides only on the release), so the match compares
-// Binding.ModMask with the key's own family bit cleared — latch-tolerant
-// through &, the NumLock precedent of 02-04 — kills the tap series with a
-// deliberate Reset (Pitfall 4: left to the FSM the Control_R press would
-// silently die as modifier use) and launches the word pipeline of the
-// Double semantics with the flip deferred to its settlement
-// (comboPending/settleCombo). The combo press itself transits: a bare
-// modifier chord puts no rune in the field, and the transit keeps the
-// client's press/release pairing intact. The CORR-09 reset keyvals (Enter
-// and its keypad variant, Tab, Escape) end the phrase instead of feeding
-// it. The caller holds the mutex.
+// it). The branch order is the branch's contract. The MACR interception
+// (MACR-01, ADR-005, Pattern 6) is recognized FIRST of all, above the
+// chords and every mode branch: a configured letter press carrying Mod4 —
+// the press-side wire truth of the live probe: the letter arrives Latin
+// with Mod4 in EVERY internal mode — is consumed and replayed as the
+// Ctrl+letter forward burst, so the RU commit can never fire on a Super
+// chord and the buffer is never fed. The word-layout combo (D-36) is
+// recognized next, above every mode branch: a press of the bound combo key
+// under its bound HELD modifiers — the press's state word carries only the
+// modifiers held before the key (live finding 2026-09-15: a Control_R
+// press under Shift arrives with Shift|NumLock, its own Control bit rides
+// only on the release), so the match compares Binding.ModMask with the
+// key's own family bit cleared — latch-tolerant through &, the NumLock
+// precedent of 02-04 — kills the tap series with a deliberate Reset
+// (Pitfall 4: left to the FSM the Control_R press would silently die as
+// modifier use) and launches the word pipeline of the Double semantics
+// with the flip deferred to its settlement (comboPending/settleCombo).
+// The combo press itself transits: a bare modifier chord puts no rune in
+// the field, and the transit keeps the client's press/release pairing
+// intact. The mode-switch chord (owner decision 2, quick plan 260927-way)
+// sits AFTER the combo (the combo wins a collision) and BEFORE the mode
+// branches: a press of the bound chord key under its held modifiers flips
+// the script mode IMMEDIATELY, consumes the press (no space lands in the
+// field), kills any pending tap series, and marks the Super hold as
+// WITNESSED — goswitch itself consumed the chord, nothing went upstream,
+// so the MACR consumed-upstream detect stays silent (the MACR layer is
+// unaffected: space is not a letter, macrIntercept owns the hold window).
+// The CORR-09 reset keyvals (Enter and its keypad variant, Tab, Escape)
+// end the phrase instead of feeding it. The caller holds the mutex.
 func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 	if a.macrIntercept(ev) {
 		return true
@@ -1238,6 +1360,10 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 
 			return false
 		}
+	}
+
+	if a.modeSwitchChord(ev) {
+		return true
 	}
 
 	switch {
@@ -1281,6 +1407,32 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 
 		return false
 	}
+}
+
+// modeSwitchChord is the mode-switch chord branch of feedKey (owner
+// decision 2, quick plan 260927-way): a press of the bound chord key under
+// its held modifiers — the same press-side held-mask rule as the combo
+// above (space has no family bit, so held is exactly the chord's Mod4) —
+// flips the script mode IMMEDIATELY and reports the press consumed. The
+// Super hold is marked WITNESSED (goswitch consumed the chord itself,
+// nothing was swallowed upstream — the MACR consumed-upstream detect must
+// not fire on the release), any pending tap series dies with the
+// deliberate Reset (Pitfall 4), and the panel symbol rides the flip. A
+// zero chord binding (disabled) never matches. The caller holds the mutex.
+func (a *Actor) modeSwitchChord(ev engine.EngineEvent) bool {
+	c := a.opts.ModeSwitchChord
+	if c.Keyval == 0 || ev.Keyval != c.Keyval {
+		return false
+	}
+	if held := c.ModMask &^ hotkey.FamilyMask(c.Keyval); ev.Mods&held != held {
+		return false
+	}
+	a.macrSawLetter = true
+	a.fsm.Feed(hotkey.Reset{}, a.elapsed())
+	slog.Info("combo", "kind", "mode-switch-chord")
+	a.flipScript()
+
+	return true
 }
 
 // startCorrection launches the correction of the Double decision: with an
@@ -1489,7 +1641,8 @@ func (a *Actor) executeCorrection() {
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
 	a.logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
-	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
+	a.settleCorrectionFlip(p.converted) // owner rule 2026-09-28: the mode follows the converted script
+	a.settleCombo()                     // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerify(p.converted, p.rng.tail)
 }
 
@@ -1504,15 +1657,23 @@ func (a *Actor) executeCorrection() {
 // range-anchored. The caller holds the mutex and pending != nil.
 func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 	sel := p.sel
-	// #nosec G115 -- both positions index a real input field, far below
-	// 2^31 runes; on the 64-bit target an int always holds a uint32.
-	offset := int32(sel.start) - int32(sel.cursor)
-	nchars := sel.end - sel.start
-	a.eng.DeleteSurroundingText(offset, nchars)
+	// NO DeleteSurroundingText here (2026-09-28 fix): the client's
+	// selection is ACTIVE — a CommitText replaces an active selection by
+	// the OS input-method contract (GTK, Chromium/Electron, Qt alike), so
+	// the former delete+commit pair double-applied and corrupted the field
+	// around the selection (live hunt 2026-09-28: Chromium answered with a
+	// cursor position no correct delete+commit ordering can produce, the
+	// verify-after timed out — 25→24-rune correction). Geometry only,
+	// never field content (D-20/D-21).
+	slog.Debug("selection geometry",
+		"cursor", sel.cursor, "anchor", a.sel.anchor,
+		"start", sel.start, "end", sel.end,
+		"field_len", len(a.sel.full))
 	a.eng.CommitText(engine.NewIBusText(string(p.converted)))
 	a.buf.HardReset() // the buffer can no longer mirror the replaced field
 	a.logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
-	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
+	a.settleCorrectionFlip(p.converted) // owner rule 2026-09-28: the mode follows the converted script
+	a.settleCombo()                     // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerifyRange(p.converted, sel.start)
 }
 
@@ -1538,6 +1699,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
+	a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
 	a.settleCombo()
 }
 

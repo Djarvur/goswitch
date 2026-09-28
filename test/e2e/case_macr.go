@@ -478,6 +478,7 @@ timeouts:
 correction:
   backspace_cap: 50
   clipboard_rung: false
+  flip_after_correction: false # pins the pre-batch (pre-260927-vu8) semantics
 macr:
   enabled: true
   letters: "x"
@@ -719,6 +720,7 @@ timeouts:
 correction:
   backspace_cap: 50
   clipboard_rung: false
+  flip_after_correction: false # pins the pre-batch (pre-260927-vu8) semantics
 macr:
   enabled: true
   letters: "x"

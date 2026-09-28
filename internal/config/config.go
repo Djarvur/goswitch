@@ -62,6 +62,7 @@ func altModifierCandidates() []string {
 type Hotkeys struct {
 	TapKey          string `yaml:"tap_key"`
 	WordLayoutCombo string `yaml:"word_layout_combo"`
+	ModeSwitchChord string `yaml:"mode_switch_chord"`
 }
 
 // Timeouts are the timing parameters, in milliseconds.
@@ -71,10 +72,12 @@ type Timeouts struct {
 }
 
 // Correction carries the replacement-ladder parameters: the D-27 Backspace
-// series cap and the D-28 opt-in clipboard rung.
+// series cap, the D-28 opt-in clipboard rung and the post-correction script
+// flip switch (owner decision 2, quick plan 260927-vu8).
 type Correction struct {
-	BackspaceCap  int  `yaml:"backspace_cap"`
-	ClipboardRung bool `yaml:"clipboard_rung"`
+	BackspaceCap        int  `yaml:"backspace_cap"`
+	ClipboardRung       bool `yaml:"clipboard_rung"`
+	FlipAfterCorrection bool `yaml:"flip_after_correction"`
 }
 
 // MACR is the Super→Ctrl remapping layer (ADR-005): a global switch, the
@@ -99,21 +102,24 @@ type Config struct {
 // Defaults returns the documented built-in defaults: the daemon runs on
 // them when -config is absent, so they must equal the Phase 2 behavior —
 // the tap window is ADR-002's DefaultWindow (300 ms), the Backspace cap
-// D-27's 50, the clipboard rung off (D-28) and MACR off with no
-// alternative modifier (ADR-005 b.3).
+// D-27's 50, the clipboard rung off (D-28), MACR off with no
+// alternative modifier (ADR-005 b.3) and the post-correction script flip
+// ON (owner decision 2, 2026-09-27: the mode follows a changed correction).
 func Defaults() Config {
 	return Config{
 		Hotkeys: Hotkeys{
 			TapKey:          defTapKey,
 			WordLayoutCombo: defCombo,
+			ModeSwitchChord: defModeSwitchChord,
 		},
 		Timeouts: Timeouts{
 			TapWindowMs:  defaultTapWindowMs,
 			VerifyWaitMs: defaultVerifyWaitMs,
 		},
 		Correction: Correction{
-			BackspaceCap:  defaultBackspaceCap,
-			ClipboardRung: false,
+			BackspaceCap:        defaultBackspaceCap,
+			ClipboardRung:       false,
+			FlipAfterCorrection: true,
 		},
 		MACR: MACR{
 			Enabled:     false,
@@ -126,8 +132,9 @@ func Defaults() Config {
 
 // The documented default binding names (shared with the corpus).
 const (
-	defTapKey = "shift_r"
-	defCombo  = "shift+ctrl_r"
+	defTapKey          = "shift_r"
+	defCombo           = "shift+ctrl_r"
+	defModeSwitchChord = "super+space"
 )
 
 // Validate enforces the ranges and closed vocabularies; every error names
@@ -163,6 +170,16 @@ func (h Hotkeys) validate() error {
 	}
 	if _, err := hotkey.ParseBinding(h.WordLayoutCombo); err != nil {
 		return fmt.Errorf("hotkeys.word_layout_combo %q: %w", h.WordLayoutCombo, err)
+	}
+	if h.ModeSwitchChord == "" {
+		// The chord is DISABLED by an empty value — the missing-key
+		// compatibility rule (the macr.alt_modifier empty precedent):
+		// documents written before the key exist load unchanged with the
+		// chord off, never defaulted on.
+		return nil
+	}
+	if _, err := hotkey.ParseBinding(h.ModeSwitchChord); err != nil {
+		return fmt.Errorf("hotkeys.mode_switch_chord %q: %w", h.ModeSwitchChord, err)
 	}
 
 	return nil
