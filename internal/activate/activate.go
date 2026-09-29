@@ -139,8 +139,11 @@ func ParseSourceTuples(raw string) ([]SourceTuple, error) {
 // index of the sources list. Never returns an error and never panics —
 // every outcome lands in the log (INFO success, DEBUG skip/failure
 // attempts, WARN exhausted retries). A foreign or malformed current source
-// receives no `ibus engine` call at all (T-SY8-01).
-func IfOwned(ctx context.Context, run Runner) {
+// receives no `ibus engine` call at all (T-SY8-01). The globalEngine reader
+// (05-04, the FACTUAL engine) is declared in the signature; RED STUB:
+// ignored — the legacy current-index path decides alone.
+func IfOwned(ctx context.Context, run Runner, globalEngine func(ctx context.Context) (string, bool)) {
+	_ = globalEngine
 	if err := ctx.Err(); err != nil {
 		slog.Debug("engine reactivation skipped", "reason", "context done", "error", err)
 

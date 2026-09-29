@@ -597,6 +597,12 @@ func (a *Actor) SetSwitcher(sw func(ctx context.Context, engineName string) erro
 	a.switcherWarned = false // a fresh generation opens a fresh degradation episode
 }
 
+// SyncEngine pulls the daemon under the observed engine name (05-04,
+// criterion 3). RED STUB: declared, does nothing yet.
+func (a *Actor) SyncEngine(name string) {
+	_ = name
+}
+
 // Expiry is the timer callback: time.AfterFunc(window) re-enters here when
 // the disambiguation window closes.
 func (a *Actor) Expiry() {

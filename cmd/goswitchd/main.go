@@ -169,7 +169,7 @@ func engineConfig(actor *session.Actor) engine.Config {
 		Engines:   engines,
 		Handler:   actor, // decides consumption (RU script mode) at the key; tap decisions at window expiry.
 		PostRegister: func(ctx context.Context, _ int) {
-			activate.IfOwned(ctx, activate.NewExecRunner())
+			activate.IfOwned(ctx, activate.NewExecRunner(), nil) // RED STUB: the 05-04 reader wiring lands in GREEN
 		},
 		// BindSwitcher hands the generation-scoped SetGlobalEngine closure
 		// to the actor (D-52): every flip gesture leaves the daemon through

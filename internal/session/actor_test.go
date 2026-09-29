@@ -4224,3 +4224,100 @@ func TestStatus_ReportsActiveEngine(t *testing.T) {
 		t.Errorf("post-flip snapshot engine = %q, want %s", st.Engine, engine.NameRU)
 	}
 }
+
+// TestActor_SyncEngineFollowsEngine pins the sync semantics (05-04,
+// criterion 3): an observed engine name matching the current mode is the
+// daemon's OWN flip echoed back (spike P4) — a silent confirmation without
+// a record; a drift corrects the internal mode with the byte-stable mode
+// record (the e2e oracle) plus a WARN, and the panel symbol follows the
+// corrected mode.
+func TestActor_SyncEngineFollowsEngine(t *testing.T) {
+	t.Run("same mode confirms without a record", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		a.SyncEngine(engine.NameEN) // EN at start: the daemon's own state echoed back
+
+		logged := buf.String()
+		if strings.Contains(logged, `"msg":"mode"`) {
+			t.Errorf("same-mode sync wrote a mode record — the echo must confirm silently; log:\n%s", logged)
+		}
+		if strings.Contains(logged, `"level":"WARN"`) {
+			t.Errorf("same-mode sync warned; log:\n%s", logged)
+		}
+		if st := a.StatusSnapshot(); st.Mode != "en" || st.Engine != engine.NameEN {
+			t.Errorf("snapshot mode/engine = %q/%q, want en/%s", st.Mode, st.Engine, engine.NameEN)
+		}
+		if got := sink.modeSymbols(); len(got) != 0 {
+			t.Errorf("same-mode sync emitted %v panel symbols, want none", got)
+		}
+	})
+
+	t.Run("drift corrects with the mode record and a WARN", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		a.SyncEngine(engine.NameRU) // an external flip (indicator click): EN → RU
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+			t.Errorf("byte-stable mode record missing; log:\n%s", logged)
+		}
+		if !strings.Contains(logged, `"msg":"mode corrected"`) {
+			t.Errorf("correction WARN missing; log:\n%s", logged)
+		}
+		if st := a.StatusSnapshot(); st.Mode != "ru" || st.Engine != engine.NameRU {
+			t.Errorf("snapshot mode/engine = %q/%q, want ru/%s", st.Mode, st.Engine, engine.NameRU)
+		}
+		if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+			t.Errorf("panel symbols after the correction = %q, want exactly [ru]", got)
+		}
+	})
+}
+
+// TestActor_SyncEngineForeignWarns pins the honest exit from under goswitch
+// (T-05-04-03): a third-party engine name — another ibus engine, an xkb
+// source — warns and leaves the mode untouched; the daemon owns no state it
+// cannot observe.
+func TestActor_SyncEngineForeignWarns(t *testing.T) {
+	for _, name := range []string{"anthy", "xkb:fr"} {
+		t.Run(name, func(t *testing.T) {
+			buf := captureLogs(t)
+			a, sink := wiredActor()
+
+			a.SyncEngine(name)
+
+			logged := buf.String()
+			if !strings.Contains(logged, `"msg":"foreign engine"`) {
+				t.Errorf("foreign-engine WARN missing; log:\n%s", logged)
+			}
+			if strings.Contains(logged, `"msg":"mode"`) {
+				t.Errorf("foreign sync moved the mode; log:\n%s", logged)
+			}
+			if st := a.StatusSnapshot(); st.Mode != "en" {
+				t.Errorf("mode = %q, want en — foreign names must not touch the state", st.Mode)
+			}
+			if got := sink.modeSymbols(); len(got) != 0 {
+				t.Errorf("foreign sync emitted %v panel symbols, want none", got)
+			}
+		})
+	}
+}
+
+// TestActor_SyncEngineNeverSwitches pins the flip-loop prohibition
+// (T-05-04-01): NO sync input ever reaches the switcher — the correction
+// moves the internal mode only; the daemon stays the single writer of the
+// bus, the shell's indicator clicks are followed, never fought.
+func TestActor_SyncEngineNeverSwitches(t *testing.T) {
+	a, _ := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	a.SyncEngine(engine.NameEN)
+	a.SyncEngine(engine.NameRU)
+	a.SyncEngine("anthy")
+
+	if got := probe.targets(); len(got) != 0 {
+		t.Errorf("SyncEngine called the switcher with %q — a flip loop is built on this; want zero calls", got)
+	}
+}

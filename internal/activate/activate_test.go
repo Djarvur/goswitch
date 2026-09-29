@@ -15,6 +15,7 @@ import (
 const (
 	sourcesOwnerSingle = `[('ibus', 'goswitch-en')]`
 	sourcesOwnerMid    = `[('xkb', 'us'), ('ibus', 'goswitch-ru')]`
+	sourcesOwnerBoth   = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
 	sourcesForeignXKB  = `[('xkb', 'us'), ('xkb', 'ru')]`
 	sourcesForeignIBus = `[('ibus', 'mozc'), ('ibus', 'goswitch-en')]`
 	sourcesGarbage     = `garbage`
@@ -140,9 +141,19 @@ func runIfOwned(t *testing.T, reply func(string, []string) ([]byte, error),
 ) (elapsed time.Duration, ibusCalls []string) {
 	t.Helper()
 
+	return runIfOwnedReader(t, reply, nil)
+}
+
+// runIfOwnedReader drives IfOwned with a globalEngine reader — the 05-04
+// factual-engine path (nil reader = the legacy current-index world).
+func runIfOwnedReader(t *testing.T, reply func(string, []string) ([]byte, error),
+	reader func(context.Context) (string, bool),
+) (elapsed time.Duration, ibusCalls []string) {
+	t.Helper()
+
 	f := &fakeRunner{reply: reply}
 	start := time.Now()
-	IfOwned(context.Background(), f.run)
+	IfOwned(context.Background(), f.run, reader)
 	elapsed = time.Since(start)
 
 	return elapsed, f.ibusCalls()
@@ -295,7 +306,7 @@ func TestIfOwnedCancelledContext(t *testing.T) {
 
 	f := &fakeRunner{reply: stubDesktop(sourcesOwnerSingle, current0)}
 	start := time.Now()
-	IfOwned(ctx, f.run)
+	IfOwned(ctx, f.run, nil)
 	elapsed := time.Since(start)
 
 	if elapsed > 400*time.Millisecond {
@@ -304,6 +315,57 @@ func TestIfOwnedCancelledContext(t *testing.T) {
 	if total := f.totalCalls(); total != 0 {
 		t.Errorf("subprocess calls = %d, want 0", total)
 	}
+}
+
+// TestIfOwned_PrefersGlobalEngine pins the factual-engine priority (05-04,
+// Pitfall 3): a live reader answer IS the truth — the goswitch engine it
+// names is reactivated directly, even when the dead `current` key points at
+// a foreign source the legacy path would refuse.
+func TestIfOwned_PrefersGlobalEngine(t *testing.T) {
+	withRetry(t, 0, time.Millisecond)
+
+	_, got := runIfOwnedReader(t, stubDesktop(sourcesOwnerMid, current0),
+		func(context.Context) (string, bool) { return "goswitch-ru", true })
+
+	assertIBus(t, got, []string{callRU})
+}
+
+// TestIfOwned_RuActiveSurvivesRestart pins the Pitfall-3 regression: with
+// both goswitch engines in sources and the ru engine factually active while
+// the dead key still says current=0, the restart reactivates goswitch-ru —
+// the "daemon restart flips ru→en" warning sign is excluded by construction.
+func TestIfOwned_RuActiveSurvivesRestart(t *testing.T) {
+	withRetry(t, 0, time.Millisecond)
+
+	_, got := runIfOwnedReader(t, stubDesktop(sourcesOwnerBoth, current0),
+		func(context.Context) (string, bool) { return "goswitch-ru", true })
+
+	assertIBus(t, got, []string{callRU})
+}
+
+// TestIfOwned_ColdBusFallsBackToIndex pins the fallback: a reader that
+// cannot answer (cold bus) leaves the legacy current-index derivation in
+// charge — the existing behavior is untouched.
+func TestIfOwned_ColdBusFallsBackToIndex(t *testing.T) {
+	withRetry(t, 0, time.Millisecond)
+
+	_, got := runIfOwnedReader(t, stubDesktop(sourcesOwnerMid, current1),
+		func(context.Context) (string, bool) { return "", false })
+
+	assertIBus(t, got, []string{callRU})
+}
+
+// TestIfOwned_ForeignGlobalEngineSkips pins the no-hijack guard on the
+// factual path: a foreign engine name skips with DEBUG WITHOUT consulting
+// the dead `current` key — even when the index would point at a goswitch
+// engine, the factual answer outranks it.
+func TestIfOwned_ForeignGlobalEngineSkips(t *testing.T) {
+	withRetry(t, 0, time.Millisecond)
+
+	_, got := runIfOwnedReader(t, stubDesktop(sourcesOwnerSingle, current0),
+		func(context.Context) (string, bool) { return "mozc", true })
+
+	assertIBus(t, got, nil)
 }
 
 // TestParseSourceTuples pins the canonical strict parser of the GNOME
