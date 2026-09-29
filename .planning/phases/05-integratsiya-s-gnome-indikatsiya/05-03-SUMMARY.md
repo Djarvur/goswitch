@@ -229,3 +229,11 @@ None - no external service configuration required.
 ---
 *Phase: 05-integratsiya-s-gnome-indikatsiya*
 *Completed: 2026-09-29*
+
+## Self-Check: PASSED
+
+- SUMMARY.md exists at the plan path; all 5 commits verified in git log
+  (992071b, e624727, c8f1baa, 1a0a402, 5fb0cd5); measured commits vs the plan
+  ledger: 5 (4 production + 1 docs); working tree clean of plan files — the
+  remaining untracked paths (.gsd/, .zcode/, agent-history.json, …) predate
+  this plan.
