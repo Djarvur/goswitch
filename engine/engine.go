@@ -107,6 +107,10 @@ type Engine struct {
 	name    string
 	handler EventHandler
 	caps    uint32
+	// onGlobalEngine is the sync-listener input (05-04 criterion 3): set by
+	// the factory from Config.OnGlobalEngine — FocusIn forwards THIS
+	// engine's name into it. RED STUB: declared, not yet called.
+	onGlobalEngine func(engineName string)
 }
 
 // NewEngine creates an engine object for the named engine (e.g.

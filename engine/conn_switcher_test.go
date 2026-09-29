@@ -191,6 +191,34 @@ type fakeBus struct {
 	mu       sync.Mutex
 	switches []string
 	fail     bool
+
+	// writeMu serializes every write to the client connection: the
+	// dispatch loop answers method calls from its own goroutine while the
+	// sync corpus emits raw signal messages from the test goroutine (the
+	// direction the real bus fans GlobalEngineChanged out in — spike P2).
+	writeMu sync.Mutex
+	// client is the live client connection (the most recent accepted one);
+	// nil when no client is connected.
+	client net.Conn
+	// globalEngine is what the stand's GetGlobalEngine answers with (the
+	// wire name inside a variant-wrapped EngineDesc); empty = refuses.
+	globalEngine string
+}
+
+// setClient records the live client connection under the write guard.
+func (fb *fakeBus) setClient(c net.Conn) {
+	fb.writeMu.Lock()
+	defer fb.writeMu.Unlock()
+
+	fb.client = c
+}
+
+// clientConn snapshots the live client connection (nil when disconnected).
+func (fb *fakeBus) clientConn() net.Conn {
+	fb.writeMu.Lock()
+	defer fb.writeMu.Unlock()
+
+	return fb.client
 }
 
 // newFakeBus starts the stand and points Discover's IBUS_ADDRESS override at
@@ -231,6 +259,9 @@ func (fb *fakeBus) accept(ln net.Listener) {
 // calls until the connection dies or the test's cleanup tears the stand down.
 func (fb *fakeBus) handle(c net.Conn) {
 	defer func() { _ = c.Close() }()
+
+	fb.setClient(c)
+	defer fb.setClient(nil)
 
 	br := bufio.NewReader(c)
 	if err := fb.sasl(c, br); err != nil {
@@ -293,9 +324,11 @@ func saslLine(br *bufio.Reader) (string, error) {
 // Hello and RequestName at the bus object (unique name, primary owner — the
 // single-instance guard must pass for the generation to register),
 // RegisterComponent (accepted unwatched — the payload is the variant-wrapped
-// wire struct) and SetGlobalEngine (the D-52 act itself — recorded, verdict
-// per the fail flag). Every reply carries the call's serial — the shape the
-// client's pending-call tracker matches on.
+// wire struct), SetGlobalEngine (the D-52 act itself — recorded, verdict
+// per the fail flag), AddMatch/RemoveMatch (the match-rule bookkeeping the
+// bus object serves) and GetGlobalEngine (the factual-engine reader of
+// 05-04). Every reply carries the call's serial — the shape the client's
+// pending-call tracker matches on.
 func (fb *fakeBus) dispatch(c net.Conn, br *bufio.Reader) {
 	for {
 		msg, err := dbus.DecodeMessage(br)
@@ -307,7 +340,10 @@ func (fb *fakeBus) dispatch(c net.Conn, br *bufio.Reader) {
 		}
 		reply := fb.answer(msg)
 		reply.Headers[dbus.FieldReplySerial] = dbus.MakeVariant(msg.Serial())
-		if err := reply.EncodeTo(c, binary.LittleEndian); err != nil {
+		fb.writeMu.Lock()
+		err = reply.EncodeTo(c, binary.LittleEndian)
+		fb.writeMu.Unlock()
+		if err != nil {
 			return
 		}
 	}
@@ -334,6 +370,19 @@ func (fb *fakeBus) answer(msg *dbus.Message) *dbus.Message {
 		}
 
 		return replyMsg(dbus.TypeMethodReply, "", nil)
+	case "AddMatch", "RemoveMatch":
+		// The match-rule bookkeeping: the real bus confirms with an empty
+		// reply — the forwarding the rule buys is the live side (spike P2).
+		return replyMsg(dbus.TypeMethodReply, "", nil)
+	case "GetGlobalEngine":
+		fb.mu.Lock()
+		name := fb.globalEngine
+		fb.mu.Unlock()
+		if name == "" {
+			return replyMsg(dbus.TypeError, errFailMember, "fake bus: no global engine")
+		}
+
+		return replyMsg(dbus.TypeMethodReply, "", dbus.MakeVariant(NewEngineDesc(name, "goswitch stand", "xx", "us", "xx")))
 	default:
 		// An unknown member must fail the caller fast, never hang it.
 		return replyMsg(dbus.TypeError, errFailMember, "fake bus: unknown member "+member)
@@ -376,6 +425,15 @@ func (fb *fakeBus) setFail(on bool) {
 	defer fb.mu.Unlock()
 
 	fb.fail = on
+}
+
+// setGlobalEngine fixes what the stand's GetGlobalEngine answers with —
+// the factual active engine of the 05-04 reader (Pitfall 3).
+func (fb *fakeBus) setGlobalEngine(name string) {
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+
+	fb.globalEngine = name
 }
 
 // TestSwitcherBindsPerGeneration pins the generation-scoped rebinding

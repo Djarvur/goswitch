@@ -52,6 +52,18 @@ type Config struct {
 	// bus can only stall a flip, never the registration cycle, and its
 	// failures are journal lines (switch_engine), never generation errors.
 	BindSwitcher func(flip func(ctx context.Context, engineName string) error)
+
+	// OnGlobalEngine is the sync-listener input (05-04 criterion 3): invoked
+	// with the engine name carried by every org.freedesktop.IBus
+	// .GlobalEngineChanged signal on this connection. RED STUB: declared,
+	// not yet dispatched.
+	OnGlobalEngine func(engineName string)
+
+	// BindGlobalEngine is the generation-scoped GetGlobalEngine reader seam
+	// (05-04, Pitfall 3): invoked once per generation like BindSwitcher,
+	// with the closure that reads the FACTUAL active engine off THIS
+	// generation's connection. RED STUB: declared, not yet wired.
+	BindGlobalEngine func(get func(ctx context.Context) (string, error))
 }
 
 // signalBufferSize keeps the registered signal channel from dropping into
@@ -147,7 +159,7 @@ func serve(ctx context.Context, cfg *Config, generation int) error {
 		cfg.BindSwitcher(newSwitcher(conn.Object(ibusService, ibusPath)))
 	}
 
-	return waitBusLoss(ctx, conn)
+	return waitBusLoss(ctx, cfg, conn)
 }
 
 // newSwitcher builds the generation-scoped SetGlobalEngine closure — the
@@ -175,10 +187,19 @@ func newSwitcher(ibus dbus.BusObject) func(ctx context.Context, engineName strin
 // waitBusLoss blocks until ctx is cancelled (returns nil) or the signal
 // channel closes — godbus closes channels registered through Signal() when
 // the connection terminates, which is the bus-loss verdict. Signals that
-// do arrive are drained: they carry no meaning for the tracer.
-func waitBusLoss(ctx context.Context, conn *dbus.Conn) error {
+// do arrive are drained: they carry no meaning for the tracer. (05-04 turns
+// the drain into a dispatcher; the verdicts must survive the refactor.)
+func waitBusLoss(ctx context.Context, cfg *Config, conn *dbus.Conn) error {
 	signals := make(chan *dbus.Signal, signalBufferSize)
 	conn.Signal(signals)
+
+	return dispatchSignals(ctx, cfg, signals)
+}
+
+// dispatchSignals consumes the registered signal stream. RED STUB: the
+// pre-phase drain — the GlobalEngineChanged dispatch is not wired yet.
+func dispatchSignals(ctx context.Context, cfg *Config, signals <-chan *dbus.Signal) error {
+	_ = cfg
 	for {
 		select {
 		case <-ctx.Done():
@@ -188,6 +209,20 @@ func waitBusLoss(ctx context.Context, conn *dbus.Conn) error {
 				return errBusClosed
 			}
 		}
+	}
+}
+
+// errGlobalEngineStub is the RED stub verdict of the not-yet-implemented
+// GetGlobalEngine reader.
+var errGlobalEngineStub = errors.New("global engine reader: not implemented")
+
+// newGlobalEngineReader builds the generation-scoped GetGlobalEngine reader.
+// RED STUB: always refuses.
+func newGlobalEngineReader(ibus dbus.BusObject) func(ctx context.Context) (string, error) {
+	_ = ibus
+
+	return func(context.Context) (string, error) {
+		return "", errGlobalEngineStub
 	}
 }
 
