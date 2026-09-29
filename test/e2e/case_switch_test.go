@@ -197,3 +197,107 @@ func checkXKBClassVerdicts(t *testing.T) {
 		t.Errorf("xkbVerdictFromClasses accepted a non-class readback value")
 	}
 }
+
+// The 05-05 flip-marks corpus: synthetic daemon-journal lines carrying
+// engine names and mode symbols only (D-20/D-21 — typed text never reaches
+// any report). The pair (mode, then switch_engine naming the goswitch
+// engine) is the only observable form of the switching act (D-34
+// heritage), so the pure oracle is pinned here without a live desktop;
+// the live halves are `mise run e2e-two-source-flip` and the matrix
+// driver's additive oracle.
+const (
+	journalModeRU   = `{"time":"2026-09-30T00:00:01.100Z","level":"INFO","msg":"mode","to":"ru"}`
+	journalModeEN   = `{"time":"2026-09-30T00:00:02.100Z","level":"INFO","msg":"mode","to":"en"}`
+	journalSwitchRU = `{"time":"2026-09-30T00:00:01.120Z","level":"INFO","msg":"switch_engine","engine":"goswitch-ru"}`
+	journalSwitchEN = `{"time":"2026-09-30T00:00:02.120Z","level":"INFO","msg":"switch_engine","engine":"goswitch-en"}`
+	journalTyping   = `{"time":"2026-09-30T00:00:01.050Z","level":"DEBUG","msg":"key","unicode":"x"}`
+)
+
+// TestFlipMarksPaired pins the pair oracle: for a flip target the journal
+// must hold the target's mode record and a STRICTLY LATER switch_engine
+// record naming the target's engine; every deviation — a missing record,
+// an inverted order, a foreign engine name, an unknown target — is an
+// error naming what deviated. Both directions are pinned symmetrically.
+func TestFlipMarksPaired(t *testing.T) {
+	tests := []struct {
+		name    string
+		journal string
+		target  string
+		wantErr string // empty: the oracle must pass; else: a substring of the error
+	}{
+		{
+			name:    "ru pair in order",
+			journal: journalModeRU + "\n" + journalSwitchRU,
+			target:  flipTargetRU,
+		},
+		{
+			name:    "en pair in order (symmetric)",
+			journal: journalModeEN + "\n" + journalSwitchEN,
+			target:  flipTargetEN,
+		},
+		{
+			name:    "pair inside a fuller journal",
+			journal: journalTyping + "\n" + journalModeRU + "\n" + journalSwitchRU + "\n" + journalTyping,
+			target:  flipTargetRU,
+		},
+		{
+			name:    "flip history keeps both pairs provable",
+			journal: journalModeRU + "\n" + journalSwitchRU + "\n" + journalModeEN + "\n" + journalSwitchEN,
+			target:  flipTargetRU,
+		},
+		{
+			name:    "flip history keeps the newest pair provable",
+			journal: journalModeRU + "\n" + journalSwitchRU + "\n" + journalModeEN + "\n" + journalSwitchEN,
+			target:  flipTargetEN,
+		},
+		{
+			name:    "mode correction without a switch_engine record is not a flip",
+			journal: journalModeRU,
+			target:  flipTargetRU,
+			wantErr: "switch_engine",
+		},
+		{
+			name:    "switch_engine record without a mode record proves nothing",
+			journal: journalSwitchRU,
+			target:  flipTargetRU,
+			wantErr: "mode record",
+		},
+		{
+			name:    "stale opposite pair does not satisfy the target",
+			journal: journalModeEN + "\n" + journalSwitchEN,
+			target:  flipTargetRU,
+			wantErr: "mode record",
+		},
+		{
+			name:    "inverted order is an error",
+			journal: journalSwitchRU + "\n" + journalModeRU,
+			target:  flipTargetRU,
+			wantErr: "precedes",
+		},
+		{
+			name:    "foreign engine record must not satisfy the target",
+			journal: journalModeRU + "\n" + journalSwitchEN,
+			target:  flipTargetRU,
+			wantErr: "switch_engine",
+		},
+		{
+			name:    "unknown target is refused",
+			journal: journalModeRU + "\n" + journalSwitchRU,
+			target:  "de",
+			wantErr: "outside",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := flipMarksPaired(tc.journal, tc.target)
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("flipMarksPaired(%q target %s) = %v, want nil", tc.journal, tc.target, err)
+			case tc.wantErr != "" && err == nil:
+				t.Errorf("flipMarksPaired(%q target %s) = nil, want error containing %q", tc.journal, tc.target, tc.wantErr)
+			case tc.wantErr != "" && !strings.Contains(err.Error(), tc.wantErr):
+				t.Errorf("flipMarksPaired(%q target %s) = %q, want error containing %q", tc.journal, tc.target, err, tc.wantErr)
+			}
+		})
+	}
+}

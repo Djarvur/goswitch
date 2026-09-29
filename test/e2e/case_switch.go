@@ -850,3 +850,65 @@ func findProbe(probes []spikeProbe, id string) (spikeProbe, bool) {
 
 	return spikeProbe{}, false
 }
+
+// The flip-marks vocabulary of plan 05-05: the closed flip-target set and
+// the daemon journal marks whose ORDER is the only observable form of the
+// switching act (D-34 heritage: the daemon's journal, never dconf). The
+// flipTo record order is mode first (actor mutex), switch_engine second
+// (the SetGlobalEngine leg, engine/conn.go) — both records carry engine
+// names and mode symbols only (D-20/D-21).
+
+// The closed flip-target vocabulary of the marks oracle.
+const (
+	flipTargetEN = "en"
+	flipTargetRU = "ru"
+)
+
+// switchEngineMarkPrefix is the stable prefix of the daemon's switch_engine
+// record — the per-target mark appends the engine literal and the closing
+// quote.
+const switchEngineMarkPrefix = `"msg":"switch_engine","engine":"`
+
+// flipEngineName returns the goswitch engine name a flip target's
+// switch_engine record carries; an unknown target is an error — the marks
+// never guess.
+func flipEngineName(target string) (string, error) {
+	switch target {
+	case flipTargetEN:
+		return spikeEngineEN, nil
+	case flipTargetRU:
+		return spikeEngineRU, nil
+	}
+
+	return "", fmt.Errorf("flip target %q outside {%s, %s}", target, flipTargetEN, flipTargetRU)
+}
+
+// flipModeMark returns the daemon's mode-record mark for a flip target.
+func flipModeMark(target string) (string, error) {
+	if _, err := flipEngineName(target); err != nil {
+		return "", err
+	}
+
+	return modeRecordMark + `"` + target + `"`, nil
+}
+
+// flipEngineMark returns the switch_engine-record mark for a flip target's
+// engine — the journal line the bound switcher's SetGlobalEngine leg writes.
+func flipEngineMark(target string) (string, error) {
+	engine, err := flipEngineName(target)
+	if err != nil {
+		return "", err
+	}
+
+	return switchEngineMarkPrefix + engine + `"`, nil
+}
+
+// flipMarksPaired verifies the daemon journal's two-record form of a bus
+// flip toward target: the mode record for the target and, STRICTLY AFTER
+// it (the offsets of the NEWEST occurrences), the switch_engine record
+// naming the target's engine. The GREEN implementation lands with plan
+// 05-05; the stub keeps the RED corpus compiling and failing on its
+// planned-behavior assertions.
+func flipMarksPaired(journal string, target string) error {
+	return errors.New("flip-marks pair oracle not implemented (RED stub)")
+}
