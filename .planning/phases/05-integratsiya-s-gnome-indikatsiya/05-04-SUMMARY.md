@@ -235,3 +235,10 @@ None - no external service configuration required.
 ---
 *Phase: 05-integratsiya-s-gnome-indikatsiya*
 *Completed: 2026-09-29*
+
+## Self-Check: PASSED
+
+- All 10 created/modified source and planning files exist on disk (checked by path).
+- All 5 plan commits exist in history: `ee961ad` (test 05-04 RED T1), `9b3874f` (feat 05-04 T1), `869baf0` (test 05-04 RED T2), `e218ab3` (feat 05-04 T2), `fe9846e` (docs 05-04 plan complete).
+- Measured `git rev-list --count` from the plan ledger base `22d5f40` to HEAD: 5 commits (4 production/RED + 1 docs metadata) — matches the frontmatter `commits: 4` production count plus the metadata commit.
+- `mise run ci` green on the final tree (build + vet + golangci-lint strict + test -race, all packages).
