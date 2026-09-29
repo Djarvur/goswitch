@@ -42,8 +42,15 @@ type Config struct {
 	// bounds it).
 	PostRegister func(ctx context.Context, generation int)
 
-	// BindSwitcher is the optional flip seam (D-52): RED stub — declared,
-	// serve never invokes it yet.
+	// BindSwitcher is the optional flip seam (D-52): invoked once per
+	// connection generation, right beside PostRegister, with the closure
+	// that calls org.freedesktop.IBus.SetGlobalEngine on THIS generation's
+	// connection. A switcher captured from a dead generation must never
+	// survive the reconnect — the rebinding HERE is the guarantee
+	// (T-05-03-03). nil = no-op (the PostRegister contract). The closure is
+	// invoked by the actor on the flip path, never by the serve loop: a slow
+	// bus can only stall a flip, never the registration cycle, and its
+	// failures are journal lines (switch_engine), never generation errors.
 	BindSwitcher func(flip func(ctx context.Context, engineName string) error)
 }
 
@@ -136,8 +143,33 @@ func serve(ctx context.Context, cfg *Config, generation int) error {
 	if cfg.PostRegister != nil {
 		cfg.PostRegister(ctx, generation)
 	}
+	if cfg.BindSwitcher != nil {
+		cfg.BindSwitcher(newSwitcher(conn.Object(ibusService, ibusPath)))
+	}
 
 	return waitBusLoss(ctx, conn)
+}
+
+// newSwitcher builds the generation-scoped SetGlobalEngine closure — the
+// D-52 flip act (wire signature SetGlobalEngine(in s engine_name),
+// live-verified; the RegisterComponent call shape above is the in-repo
+// precedent). The journal record names the engine — a config literal
+// (D-20/D-21) — at INFO on success and WARN with the cause on failure: a
+// flip loss must stay observable, and it is NEVER a generation error. The
+// caller's context carries the deadline (the actor bounds it; the engine
+// layer only honors it).
+func newSwitcher(ibus dbus.BusObject) func(ctx context.Context, engineName string) error {
+	return func(ctx context.Context, engineName string) error {
+		err := ibus.CallWithContext(ctx, ibusService+".SetGlobalEngine", 0, engineName).Err
+		if err != nil {
+			slog.Warn("switch_engine", "engine", engineName, "err", err)
+
+			return fmt.Errorf("set global engine: %w", err)
+		}
+		slog.Info("switch_engine", "engine", engineName)
+
+		return nil
+	}
 }
 
 // waitBusLoss blocks until ctx is cancelled (returns nil) or the signal

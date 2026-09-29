@@ -29,12 +29,13 @@ const serveBudget = 5 * time.Second
 // callBudget bounds one switcher round trip against the fake bus.
 const callBudget = 5 * time.Second
 
-// fakeBus static verdicts: the SASL refusal and the injected switch failure
-// of the stand's SetGlobalEngine reply.
-var (
-	errSaslHandshake = errors.New("fake bus: unexpected sasl line")   //nolint:gochecknoglobals // test seam
-	errInjectedFail  = errors.New("fake bus: injected switch failure") //nolint:gochecknoglobals // test seam
-)
+// errSaslHandshake is the stand's static refusal: the client left the SASL
+// script the fake bus answers.
+var errSaslHandshake = errors.New("fake bus: unexpected sasl line")
+
+// errInjectedFail is the stand's injected SetGlobalEngine failure — the
+// Warn path's observable cause without a wedged bus.
+var errInjectedFail = errors.New("fake bus: injected switch failure")
 
 // errFailMember is the D-Bus error name of the injected SetGlobalEngine
 // failure — the shape every bus error reply carries.
@@ -199,7 +200,8 @@ func newFakeBus(t *testing.T) *fakeBus {
 	t.Helper()
 
 	sock := filepath.Join(t.TempDir(), "ibus-fake.sock")
-	ln, err := net.Listen("unix", sock)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "unix", sock)
 	if err != nil {
 		t.Fatalf("listen fake ibus socket: %v", err)
 	}
@@ -228,7 +230,7 @@ func (fb *fakeBus) accept(ln net.Listener) {
 // handle walks one connection through SASL, then dispatches its method
 // calls until the connection dies or the test's cleanup tears the stand down.
 func (fb *fakeBus) handle(c net.Conn) {
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	br := bufio.NewReader(c)
 	if err := fb.sasl(c, br); err != nil {
@@ -404,14 +406,13 @@ func TestSwitcherBindsPerGeneration(t *testing.T) {
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	errCh = serveOnce(ctx1, cfg, 1)
 	awaitSeam(t, reached, errCh, 1)
-	cancel1()
-	if err := <-errCh; err != nil {
-		t.Fatalf("serve(gen 1) = %v, want a clean nil on ctx cancel", err)
-	}
 
 	if got := rec.count(); got != 2 {
 		t.Fatalf("BindSwitcher fired %d times across two generations, want exactly 2", got)
 	}
+	// The rebinding proof runs while generation 1 is still serving: the
+	// generation-0 closure's connection is already closed (serve returned
+	// and closed it), the generation-1 closure's is live.
 	flip0, flip1 := rec.closure(t, 0), rec.closure(t, 1)
 	callCtx, callCancel := context.WithTimeout(context.Background(), callBudget)
 	defer callCancel()
@@ -423,6 +424,11 @@ func TestSwitcherBindsPerGeneration(t *testing.T) {
 	}
 	if got := bus1.switchTargets(); !slices.Equal(got, []string{NameRU}) {
 		t.Errorf("reconnected bus targets = %q, want exactly [%s]", got, NameRU)
+	}
+
+	cancel1()
+	if err := <-errCh; err != nil {
+		t.Fatalf("serve(gen 1) = %v, want a clean nil on ctx cancel", err)
 	}
 }
 
@@ -452,8 +458,8 @@ func TestSwitcherCallsSetGlobalEngine(t *testing.T) {
 // record at WARN with the cause — and the engine name (a config literal,
 // D-20/D-21) is the only payload: the record's key set admits no user text.
 func TestSwitcherJournalRecords(t *testing.T) {
-	buf := captureJSONLogs(t)
 	flip, bus := boundSeam(t)
+	buf := captureJSONLogs(t) // after the setup — its own capture owns the default logger now
 
 	callCtx, callCancel := context.WithTimeout(context.Background(), callBudget)
 	defer callCancel()
@@ -490,7 +496,8 @@ func TestSwitcherJournalRecords(t *testing.T) {
 			switch key {
 			case "time", "level", "msg", "engine", "err":
 			default:
-				t.Errorf("switch_engine record carries key %q — only the engine literal and the cause belong: %s", key, line)
+				t.Errorf("switch_engine record carries key %q — only the engine literal"+
+					" and the cause belong: %s", key, line)
 			}
 		}
 	}

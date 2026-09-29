@@ -122,6 +122,11 @@ linters:
       # Relax gosec in test code
       - linters: [gosec]
         path: ".*_test\\.go"
+      # Relax wrapcheck in test code: the fake-bus/stand plumbing returns raw
+      # transport errors as assertion-failure fuel — wrapping adds nothing to
+      # a test's error surface (the corpus Fatalf's on them verbatim)
+      - linters: [wrapcheck]
+        path: ".*_test\\.go"
       # Relax exhaustruct everywhere (too noisy for structs with optional fields)
       - linters: [exhaustruct, exhaustruct_v5]
         text: ".*"

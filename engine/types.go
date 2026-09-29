@@ -56,8 +56,8 @@ type EngineDesc struct {
 // (D-52). The values are config-level literals (D-20/D-21): a flip journal
 // record names the engine, never any user text.
 const (
-	NameEN = "" // RED stub — GREEN pins "goswitch-en"
-	NameRU = "" // RED stub — GREEN pins "goswitch-ru"
+	NameEN = "goswitch-en"
+	NameRU = "goswitch-ru"
 )
 
 // AttrList mirrors the serialized IBusAttrList wire struct; Attributes is
