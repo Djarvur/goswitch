@@ -51,6 +51,15 @@ type EngineDesc struct {
 	IconPropKey   string // modePropKey — the dynamic panel icon property.
 }
 
+// NameEN and NameRU are the wire names of the goswitch engine pair — the
+// single source the flip path derives its SetGlobalEngine target from
+// (D-52). The values are config-level literals (D-20/D-21): a flip journal
+// record names the engine, never any user text.
+const (
+	NameEN = "" // RED stub — GREEN pins "goswitch-en"
+	NameRU = "" // RED stub — GREEN pins "goswitch-ru"
+)
+
 // AttrList mirrors the serialized IBusAttrList wire struct; Attributes is
 // an av of variant-wrapped serialized IBusAttribute values — ibusattrlist.h
 // keeps a GArray of attribute OBJECTS, and the daemon's CommitText parser

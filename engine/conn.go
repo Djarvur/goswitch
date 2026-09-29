@@ -41,6 +41,10 @@ type Config struct {
 	// stalls the generation (the activate package's 10 s per-call timeout
 	// bounds it).
 	PostRegister func(ctx context.Context, generation int)
+
+	// BindSwitcher is the optional flip seam (D-52): RED stub — declared,
+	// serve never invokes it yet.
+	BindSwitcher func(flip func(ctx context.Context, engineName string) error)
 }
 
 // signalBufferSize keeps the registered signal channel from dropping into
