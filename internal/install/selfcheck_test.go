@@ -89,6 +89,17 @@ func redSourcesStub(name string, args []string) ([]byte, error) {
 	return selfcheckGreenStub(name, args)
 }
 
+// redSingleSourceStub answers the phase-4 single-owner desktop (only
+// goswitch-en) over the otherwise-green stand-in — the rejected form of
+// the D-54 two-source expectation.
+func redSingleSourceStub(name string, args []string) ([]byte, error) {
+	if name == binGSettings && len(args) == 3 && args[0] == opGet {
+		return []byte(goswitchSources), nil
+	}
+
+	return selfcheckGreenStub(name, args)
+}
+
 // newSelfchecker builds an installer for the selfcheck corpus: fake runner,
 // the given $HOME, canned ctlStatus and activeEngines — no live bus, no
 // real desktop behind the audit.
@@ -382,4 +393,68 @@ func TestSelfcheck_StatusProbeSeam(t *testing.T) {
 			t.Errorf("selfcheck output %q misses the ok version verdict", out)
 		}
 	})
+}
+
+// wrappedSourcesStub answers the D-54 two-source desktop (both goswitch
+// engines in the sources list) over the otherwise-green stand-in.
+func wrappedSourcesStub(name string, args []string) ([]byte, error) {
+	if name == binGSettings && len(args) == 3 && args[0] == opGet {
+		return []byte(wrappedSources), nil
+	}
+
+	return selfcheckGreenStub(name, args)
+}
+
+// TestSelfcheck_InputSourceTwoEngines pins the green form of the D-54
+// two-source audit (criterion 5): sources carrying BOTH goswitch engines
+// pass the input-source step.
+func TestSelfcheck_InputSourceTwoEngines(t *testing.T) {
+	f := &fakeRunner{stub: wrappedSourcesStub}
+	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err != nil {
+		t.Fatalf("Selfcheck error = %v, want the two-source desktop to pass", err)
+	}
+	if out := buf.String(); !strings.Contains(out, "ok input-source") {
+		t.Errorf("selfcheck output %q misses the ok input-source verdict", out)
+	}
+}
+
+// TestSelfcheck_InputSourceSingleRejected pins the phase-4 single-owner
+// desktop as RED: only goswitch-en in the sources fails the audit, and the
+// verdict names the TWO-source expectation and the fix (criterion 5).
+func TestSelfcheck_InputSourceSingleRejected(t *testing.T) {
+	f := &fakeRunner{stub: redSingleSourceStub}
+	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err == nil {
+		t.Fatal("Selfcheck error = nil, want the single-owner desktop to fail the audit")
+	}
+	out := buf.String()
+	runRed(t, i, "FAIL input-source", hintInstall)
+	for _, want := range []string{"both", "goswitch-ru"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("verdict %q does not name the two-source expectation (%q missing)", out, want)
+		}
+	}
+}
+
+// TestSelfcheck_InputSourceForeignRejected pins the foreign desktop as RED
+// under the same two-source verdict: no goswitch tuples at all fails with
+// the identical one-verdict render (the fail-fast shape is unchanged).
+func TestSelfcheck_InputSourceForeignRejected(t *testing.T) {
+	f := &fakeRunner{stub: redSourcesStub}
+	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err == nil {
+		t.Fatal("Selfcheck error = nil, want the foreign desktop to fail the audit")
+	}
+	out := buf.String()
+	runRed(t, i, "FAIL input-source", hintInstall)
+	if !strings.Contains(out, "both") || !strings.Contains(out, "goswitch-ru") {
+		t.Errorf("verdict %q does not name the two-source expectation", out)
+	}
 }
