@@ -57,14 +57,14 @@ macr:
 var errFakeCtlDown = errors.New("name has no owner")
 
 // selfcheckGreenStub answers the healthy desktop for the audit: the unit
-// active and the single-owner sources set; list-engine falls through to
+// active and the D-54 two-source wrapper set; list-engine falls through to
 // defaultReply's registry hit.
 func selfcheckGreenStub(name string, args []string) ([]byte, error) {
 	if name == binSystemctl && len(args) == 3 && args[1] == "is-active" {
 		return []byte("active"), nil
 	}
 	if name == binGSettings && len(args) == 3 && args[0] == opGet {
-		return []byte(goswitchSources), nil
+		return []byte(wrappedSources), nil
 	}
 
 	return defaultReply(name, args)

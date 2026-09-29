@@ -41,7 +41,8 @@ var (
 		"goswitch-en is not registered with the live ibus-daemon (cache-visible ≠ daemon-visible) — " +
 			"fix: journalctl --user -u goswitchd")
 	errSourceNotOwner = errors.New(
-		"the input sources are not the goswitch single owner — fix: goswitchctl install")
+		"the input sources do not carry both goswitch engines (goswitch-en AND goswitch-ru) — " +
+			"fix: goswitchctl install")
 )
 
 // Selfcheck runs the production D-41 audit — the CLI's thin entry (the
@@ -171,14 +172,18 @@ func (i *Installer) checkConfig(_ context.Context) (string, error) {
 	return "config " + path, nil
 }
 
-// checkInputSource proves the D-40 single-owner takeover holds (D-41
-// step 6): the gsettings sources carry the goswitch engine.
+// checkInputSource proves the D-54 two-source takeover holds (D-41
+// step 6, phase criterion 5): the gsettings sources carry BOTH goswitch
+// engines — the wrapped layout pair, not the phase-4 single owner. The
+// red verdict names the two-source expectation and the fix.
 func (i *Installer) checkInputSource(ctx context.Context) (string, error) {
 	out, err := i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKey)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", errSourceNotOwner, err)
 	}
-	if !strings.Contains(string(out), "('ibus', '"+engineEN+"')") {
+	sources := string(out)
+	if !strings.Contains(sources, "('ibus', '"+engineEN+"')") ||
+		!strings.Contains(sources, "('ibus', '"+engineRU+"')") {
 		return "", errSourceNotOwner
 	}
 
