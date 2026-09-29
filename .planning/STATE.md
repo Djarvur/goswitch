@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 05
 current_phase_name: "Интеграция с GNOME: индикация и двухисточниковое переключение"
 status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-09-29T22:26:44.325Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-09-29T23:19:28.510Z"
 last_activity: 2026-09-29
 last_activity_desc: Phase 05 execution started
-state_head: 1a0a402626bb8ece77cd402df286b4e48671adcb
+state_head: e218ab3b3b609a544fd0f1e4ca2af00f2ea6c53c
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 33
-  completed_plans: 30
+  completed_plans: 31
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 05 (Интеграция с GNOME: индикация и двухисточниковое переключение) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-09-29 — Phase 05 execution started
 
@@ -95,6 +95,7 @@ Progress: [████████░░] 75%
 | Phase 05 P02 | 29 min | 2 tasks | 8 files |
 | Phase 05 P01 | 134 min | 3 tasks | 8 files |
 | Phase 05 P03 | 47 min | 2 tasks | 10 files |
+| Phase 05 P04 | 46 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -196,6 +197,9 @@ Recent decisions affecting current work:
 - [Phase 04]: [04-09] Nightly-gate shape: root timer restart gdm -> GDM autologin -> graphical-session.target raises user units -> oneshot dispatcher (sleep 120) runs scripts/d48-nightly-dispatch.sh; schedule cron 01:10 UTC is the post-merge redundant belt — machine-checked freshness stays the D-48 gate
 - [Phase 05]: D-52 resolved: d52-literal (owner, 2026-09-30) — flip = SetGlobalEngine engine-truth on the daemon's ibus connection; criterion 2 reworded via spec-delta (indicator reflects user gestures; daemon-flip changes input immediately, label at next user gesture); ADR-006 Proposed, Accepted at 05-05; 05-04 obligations: sync listener + self-echo suppression (P4 x2); sources-rewrite rejected; mru-seed deferred to v1.1
 - [Phase 05]: [05-03] Flip mechanism per ADR-006 d52-literal landed: engine.Config.BindSwitcher seam (per-generation SetGlobalEngine closure rebound beside PostRegister) + actor.flipTo — the single execution path of all four flip sites with a hard 40 ms switchTimeout under the actor mutex; deadline-under-mutex chosen over the async WR-01 handoff to keep the record order deterministic and rapid flips final-state-correct — [05-03] Fake-ibus-bus test seam: in-process unix-socket stand with hand-rolled EXTERNAL SASL server + godbus exported DecodeMessage/EncodeTo dispatch loop (godbus ships no server side; NewConn starts no workers — workers start in Auth) — the corpus proves the wire act end-to-end hermetically
+- [Phase 05]: [05-04] Sync-listener storm safety needs a custom dbus.SignalHandler: godbus v5.2.2's default handler defers a blocking goroutine per overflow signal (deferredDeliver) — unbounded memory under a storm; the daemon's stormHandler drops on a full channel with one bounded WARN per generation and Terminate closes the registered channels, which IS the errBusClosed bus-loss verdict
+- [Phase 05]: [05-04] Echo suppression per spike P4 = the same-mode branch of SyncEngine (the initiator's own GlobalEngineChanged confirms without a record); correction writes the byte-stable mode record then a 'mode corrected' WARN and NEVER touches the switcher — flip loop impossible by construction (single-writer)
+- [Phase 05]: [05-04] activate.IfOwned prefers the FACTUAL engine (generation-scoped GetGlobalEngine reader, bound before PostRegister) over the dead gsettings current key; a foreign factual name skips without consulting the key; cold bus falls back to the current-index derivation — Pitfall 3 (restart flips ru→en) closed at unit level, live proof in 05-05
 
 ### Pending Todos
 
@@ -224,6 +228,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-29T22:26:35.102Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-09-29T23:19:28.406Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None
