@@ -94,17 +94,44 @@ func NewExecRunner() Runner {
 
 // SourceTuple is one parsed element of the GNOME input-sources list: the
 // GVariant 2-tuple ('kind', 'id') — e.g. ('xkb', 'us') or
-// ('ibus', 'goswitch-en'). RED stub (05-02): the real strict parser lands
-// in the GREEN step.
+// ('ibus', 'goswitch-en'). Kind is the source type (xkb, ibus), ID the
+// layout or engine name.
 type SourceTuple struct {
 	Kind string
 	ID   string
 }
 
-// ParseSourceTuples reads one gsettings sources output into typed tuples.
-// RED stub (05-02): always empty, never an error.
+// errMalformedSources is the parse-failure sentinel of the canonical
+// sources parser (err113): every refusal names what deviated.
+var errMalformedSources = errors.New("malformed input sources")
+
+// ParseSourceTuples reads one gsettings sources output strictly as a
+// GVariant text array of 2-tuples of single-quoted strings — the canonical
+// parser every consumer (the daemon's ownership verdict, the installer's
+// sources wrap) shares, so the wire shape is parsed in exactly one place.
+// Any deviation — unbalanced brackets, no tuples, an empty list, garbage
+// between tuples — is an error, never a partial parse.
 func ParseSourceTuples(raw string) ([]SourceTuple, error) {
-	return nil, nil
+	s := strings.TrimSpace(raw)
+	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+		return nil, fmt.Errorf("%w: not a bracketed list: %q", errMalformedSources, s)
+	}
+	body := s[1 : len(s)-1]
+	matches := tupleRe.FindAllStringSubmatch(body, -1)
+	if matches == nil {
+		return nil, fmt.Errorf("%w: no source tuples in %q", errMalformedSources, s)
+	}
+	if rest := tupleRe.ReplaceAllString(body, ""); strings.IndexFunc(rest, func(r rune) bool {
+		return r != ',' && !unicode.IsSpace(r)
+	}) >= 0 {
+		return nil, fmt.Errorf("%w: garbage between tuples in %q", errMalformedSources, s)
+	}
+	tuples := make([]SourceTuple, 0, len(matches))
+	for _, m := range matches {
+		tuples = append(tuples, SourceTuple{Kind: m[1], ID: m[2]})
+	}
+
+	return tuples, nil
 }
 
 // IfOwned re-activates the engine that owns the current GNOME input
@@ -161,29 +188,18 @@ func readKey(ctx context.Context, run Runner, key string) ([]byte, error) {
 	return run(ctx, binGSettings, []string{"get", gsettingsSchema, key})
 }
 
-// parseSources reads the sources output strictly as a GVariant text array
-// of 2-tuples of single-quoted strings, returning the engine/source NAME
-// (the second element) of every tuple. Any deviation — empty output,
-// unbalanced brackets, garbage between tuples — is malformed: nil.
+// parseSources reads the sources output strictly, returning the engine/
+// source NAME (the second element) of every tuple — the thin adapter over
+// the canonical ParseSourceTuples the IfOwned verdict consumes. Any
+// deviation is malformed: nil.
 func parseSources(out []byte) []string {
-	s := strings.TrimSpace(string(out))
-	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+	tuples, err := ParseSourceTuples(string(out))
+	if err != nil {
 		return nil
 	}
-	body := s[1 : len(s)-1]
-	matches := tupleRe.FindAllStringSubmatch(body, -1)
-	if matches == nil {
-		return nil
-	}
-	if rest := tupleRe.ReplaceAllString(body, ""); strings.IndexFunc(rest, func(r rune) bool {
-		return r != ',' && !unicode.IsSpace(r)
-	}) >= 0 {
-		return nil
-	}
-
-	names := make([]string, 0, len(matches))
-	for _, m := range matches {
-		names = append(names, m[2])
+	names := make([]string, 0, len(tuples))
+	for _, t := range tuples {
+		names = append(names, t.ID)
 	}
 
 	return names

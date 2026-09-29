@@ -32,7 +32,6 @@ const (
 	fallbackSwitchBindings         = `['<Super>space', 'XF86Keyboard']`
 	fallbackSwitchBindingsBackward = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
 	listEngineOut                  = "goswitch-en - goswitch English (US)\ngoswitch-ru - goswitch Русская\n"
-	markerSources                  = "MARKER-ORIGINAL"
 )
 
 // The pinned binary/operation names the corpus asserts on (goconst: named
@@ -42,7 +41,9 @@ const (
 	binIbus      = "ibus"
 	binSystemctl = "systemctl"
 	opWriteCache = "write-cache"
+	opRestart    = "restart"
 	opGet        = "get"
+	opSet        = "set"
 	engineENName = "goswitch-en"
 )
 
@@ -249,7 +250,7 @@ func TestInstall_Sequence(t *testing.T) {
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
 		{binIbus, opWriteCache},
-		{binIbus, "restart"},
+		{binIbus, opRestart},
 		{binIbus, "list-engine"},
 		{binSystemctl, "--user daemon-reload"},
 		{binSystemctl, "--user enable goswitchd"},
@@ -263,15 +264,22 @@ func TestInstall_Sequence(t *testing.T) {
 	})
 
 	xmlPath, unitPath, statePath := installPaths(home)
+	assertSequenceState(t, xmlPath, unitPath, statePath, report)
+}
+
+// assertSequenceState pins the file/report tail of TestInstall_Sequence:
+// all three artifacts exist, the state carries the read switch bindings
+// VERBATIM (decoded — json.Marshal HTML-escapes the '<'/'>' of the raw
+// binding bytes; the restore path reads the fields back through the same
+// decode), and the report names both the cleared handover and the
+// two-source wrap verdict.
+func assertSequenceState(t *testing.T, xmlPath, unitPath, statePath string, report []string) {
+	t.Helper()
 	for _, p := range []string{xmlPath, unitPath, statePath} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("install artifact %s missing: %v", p, err)
 		}
 	}
-	// Owner decision 3: the state carries the read switch binding VERBATIM
-	// (decoded — json.Marshal HTML-escapes the '<'/'>' of the raw binding
-	// bytes; the restore path reads the field back through the same
-	// decode), and the report names the handover.
 	var st struct {
 		Sources           string `json:"sources"`
 		SwitchInputSource string `json:"switch_input_source"`
@@ -536,9 +544,17 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	// The upgrade form (D-54): the takeover computes the wrapper from the
 	// saved original and writes it — the desktop leaves the phase-4
 	// single-owner form for the two-source wrapper in this same install.
+	assertWrapperFromSavedOriginal(t, f.snapshot())
+}
+
+// assertWrapperFromSavedOriginal pins the D-54 upgrade verdict: exactly the
+// wrapper computed from the SAVED original reaches `gsettings set …
+// sources`, never the live goswitch-only value and never the old constant.
+func assertWrapperFromSavedOriginal(t *testing.T, calls []instCall) {
+	t.Helper()
 	wrapperSet := false
-	for _, c := range f.snapshot() {
-		if c.name == binGSettings && len(c.args) == 4 && c.args[0] == "set" && c.args[2] == gsettingsKey {
+	for _, c := range calls {
+		if c.name == binGSettings && len(c.args) == 4 && c.args[0] == opSet && c.args[2] == gsettingsKey {
 			wrapperSet = true
 			if c.args[3] != wrappedSources {
 				t.Errorf("upgrade set %q, want the wrapper computed from the SAVED original %q",
@@ -583,7 +599,7 @@ func TestUninstall_FullRollback(t *testing.T) {
 		{binSystemctl, "--user disable goswitchd"},
 		{binSystemctl, "--user daemon-reload"},
 		{binIbus, opWriteCache},
-		{binIbus, "restart"},
+		{binIbus, opRestart},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + ownerSources},
 		{binIbus, "engine " + derivedActivation},
 		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + ownerSwitchBindings},
@@ -613,10 +629,12 @@ func TestUninstall_FullRollback(t *testing.T) {
 }
 
 // installCallCount is the subprocess count of one happy-path install (the
-// FullRollback corpus asserts the uninstall suffix of the recording): two
-// gsettings gets (sources + switch binding), two ibus cache steps, three
-// systemctl steps, list-engine, two gsettings sets, engine activation.
-const installCallCount = 13
+// FullRollback corpus asserts the uninstall suffix of the recording): three
+// gsettings gets (sources + the two switch bindings) at snapshot time, two
+// ibus cache steps, three systemctl steps, list-engine, the takeover's
+// live sources re-read, three gsettings sets (wrapper + two bindings),
+// engine activation.
+const installCallCount = 14
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did
@@ -974,6 +992,27 @@ func TestUninstall_PurgeRemovesUserConfig(t *testing.T) {
 	}
 }
 
+// countSourcesSets counts the recorded `gsettings set … sources` calls.
+func countSourcesSets(calls []instCall) int {
+	n := 0
+	for _, c := range calls {
+		if c.name == binGSettings && len(c.args) == 4 && c.args[0] == opSet && c.args[2] == gsettingsKey {
+			n++
+		}
+	}
+
+	return n
+}
+
+// hasEngineActivation reports whether the recording carries the explicit
+// `ibus engine goswitch-en` activation (the Pitfall-6 half of the
+// takeover contract).
+func hasEngineActivation(calls []instCall) bool {
+	return slices.ContainsFunc(calls, func(c instCall) bool {
+		return c.name == binIbus && len(c.args) == 2 && c.args[0] == "engine" && c.args[1] == engineENName
+	})
+}
+
 // TestInstall_TakeoverSkipsIdenticalWrite pins Pitfall 6 as a unit
 // contract: a live value already equal to the computed wrapper receives
 // ZERO `gsettings set … sources` calls — a value-identical write
@@ -991,32 +1030,32 @@ func TestInstall_TakeoverSkipsIdenticalWrite(t *testing.T) {
 	// The follow-up install sees the ALREADY-wrapped desktop: its live
 	// value equals the wrapper computed from the saved original — the
 	// sources set must be skipped entirely.
-	setSources := 0
-	engineActivated := false
 	f.stub = func(name string, args []string) ([]byte, error) {
-		if name == binGSettings && len(args) == 4 && args[0] == "set" && args[2] == gsettingsKey {
-			setSources++
-		}
 		if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
 			return []byte(wrappedSources), nil
-		}
-		if name == binIbus && len(args) == 2 && args[0] == "engine" && args[1] == engineENName {
-			engineActivated = true
 		}
 
 		return defaultReply(name, args)
 	}
 	runInstall(t, i)
 
-	if setSources != 0 {
-		t.Errorf("value-identical takeover issued %d gsettings set sources calls, want 0 (Pitfall 6)", setSources)
+	second := f.snapshot()[callsBefore:]
+	if n := countSourcesSets(second); n != 0 {
+		t.Errorf("value-identical takeover issued %d gsettings set sources calls, want 0 (Pitfall 6)", n)
 	}
-	if !engineActivated {
+	if !hasEngineActivation(second) {
 		t.Error("identical takeover dropped the ibus engine goswitch-en activation — the sequence keeps it")
 	}
-	if got := len(f.snapshot()); got <= callsBefore {
-		t.Errorf("second install recorded %d calls, want more than the first install's %d", got, callsBefore)
-	}
+}
+
+// isMutatingCall reports whether one recorded subprocess mutates the
+// desktop: a gsettings set, any systemctl call, an ibus write-cache or
+// restart — the atomic-refusal probe of TestInstall_RefusalBeforeAnyWrite.
+func isMutatingCall(c instCall) bool {
+	gsettingsSet := c.name == binGSettings && len(c.args) > 0 && c.args[0] == opSet
+	ibusMutation := c.name == binIbus && len(c.args) > 0 && (c.args[0] == opWriteCache || c.args[0] == opRestart)
+
+	return gsettingsSet || c.name == binSystemctl || ibusMutation
 }
 
 // TestInstall_RefusalBeforeAnyWrite pins the D-54 atomic refusal: a
@@ -1043,13 +1082,9 @@ func TestInstall_RefusalBeforeAnyWrite(t *testing.T) {
 	if !strings.Contains(err.Error(), "fix") {
 		t.Errorf("refusal %q carries no fix hint", err)
 	}
-	for _, c := range f.snapshot() {
-		mutating := (c.name == binGSettings && len(c.args) > 0 && c.args[0] == "set") ||
-			c.name == binSystemctl ||
-			(c.name == binIbus && len(c.args) > 0 && (c.args[0] == opWriteCache || c.args[0] == "restart"))
-		if mutating {
-			t.Errorf("refused install still mutated the desktop: %s %v", c.name, c.args)
-		}
+	if idx := slices.IndexFunc(f.snapshot(), isMutatingCall); idx >= 0 {
+		c := f.snapshot()[idx]
+		t.Errorf("refused install still mutated the desktop: %s %v", c.name, c.args)
 	}
 	_, _, statePath := installPaths(home)
 	if _, serr := os.Stat(statePath); !os.IsNotExist(serr) {

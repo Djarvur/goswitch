@@ -41,17 +41,17 @@ func TestVerifyWritten(t *testing.T) {
 
 // The wrap corpus's raw gsettings shapes (goconst: named once).
 const (
-	wrapPairENRU     = `[('xkb', 'us'), ('xkb', 'ru')]`
-	wrapPairRUEN     = `[('xkb', 'ru'), ('xkb', 'us')]`
-	wrapWrappedENRU  = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
-	wrapWrappedRUEN  = `[('ibus', 'goswitch-ru'), ('ibus', 'goswitch-en')]`
-	wrapTriple       = `[('xkb', 'us'), ('xkb', 'ru'), ('xkb', 'fr')]`
+	wrapPairENRU      = `[('xkb', 'us'), ('xkb', 'ru')]`
+	wrapPairRUEN      = `[('xkb', 'ru'), ('xkb', 'us')]`
+	wrapWrappedENRU   = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
+	wrapWrappedRUEN   = `[('ibus', 'goswitch-ru'), ('ibus', 'goswitch-en')]`
+	wrapTriple        = `[('xkb', 'us'), ('xkb', 'ru'), ('xkb', 'fr')]`
 	wrapTripleWrapped = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru'), ('xkb', 'fr')]`
-	wrapUSFR         = `[('xkb', 'us'), ('xkb', 'fr')]`
-	wrapSingleUS     = `[('xkb', 'us')]`
-	wrapForeignKind  = `[('xkb', 'us'), ('wayland', 'ru')]`
-	wrapHalfWrapped  = `[('ibus', 'goswitch-en'), ('xkb', 'ru')]`
-	wrapOwnedSingle  = `[('ibus', 'goswitch-en')]`
+	wrapUSFR          = `[('xkb', 'us'), ('xkb', 'fr')]`
+	wrapSingleUS      = `[('xkb', 'us')]`
+	wrapForeignKind   = `[('xkb', 'us'), ('wayland', 'ru')]`
+	wrapHalfWrapped   = `[('ibus', 'goswitch-en'), ('xkb', 'ru')]`
+	wrapOwnedSingle   = `[('ibus', 'goswitch-en')]`
 )
 
 // TestWrapSourcesPairPreserved pins the D-54 wrap of the user's own pair:
