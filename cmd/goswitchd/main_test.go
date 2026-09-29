@@ -126,13 +126,13 @@ func TestMain_WiringSyncAndReader(t *testing.T) {
 	if cfg.BindGlobalEngine == nil {
 		t.Fatal("engineConfig leaves BindGlobalEngine nil — IfOwned could never consult the factual engine (Pitfall 3)")
 	}
-	var reader func(ctx context.Context) (string, bool)
-	cfg.BindGlobalEngine(func(_ context.Context) (string, error) { return engine.NameRU, nil })
-	name, ok := reader(context.Background())
-	if !ok || name != engine.NameRU {
-		t.Errorf("bound reader = (%q, %v), want (%s, true)", name, ok, engine.NameRU)
-	}
 
+	// PostRegister hands the bound reader to IfOwned: a FOREIGN factual
+	// name makes IfOwned skip without a single subprocess — the consulted
+	// channel proves the handoff (IfOwned consults the reader before any
+	// gsettings read), the fast return proves the skip. The reader itself
+	// is engine-package surface (its own corpus); the reader-to-IfOwned
+	// semantics live in the activate corpus — this pin is the wiring.
 	consulted := make(chan struct{}, 1)
 	cfg.BindGlobalEngine(func(context.Context) (string, error) {
 		consulted <- struct{}{}

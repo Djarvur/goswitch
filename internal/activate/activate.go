@@ -135,19 +135,36 @@ func ParseSourceTuples(raw string) ([]SourceTuple, error) {
 }
 
 // IfOwned re-activates the engine that owns the current GNOME input
-// source: `ibus engine <name>` for the goswitch engine at the current
-// index of the sources list. Never returns an error and never panics —
-// every outcome lands in the log (INFO success, DEBUG skip/failure
-// attempts, WARN exhausted retries). A foreign or malformed current source
-// receives no `ibus engine` call at all (T-SY8-01). The globalEngine reader
-// (05-04, the FACTUAL engine) is declared in the signature; RED STUB:
-// ignored — the legacy current-index path decides alone.
+// source. The FACTUAL engine leads (05-04, Pitfall 3): when the caller
+// hands a globalEngine reader — the daemon's generation-scoped
+// GetGlobalEngine — a successful read IS the truth. A goswitch name
+// reactivates directly: the gsettings `current` key is dead on GNOME 46
+// (the shell never writes it), and trusting it would flip a ru user back
+// to en on every daemon restart. A foreign factual name skips with DEBUG
+// (the honest exit from under goswitch) WITHOUT consulting the dead key.
+// The reader failing — a cold bus — falls back to the legacy
+// sources+current derivation unchanged. Never returns an error and never
+// panics — every outcome lands in the log (INFO success, DEBUG
+// skip/failure attempts, WARN exhausted retries); a foreign or malformed
+// current source receives no `ibus engine` call at all (T-SY8-01).
 func IfOwned(ctx context.Context, run Runner, globalEngine func(ctx context.Context) (string, bool)) {
-	_ = globalEngine
 	if err := ctx.Err(); err != nil {
 		slog.Debug("engine reactivation skipped", "reason", "context done", "error", err)
 
 		return
+	}
+	if globalEngine != nil {
+		if name, ok := globalEngine(ctx); ok {
+			if !strings.HasPrefix(name, enginePrefix) {
+				slog.Debug("engine reactivation skipped", "reason", "global engine is foreign", "engine", name)
+
+				return
+			}
+			reactivate(ctx, run, name)
+
+			return
+		}
+		slog.Debug("global engine unreadable", "reason", "cold bus; falling back to the current index")
 	}
 
 	sources, err := readKey(ctx, run, keySources)

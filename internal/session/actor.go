@@ -597,10 +597,36 @@ func (a *Actor) SetSwitcher(sw func(ctx context.Context, engineName string) erro
 	a.switcherWarned = false // a fresh generation opens a fresh degradation episode
 }
 
-// SyncEngine pulls the daemon under the observed engine name (05-04,
-// criterion 3). RED STUB: declared, does nothing yet.
+// SyncEngine pulls the daemon under the FACTUAL active engine (05-04,
+// criterion 3): every GlobalEngineChanged on the daemon's ibus connection
+// and every FocusIn lands here with the observed wire name. The enum is
+// closed: goswitch-en → EN, goswitch-ru → RU. A name matching the current
+// mode is the daemon's OWN flip echoed back (spike P4: the initiator
+// receives its own signal) — a confirmation without a record. A drift
+// corrects the internal mode with the byte-stable mode record (the e2e
+// oracle) plus a WARN. Anything else is a foreign engine — the honest exit
+// from under goswitch (a third source or another IME) — WARNed with the
+// state untouched (T-05-04-03).
+//
+// SyncEngine NEVER calls the switcher and NEVER flips the bus: the
+// correction moves the internal mode only, so the daemon stays the single
+// writer of the active source — a flip loop (daemon flips → echo →
+// correction → flip) is impossible by construction (T-05-04-01: goswitch
+// flips, the shell's indicator clicks are followed, never fought). The
+// caller runs off the key path (the signal dispatcher, engine D-Bus
+// handlers); the mutex hold is record-keeping only.
 func (a *Actor) SyncEngine(name string) {
-	_ = name
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	switch name {
+	case engine.NameEN:
+		a.syncMode(modeEN, name)
+	case engine.NameRU:
+		a.syncMode(modeRU, name)
+	default:
+		slog.Warn("foreign engine", "engine", name)
+	}
 }
 
 // Expiry is the timer callback: time.AfterFunc(window) re-enters here when
@@ -1376,6 +1402,23 @@ func engineNameOf(m scriptMode) string {
 	}
 
 	return engine.NameEN
+}
+
+// syncMode applies one observed goswitch engine name under the mutex: the
+// same mode is a silent confirmation (the own-flip echo); a drift records
+// the byte-stable mode record first, the correction WARN second, then the
+// panel symbol follows the corrected mode — the flipTo order without the
+// switcher leg.
+func (a *Actor) syncMode(target scriptMode, name string) {
+	if target == a.mode {
+		return
+	}
+	a.mode = target
+	slog.Info("mode", "to", a.modeSymbol())
+	slog.Warn("mode corrected", "engine", name)
+	if a.eng != nil {
+		a.eng.UpdateModeSymbol(a.modeSymbol())
+	}
 }
 
 // modeSymbol returns the panel symbol of the current script mode — the

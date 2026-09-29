@@ -153,23 +153,36 @@ func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 // without -config the built-in default equals hotkey.DefaultWindow
 // (pinned by config.TestDefaults).
 //
-// PostRegister re-activates the owned engine after every (re)registration
-// (SY8): the closure receives the serving generation's context — the
-// daemon's signal lineage — and the activate package is void by contract,
-// degrading every failure to journal lines. A double activation after
-// `goswitchctl install` is harmless: SetGlobalEngine is idempotent.
+// The sync loop of ADR-006 (05-04, criterion 3) wires both directions:
+// OnGlobalEngine feeds every observed engine name (GlobalEngineChanged AND
+// FocusIn) into the actor's SyncEngine — the daemon FOLLOWS the factual
+// engine, never fights it; BindGlobalEngine keeps the generation-scoped
+// GetGlobalEngine reader, and PostRegister hands it to activate.IfOwned so
+// a reactivation after (re)registration prefers the FACTUAL engine over
+// the dead gsettings current key (Pitfall 3). Serve binds the reader
+// BEFORE PostRegister fires, so every generation's reactivation consults
+// its own generation's reader.
 func engineConfig(actor *session.Actor) engine.Config {
 	engines := []engine.EngineDesc{
 		engine.NewEngineDesc("goswitch-en", "goswitch English (US)", "en", "us", "en"),
 		engine.NewEngineDesc("goswitch-ru", "goswitch Русская", "ru", "ru", "ru"),
 	}
 
+	// readGlobalEngine is rebound on every generation before PostRegister;
+	// nil only before the first bind ever — a generation's PostRegister
+	// cannot run ahead of its own bind (the serve order).
+	var readGlobalEngine func(ctx context.Context) (string, bool)
+
 	return engine.Config{
 		Component: engine.NewComponent(engines),
 		Engines:   engines,
 		Handler:   actor, // decides consumption (RU script mode) at the key; tap decisions at window expiry.
+		// The sync-listener input: the engine adapter calls it with the
+		// observed wire name; the actor's SyncEngine corrects only its
+		// internal mode, never the bus (single-writer, T-05-04-01).
+		OnGlobalEngine: actor.SyncEngine,
 		PostRegister: func(ctx context.Context, _ int) {
-			activate.IfOwned(ctx, activate.NewExecRunner(), nil) // RED STUB: the 05-04 reader wiring lands in GREEN
+			activate.IfOwned(ctx, activate.NewExecRunner(), readGlobalEngine)
 		},
 		// BindSwitcher hands the generation-scoped SetGlobalEngine closure
 		// to the actor (D-52): every flip gesture leaves the daemon through
@@ -179,5 +192,18 @@ func engineConfig(actor *session.Actor) engine.Config {
 		// degradation (one WARN, the chord-parse precedent below) keeps the
 		// daemon starting even if the seam never arrives.
 		BindSwitcher: actor.SetSwitcher,
+		// BindGlobalEngine adapts the engine reader's (string, error) to
+		// IfOwned's (string, bool): an unreadable or empty name is the cold
+		// bus, and IfOwned falls back to the current-index derivation.
+		BindGlobalEngine: func(get func(ctx context.Context) (string, error)) {
+			readGlobalEngine = func(ctx context.Context) (string, bool) {
+				name, err := get(ctx)
+				if err != nil || name == "" {
+					return "", false
+				}
+
+				return name, true
+			}
+		},
 	}
 }
