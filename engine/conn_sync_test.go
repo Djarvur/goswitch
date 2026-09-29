@@ -1,4 +1,4 @@
-//nolint:testpackage // binds unexported serve/dispatchSignals and the engine's sync seam — the sanctioned in-package corpus (conn_switcher_test.go precedent)
+//nolint:testpackage // binds unexported serve/dispatchSignals + the sync seam — the sanctioned in-package corpus
 package engine
 
 import (
@@ -13,13 +13,18 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// foreignMember and foreignPath name signal traffic that must NOT reach the
-// sync listener: the dispatcher filters on the exact IBus path/member pair.
-var (
-	foreignMember = "NameOwnerChanged"
-	foreignPath   = dbus.ObjectPath("/org/freedesktop/DBus")
-	foreignIface  = "org.freedesktop.DBus"
-	wrongPath     = dbus.ObjectPath("/org/freedesktop/IBus/Engine/1")
+// The member name of the sync-listener signal and the shapes of foreign
+// traffic that must NOT reach it: the dispatcher filters on the exact IBus
+// path/member pair (T-05-04-03).
+const (
+	globalEngineChangedMember = "GlobalEngineChanged"
+	foreignMember             = "NameOwnerChanged"
+	foreignIface              = "org.freedesktop.DBus"
+)
+
+const (
+	foreignPath = dbus.ObjectPath("/org/freedesktop/DBus")
+	wrongPath   = dbus.ObjectPath("/org/freedesktop/IBus/Engine/1")
 )
 
 // emitSignal writes one raw signal message to the stand's live client —
@@ -48,12 +53,35 @@ func (fb *fakeBus) emitSignal(member string, path dbus.ObjectPath, iface string,
 	_ = msg.EncodeTo(c, binary.LittleEndian)
 }
 
+// floodSignals emits n GlobalEngineChanged probes on the IBus path — the
+// signal storm of T-05-04-02.
+func floodSignals(bus *fakeBus, n int) {
+	for range n {
+		bus.emitSignal(globalEngineChangedMember, ibusPath, ibusService, NameRU)
+	}
+}
+
 // awaitSeamSignal drives one serve generation to its post-RequestName seam
 // where the signal stream is already plumbed (serve registers the channel
 // before the seams — an emission after the seam cannot be lost).
 func awaitSeamSignal(t *testing.T, reached <-chan struct{}, errCh <-chan error) {
 	t.Helper()
 	awaitSeam(t, reached, errCh, 0)
+}
+
+// awaitCleanCancel cancels the serve context and asserts a clean nil return
+// within the serve budget — the dispatcher must never block shutdown.
+func awaitCleanCancel(t *testing.T, cancel context.CancelFunc, errCh <-chan error) {
+	t.Helper()
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("serve() = %v, want a clean nil on ctx cancel", err)
+		}
+	case <-time.After(serveBudget):
+		t.Fatal("serve never returned after cancellation — the dispatcher blocks shutdown")
+	}
 }
 
 // drainDispatched empties the dispatch channel without blocking.
@@ -125,7 +153,7 @@ func TestGlobalEngineChangedDispatched(t *testing.T) {
 	errCh := serveOnce(ctx, cfg, 0)
 	awaitSeamSignal(t, reached, errCh)
 
-	bus.emitSignal("GlobalEngineChanged", ibusPath, ibusService, NameRU)
+	bus.emitSignal(globalEngineChangedMember, ibusPath, ibusService, NameRU)
 	select {
 	case name := <-dispatched:
 		if name != NameRU {
@@ -137,22 +165,14 @@ func TestGlobalEngineChangedDispatched(t *testing.T) {
 	drainDispatched(dispatched)
 
 	bus.emitSignal(foreignMember, foreignPath, foreignIface, ":1.a", "", ":1.b")
-	bus.emitSignal("GlobalEngineChanged", wrongPath, ibusService, NameEN)
+	bus.emitSignal(globalEngineChangedMember, wrongPath, ibusService, NameEN)
 	select {
 	case name := <-dispatched:
 		t.Errorf("foreign signal dispatched (%q) — the path/member filter is broken", name)
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	cancel()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("serve() = %v, want a clean nil on ctx cancel", err)
-		}
-	case <-time.After(serveBudget):
-		t.Fatal("serve never returned after cancellation — the dispatcher blocks shutdown")
-	}
+	awaitCleanCancel(t, cancel, errCh)
 }
 
 // TestSignalStormBounded pins the storm mitigation (T-05-04-02): the
@@ -164,16 +184,19 @@ func TestGlobalEngineChangedDispatched(t *testing.T) {
 // provably happen.
 func TestSignalStormBounded(t *testing.T) {
 	buf := captureJSONLogs(t)
-	dispatched := make(chan string, signalBufferSize+8)
 	gate := make(chan struct{})
 	entered := make(chan struct{}, 1)
 	var once sync.Once
+	var mu sync.Mutex
+	count := 0
 	reached := make(chan struct{}, 1)
 	cfg := seamConfig(func(func(context.Context, string) error) { reached <- struct{}{} })
-	cfg.OnGlobalEngine = func(name string) {
+	cfg.OnGlobalEngine = func(string) {
 		once.Do(func() { close(entered) })
 		<-gate
-		dispatched <- name
+		mu.Lock()
+		count++
+		mu.Unlock()
 	}
 	bus := newFakeBus(t)
 
@@ -182,30 +205,13 @@ func TestSignalStormBounded(t *testing.T) {
 	errCh := serveOnce(ctx, cfg, 0)
 	awaitSeamSignal(t, reached, errCh)
 
-	// One signal: the dispatcher picks it up and parks inside the callback.
-	bus.emitSignal("GlobalEngineChanged", ibusPath, ibusService, NameRU)
-	select {
-	case <-entered:
-	case <-time.After(serveBudget):
-		t.Fatal("the dispatcher never picked up the first signal")
-	}
-
-	// The storm: far more than the buffer holds while the consumer is
-	// parked — every delivery beyond one buffered is a guaranteed drop.
 	const storm = 64
-	for range storm {
-		bus.emitSignal("GlobalEngineChanged", ibusPath, ibusService, NameRU)
-	}
-	// Drain window: a desktop-class unix socket moves these tiny messages
-	// in microseconds; the wait makes "all storm messages processed" the
-	// operative assumption for the drop arithmetic below.
-	time.Sleep(200 * time.Millisecond)
+	total := stormEpisode(t, bus, entered, gate, storm, func() int {
+		mu.Lock()
+		defer mu.Unlock()
 
-	close(gate)
-	drainDispatched(dispatched)
-	// The parked first dispatch plus everything still in the bounded
-	// buffer — everything else was dropped: memory stayed at the buffer.
-	total := len(dispatched)
+		return count
+	})
 	if total > signalBufferSize+1 {
 		t.Errorf("dispatched %d of %d storm signals — the memory bound is broken", total, storm)
 	}
@@ -213,20 +219,43 @@ func TestSignalStormBounded(t *testing.T) {
 		t.Error("no storm signal dispatched — the dispatcher died in the storm")
 	}
 
-	cancel()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("serve() = %v, want a clean nil on ctx cancel", err)
-		}
-	case <-time.After(serveBudget):
-		t.Fatal("serve never returned after the storm — the dispatcher blocked shutdown")
-	}
+	awaitCleanCancel(t, cancel, errCh)
 
 	// The drop policy warns exactly once: a storm must not flood the journal.
 	if got := strings.Count(buf.String(), `"msg":"signal dropped"`); got != 1 {
 		t.Errorf("signal-dropped WARN count = %d, want exactly 1; log:\n%s", got, buf.String())
 	}
+}
+
+// stormEpisode parks the dispatcher inside its first callback (the entered
+// channel fires from the callback; the gate holds it), floods the bus with
+// n probes and — after the gate opens — returns the count the callback
+// eventually saw: one parked plus everything still in the bounded buffer,
+// everything else a guaranteed drop.
+func stormEpisode(t *testing.T, bus *fakeBus, entered <-chan struct{}, gate chan struct{}, n int, seen func() int) int {
+	t.Helper()
+
+	// One signal: the dispatcher picks it up and parks inside the callback.
+	bus.emitSignal(globalEngineChangedMember, ibusPath, ibusService, NameRU)
+	select {
+	case <-entered:
+	case <-time.After(serveBudget):
+		t.Fatal("the dispatcher never picked up the first signal")
+	}
+	// The storm: far more than the buffer holds while the consumer is
+	// parked — every delivery beyond one buffered is a guaranteed drop.
+	floodSignals(bus, n)
+	// Drain window: a desktop-class unix socket moves these tiny messages
+	// in microseconds; the wait makes "all storm messages processed" the
+	// operative assumption for the drop arithmetic below.
+	time.Sleep(200 * time.Millisecond)
+
+	close(gate)
+	// Settle window: the parked first dispatch and everything still in the
+	// bounded buffer land in microseconds once the gate opens.
+	time.Sleep(200 * time.Millisecond)
+
+	return seen()
 }
 
 // TestFocusInForwardsEngineName pins the FocusIn sync input (criterion 3):
@@ -311,11 +340,11 @@ func (r *readerRecorder) closure(t *testing.T, gen int) func(ctx context.Context
 func TestBindGlobalEnginePerGeneration(t *testing.T) {
 	captureJSONLogs(t) // quiet the serve INFO records
 	rec := &readerRecorder{}
-	reached := make(chan struct{}, 8)
-	cfg := seamConfig(func(func(context.Context, string) error) { reached <- struct{}{} })
+	readerReached := make(chan struct{}, 8)
+	cfg := seamConfig(func(func(context.Context, string) error) {})
 	cfg.BindGlobalEngine = func(get func(context.Context) (string, error)) {
 		rec.bind(get)
-		reached <- struct{}{}
+		readerReached <- struct{}{}
 	}
 
 	callCtx, callCancel := context.WithTimeout(context.Background(), callBudget)
@@ -325,7 +354,7 @@ func TestBindGlobalEnginePerGeneration(t *testing.T) {
 	bus0.setGlobalEngine(NameRU)
 	ctx0, cancel0 := context.WithCancel(context.Background())
 	errCh := serveOnce(ctx0, cfg, 0)
-	awaitSeam(t, reached, errCh, 0)
+	awaitSeam(t, readerReached, errCh, 0)
 	name, err := rec.closure(t, 0)(callCtx)
 	if err != nil {
 		t.Fatalf("generation-0 reader = %v, want a clean read", err)
@@ -342,7 +371,7 @@ func TestBindGlobalEnginePerGeneration(t *testing.T) {
 	bus1.setGlobalEngine(NameEN)
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	errCh = serveOnce(ctx1, cfg, 1)
-	awaitSeam(t, reached, errCh, 1)
+	awaitSeam(t, readerReached, errCh, 1)
 	if got := rec.count(); got != 2 {
 		t.Fatalf("BindGlobalEngine fired %d times across two generations, want exactly 2", got)
 	}

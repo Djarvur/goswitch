@@ -381,8 +381,9 @@ func (fb *fakeBus) answer(msg *dbus.Message) *dbus.Message {
 		if name == "" {
 			return replyMsg(dbus.TypeError, errFailMember, "fake bus: no global engine")
 		}
+		desc := NewEngineDesc(name, "goswitch stand", "xx", "us", "xx")
 
-		return replyMsg(dbus.TypeMethodReply, "", dbus.MakeVariant(NewEngineDesc(name, "goswitch stand", "xx", "us", "xx")))
+		return replyMsg(dbus.TypeMethodReply, "", dbus.MakeVariant(desc))
 	default:
 		// An unknown member must fail the caller fast, never hang it.
 		return replyMsg(dbus.TypeError, errFailMember, "fake bus: unknown member "+member)

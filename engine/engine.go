@@ -109,7 +109,8 @@ type Engine struct {
 	caps    uint32
 	// onGlobalEngine is the sync-listener input (05-04 criterion 3): set by
 	// the factory from Config.OnGlobalEngine — FocusIn forwards THIS
-	// engine's name into it. RED STUB: declared, not yet called.
+	// engine's wire name into it, the second observer beside the
+	// GlobalEngineChanged dispatch. nil = no-op (headless engines).
 	onGlobalEngine func(engineName string)
 }
 
@@ -252,6 +253,15 @@ func (e *Engine) FocusIn() (err *dbus.Error) {
 	defer recoverHandler("FocusIn", &err)
 	slog.Info("focus_in", "engine", e.name)
 	e.lifecycle(LifecycleFocusIn)
+	if e.onGlobalEngine != nil {
+		// The sync listener's second observer (criterion 3): the focused
+		// engine's wire name IS the factual input source — the same input
+		// the GlobalEngineChanged dispatch feeds, one sync point downstream.
+		// The HandleLifecycle signature stays untouched (OQ3, the smallest
+		// ripple), and this path is recoverHandler-wrapped like every D-Bus
+		// handler (INTEG-05).
+		e.onGlobalEngine(e.name)
+	}
 
 	return nil
 }

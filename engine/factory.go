@@ -17,10 +17,11 @@ const (
 
 // factory mints per-input-context Engine objects for ibus-daemon.
 type factory struct {
-	conn    *dbus.Conn
-	handler EventHandler
-	mu      sync.Mutex
-	seq     uint64
+	conn           *dbus.Conn
+	handler        EventHandler
+	onGlobalEngine func(engineName string) // the sync-listener input (05-04); may be nil
+	mu             sync.Mutex
+	seq            uint64
 }
 
 // CreateEngine implements org.freedesktop.IBus.Factory.CreateEngine
@@ -38,6 +39,7 @@ func (f *factory) CreateEngine(name string) (path dbus.ObjectPath, err *dbus.Err
 	eng := NewEngine(f.handler, name)
 	eng.conn = f.conn
 	eng.path = path
+	eng.onGlobalEngine = f.onGlobalEngine
 	if f.handler != nil {
 		// The handler (session.Actor) corrects through this engine's
 		// emitters — the sink must be the bound object, so the attachment
