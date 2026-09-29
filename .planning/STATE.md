@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 5
+current_phase: 05
 current_phase_name: "Интеграция с GNOME: индикация и двухисточниковое переключение"
-status: verifying
-stopped_at: Phases 1-3 re-verified and marked complete; Phase 4 UAT awaiting owner (test 2 — D-48 fresh-session run)
-last_updated: "2026-09-28T16:11:05.437Z"
-last_activity: 2026-09-27
-last_activity_desc: Phases 1-3 re-verified on post-04-09 tree (fingerprints refreshed), marked complete; Phase 4 UAT in progress
-state_head: a2e22c725fb7d1f2605453e7123b57a2cbe9cef5
+status: executing
+stopped_at: Completed 05-02-PLAN.md (05-01 parked at human checkpoint)
+last_updated: "2026-09-29T20:38:46.377Z"
+last_activity: 2026-09-29
+last_activity_desc: Phase 05 execution started
+state_head: e761164d47757aeba8f65643b7d1b9d9b4a4edcc
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 0
   total_plans: 33
   completed_plans: 28
 ---
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 04 — Поставка и приёмка
+**Current focus:** Phase 05 — Интеграция с GNOME: индикация и двухисточниковое переключение
 
 ## Current Position
 
-Phase: 5 (Интеграция с GNOME: индикация и двухисточниковое переключение) — READY TO EXECUTE
-Plan: 9 of 9
-Status: Executed — D-48 tonight (real run after dispatcher-PATH + shell-idle fixes; PR #8 merged)
-Last activity: 2026-09-27 — Quick task 260927-vu8: correction UX batch A (bracket-row allow-set + flip_after_correction, needs-review); live e2e acceptance deferred to orchestrator
+Phase: 05 (Интеграция с GNOME: индикация и двухисточниковое переключение) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-09-29 — Phase 05 execution started
 
 Progress: [████████░░] 75%
 
@@ -92,6 +92,7 @@ Progress: [████████░░] 75%
 | Phase 04 P07 | 33 min | 3 tasks | 4 files |
 | Phase 04 P08 | 35 min | 2 tasks | 4 files |
 | Phase 04 P09 | 9 min | 3 tasks | 4 files |
+| Phase 05 P02 | 29 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -219,6 +220,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-20T14:40:00Z
-Stopped at: Phases 1–3 re-verified and marked complete; Phase 4 UAT awaiting owner (test 2 — D-48 fresh-session run)
+Last session: 2026-09-29T20:38:46.292Z
+Stopped at: Completed 05-02-PLAN.md (05-01 parked at human checkpoint)
 Resume file: None
