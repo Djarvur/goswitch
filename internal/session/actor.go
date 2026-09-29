@@ -141,6 +141,9 @@ type Actor struct {
 	// the status snapshot lifts it so goswitchctl status identifies the
 	// running build.
 	version string
+	// switcher is the generation-scoped SetGlobalEngine seam (D-52). RED
+	// stub: written by SetSwitcher, never read yet.
+	switcher func(ctx context.Context, engineName string) error
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -374,6 +377,7 @@ func (a *Actor) MACRCounters() MACRStats {
 type Status struct {
 	Version               string
 	Mode                  string
+	Engine                string // RED stub — GREEN carries the active engine name
 	CorrectionsDone       int
 	CorrectionsSkipped    int
 	SkipReasons           map[string]int
@@ -567,6 +571,16 @@ func (a *Actor) AttachEngine(eng engine.Emitter) {
 	defer a.mu.Unlock()
 
 	a.eng = eng
+}
+
+// SetSwitcher installs the generation-scoped SetGlobalEngine seam (D-52) —
+// the BindSwitcher mirror of AttachEngine. RED stub: stored, the flip path
+// never reads it yet.
+func (a *Actor) SetSwitcher(sw func(ctx context.Context, engineName string) error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.switcher = sw
 }
 
 // Expiry is the timer callback: time.AfterFunc(window) re-enters here when

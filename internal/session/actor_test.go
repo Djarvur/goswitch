@@ -3941,3 +3941,303 @@ func TestActor_FlipDirectionFollowsConvertedScript(t *testing.T) {
 		}
 	})
 }
+
+// The switcher-seam corpus of plan 05-03 (D-52): every flip gesture executes
+// org.freedesktop.IBus.SetGlobalEngine THROUGH the injected seam — the mode
+// record stays the byte-stable e2e oracle, the switch lands strictly between
+// the mode record and the panel-symbol emit (the D-36 extension), a failing
+// seam is a WARN that never stops typing, and the snapshot names the active
+// engine. The seam is a hard-deadline call: a wedged bus can cost a flip at
+// most switchTimeout, never an unbounded stall.
+
+// errSwitchInjected is the failing seam's static cause (err113) — the corpus
+// injects it to pin the WARN-not-fatal contract.
+var errSwitchInjected = errors.New("injected switch failure")
+
+// flipBudget is the switchTimeout contract from the outside: the switcher's
+// context deadline is at most this far from the call instant.
+const flipBudget = 40 * time.Millisecond
+
+// switchProbe is the switcher-seam double: it records every call's target
+// and context deadline — the flip path's observable — with the hook form of
+// fakeSink's modeHook (the corpus interleaves the call with the journal and
+// the sink's op log).
+type switchProbe struct {
+	mu     sync.Mutex
+	names  []string
+	dl     []time.Time
+	dlOK   []bool
+	onCall func(name string)
+}
+
+// switcher is the SetSwitcher-shaped recording function.
+func (p *switchProbe) switcher(ctx context.Context, name string) error {
+	p.mu.Lock()
+	p.names = append(p.names, name)
+	deadline, ok := ctx.Deadline()
+	p.dl = append(p.dl, deadline)
+	p.dlOK = append(p.dlOK, ok)
+	hook := p.onCall
+	p.mu.Unlock()
+
+	if hook != nil {
+		hook(name)
+	}
+
+	return nil
+}
+
+// targets snapshots the recorded switch targets.
+func (p *switchProbe) targets() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return append([]string(nil), p.names...)
+}
+
+// lastDeadline snapshots the most recent call's context deadline.
+func (p *switchProbe) lastDeadline() (time.Time, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.dl) == 0 {
+		return time.Time{}, false
+	}
+
+	return p.dl[len(p.dl)-1], p.dlOK[len(p.dlOK)-1]
+}
+
+// TestActor_FlipRoutesThroughSwitcher pins the D-52 execution: a single-tap
+// flip routes through the seam with the TARGET mode's engine — goswitch-ru
+// on EN→RU, goswitch-en on the flip back — while the byte-stable mode
+// records stay the flip's observable and the panel emit stays one per flip.
+func TestActor_FlipRoutesThroughSwitcher(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	flipMode(a) // EN → RU
+	flipMode(a) // RU → EN
+
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU, engine.NameEN}) {
+		t.Errorf("switch targets = %q, want exactly [%s %s] — the target mode's engine per flip",
+			got, engine.NameRU, engine.NameEN)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) || !strings.Contains(logged, `"msg":"mode","to":"en"`) {
+		t.Errorf("byte-stable mode records missing; log:\n%s", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en] — one emit per flip", got)
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("flip made %d RequireSurroundingText calls, want 0", got)
+	}
+}
+
+// TestActor_FlipOrderPinned pins the flip's record order (the D-36
+// extension): the byte-stable mode record lands strictly BEFORE the switcher
+// call, the switcher call strictly BEFORE the panel-symbol emit; on the combo
+// gesture the switch lands strictly after the settled done record.
+func TestActor_FlipOrderPinned(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	var swSawModeRecord, symbolSawSwitch bool
+	probe.onCall = func(name string) {
+		to := "en"
+		if name == engine.NameRU {
+			to = "ru"
+		}
+		swSawModeRecord = strings.Contains(buf.String(), `"msg":"mode","to":"`+to+`"`)
+	}
+	sink.modeHook = func(_ string) {
+		symbolSawSwitch = len(probe.targets()) == 1 && swSawModeRecord
+	}
+	a.SetSwitcher(probe.switcher)
+
+	flipMode(a) // EN → RU
+	if !swSawModeRecord {
+		t.Errorf("the switcher fired before the mode record — the pinned order is mode → switch; log:\n%s", buf.String())
+	}
+	if !symbolSawSwitch {
+		t.Error("UpdateModeSymbol fired before the switcher call — the pinned order is switch → emit")
+	}
+
+	// The combo leg: the word half settles FIRST (its done record is in the
+	// log), then the flip — mode record, then the switch (D-36 extended).
+	buf2 := captureLogs(t)
+	comboDone, comboMode := false, false
+	probe2 := &switchProbe{}
+	probe2.onCall = func(_ string) {
+		logged := buf2.String()
+		comboDone = strings.Contains(logged, `"msg":"correction","outcome":"done"`)
+		comboMode = strings.Contains(logged, `"msg":"mode","to":"ru"`)
+	}
+	a2, _ := wiredActor()
+	a2.SetSwitcher(probe2.switcher)
+	typeWord(a2, wordEN)
+	pressComboDefault(a2)
+	line := "abc " + wordEN
+	a2.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	if !comboDone || !comboMode {
+		t.Errorf("combo switch fired without its predecessors (done %t, mode %t) — the D-36 order is mode-after-done, switch-after-mode",
+			comboDone, comboMode)
+	}
+	if got := probe2.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("combo switch targets = %q, want exactly [%s] — one flip per gesture", got, engine.NameRU)
+	}
+}
+
+// TestActor_CorrectionFlipSetsResultEngine pins criterion 4 in two-engine
+// form (the SET semantics): the engine of the RESULT script becomes active —
+// ghbdtn→привет activates goswitch-ru, привет→ghbdtn-обратно activates
+// goswitch-en — the "режим = скрипт результата" rule carried by the seam.
+func TestActor_CorrectionFlipSetsResultEngine(t *testing.T) {
+	a, _ := wiredActor()
+	a.SetOptions(flipOnOptions())
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	settleWordCorrection(a) // lat→cyr: the result script is Cyrillic
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Fatalf("after ghbdtn→привет the switch targets = %q, want exactly [%s] (the result script's engine)",
+			got, engine.NameRU)
+	}
+
+	settleRUWordCorrection(a) // cyr→lat: привет corrects back to ghbdtn
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU, engine.NameEN}) {
+		t.Errorf("after привет→ghbdtn the switch targets = %q, want [%s %s]", got, engine.NameRU, engine.NameEN)
+	}
+}
+
+// TestActor_SwitcherFailureWarnsNotFatal pins the WARN-not-fatal contract
+// (criterion 3): a failing seam logs the engine-name WARN, the daemon's mode
+// is ALREADY switched, the panel symbol still updates and the next keys are
+// handled in the new mode — typing never stops.
+func TestActor_SwitcherFailureWarnsNotFatal(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetSwitcher(func(_ context.Context, _ string) error { return errSwitchInjected })
+
+	flipMode(a) // EN → RU — the bus call fails, the internal flip stands
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"engine switch failed","engine":"`+engine.NameRU+`"`) {
+		t.Errorf("failure WARN with the engine name missing; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("mode record missing — the internal flip must stand; log:\n%s", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] — the emit survives the failure", got)
+	}
+	if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32('g')}); !consume {
+		t.Fatal("post-failure RU press transited — the mode did not switch internally")
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != "п" {
+		t.Errorf("post-failure commits = %q, want exactly [п] — typing continues in the new mode", texts)
+	}
+}
+
+// TestActor_SwitcherDeadlineBounded pins the flip's deadline discipline
+// (T-05-03-01, Pitfall 4): the switcher receives a context with a hard
+// deadline ≤ 40 ms, and a seam stuck until that deadline stalls the actor
+// only boundedly — a Status snapshot served THROUGH the stalled flip
+// completes within the budget, so the keystroke path can never hang on a
+// wedged bus.
+func TestActor_SwitcherDeadlineBounded(t *testing.T) {
+	a, _ := wiredActor()
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	remainingCh := make(chan time.Duration, 1)
+	a.SetSwitcher(func(ctx context.Context, _ string) error {
+		remaining := 2 * flipBudget // no deadline at all — the failing probe value
+		if dl, ok := ctx.Deadline(); ok {
+			remaining = time.Until(dl) // measured at entry — the original budget's shape
+		}
+		remainingCh <- remaining
+		entered <- struct{}{}
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done(): // the seam honors the deadline — the real closure's shape
+			return ctx.Err()
+		}
+	})
+
+	tapShift(a)
+	go a.ExpiryAt(expiryAfterWindow) // the flip runs on the timer goroutine's path
+	select {
+	case <-entered:
+	case <-time.After(flipBudget + 5*time.Second):
+		t.Fatal("the flip never called the switcher — the seam is not wired into the flip path")
+	}
+	if remaining := <-remainingCh; remaining <= 0 || remaining > flipBudget {
+		t.Errorf("switcher context deadline budget = %v at entry, want in (0, %v] — the flip must be hard-bounded",
+			remaining, flipBudget)
+	}
+
+	// While the seam is stuck, the stall is bounded: a Status snapshot
+	// served THROUGH the stalled flip completes within the budget's slack —
+	// the mutex-holding call can cost a bounded slice, never a hang.
+	snapDone := make(chan struct{})
+	go func() {
+		_ = a.StatusSnapshot()
+		close(snapDone)
+	}()
+	select {
+	case <-snapDone:
+	case <-time.After(flipBudget + 500*time.Millisecond):
+		t.Error("StatusSnapshot blocked past the switch budget — the flip can stall the keystroke path unboundedly")
+	}
+	close(release)
+
+	// The flip concluded (deadline error or late success); the mode stands
+	// switched and the actor keeps serving.
+	if st := a.StatusSnapshot(); st.Mode != "ru" {
+		t.Errorf("mode after the stalled flip = %q, want ru — the internal flip stands", st.Mode)
+	}
+}
+
+// TestActor_NilSwitcherInternalFlip pins the nil-seam degradation: with no
+// switcher bound the flip stays the internal mode switch with exactly ONE
+// WARN at first use, the panel symbol rides, and typing works — the missing
+// seam degrades the flip, never the daemon.
+func TestActor_NilSwitcherInternalFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	flipMode(a) // EN → RU — no switcher bound
+	flipMode(a) // RU → EN
+
+	logged := buf.String()
+	if got := strings.Count(logged, `"msg":"switcher unavailable"`); got != 1 {
+		t.Errorf("nil-switcher WARNs = %d, want exactly 1 (one WARN per degradation episode); log:\n%s", got, logged)
+	}
+	if got := countModeRecords(buf); got != 2 {
+		t.Errorf("mode records = %d, want 2 — the internal flip stands", got)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en]", got)
+	}
+	if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32('g')}); consume {
+		t.Error("EN-mode press consumed without a switcher — the internal mode must still govern typing")
+	}
+}
+
+// TestStatus_ReportsActiveEngine pins the D-52 status surface: the snapshot
+// names the ACTIVE engine — the mode's engine literal (a config constant,
+// D-20), never user text.
+func TestStatus_ReportsActiveEngine(t *testing.T) {
+	a, _ := wiredActor()
+	if st := a.StatusSnapshot(); st.Engine != engine.NameEN {
+		t.Errorf("fresh snapshot engine = %q, want %s", st.Engine, engine.NameEN)
+	}
+
+	flipMode(a)
+	if st := a.StatusSnapshot(); st.Engine != engine.NameRU {
+		t.Errorf("post-flip snapshot engine = %q, want %s", st.Engine, engine.NameRU)
+	}
+}

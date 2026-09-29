@@ -2,7 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"testing"
+	"time"
+
+	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/hotkey"
+	"github.com/Djarvur/goswitch/internal/session"
 )
 
 // restoreBuildVars puts the package build coordinates back after a subtest
@@ -60,5 +66,40 @@ func TestVersionFlag(t *testing.T) {
 
 	if got := buf.String(); got != "goswitchd dev\n" {
 		t.Errorf("runVersion output = %q, want %q", got, "goswitchd dev\n")
+	}
+}
+
+// TestEngineConfigWiresSwitcher pins the D-52 wiring: engineConfig hands the
+// BindSwitcher closure to the actor BEFORE engine.Run — a flip gesture after
+// the wiring reaches the seam, and the status snapshot's engine follows the
+// mode the seam flipped into.
+func TestEngineConfigWiresSwitcher(t *testing.T) {
+	actor := session.NewActor(time.Second)
+	cfg := engineConfig(actor)
+	if cfg.BindSwitcher == nil {
+		t.Fatal("engineConfig leaves BindSwitcher nil — the D-52 flip would never reach the bus")
+	}
+
+	switches := make(chan string, 4)
+	cfg.BindSwitcher(func(_ context.Context, name string) error {
+		switches <- name
+
+		return nil
+	})
+
+	actor.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalShiftR})
+	actor.HandleKey(engine.EngineEvent{Keyval: hotkey.KeyvalShiftR, Release: true})
+	actor.ExpiryAt(2 * time.Second) // past the one-second window — the Single decision
+
+	select {
+	case name := <-switches:
+		if name != engine.NameRU {
+			t.Errorf("wired switcher received %q, want %s", name, engine.NameRU)
+		}
+	default:
+		t.Fatal("the flip never reached the wired switcher — the closure does not feed the actor")
+	}
+	if st := actor.StatusSnapshot(); st.Engine != engine.NameRU {
+		t.Errorf("snapshot engine = %q, want %s", st.Engine, engine.NameRU)
 	}
 }
