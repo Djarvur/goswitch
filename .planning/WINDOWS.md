@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 2
 waived_count: 3
 fixed_count: 4
-total_count: 8
-last_updated: 2026-09-27T18:57:43.384Z
+total_count: 9
+last_updated: 2026-09-29T20:37:58.257Z
 ---
 
 # Broken Windows Ledger
@@ -23,6 +23,7 @@ last_updated: 2026-09-27T18:57:43.384Z
 | 6 | 04 | deviation | test/e2e/main.go | 201 | 04-04 (1b443eb) turned the matrix path's zero watchdog limit into a literal time.After(0): every matrix case (v1/v2/v3) failed instantly with 'did not complete within 0s' — live-caught by the first D-48 double-run dispatch (run 35107406144); fixed structurally by watchdogLimit resolving 0 to caseTimeout inside runCaseWatchdog (9f2fd75, RED->GREEN tests) | fixed |  | 2026-09-16T14:35:30.840Z | 2026-09-16T14:35:35.768Z |
 | 7 | 04 | deviation | test/e2e/focus_helper.py |  | 04-08 live smoke: INPUT-hit-through-focused-frame not drivable from background context (mutter denies activation; FLAGGED focus-lag case) — witness answered frame-fallback arm in budget; in-situ proof rides the owner's D-48 dispatch | open |  | 2026-09-17T11:53:10.594Z |  |
 | 8 | quick-260927-sy8 | unrun-verify | .planning/quick/260927-sy8-engine-self-reactivation-re-activate-the |  | Task 3 live desktop restart-and-type human-check deferred to orchestrator (automated grep gates + README edits done) | fixed |  | 2026-09-27T18:28:09.875Z | 2026-09-27T18:57:43.384Z |
+| 9 | 05 | unrun-verify | mise.toml | 153 | plan 05-02: mise run e2e-install-cycle full-case PASS deferred — live run proved the new two-source assertions (install wrapper machine-check, selfcheck ok input-source, verbatim restore) but the zenity correction step was focus-refused with the owner active; rerun consolidates in plan 05-05 | open |  | 2026-09-29T20:37:58.257Z |  |
 
 ````json
 [
@@ -121,6 +122,18 @@ last_updated: 2026-09-27T18:57:43.384Z
     "reason": "",
     "recorded_at": "2026-09-27T18:28:09.875Z",
     "resolved_at": "2026-09-27T18:57:43.384Z"
+  },
+  {
+    "id": 9,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "mise.toml",
+    "line": 153,
+    "description": "plan 05-02: mise run e2e-install-cycle full-case PASS deferred — live run proved the new two-source assertions (install wrapper machine-check, selfcheck ok input-source, verbatim restore) but the zenity correction step was focus-refused with the owner active; rerun consolidates in plan 05-05",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T20:37:58.257Z",
+    "resolved_at": null
   }
 ]
 ````
