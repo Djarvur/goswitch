@@ -3512,7 +3512,7 @@ func pressSuperSpace(a *session.Actor) bool {
 // TestActor_SuperSpaceChordFlipsMode pins the chord itself: a Super+Space
 // press flips the script mode IMMEDIATELY (no ExpiryAt — the chord is not a
 // tap), CONSUMES the press (no space lands in the field), emits exactly one
-// panel-symbol update through flipScript (Task 1) and commits nothing; the
+// panel-symbol update through the flip body (vu8 Task 1) and commits nothing; the
 // buffer stays clean — typing "abc" afterwards yields the token "abc" with
 // no leading space.
 func TestActor_SuperSpaceChordFlipsMode(t *testing.T) {
@@ -3534,7 +3534,7 @@ func TestActor_SuperSpaceChordFlipsMode(t *testing.T) {
 		t.Errorf("the chord did not flip EN→RU; log:\n%s", logged)
 	}
 	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
-		t.Errorf("panel symbols = %q, want exactly [ru] (Task 1 through flipScript)", got)
+		t.Errorf("panel symbols = %q, want exactly [ru] (vu8 Task 1 through the flip body)", got)
 	}
 	if texts := sink.commitTexts(); len(texts) != 0 {
 		t.Errorf("chord commits = %q, want none — the press never lands in the field", texts)
@@ -3965,18 +3965,13 @@ const flipBudget = 40 * time.Millisecond
 type switchProbe struct {
 	mu     sync.Mutex
 	names  []string
-	dl     []time.Time
-	dlOK   []bool
 	onCall func(name string)
 }
 
 // switcher is the SetSwitcher-shaped recording function.
-func (p *switchProbe) switcher(ctx context.Context, name string) error {
+func (p *switchProbe) switcher(_ context.Context, name string) error {
 	p.mu.Lock()
 	p.names = append(p.names, name)
-	deadline, ok := ctx.Deadline()
-	p.dl = append(p.dl, deadline)
-	p.dlOK = append(p.dlOK, ok)
 	hook := p.onCall
 	p.mu.Unlock()
 
@@ -3993,18 +3988,6 @@ func (p *switchProbe) targets() []string {
 	defer p.mu.Unlock()
 
 	return append([]string(nil), p.names...)
-}
-
-// lastDeadline snapshots the most recent call's context deadline.
-func (p *switchProbe) lastDeadline() (time.Time, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if len(p.dl) == 0 {
-		return time.Time{}, false
-	}
-
-	return p.dl[len(p.dl)-1], p.dlOK[len(p.dlOK)-1]
 }
 
 // TestActor_FlipRoutesThroughSwitcher pins the D-52 execution: a single-tap
@@ -4059,7 +4042,7 @@ func TestActor_FlipOrderPinned(t *testing.T) {
 
 	flipMode(a) // EN → RU
 	if !swSawModeRecord {
-		t.Errorf("the switcher fired before the mode record — the pinned order is mode → switch; log:\n%s", buf.String())
+		t.Errorf("the switcher fired before the mode record — order is mode → switch; log:\n%s", buf.String())
 	}
 	if !symbolSawSwitch {
 		t.Error("UpdateModeSymbol fired before the switcher call — the pinned order is switch → emit")
@@ -4082,8 +4065,8 @@ func TestActor_FlipOrderPinned(t *testing.T) {
 	line := "abc " + wordEN
 	a2.HandleSurroundingText(line, runeLen(line), runeLen(line))
 	if !comboDone || !comboMode {
-		t.Errorf("combo switch fired without its predecessors (done %t, mode %t) — the D-36 order is mode-after-done, switch-after-mode",
-			comboDone, comboMode)
+		t.Errorf("combo switch fired without its predecessors (done %t, mode %t) — the D-36 order is"+
+			" done → mode → switch", comboDone, comboMode)
 	}
 	if got := probe2.targets(); !slices.Equal(got, []string{engine.NameRU}) {
 		t.Errorf("combo switch targets = %q, want exactly [%s] — one flip per gesture", got, engine.NameRU)

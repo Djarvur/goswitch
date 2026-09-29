@@ -171,5 +171,13 @@ func engineConfig(actor *session.Actor) engine.Config {
 		PostRegister: func(ctx context.Context, _ int) {
 			activate.IfOwned(ctx, activate.NewExecRunner())
 		},
+		// BindSwitcher hands the generation-scoped SetGlobalEngine closure
+		// to the actor (D-52): every flip gesture leaves the daemon through
+		// THIS closure — the engine-truth flip of ADR-006 — rebound on every
+		// reconnecting generation by the engine's serve cycle. The method
+		// value is wiring before engine.Run; the actor's nil-switcher
+		// degradation (one WARN, the chord-parse precedent below) keeps the
+		// daemon starting even if the seam never arrives.
+		BindSwitcher: actor.SetSwitcher,
 	}
 }

@@ -48,6 +48,12 @@ const comboMask = engine.MaskControl | engine.MaskMod1 | engine.MaskMod4
 // (RESEARCH Pattern 1; the keyval half is engine.KeyBackSpace).
 const backSpaceKeycode = 14
 
+// switchTimeout bounds the SetGlobalEngine round trip on the flip path
+// (Pitfall 4, T-05-03-01): a slice of the <50 ms reaction budget — the local
+// socket RTT is 1-10 ms (STACK), so 40 ms leaves the rest of the budget to
+// the key's own transit; the flip's live latency evidence is 05-05's (A6).
+const switchTimeout = 40 * time.Millisecond
+
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
 // flip toggles it on every Single decision while the session's XKB group
 // stays untouched — the mode is pure daemon state, the rune the field
@@ -141,9 +147,14 @@ type Actor struct {
 	// the status snapshot lifts it so goswitchctl status identifies the
 	// running build.
 	version string
-	// switcher is the generation-scoped SetGlobalEngine seam (D-52). RED
-	// stub: written by SetSwitcher, never read yet.
+	// switcher is the generation-scoped SetGlobalEngine seam (D-52) the
+	// daemon wiring hands over via SetSwitcher before engine.Run; nil = the
+	// internal-flip degradation (one WARN per episode at first use).
 	switcher func(ctx context.Context, engineName string) error
+	// switcherWarned keeps the nil-seam degradation at one WARN per episode —
+	// a broken seam must not spam the journal per flip (the appidWarned
+	// precedent).
+	switcherWarned bool
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -377,7 +388,7 @@ func (a *Actor) MACRCounters() MACRStats {
 type Status struct {
 	Version               string
 	Mode                  string
-	Engine                string // RED stub — GREEN carries the active engine name
+	Engine                string // the active engine's wire name (D-52, D-20: a config literal)
 	CorrectionsDone       int
 	CorrectionsSkipped    int
 	SkipReasons           map[string]int
@@ -409,6 +420,7 @@ func (a *Actor) StatusSnapshot() Status {
 	st := Status{
 		Version:               a.version,
 		Mode:                  "en",
+		Engine:                engineNameOf(a.mode),
 		CorrectionsDone:       a.corrDone,
 		CorrectionsSkipped:    a.corrSkipped,
 		SkipReasons:           maps.Clone(a.skipReasons),
@@ -574,13 +586,15 @@ func (a *Actor) AttachEngine(eng engine.Emitter) {
 }
 
 // SetSwitcher installs the generation-scoped SetGlobalEngine seam (D-52) —
-// the BindSwitcher mirror of AttachEngine. RED stub: stored, the flip path
-// never reads it yet.
+// the BindSwitcher mirror of AttachEngine: the daemon wiring calls it before
+// engine.Run, and every reconnecting generation replaces the closure. A nil
+// sw is the no-seam state — the internal flip with its one-WARN degradation.
 func (a *Actor) SetSwitcher(sw func(ctx context.Context, engineName string) error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.switcher = sw
+	a.switcherWarned = false // a fresh generation opens a fresh degradation episode
 }
 
 // Expiry is the timer callback: time.AfterFunc(window) re-enters here when
@@ -609,7 +623,7 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 		case hotkey.Double:
 			a.startCorrection()
 		case hotkey.Single:
-			a.flipScript()
+			a.flipTo(oppositeMode(a.mode))
 		case hotkey.Triple:
 			a.startPhraseCorrection()
 		}
@@ -658,7 +672,7 @@ func (a *Actor) settleCombo() {
 		return
 	}
 	a.comboPending = false
-	a.flipScript()
+	a.flipTo(oppositeMode(a.mode))
 }
 
 // settleCorrectionFlip applies owner decision 2 (quick plan 260927-vu8,
@@ -685,21 +699,10 @@ func (a *Actor) settleCorrectionFlip(converted []rune) {
 	// The mode is SET to the converted text's script, never toggled (owner
 	// rule 2026-09-28): a cyr→lat correction leaves the layout Latin, a
 	// lat→cyr one makes it Cyrillic — the layout you now intend to type in.
-	switch scriptOf(converted) {
-	case modeEN:
-		a.setScriptMode(a.mode == modeRU)
-	case modeRU:
-		a.setScriptMode(a.mode == modeEN)
-	}
-}
-
-// setScriptMode applies one script-mode transition when the mode actually
-// differs, reusing the flip's whole body (the mode record, the panel
-// symbol update); a same-mode call is a no-op.
-func (a *Actor) setScriptMode(transition bool) {
-	if transition {
-		a.flipScript()
-	}
+	// In the two-engine form this makes the RESULT script's ENGINE active
+	// (ADR-006 criterion 4); flipTo's same-target guard keeps a same-script
+	// correction a no-op.
+	a.flipTo(scriptOf(converted))
 }
 
 // scriptOf reports the script of the first letter of the converted range —
@@ -1293,26 +1296,80 @@ func (a *Actor) backspaceCap() int {
 	return correct.DefaultBackspaceCap
 }
 
-// flipScript toggles the internal output-script mode (ADR-001 Option B):
-// the switch is daemon state only — the session's XKB group is never
-// touched and the flip makes no FIELD call on the sink. The INFO mode
-// record is the e2e sequencing contract: the stand waits for it after a
-// single tap before typing in the new script, because the flip fires at
-// window expiry, not inside the tap (Pitfall 5). Right after the record the
-// flip refreshes the panel symbol (owner decision 1, quick plan 260927-way):
-// exactly one UpdateModeSymbol per flip, strictly after the log record —
-// fire-and-forget (the CommitText precedent; the caller holds the mutex).
-func (a *Actor) flipScript() {
-	if a.mode == modeEN {
-		a.mode = modeRU
-		slog.Info("mode", "to", "ru")
-	} else {
-		a.mode = modeEN
-		slog.Info("mode", "to", "en")
+// flipTo executes one flip to the target mode — the single execution path of
+// EVERY flip gesture (the Single decision at window expiry, the combo's
+// settleCombo, the correction flip's SET semantics via settleCorrectionFlip,
+// the mode-switch chord). The ADR-001 Option B internal flip became the
+// ADR-006 engine-truth flip (D-52): the internal mode stands switched
+// IMMEDIATELY — it stays the single writer of the script state and the RU
+// commit branch keeps producing the script — and the actual engine switch
+// leaves through the SetGlobalEngine seam, so the next keystroke enters the
+// new engine and GNOME sees a first-class switch. The record order is the
+// D-36 extension, pinned by the corpus: the byte-stable mode record first
+// (the e2e oracle — the stand waits for it after a single tap before typing
+// in the new script, Pitfall 5), then the switcher call, then the
+// panel-symbol update — exactly one UpdateModeSymbol per flip, strictly
+// after the log record (owner decision 1, quick plan 260927-way).
+//
+// The switcher call runs under a.mu (every caller holds it) with a hard
+// switchTimeout deadline — the deliberate choice of the two mechanisms the
+// phase research offered (deadline OR off-mutex handoff, Pitfall 4 /
+// T-05-03-01): a wedged ibus-daemon can cost a flip at most switchTimeout,
+// never an unbounded keystroke stall, because the real seam honors the
+// context deadline (the godbus CallWithContext round trip). The async
+// WR-01-rung alternative was rejected for THIS path: the flip must be
+// synchronous so the record order stays deterministic and rapid flips keep
+// the final bus state equal to the final mode. A failure WARNs with the
+// engine name — the internal flip already stands, typing continues in the
+// new mode (criterion 3); a nil seam degrades to the internal flip with
+// exactly one WARN per episode. The caller holds the mutex.
+//
+// A flipTo to the CURRENT mode is a no-op: the SET-semantics site
+// (settleCorrectionFlip) names its target from the corrected text's script,
+// and a same-script correction flip changes nothing.
+func (a *Actor) flipTo(target scriptMode) {
+	if target == a.mode {
+		return
 	}
+	a.mode = target
+	slog.Info("mode", "to", a.modeSymbol())
+
+	if sw := a.switcher; sw != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), switchTimeout)
+		defer cancel()
+		if err := sw(ctx, engineNameOf(target)); err != nil {
+			slog.Warn("engine switch failed", "engine", engineNameOf(target), "error", err)
+		}
+	} else if !a.switcherWarned {
+		a.switcherWarned = true
+		slog.Warn("switcher unavailable", "engine", engineNameOf(target))
+	}
+
 	if a.eng != nil {
 		a.eng.UpdateModeSymbol(a.modeSymbol())
 	}
+}
+
+// oppositeMode is the toggle target of the gesture flips (the Single
+// decision, the combo's settle, the mode-switch chord); the SET-semantics
+// site names its target directly (settleCorrectionFlip).
+func oppositeMode(m scriptMode) scriptMode {
+	if m == modeEN {
+		return modeRU
+	}
+
+	return modeEN
+}
+
+// engineNameOf returns the wire name of a script mode's engine (D-52): the
+// mode's engine IS the flip target; the names are the engine package's
+// literals — config constants, never user data (D-20).
+func engineNameOf(m scriptMode) string {
+	if m == modeRU {
+		return engine.NameRU
+	}
+
+	return engine.NameEN
 }
 
 // modeSymbol returns the panel symbol of the current script mode — the
@@ -1444,7 +1501,7 @@ func (a *Actor) modeSwitchChord(ev engine.EngineEvent) bool {
 	a.macrSawLetter = true
 	a.fsm.Feed(hotkey.Reset{}, a.elapsed())
 	slog.Info("combo", "kind", "mode-switch-chord")
-	a.flipScript()
+	a.flipTo(oppositeMode(a.mode))
 
 	return true
 }
