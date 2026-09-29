@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 05
 current_phase_name: "Интеграция с GNOME: индикация и двухисточниковое переключение"
 status: executing
-stopped_at: Completed 05-02-PLAN.md (05-01 parked at human checkpoint)
-last_updated: "2026-09-29T20:38:46.377Z"
+stopped_at: "Completed 05-01-PLAN.md (D-52 resolved: d52-literal)"
+last_updated: "2026-09-29T21:28:54.610Z"
 last_activity: 2026-09-29
 last_activity_desc: Phase 05 execution started
-state_head: e761164d47757aeba8f65643b7d1b9d9b4a4edcc
+state_head: e973ab1bdf8e6eb40321142173aebca774cc4cac
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 33
-  completed_plans: 28
+  completed_plans: 29
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 05 (Интеграция с GNOME: индикация и двухисточниковое переключение) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-09-29 — Phase 05 execution started
 
@@ -93,6 +93,7 @@ Progress: [████████░░] 75%
 | Phase 04 P08 | 35 min | 2 tasks | 4 files |
 | Phase 04 P09 | 9 min | 3 tasks | 4 files |
 | Phase 05 P02 | 29 min | 2 tasks | 8 files |
+| Phase 05 P01 | 134 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -192,6 +193,7 @@ Recent decisions affecting current work:
 - [Phase 04]: [04-09] Soft mode covers ONLY preflight failures (busy desk / stale session on schedule: warning + D48_SKIP + exit 0) — real run failures stay red for every trigger; nightly red remains a regression signal
 - [Phase 04]: [04-09] focused-app answers at the frames level only (first focused frame names its app, '(none)' when none) — shell surfaces deliberately unclassified, interpretation is the workflow preflight's job
 - [Phase 04]: [04-09] Nightly-gate shape: root timer restart gdm -> GDM autologin -> graphical-session.target raises user units -> oneshot dispatcher (sleep 120) runs scripts/d48-nightly-dispatch.sh; schedule cron 01:10 UTC is the post-merge redundant belt — machine-checked freshness stays the D-48 gate
+- [Phase 05]: D-52 resolved: d52-literal (owner, 2026-09-30) — flip = SetGlobalEngine engine-truth on the daemon's ibus connection; criterion 2 reworded via spec-delta (indicator reflects user gestures; daemon-flip changes input immediately, label at next user gesture); ADR-006 Proposed, Accepted at 05-05; 05-04 obligations: sync listener + self-echo suppression (P4 x2); sources-rewrite rejected; mru-seed deferred to v1.1
 
 ### Pending Todos
 
@@ -220,6 +222,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-29T20:38:46.292Z
-Stopped at: Completed 05-02-PLAN.md (05-01 parked at human checkpoint)
+Last session: 2026-09-29T21:28:54.502Z
+Stopped at: Completed 05-01-PLAN.md (D-52 resolved: d52-literal)
 Resume file: None
