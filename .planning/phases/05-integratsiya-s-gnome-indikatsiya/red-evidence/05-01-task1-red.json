@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./test/e2e/ -run 'TestRenderSwitchVerdict|TestSwitchSpikeProbesOrdered' -race -count=1 -v (transcribed to node-test TAP)",
+  "exitCode": 1,
+  "targetTest": "TestRenderSwitchVerdict",
+  "failingTest": "TestRenderSwitchVerdict",
+  "expected": "renderer emits one (probe | observed | verdict) line per probe with verdicts from the closed set {follows, not-follows, error}, error rows carry a one-line reason; the probe plan is exactly P1 shell-activation, P2 external-flip-signal, P3 xkb-truth, P4 self-echo; the report ends with the indicator-verdict placeholder line; the P3 XKB verdict derives from en_pinned only",
+  "actual": "both target tests fail on assertions against the RED stubs: newSpikeProbe rejects every row (\"switch-spike: not implemented\"), spikeProbePlan() returns 0 entries, renderers return empty strings — no report shape exists yet; no other corpus runs in this -run filter",
+  "output": "=== RUN   TestRenderSwitchVerdict\n    case_switch_test.go:43: newSpikeProbe(P1): switch-spike: not implemented\n--- FAIL: TestRenderSwitchVerdict (0.00s)\n=== RUN   TestSwitchSpikeProbesOrdered\n    case_switch_test.go:103: probe plan has 0 entries, want 4\n--- FAIL: TestSwitchSpikeProbesOrdered (0.00s)\nFAIL\nFAIL\tgithub.com/Djarvur/goswitch/test/e2e\t0.012s\nFAIL\nnot ok 1 - TestRenderSwitchVerdict\nnot ok 2 - TestSwitchSpikeProbesOrdered\n# tests 2\n# pass 0\n# fail 2"
+}
