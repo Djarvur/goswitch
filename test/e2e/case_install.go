@@ -199,8 +199,8 @@ func installUnitActive(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("install-cycle: unit not active after install (%s): %w", state, err)
 	}
-	if state != "active" {
-		return fmt.Errorf("install-cycle: unit state %q, want active", state)
+	if state != unitActiveState {
+		return fmt.Errorf("install-cycle: unit state %q, want %s", state, unitActiveState)
 	}
 
 	return nil
@@ -235,7 +235,8 @@ func runUninstallAndVerify(ctx context.Context, ctlBin string, s *stand) error {
 		return fmt.Errorf("install-cycle: uninstall exited non-zero (out %q err %q): %w", out, errOut, err)
 	}
 
-	if state, err := runCmd(ctx, "systemctl", "--user", "is-active", "goswitchd"); err == nil && state == "active" {
+	state, err := runCmd(ctx, "systemctl", "--user", "is-active", "goswitchd")
+	if err == nil && state == unitActiveState {
 		return fmt.Errorf("install-cycle: unit still active after uninstall (%s)", state)
 	}
 	xmlPath, unitPath, statePath := installArtifactPaths()

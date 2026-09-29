@@ -106,7 +106,7 @@ func caseListUsage() string {
 		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
-		" | macr-per-app | ctl-smoke | install-cycle | perf"
+		" | macr-per-app | ctl-smoke | switch-spike | install-cycle | perf"
 }
 
 // parseFlags fills the stand's CLI surface from os.Args.
@@ -259,6 +259,7 @@ func pickCase(name string) (caseSpec, error) {
 		"macr-super-letter": {fn: runMacrSuperLetter},
 		"macr-per-app":      {fn: runMacrPerApp},
 		"ctl-smoke":         {fn: runCtlSmoke},
+		"switch-spike":      {fn: runSwitchSpike, standalone: true},
 		"install-cycle":     {fn: runInstallCycle, standalone: true},
 		"perf":              {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
 	}
@@ -269,7 +270,7 @@ func pickCase(name string) (caseSpec, error) {
 			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
 			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
-			" ctl-smoke, install-cycle, perf)", name)
+			" ctl-smoke, switch-spike, install-cycle, perf)", name)
 	}
 
 	return spec, nil

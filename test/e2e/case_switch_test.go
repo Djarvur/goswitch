@@ -56,9 +56,13 @@ func TestRenderSwitchVerdict(t *testing.T) {
 		}
 	}
 
-	// A non-error verdict never carries a reason.
-	if strings.Contains(table, "(") {
-		t.Errorf("non-error table carries a reason parenthesis:\n%s", table)
+	// A non-error verdict never carries a renderer-appended reason: the
+	// row ends at the verdict token (an observed value may legitimately
+	// contain parentheses of its own, e.g. a delivered signal's engine).
+	for i, p := range probes {
+		if p.Verdict != verdictError && !strings.HasSuffix(lines[i], "| "+p.Verdict) {
+			t.Errorf("line %d = %q must end at the verdict token", i, lines[i])
+		}
 	}
 
 	// The error verdict carries its one-line reason (D-20: types and
@@ -92,6 +96,16 @@ func TestRenderSwitchVerdict(t *testing.T) {
 }
 
 func TestSwitchSpikeProbesOrdered(t *testing.T) {
+	checkSpikePlanOrder(t)
+	probes := sampleProbes(t)
+	checkSpikeReportShape(t, probes)
+	checkXKBClassVerdicts(t)
+}
+
+// checkSpikePlanOrder pins the fixed probe sequence: P1..P4, complete,
+// in the research-prescribed order.
+func checkSpikePlanOrder(t *testing.T) {
+	t.Helper()
 	plan := spikeProbePlan()
 	want := []spikeProbeSpec{
 		{ID: "P1", Name: "shell-activation"},
@@ -107,10 +121,13 @@ func TestSwitchSpikeProbesOrdered(t *testing.T) {
 			t.Errorf("plan[%d] = %+v, want %+v", i, plan[i], w)
 		}
 	}
+}
 
-	// Every plan entry renders exactly once, in order, and the report ends
-	// with the indicator-verdict line the owner's checkpoint fills.
-	probes := sampleProbes(t)
+// checkSpikeReportShape renders the sample corpus and pins the report
+// shape: every probe line exactly once, in order, and the indicator
+// verdict line last; the P3 line carries BOTH readback classes.
+func checkSpikeReportShape(t *testing.T, probes []spikeProbe) {
+	t.Helper()
 	report := renderSpikeReport(probes)
 	lines := strings.Split(strings.TrimSuffix(report, "\n"), "\n")
 	if len(lines) != len(probes)+1 {
@@ -138,7 +155,6 @@ func TestSwitchSpikeProbesOrdered(t *testing.T) {
 		t.Errorf("report must END with the indicator-verdict line %q, got %q", spikeIndicatorLine, last)
 	}
 
-	// The P3 line carries BOTH readback classes.
 	p3Line := ""
 	for _, line := range lines {
 		if strings.HasPrefix(line, "P3 ") {
@@ -153,10 +169,13 @@ func TestSwitchSpikeProbesOrdered(t *testing.T) {
 	if !strings.Contains(p3Line, "en_pinned=cyrillic") || !strings.Contains(p3Line, "ru_pinned=latin") {
 		t.Errorf("P3 line misses the readback classes (en_pinned/ru_pinned):\n%s", p3Line)
 	}
+}
 
-	// The XKB verdict derives from en_pinned ONLY: ru_pinned is the
-	// safety-net witness (cyrillic expected in both XKB worlds), never a
-	// discriminator.
+// checkXKBClassVerdicts pins the P3 derivation: the verdict comes from
+// en_pinned ONLY — ru_pinned is the safety-net witness (cyrillic expected
+// in both XKB worlds), never a discriminator.
+func checkXKBClassVerdicts(t *testing.T) {
+	t.Helper()
 	verdictCases := []struct{ en, ru, want string }{
 		{readbackCyrillic, readbackLatin, verdictFollows},
 		{readbackCyrillic, readbackCyrillic, verdictFollows},
