@@ -1,9 +1,11 @@
 package install
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,5 +36,138 @@ func TestVerifyWritten(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "tampering") {
 		t.Errorf("err %q does not name the tampering suspicion", err)
+	}
+}
+
+// The wrap corpus's raw gsettings shapes (goconst: named once).
+const (
+	wrapPairENRU     = `[('xkb', 'us'), ('xkb', 'ru')]`
+	wrapPairRUEN     = `[('xkb', 'ru'), ('xkb', 'us')]`
+	wrapWrappedENRU  = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
+	wrapWrappedRUEN  = `[('ibus', 'goswitch-ru'), ('ibus', 'goswitch-en')]`
+	wrapTriple       = `[('xkb', 'us'), ('xkb', 'ru'), ('xkb', 'fr')]`
+	wrapTripleWrapped = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru'), ('xkb', 'fr')]`
+	wrapUSFR         = `[('xkb', 'us'), ('xkb', 'fr')]`
+	wrapSingleUS     = `[('xkb', 'us')]`
+	wrapForeignKind  = `[('xkb', 'us'), ('wayland', 'ru')]`
+	wrapHalfWrapped  = `[('ibus', 'goswitch-en'), ('xkb', 'ru')]`
+	wrapOwnedSingle  = `[('ibus', 'goswitch-en')]`
+)
+
+// TestWrapSourcesPairPreserved pins the D-54 wrap of the user's own pair:
+// every xkb us/ru entry becomes the goswitch engine of its layout and the
+// POSITIONS survive — a ru-first desktop gets goswitch-ru first.
+func TestWrapSourcesPairPreserved(t *testing.T) {
+	t.Run("us ru order", func(t *testing.T) {
+		got, err := wrapSources(wrapPairENRU)
+		if err != nil {
+			t.Fatalf("wrapSources() err = %v, want nil", err)
+		}
+		if got != wrapWrappedENRU {
+			t.Errorf("wrapSources() = %q, want %q", got, wrapWrappedENRU)
+		}
+	})
+
+	t.Run("ru us order keeps positions", func(t *testing.T) {
+		got, err := wrapSources(wrapPairRUEN)
+		if err != nil {
+			t.Fatalf("wrapSources() err = %v, want nil", err)
+		}
+		if got != wrapWrappedRUEN {
+			t.Errorf("wrapSources() = %q, want %q (the ru slot must wrap first)", got, wrapWrappedRUEN)
+		}
+	})
+}
+
+// TestWrapSourcesThirdSourcePassthrough pins the transit rule: an entry
+// outside the us/ru pair copies VERBATIM into its own position while the
+// pair wraps around it.
+func TestWrapSourcesThirdSourcePassthrough(t *testing.T) {
+	got, err := wrapSources(wrapTriple)
+	if err != nil {
+		t.Fatalf("wrapSources() err = %v, want nil", err)
+	}
+	if got != wrapTripleWrapped {
+		t.Errorf("wrapSources() = %q, want %q (the third source must transit verbatim)", got, wrapTripleWrapped)
+	}
+}
+
+// TestWrapSourcesRefusalTable pins the D-54 refusal table: a pair without
+// us/ru, a single source, an entry of an unsupported kind, and a
+// hand-edited half-wrapped list are named refusals — never a forced pair.
+// Every verdict names the failing tuple TYPE and the fix, never the raw
+// user line (D-20-safe).
+func TestWrapSourcesRefusalTable(t *testing.T) {
+	cases := map[string]struct {
+		raw  string
+		want error
+	}{
+		"us+fr has no pair":        {raw: wrapUSFR, want: errUnsupportedPair},
+		"single source":            {raw: wrapSingleUS, want: errUnsupportedPair},
+		"unsupported kind in list": {raw: wrapForeignKind, want: errUnsupportedPair},
+		"half-wrapped list":        {raw: wrapHalfWrapped, want: errMixedSources},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, err := wrapSources(tc.raw)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("wrapSources(%s) err = %v, want an %v wrap", tc.raw, err, tc.want)
+			}
+			if got != "" {
+				t.Errorf("wrapSources(%s) = %q alongside the refusal, want an empty value", tc.raw, got)
+			}
+			if strings.Contains(err.Error(), tc.raw) {
+				t.Errorf("verdict %q carries the raw user line — it must name the tuple type, not the content", err)
+			}
+			if !strings.Contains(err.Error(), "fix") {
+				t.Errorf("verdict %q carries no fix hint", err)
+			}
+		})
+	}
+}
+
+// TestWrapSourcesAlreadyOwnedUpgrade pins the Pitfall-7 upgrade path: the
+// live desktop is already goswitch-owned (the phase-4 single source), so
+// the two-source wrapper is computed from the SAVED ORIGINAL in the state
+// file — never from the live value — and the state file stays byte-intact
+// (the first backup is sacred).
+func TestWrapSourcesAlreadyOwnedUpgrade(t *testing.T) {
+	home := t.TempDir()
+	statePath := filepath.Join(home, stateDirRel, stateFile)
+	original := wrapPairENRU
+	plant := `{"sources":"` + original + `","switch_input_source":"[]","switch_input_source_backward":"[]"}`
+	if err := os.MkdirAll(filepath.Dir(statePath), permDir); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(statePath, []byte(plant), permPrivate); err != nil {
+		t.Fatalf("plant the state file: %v", err)
+	}
+
+	var sets [][]string
+	run := func(_ context.Context, name string, args []string, _ []string, _ []byte) ([]byte, error) {
+		if name == binGSettings && len(args) == 4 && args[0] == "set" {
+			sets = append(sets, slices.Clone(args))
+		}
+		if name == binGSettings && len(args) == 3 && args[0] == "get" && args[2] == gsettingsKey {
+			return []byte(wrapOwnedSingle), nil
+		}
+
+		return nil, nil
+	}
+	i := New(WithRunner(run), WithHome(home))
+	if err := i.takeoverSources(context.Background()); err != nil {
+		t.Fatalf("takeoverSources() err = %v, want the upgrade from the saved original to succeed", err)
+	}
+
+	wantSet := []string{"set", gsettingsSchema, gsettingsKey, wrapWrappedENRU}
+	if len(sets) != 1 || !slices.Equal(sets[0], wantSet) {
+		t.Errorf("set calls = %v, want exactly %v (the wrapper computed from the SAVED original)", sets, wantSet)
+	}
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("re-read state: %v", err)
+	}
+	if string(data) != plant {
+		t.Errorf("state rewritten to %q, want %q byte-intact (the first backup is sacred)", data, plant)
 	}
 }

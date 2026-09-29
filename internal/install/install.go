@@ -628,6 +628,20 @@ func (i *Installer) waitRegistration(ctx context.Context) error {
 	}
 }
 
+// The D-54 refusal sentinels of the sources wrap (RED stub declarations,
+// 05-02): errUnsupportedPair — the desktop carries no wrappable xkb us/ru
+// pair; errMixedSources — a hand-edited half-wrapped list.
+var (
+	errUnsupportedPair = errors.New("unsupported input sources")
+	errMixedSources    = errors.New("mixed input sources")
+)
+
+// wrapSources computes the two-source takeover value from one raw sources
+// list. RED stub (05-02): always empty, never an error.
+func wrapSources(raw string) (string, error) {
+	return "", nil
+}
+
 // takeoverSources writes the D-40 single-owner value.
 func (i *Installer) takeoverSources(ctx context.Context) error {
 	_, err := i.call(ctx, binGSettings, "set", gsettingsSchema, gsettingsKey, ownerSourcesSet)

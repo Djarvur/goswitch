@@ -305,3 +305,39 @@ func TestIfOwnedCancelledContext(t *testing.T) {
 		t.Errorf("subprocess calls = %d, want 0", total)
 	}
 }
+
+// TestParseSourceTuples pins the canonical strict parser of the GNOME
+// input-sources list (05-02): the real gsettings output parses into typed
+// tuples in order, and any deviation — a garbage remainder between tuples,
+// unbalanced brackets, an empty list — is an error, never a partial parse.
+func TestParseSourceTuples(t *testing.T) {
+	t.Run("real gsettings output parses in order", func(t *testing.T) {
+		tuples, err := ParseSourceTuples(`[('xkb', 'us'), ('xkb', 'ru')]`)
+		if err != nil {
+			t.Fatalf("ParseSourceTuples() err = %v, want nil", err)
+		}
+		want := []SourceTuple{{Kind: "xkb", ID: "us"}, {Kind: "xkb", ID: "ru"}}
+		if !slices.Equal(tuples, want) {
+			t.Errorf("tuples = %v, want %v", tuples, want)
+		}
+	})
+
+	t.Run("garbage remainder between tuples is an error", func(t *testing.T) {
+		tuples, err := ParseSourceTuples(`[('xkb', 'us') junk]`)
+		if err == nil {
+			t.Fatalf("ParseSourceTuples() = %v with nil error — want the remainder-check refusal", tuples)
+		}
+	})
+
+	t.Run("unbalanced input is an error", func(t *testing.T) {
+		if _, err := ParseSourceTuples(`('xkb', 'us')`); err == nil {
+			t.Fatal("ParseSourceTuples() err = nil — want the unbalanced-input refusal")
+		}
+	})
+
+	t.Run("empty list is an error", func(t *testing.T) {
+		if _, err := ParseSourceTuples(`[]`); err == nil {
+			t.Fatal("ParseSourceTuples() err = nil — want the empty-list refusal")
+		}
+	})
+}

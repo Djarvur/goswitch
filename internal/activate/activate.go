@@ -92,6 +92,21 @@ func NewExecRunner() Runner {
 	}
 }
 
+// SourceTuple is one parsed element of the GNOME input-sources list: the
+// GVariant 2-tuple ('kind', 'id') — e.g. ('xkb', 'us') or
+// ('ibus', 'goswitch-en'). RED stub (05-02): the real strict parser lands
+// in the GREEN step.
+type SourceTuple struct {
+	Kind string
+	ID   string
+}
+
+// ParseSourceTuples reads one gsettings sources output into typed tuples.
+// RED stub (05-02): always empty, never an error.
+func ParseSourceTuples(raw string) ([]SourceTuple, error) {
+	return nil, nil
+}
+
 // IfOwned re-activates the engine that owns the current GNOME input
 // source: `ibus engine <name>` for the goswitch engine at the current
 // index of the sources list. Never returns an error and never panics —
