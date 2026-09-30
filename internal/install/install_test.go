@@ -48,8 +48,11 @@ const (
 	opRestart    = "restart"
 	opGet        = "get"
 	opSet        = "set"
-	engineENName = "goswitch-en"
-	engineRUName = "goswitch-ru"
+	// opDaemonReload is the systemctl daemon-reload argv the sequence and
+	// the rollback corpora pin (goconst: named once).
+	opDaemonReload = "--user daemon-reload"
+	engineENName   = "goswitch-en"
+	engineRUName   = "goswitch-ru"
 )
 
 // The gsettings schema keys of the input sources (D-40's single-owner
@@ -260,8 +263,8 @@ func TestInstall_Sequence(t *testing.T) {
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
 		{binIbus, opWriteCache},
 		{binIbus, opRestart},
-		{binIbus, "list-engine"},
-		{binSystemctl, "--user daemon-reload"},
+		{binIbus, opListEngine},
+		{binSystemctl, opDaemonReload},
 		{binSystemctl, "--user enable goswitchd"},
 		{binSystemctl, "--user restart goswitchd"},
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
@@ -351,8 +354,8 @@ func TestInstall_SequenceSingleSource(t *testing.T) {
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
 		{binIbus, opWriteCache},
 		{binIbus, opRestart},
-		{binIbus, "list-engine"},
-		{binSystemctl, "--user daemon-reload"},
+		{binIbus, opListEngine},
+		{binSystemctl, opDaemonReload},
 		{binSystemctl, "--user enable goswitchd"},
 		{binSystemctl, "--user restart goswitchd"},
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
@@ -683,7 +686,7 @@ func TestUninstall_FullRollback(t *testing.T) {
 	assertCallSequence(t, uninstallCalls(t, f), []struct{ name, args string }{
 		{binSystemctl, "--user stop goswitchd"},
 		{binSystemctl, "--user disable goswitchd"},
-		{binSystemctl, "--user daemon-reload"},
+		{binSystemctl, opDaemonReload},
 		{binIbus, opWriteCache},
 		{binIbus, opRestart},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + ownerSources},

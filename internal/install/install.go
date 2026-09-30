@@ -84,13 +84,13 @@ const (
 	// The layout-switch keybinding lives in the WINDOW-MANAGER keybindings
 	// schema, not in desktop.input-sources (live finding 2026-09-27: the
 	// desktop.input-sources schema carries no switch key at all — a
-	// gsettings get answers "No such key"). ADR-006 two-source: the input
-	// sources are a pair of goswitch engines, so GNOME's switch chord
-	// cycles between them as a first-class VISIBLE switch and the daemon
-	// follows external flips via the 05-04 sync listener (GlobalEngineChanged
-	// + FocusIn engine-name feed, live proof "external-flip-sync", commit
-	// 1caf5b4) — install leaves both bindings untouched; saveState still
-	// snapshots them verbatim for the uninstall restore.
+	// gsettings get answers "No such key"). Install leaves both bindings
+	// untouched regardless of the sources count (quick 260930-nxd; the
+	// single-source model, owner decision 2026-09-30): switching is
+	// goswitch's own gestures and the daemon follows external engine moves
+	// via the 05-04 sync listener (GlobalEngineChanged + FocusIn
+	// engine-name feed, live proof "external-flip-sync") — saveState still
+	// snapshots the bindings verbatim for the uninstall restore.
 	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
 	gsettingsKeySwitch         = "switch-input-source"
 	gsettingsKeySwitchBackward = "switch-input-source-backward"
@@ -128,9 +128,10 @@ const (
 	layoutUS = "us"
 	layoutRU = "ru"
 
-	// pairTuples is the number of xkb layouts (us and ru) a wrappable
-	// layout pair carries.
-	pairTuples = 2
+	// minWrapped is the number of wrappable xkb us/ru sources a takeover
+	// value must carry: the single-source model (owner decision
+	// 2026-09-30) admits ONE source; the pair still wraps as before.
+	minWrapped = 1
 )
 
 // Static errors (err113): every one names the failing step and the fix.
@@ -150,16 +151,23 @@ var (
 	errWriteVerify   = errors.New("written file content mismatch after read-back (possible tampering — ASVS V14)")
 
 	errUnsupportedPair = errors.New(
-		"the input sources do not carry the xkb us/ru layout pair goswitch v1 wraps " +
-			"(the layout choice stays yours — goswitch never forces a pair) — " +
-			"fix: set both layouts to xkb 'us' and 'ru', then re-run goswitchctl install")
+		"no xkb 'us'/'ru' layout goswitch wraps found (goswitch wraps a single 'us' or 'ru' " +
+			"source, or the pair — the layout choice stays yours) — " +
+			"fix: set a layout to xkb 'us' or 'ru', then re-run goswitchctl install")
 	errMixedSources = errors.New(
 		"the input sources mix goswitch engines with foreign entries (hand-edited list?) — " +
 			"fix: re-run goswitchctl uninstall to restore the original list, then install again")
 	errSavedOriginalUnusable = errors.New(
-		"the live sources are already goswitch-owned but the saved pre-install pair is missing " +
-			"or malformed — fix: set both layouts to xkb 'us' and 'ru', then re-run goswitchctl install")
+		"the live sources are already goswitch-owned but the saved pre-install sources are missing " +
+			"or malformed — fix: set a layout to xkb 'us' or 'ru', then re-run goswitchctl install")
 )
+
+// foreignResidueHint is the D-53 rationale + fix the foreign-residue
+// verdict carries — the wrap gate (refusal BEFORE any mutation) and the
+// selfcheck's input-source audit share one text.
+const foreignResidueHint = "goswitch wraps only a list it can own entirely — " +
+	"a foreign source beside goswitch engines is one the daemon sees no keys through (D-53) — " +
+	"fix: keep only xkb 'us'/'ru' (and goswitch) sources, then re-run goswitchctl install"
 
 // Runner executes one installer subprocess (ibus, systemctl, gsettings):
 // the seam the unit corpus drives with a recording fake — argv, env and
@@ -196,6 +204,10 @@ type Installer struct {
 	// ctlStatus is the selfcheck's version-step probe of the daemon's
 	// control service (D-41 step 1); the corpus answers without a live bus.
 	ctlStatus CtlStatus
+	// wrappedEngines carries the engine names of the COMPUTED takeover
+	// value — the report's honesty pin: the rendered line names what was
+	// actually wrapped, on both the write and the skip paths.
+	wrappedEngines []string
 }
 
 // installState is the on-disk restore contract between install and
@@ -325,12 +337,13 @@ func WithCtlStatus(fn CtlStatus) func(*Installer) {
 
 // Install performs the D-39/D-40/D-54 sequence and returns the step-by-step
 // report (paths and verdicts only — never user text, D-20/D-21):
-// preflight the daemon binary → pair check + save prior sources (the
-// atomic refusal gate: an unwrappable desktop fails here, before any
-// mutation) → component XML → env-carrying write-cache + registry
-// verification → user unit → ibus restart → bounded-wait registry →
-// daemon-reload → enable + restart → bounded-wait live registration →
-// computed two-source sources wrap → engine activation.
+// preflight the daemon binary → wrap check + save prior sources (the
+// atomic refusal gate: a desktop goswitch cannot own entirely fails here,
+// before any mutation) → component XML → env-carrying write-cache +
+// registry verification → user unit → ibus restart → bounded-wait
+// registry → daemon-reload → enable + restart → bounded-wait live
+// registration → computed sources wrap (at least one wrappable xkb
+// source) → engine activation.
 func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	daemonPath, err := i.resolveDaemon()
 	if err != nil {
@@ -370,11 +383,10 @@ func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	if err := i.takeoverSources(ctx); err != nil {
 		return nil, err
 	}
-	// The GNOME switch chords stay untouched (ADR-006 two-source): with the
-	// sources a pair of goswitch engines, the chords cycle between them as
-	// a first-class visible switch — clearing them would disable the user's
-	// own switch (the old owner-decision-3 rationale is obsolete; the
-	// pre-install bindings are already snapshotted verbatim by saveState).
+	// The GNOME switch chords stay untouched (quick 260930-nxd; the
+	// single-source model, owner decision 2026-09-30): install touches ONLY
+	// the sources key — the chords are snapshotted verbatim by saveState for
+	// the uninstall restore, and switching is goswitch's own gestures.
 	if err := i.activateEngine(ctx, engineEN); err != nil {
 		return nil, err
 	}
@@ -484,16 +496,25 @@ func (i *Installer) readSources(ctx context.Context) (string, error) {
 // post-takeover goswitch-only desktop — nor any later live binding value —
 // over the owner's original values).
 //
-// Before ANY of that is written, the D-54 atomic refusal gate proves the
-// desktop carries a wrappable pair (resolveWrapInput + wrapSources): a
-// desktop without one fails HERE, so a refused install never creates the
-// state file and never changes a single desktop setting.
+// Before ANY of that is written, the atomic refusal gate proves the
+// desktop's resolved sources wrap into a list goswitch owns ENTIRELY
+// (resolveWrapInput + wrapSources): a single wrappable source passes, but
+// a foreign residue, an unsupported kind or an unwrappable desktop fails
+// HERE — before the backup is written and before a single desktop setting
+// changes.
 func (i *Installer) saveState(ctx context.Context) (string, error) {
 	prior, err := i.readSources(ctx)
 	if err != nil {
 		return "", err
 	}
-	if _, err := i.resolveWrapInput(prior); err != nil {
+	raw, err := i.resolveWrapInput(prior)
+	if err != nil {
+		return "", err
+	}
+	// The gate is the FULL wrap computation, not just the resolution: a
+	// desktop carrying a wrappable entry beside a foreign source resolves
+	// fine and must still refuse here, atomically.
+	if _, err := wrapSources(raw); err != nil {
 		return "", err
 	}
 	out, err := i.call(ctx, binGSettings, "get", gsettingsKeybindingsSchema, gsettingsKeySwitch)
@@ -693,24 +714,22 @@ func isGoswitchTuple(t activate.SourceTuple) bool {
 	return t.Kind == kindIBus && (t.ID == engineEN || t.ID == engineRU)
 }
 
-// carriesXKBPair reports whether the raw list carries BOTH xkb us and xkb
-// ru entries — the wrappable pair form of a live desktop.
-func carriesXKBPair(raw string) bool {
+// carriesWrappableXKB reports whether the raw list carries AT LEAST ONE
+// wrappable xkb us/ru entry — the form the takeover wraps from (the
+// single-source model, owner decision 2026-09-30: one source hides the
+// dead native GNOME indicator; the pair still wraps as before).
+func carriesWrappableXKB(raw string) bool {
 	tuples, err := activate.ParseSourceTuples(raw)
 	if err != nil {
 		return false
 	}
-	hasUS, hasRU := false, false
 	for _, t := range tuples {
-		switch {
-		case t.Kind == kindXKB && t.ID == layoutUS:
-			hasUS = true
-		case t.Kind == kindXKB && t.ID == layoutRU:
-			hasRU = true
+		if t.Kind == kindXKB && (t.ID == layoutUS || t.ID == layoutRU) {
+			return true
 		}
 	}
 
-	return hasUS && hasRU
+	return false
 }
 
 // countOwnedForeign splits the tuples into goswitch-owned and foreign
@@ -727,9 +746,9 @@ func countOwnedForeign(tuples []activate.SourceTuple) (owned, foreign int) {
 	return owned, foreign
 }
 
-// renderWrapped renders the wrapped list parts: goswitch tuples and the
-// xkb us/ru pair through the closed enum, every other entry verbatim.
-// Returns the number of wrapped pair entries and the first unsupported
+// renderWrapped renders the wrapped list parts: goswitch tuples and xkb
+// us/ru entries through the closed enum, every other entry verbatim.
+// Returns the number of wrapped us/ru entries and the first unsupported
 // source kind, if any.
 func renderWrapped(tuples []activate.SourceTuple) (parts []string, wrapped int, unsupportedKind string) {
 	parts = make([]string, 0, len(tuples))
@@ -753,16 +772,18 @@ func renderWrapped(tuples []activate.SourceTuple) (parts []string, wrapped int, 
 	return parts, wrapped, unsupportedKind
 }
 
-// wrapSources computes the D-54 two-source takeover value from one raw
-// sources list: every xkb us/ru entry of the user's own pair is wrapped
-// into the goswitch engine of its layout (positions preserved), every
-// other entry transits VERBATIM in its own position. The mapping is
+// wrapSources computes the takeover value from one raw sources list: EVERY
+// xkb us/ru entry of the user's own list is wrapped into the goswitch
+// engine of its layout (positions preserved) — at least one is required
+// (single 'us' → goswitch-en, single 'ru' → goswitch-ru, the pair → both),
+// every other entry transits VERBATIM in its own position. The mapping is
 // closed-enum and the result is rendered only from the parsed Go values —
 // the raw input never reaches the gsettings argument (ASVS V5 /
-// T-05-02-01). A list without the us/ru pair, an entry of an unsupported
-// kind, or a hand-edited half-wrapped list is a named refusal naming the
-// failing tuple TYPE and the fix — never a forced pair, never the raw
-// user line (D-54, D-20-safe).
+// T-05-02-01). A list with nothing wrappable, an entry of an unsupported
+// kind, a hand-edited half-wrapped list, or a foreign source that would
+// sit beside goswitch engines is a named refusal naming the failing tuple
+// TYPE and the fix — never a forced pair, never the raw user line (D-54,
+// D-20-safe).
 func wrapSources(raw string) (string, error) {
 	tuples, err := activate.ParseSourceTuples(raw)
 	if err != nil {
@@ -776,27 +797,36 @@ func wrapSources(raw string) (string, error) {
 	if unsupportedKind != "" {
 		return "", fmt.Errorf("%w: source kind %q is not a form goswitch wraps "+
 			"(only xkb layouts and ibus engines are understood) — "+
-			"fix: set both layouts to xkb 'us' and 'ru', then re-run goswitchctl install",
+			"fix: set a layout to xkb 'us' or 'ru', then re-run goswitchctl install",
 			errUnsupportedPair, unsupportedKind)
 	}
-	if wrapped < pairTuples {
-		return "", fmt.Errorf("%w: %d of the 2 required xkb layouts found — "+
-			"fix: set both layouts to xkb 'us' and 'ru', then re-run goswitchctl install",
-			errUnsupportedPair, wrapped)
+	if wrapped < minWrapped {
+		return "", errUnsupportedPair
+	}
+	// Foreign residue, computed exactly: unsupported kinds were already
+	// refused above, so every remaining part that is neither a goswitch
+	// tuple nor a wrapped xkb entry IS a verbatim transit. The check runs
+	// AFTER the nothing-wrappable verdict so a pure-foreign desktop stays
+	// the nothing-wrappable refusal, while us+fr and us+ru+fr become the
+	// residue refusal — DELIBERATE: selfcheck's own audit makes a
+	// goswitch-beside-foreign list red (D-53), so install must never write
+	// a list it would reject.
+	if transited := len(parts) - wrapped - owned; transited > 0 {
+		return "", fmt.Errorf("%w: %s", errMixedSources, foreignResidueHint)
 	}
 
 	return "[" + strings.Join(parts, ", ") + "]", nil
 }
 
 // resolveWrapInput resolves the raw value the takeover wrapper is computed
-// from: the LIVE list when it carries the xkb us/ru pair; the SAVED
-// original from the state file when the live desktop is already
-// goswitch-owned (Pitfall 7 — the state file holds the only true
-// pre-install pair, the first backup stays sacred); a hand-edited
+// from: the LIVE list when it carries at least one wrappable xkb us/ru
+// entry; the SAVED original from the state file when the live desktop is
+// already goswitch-owned (Pitfall 7 — the state file holds the only true
+// pre-install list, the first backup stays sacred); a hand-edited
 // half-wrapped list and an unusable save are named refusals, never a
 // guess (T-05-02-02).
 func (i *Installer) resolveWrapInput(live string) (string, error) {
-	if carriesXKBPair(live) {
+	if carriesWrappableXKB(live) {
 		return live, nil
 	}
 	tuples, err := activate.ParseSourceTuples(live)
@@ -815,21 +845,23 @@ func (i *Installer) resolveWrapInput(live string) (string, error) {
 
 		return saved, nil
 	default:
-		// Neither the pair nor a goswitch-owned list: refuse THROUGH the
-		// wrap verdict — errMixedSources cannot fire here, so the verdict
-		// is the pair refusal (D-54: never force the pair).
+		// Neither a wrappable list nor a goswitch-owned one: refuse THROUGH
+		// the wrap verdict — errMixedSources cannot fire here, so the
+		// verdict is the wrap refusal (D-54: never force a pair).
 		_, err = wrapSources(live)
 
 		return "", err
 	}
 }
 
-// takeoverSources computes the D-54 two-source value from the user's OWN
-// layout pair and writes it — unless the live value already equals the
-// computed wrapper, in which case the write is SKIPPED (Pitfall 6: a
-// value-identical write live-resets the global engine and breaks input
-// right after install). The sequence's explicit engine activation follows
-// unchanged at Install's tail.
+// takeoverSources computes the takeover value from the user's OWN sources
+// (at least one wrappable xkb entry) and writes it — unless the live value
+// already equals the computed wrapper, in which case the write is SKIPPED
+// (Pitfall 6: a value-identical write live-resets the global engine and
+// breaks input right after install). The wrapped engine names are recorded
+// BEFORE the skip so both the write and the skip paths report truthfully.
+// The sequence's explicit engine activation follows unchanged at Install's
+// tail.
 func (i *Installer) takeoverSources(ctx context.Context) error {
 	live, err := i.readSources(ctx)
 	if err != nil {
@@ -843,6 +875,17 @@ func (i *Installer) takeoverSources(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	tuples, err := activate.ParseSourceTuples(wrapped)
+	if err != nil {
+		return fmt.Errorf("parse wrapped sources: %w", err)
+	}
+	engines := make([]string, 0, len(tuples))
+	for _, t := range tuples {
+		if isGoswitchTuple(t) {
+			engines = append(engines, t.ID)
+		}
+	}
+	i.wrappedEngines = engines
 	if wrapped == live {
 		return nil
 	}
@@ -875,7 +918,7 @@ func (i *Installer) report(daemonPath string) []string {
 		"unit: " + i.path(unitDirRel, unitFile) + " content verified (read-back)",
 		"unit: daemon-reload + enable + restart done",
 		"engine: registered live (ListActiveEngines)",
-		"sources: wrapped pair (" + engineEN + ", " + engineRU + ")",
+		"sources: wrapped (" + strings.Join(i.wrappedEngines, ", ") + ")",
 		"switch-input-source: left untouched (saved for uninstall)",
 		"engine: activated " + engineEN,
 	}
