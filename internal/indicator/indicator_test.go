@@ -327,8 +327,12 @@ func TestAttachEmitFailureSelfDisables(t *testing.T) {
 }
 
 // TestItemProperties pins the served property surface: the SNI v0 set
-// (icon-only — no Menu, no ToolTip), the unknown-property and
-// unknown-interface refusals, and the read-only verdict of Set.
+// (icon-only — no ToolTip; Menu present as the /NO_DBUSMENU sentinel), the
+// unknown-property and unknown-interface refusals, and the read-only
+// verdict of Set. The string-typed identity properties live in one table;
+// the pixmap, the sentinel and the refusals are separate pins below.
+//
+//nolint:cyclop // one assertion per served property — the table below carries them
 func TestItemProperties(t *testing.T) {
 	item, _, em, _ := attachOK()
 

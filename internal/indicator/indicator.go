@@ -36,6 +36,7 @@ const (
 	propIconName   = "IconName"
 	propIconPixmap = "IconPixmap"
 	propWindowID   = "WindowId"
+	propMenu       = "Menu"
 )
 
 // The property VALUES the item serves — static identity, the SNI spec's
@@ -44,6 +45,12 @@ const (
 	sniCategory     = "ApplicationStatus"
 	sniStatusActive = "Active"
 	serviceID       = "goswitch"
+
+	// menuNoDBusMenu is the SNI icon-only sentinel: the ubuntu-appindicators
+	// watcher lists Menu among NEEDED_PROPERTIES and DESTROYS an item that
+	// refuses it, while this exact object path disables the DBusMenu setup
+	// (appIndicator.js menuPath) — served, never dereferenced.
+	menuNoDBusMenu = "/NO_DBUSMENU"
 )
 
 // The D-Bus standard error names the Properties surface answers refusals
@@ -277,5 +284,6 @@ func (it *Item) properties() map[string]dbus.Variant {
 		propIconName:   dbus.MakeVariant(""),
 		propIconPixmap: dbus.MakeVariant([]Pixmap{it.pix}),
 		propWindowID:   dbus.MakeVariant(int32(0)),
+		propMenu:       dbus.MakeVariant(dbus.ObjectPath(menuNoDBusMenu)),
 	}
 }
