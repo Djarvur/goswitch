@@ -1,8 +1,8 @@
 ---
 phase: 260930-pf6-feat-tray-indicator-statusnotifieritem-a
 verified: 2026-09-30T17:43:38Z
-status: human_needed
-score: 5/5 must-haves verified programmatically; owner pixel confirmation pending
+status: passed
+score: 5/5 must-haves verified (programmatic + owner pixel confirmation)
 covered_files:
   - .planning/quick/260930-pf6-feat-tray-indicator-statusnotifieritem-a/260930-pf6-PLAN.md
   - internal/indicator/pixmap.go
@@ -169,3 +169,9 @@ restarted 20:5x):
 Remaining: the owner's pixel-level confirmation that the EN/RU icon is
 visible in the top bar and changes on Super+Space (human_needed, the
 plan's own verify gate).
+
+## Owner confirmation (2026-09-30, post-relogin)
+
+The owner confirmed visually: the EN/RU icon is visible in the top bar and
+works. All five must-haves now carry live evidence; the human gate is
+closed.
