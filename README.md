@@ -54,40 +54,46 @@ records your previous input sources — `uninstall` restores them.
 
 ### Input-source handover
 
-`goswitchctl install` also clears GNOME's own layout-switch binding
-(`org.gnome.desktop.input-sources` `switch-input-source`) and remembers the
-previous value verbatim — GNOME's native Alt+Shift / Super+Space no longer
-switch anything, because switching is goswitch's own job now.
-`goswitchctl uninstall` restores the previous binding.
+`goswitchctl install` touches ONLY the input-sources key
+(`org.gnome.desktop.input-sources` `sources`): it wraps your source(s)
+into goswitch engines and remembers the previous value verbatim.
+GNOME's own layout-switch chords (`org.gnome.desktop.wm.keybindings`
+`switch-input-source` / `switch-input-source-backward`) are left
+untouched — their values are still snapshotted verbatim for the
+uninstall restore. Switching is goswitch's own job: a single tap of the
+right Shift, or Super + Space (one of goswitch's gestures — see the
+table under Usage).
 
-### Two engines, one indicator (ADR-006)
+### Input sources and the mode indicator
 
-`goswitchctl install` does not hardcode a layout pair: it reads YOUR current
-input sources and wraps each one of the pair into a goswitch engine of the
-matching layout (`('xkb', 'us')` → `('ibus', 'goswitch-en')`,
-`('xkb', 'ru')` → `('ibus', 'goswitch-ru')`). You choose the layouts — the
-installer only wraps your choice. Both engines sit in GNOME's input-source
-list, so the native GNOME panel indicator shows the active one (en/ru).
+`goswitchctl install` does not hardcode a layout pair: it reads YOUR
+current input sources and wraps at least one `xkb` 'us'/'ru' entry into
+a goswitch engine of the matching layout — a single `('xkb', 'us')`
+source becomes `('ibus', 'goswitch-en')`, a single `('xkb', 'ru')`
+becomes `('ibus', 'goswitch-ru')`, and the classic pair becomes both
+engines. You choose the layouts — the installer only wraps your choice.
 
-Switching moves the ACTIVE input source on the IBus bus (the same single
-Shift tap, Super + Space, and the flip after a correction as before). One
-honest nuance about the indicator (ADR-006): a goswitch-driven flip changes
-the typing immediately, while the panel label catches up at your next
-gesture through the shell. Like GNOME's own layout switching, a flip resets
-the correction context — text typed before the switch is not corrected by a
-gesture after it.
+ONE goswitch source is the recommended shape: GNOME's native panel
+indicator appears only with two or more input sources, so with one it is
+hidden — by design. The mode indicator is goswitch's own tray icon
+(StatusNotifierItem), which follows the daemon's mode immediately. The
+daemon's flip changes the typing at once; like GNOME's own layout
+switching, a flip resets the correction context — text typed before the
+switch is not corrected by a gesture after it.
 
-You stay in charge of the source list: if you add a third source yourself
-(say, an `xkb` layout), switching to it honestly takes the input OUT from
-under goswitch — the daemon follows the factual engine and never fights the
-desktop (no correction, no hijack). Switch back to a goswitch source to
-resume correction and hotkey switching.
+A foreign source beside goswitch engines cannot come from the installer
+(it is refused) and is flagged red by `goswitchctl selfcheck` — the
+daemon sees no keys through a plain `xkb` source. You stay in charge of
+the source list: if you switch to a foreign source yourself, the daemon
+follows the factual engine and never fights the desktop (no correction,
+no hijack). Switch back to a goswitch source to resume correction and
+hotkey switching.
 
 Restart behavior: a daemon restart keeps everything (it re-activates the
 engine that owns the current source — the `engine reactivated` journal
 line). An ibus-daemon restart returns the session to the shell's own
-current source; a layout you reached through a shell gesture (Super+Space)
-survives it, and the daemon follows whichever engine the shell brings back.
+current source; a layout reached through a shell gesture survives it,
+and the daemon follows whichever engine the shell brings back.
 
 ## Verify
 
@@ -209,14 +215,15 @@ keycode, modifiers, press/release) is written to the log at DEBUG level.
   (`systemctl --user restart goswitchd`) or an ibus-daemon restart no
   longer silently disables correction. The journal line
   `engine reactivated` confirms it.
-- **The input source switched away and correction stopped, yet the daemon
-  is still alive.** If a source outside the goswitch pair took over (you
-  switched to a third source, or a legacy single-source setup dropped the
-  engine context — e2e super-space-alive), the daemon follows the factual
-  engine and stays out of the way. Remedy: switch back to a goswitch source
-  (`ibus engine goswitch-en`), or restart the unit — self-reactivation
-  then re-applies the owned source. Check `journalctl --user -u goswitchd`
-  for the WARN/INFO lines.
+- **A non-goswitch source took over and correction stopped, yet the daemon
+  is still alive.** If you switch to a foreign source (say, a plain `xkb`
+  layout), the daemon follows the factual engine and stays out of the way —
+  it never fights the desktop. `goswitchctl selfcheck` is the audit's
+  answer: it flags a goswitch engine sitting beside a foreign source red
+  (the daemon sees no keys through an xkb source). Remedy: switch back to
+  a goswitch source (`ibus engine goswitch-en`), or restart the unit —
+  self-reactivation then re-applies the owned source. Check
+  `journalctl --user -u goswitchd` for the WARN/INFO lines.
 
 ## Uninstall
 
