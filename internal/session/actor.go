@@ -48,11 +48,15 @@ const comboMask = engine.MaskControl | engine.MaskMod1 | engine.MaskMod4
 // (RESEARCH Pattern 1; the keyval half is engine.KeyBackSpace).
 const backSpaceKeycode = 14
 
-// switchTimeout bounds the SetGlobalEngine round trip on the flip path
-// (Pitfall 4, T-05-03-01): a slice of the <50 ms reaction budget — the local
-// socket RTT is 1-10 ms (STACK), so 40 ms leaves the rest of the budget to
-// the key's own transit; the flip's live latency evidence is 05-05's (A6).
-const switchTimeout = 40 * time.Millisecond
+// switchTimeout bounds the SetGlobalEngine round trip on the flip path —
+// the FAILURE-path wedge guard (Pitfall 4, T-05-03-01), not a slice of the
+// <50 ms SPEC reaction budget: it bounds only how long a wedged ibus-daemon
+// may hold the flip. The measured success RTT is ~41-45 ms (the 05-05 live
+// proofs and the 2026-09-30 journal — the old 40 ms deadline fired before
+// completion on every healthy flip), so 150 ms sits above the measured
+// maximum: every healthy flip completes inside it, and a wedged bus still
+// costs at most the deadline.
+const switchTimeout = 150 * time.Millisecond
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
 // flip toggles it on every Single decision while the session's XKB group
@@ -1348,7 +1352,9 @@ func (a *Actor) backspaceCap() int {
 // phase research offered (deadline OR off-mutex handoff, Pitfall 4 /
 // T-05-03-01): a wedged ibus-daemon can cost a flip at most switchTimeout,
 // never an unbounded keystroke stall, because the real seam honors the
-// context deadline (the godbus CallWithContext round trip). The async
+// context deadline (the godbus CallWithContext round trip). The deadline is
+// the wedge guard only — it sits above the measured live round trip
+// (~41-45 ms), so it fires on a wedged bus, never on a healthy flip. The async
 // WR-01-rung alternative was rejected for THIS path: the flip must be
 // synchronous so the record order stays deterministic and rapid flips keep
 // the final bus state equal to the final mode. A failure WARNs with the
