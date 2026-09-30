@@ -4332,3 +4332,122 @@ func TestActor_SyncEngineNeverSwitches(t *testing.T) {
 		t.Errorf("SyncEngine called the switcher with %q — a flip loop is built on this; want zero calls", got)
 	}
 }
+
+// fakeDisplay is the actor's ModeDisplay double (quick plan 260930-pf6):
+// every ModeChanged recorded under a mutex, with an optional hook the order
+// pins interleave against the sink's modeHook.
+type fakeDisplay struct {
+	mu     sync.Mutex
+	calls  []string
+	onCall func(symbol string)
+}
+
+// ModeChanged records the symbol and plays the hook.
+func (d *fakeDisplay) ModeChanged(symbol string) {
+	d.mu.Lock()
+	d.calls = append(d.calls, symbol)
+	hook := d.onCall
+	d.mu.Unlock()
+	if hook != nil {
+		hook(symbol)
+	}
+}
+
+// symbols snapshots the recorded sequence.
+func (d *fakeDisplay) symbols() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return append([]string(nil), d.calls...)
+}
+
+// TestActor_SetModeDisplayPushesCurrentMode pins the install contract: the
+// display receives the CURRENT mode at SetModeDisplay — startup with the
+// initial mode AND late install after flips — and every later flip reaches
+// it.
+func TestActor_SetModeDisplayPushesCurrentMode(t *testing.T) {
+	a, _ := wiredActor()
+	disp := &fakeDisplay{}
+
+	a.SetModeDisplay(disp)
+	if got, want := disp.symbols(), []string{"en"}; !slices.Equal(got, want) {
+		t.Errorf("install push = %q, want exactly [en] — the display must self-sync at install", got)
+	}
+
+	flipMode(a) // EN → RU
+	if got, want := disp.symbols(), []string{"en", "ru"}; !slices.Equal(got, want) {
+		t.Errorf("symbols after the flip = %q, want [en ru]", got)
+	}
+
+	// Late install on a drifted actor: the fresh display gets the CURRENT
+	// mode, not the startup default.
+	flipMode(a) // RU → EN
+	late := &fakeDisplay{}
+	a.SetModeDisplay(late)
+	if got, want := late.symbols(), []string{"en"}; !slices.Equal(got, want) {
+		t.Errorf("late install push = %q, want exactly [en]", got)
+	}
+}
+
+// TestActor_FlipInvokesDisplayLast extends the D-36 order pin: the display
+// observer fires strictly AFTER the panel-symbol emit — mode record →
+// switcher → panel symbol → display.
+func TestActor_FlipInvokesDisplayLast(t *testing.T) {
+	a, sink := wiredActor()
+	var opMu sync.Mutex
+	var ops []string
+	sink.modeHook = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "symbol:"+symbol)
+		opMu.Unlock()
+	}
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "display:"+symbol)
+		opMu.Unlock()
+	}
+	a.SetModeDisplay(disp)
+
+	flipMode(a) // EN → RU
+
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{"symbol:ru", "display:ru"}
+	if !slices.Equal(ops, want) {
+		t.Errorf("flip op order = %q, want exactly %q — the display fires last", ops, want)
+	}
+}
+
+// TestActor_SyncDriftInvokesDisplay mirrors the order pin for syncMode: a
+// drift correction reaches the display too — the icon follows the FACTUAL
+// engine, not only the daemon's own flips.
+func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
+	a, sink := wiredActor()
+	var opMu sync.Mutex
+	var ops []string
+	sink.modeHook = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "symbol:"+symbol)
+		opMu.Unlock()
+	}
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "display:"+symbol)
+		opMu.Unlock()
+	}
+	a.SetModeDisplay(disp)
+	opMu.Lock()
+	ops = ops[:0] // the install push is pinned elsewhere; only the drift order matters here
+	opMu.Unlock()
+
+	a.SyncEngine(engine.NameRU) // an external flip: EN → RU
+
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{"symbol:ru", "display:ru"}
+	if !slices.Equal(ops, want) {
+		t.Errorf("drift op order = %q, want exactly %q — the display fires last on sync too", ops, want)
+	}
+}
