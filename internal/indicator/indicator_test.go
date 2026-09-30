@@ -2,24 +2,22 @@
 package indicator
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"os"
 	"strings"
 	"sync"
-	"bytes"
 	"testing"
 	"time"
 
 	"github.com/godbus/dbus/v5"
 )
 
-// The tray corpus constants (quick plan 260930-pf6) — the wire names the
-// tests pin and the well-known service name the daemon registers under.
-const (
-	testService = "org.djarvur.goswitch"
-	testSymbol  = "ru"
-)
+// The tray corpus constants (quick plan 260930-pf6) — the well-known
+// service name the daemon registers under; the mode symbols come from the
+// production constants (the in-package corpus seam).
+const testService = "org.djarvur.goswitch"
 
 // errWatchInjected is the probe/register failure the degradation corpus
 // injects (err113).
@@ -199,7 +197,7 @@ func TestAttachWatcherAbsentIsInert(t *testing.T) {
 		t.Errorf("absent watcher still exported %v — an inert display exports nothing", got)
 	}
 
-	item.ModeChanged(testSymbol) // must be a silent no-op
+	item.ModeChanged(symbolRU) // must be a silent no-op
 	if got := em.emitCalls(); len(got) != 0 {
 		t.Errorf("inert display emitted %v on ModeChanged — a degraded item never emits", got)
 	}
@@ -226,7 +224,7 @@ func TestAttachProbeFailureIsInert(t *testing.T) {
 	if got := w.registerCalls(); len(got) != 0 {
 		t.Errorf("failed probe still registered %q", got)
 	}
-	item.ModeChanged(testSymbol)
+	item.ModeChanged(symbolRU)
 	if got := em.emitCalls(); len(got) != 0 {
 		t.Errorf("inert display emitted %v — a degraded item never emits", got)
 	}
@@ -261,7 +259,7 @@ func TestAttachRegistersAndExports(t *testing.T) {
 	if derr != nil {
 		t.Fatalf("initial IconPixmap Get error = %v, want nil", derr)
 	}
-	if !variantIsPixmap(v, testSymbolEN) {
+	if !variantIsPixmap(v, symbolEN) {
 		t.Error("initial IconPixmap is not the EN composition — the attach default must be EN")
 	}
 }
@@ -273,7 +271,7 @@ func TestAttachModeChangedEmitsAndServesPins(t *testing.T) {
 	buf := captureLogs(t)
 	item, _, em, _ := attachOK()
 
-	item.ModeChanged(testSymbol)
+	item.ModeChanged(symbolRU)
 
 	calls := em.emitCalls()
 	if len(calls) != 1 {
@@ -287,7 +285,7 @@ func TestAttachModeChangedEmitsAndServesPins(t *testing.T) {
 	if derr != nil {
 		t.Fatalf("IconPixmap Get after ModeChanged error = %v, want nil", derr)
 	}
-	if !variantIsPixmap(v, testSymbol) {
+	if !variantIsPixmap(v, symbolRU) {
 		t.Error("IconPixmap after ModeChanged(ru) is not the RU composition")
 	}
 
@@ -299,7 +297,7 @@ func TestAttachModeChangedEmitsAndServesPins(t *testing.T) {
 	if !strings.Contains(buf.String(), `"component":"tray indicator"`) {
 		t.Errorf("unknown-symbol WARN missing the component token; log:\n%s", buf.String())
 	}
-	if v2, derr := item.Get(sniIface, propIconPixmap); derr != nil || !variantIsPixmap(v2, testSymbol) {
+	if v2, derr := item.Get(sniIface, propIconPixmap); derr != nil || !variantIsPixmap(v2, symbolRU) {
 		t.Error("unknown symbol changed the served pixmap — the last good icon must stand")
 	}
 }
@@ -312,8 +310,8 @@ func TestAttachEmitFailureSelfDisables(t *testing.T) {
 	w, em, exp := &fakeWatcher{owner: true}, &fakeEmitter{err: errEmitInjected}, &fakeExporter{}
 	item := attach(w, em, exp, testService)
 
-	item.ModeChanged(testSymbol) // the emit fails
-	item.ModeChanged(testSymbolEN)
+	item.ModeChanged(symbolRU) // the emit fails
+	item.ModeChanged(symbolEN)
 	item.ModeChanged("xx")
 
 	if got := len(em.emitCalls()); got != 1 {
@@ -335,7 +333,7 @@ func TestItemProperties(t *testing.T) {
 	item, _, em, _ := attachOK()
 
 	v, derr := item.Get(sniIface, propIconPixmap)
-	if derr != nil || !variantIsPixmap(v, testSymbolEN) {
+	if derr != nil || !variantIsPixmap(v, symbolEN) {
 		t.Fatalf("IconPixmap = (%v, %v), want the EN pixmap", v, derr)
 	}
 	for prop, want := range map[string]string{
@@ -365,7 +363,9 @@ func TestItemProperties(t *testing.T) {
 	if derr != nil {
 		t.Fatalf("GetAll error = %v, want nil", derr)
 	}
-	for _, want := range []string{propCategory, propID, propTitle, propStatus, propIconName, propIconPixmap, propWindowID} {
+	for _, want := range []string{
+		propCategory, propID, propTitle, propStatus, propIconName, propIconPixmap, propWindowID,
+	} {
 		if _, ok := all[want]; !ok {
 			t.Errorf("GetAll is missing %s", want)
 		}
@@ -399,7 +399,7 @@ func TestItemConcurrentModeAndReads(t *testing.T) {
 		}
 	}()
 	for i := range 200 {
-		item.ModeChanged([]string{testSymbolEN, testSymbol}[i%2])
+		item.ModeChanged([]string{symbolEN, symbolRU}[i%2])
 	}
 	select {
 	case <-done:
