@@ -364,14 +364,22 @@ func TestItemProperties(t *testing.T) {
 		t.Fatalf("GetAll error = %v, want nil", derr)
 	}
 	for _, want := range []string{
-		propCategory, propID, propTitle, propStatus, propIconName, propIconPixmap, propWindowID,
+		propCategory, propID, propTitle, propStatus, propIconName, propIconPixmap, propWindowID, propMenu,
 	} {
 		if _, ok := all[want]; !ok {
 			t.Errorf("GetAll is missing %s", want)
 		}
 	}
-	if len(all) != 7 {
-		t.Errorf("GetAll serves %d properties, want exactly 7 (icon-only v0 surface)", len(all))
+	if len(all) != 8 {
+		t.Errorf("GetAll serves %d properties, want exactly 8 (icon-only v0 surface + the Menu sentinel)", len(all))
+	}
+	// The Menu sentinel: the ubuntu-appindicators watcher DESTROYS an item
+	// without the Menu property (NEEDED_PROPERTIES = ['Id', 'Menu']); the
+	// /NO_DBUSMENU object path is the extension's own icon-only sentinel
+	// (appIndicator.js menuPath) — served, never dereferenced.
+	if got, derr := item.Get(sniIface, propMenu); derr != nil ||
+		got.Value() != dbus.ObjectPath(menuNoDBusMenu) {
+		t.Errorf("Get(Menu) = (%v, %v), want the /NO_DBUSMENU sentinel", got.Value(), derr)
 	}
 	if derr := item.Set(sniIface, propStatus, dbus.MakeVariant("Passive")); derr == nil {
 		t.Error("Set returned no error — every item property is read-only")
