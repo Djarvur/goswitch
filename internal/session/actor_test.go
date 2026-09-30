@@ -4408,6 +4408,9 @@ func TestActor_FlipInvokesDisplayLast(t *testing.T) {
 		opMu.Unlock()
 	}
 	a.SetModeDisplay(disp)
+	opMu.Lock()
+	ops = ops[:0] // the install push is pinned elsewhere; only the flip order matters here
+	opMu.Unlock()
 
 	flipMode(a) // EN → RU
 

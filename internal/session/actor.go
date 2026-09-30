@@ -159,6 +159,11 @@ type Actor struct {
 	// a broken seam must not spam the journal per flip (the appidWarned
 	// precedent).
 	switcherWarned bool
+	// display is the tray-indicator seam (quick 260930-pf6): the ModeDisplay
+	// the daemon wiring installs via SetModeDisplay; nil = no display, every
+	// mode change stays invisible to it. The display degrades itself — the
+	// actor adds no error handling around the call.
+	display ModeDisplay
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -599,6 +604,30 @@ func (a *Actor) SetSwitcher(sw func(ctx context.Context, engineName string) erro
 
 	a.switcher = sw
 	a.switcherWarned = false // a fresh generation opens a fresh degradation episode
+}
+
+// ModeDisplay is one mode-observer slot: the tray indicator (the SNI item)
+// is the v0 implementation. The observer fires LAST in every mode record —
+// mode record → switcher → panel symbol → display (the D-36 order with the
+// display appended) — synchronously under the actor's mutex; the
+// implementation must stay quick (a pointer swap plus a queued signal, no
+// round trip) and must never panic or block.
+type ModeDisplay interface {
+	ModeChanged(symbol string)
+}
+
+// SetModeDisplay installs the display seam — the SetSwitcher mirror. The
+// display immediately receives the CURRENT mode: the startup install shows
+// the initial mode, and a late install (after flips or syncs) self-syncs to
+// the factual state instead of waiting for the next change.
+func (a *Actor) SetModeDisplay(md ModeDisplay) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.display = md
+	if md != nil {
+		md.ModeChanged(a.modeSymbol())
+	}
 }
 
 // SyncEngine pulls the daemon under the FACTUAL active engine (05-04,
@@ -1386,6 +1415,13 @@ func (a *Actor) flipTo(target scriptMode) {
 	if a.eng != nil {
 		a.eng.UpdateModeSymbol(a.modeSymbol())
 	}
+
+	// The display observer fires LAST — after the panel symbol, the D-36
+	// order with the display appended (quick 260930-pf6). The indicator
+	// degrades itself; the actor adds no error handling around the call.
+	if a.display != nil {
+		a.display.ModeChanged(a.modeSymbol())
+	}
 }
 
 // oppositeMode is the toggle target of the gesture flips (the Single
@@ -1424,6 +1460,11 @@ func (a *Actor) syncMode(target scriptMode, name string) {
 	slog.Warn("mode corrected", "engine", name)
 	if a.eng != nil {
 		a.eng.UpdateModeSymbol(a.modeSymbol())
+	}
+	// The display observer fires last, mirroring flipTo (quick 260930-pf6):
+	// the icon follows the FACTUAL engine, not only the daemon's own flips.
+	if a.display != nil {
+		a.display.ModeChanged(a.modeSymbol())
 	}
 }
 
