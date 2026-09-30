@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 4
 waived_count: 3
-fixed_count: 4
-total_count: 11
-last_updated: 2026-09-29T21:28:22.438Z
+fixed_count: 5
+total_count: 12
+last_updated: 2026-09-30T00:22:44.944Z
 ---
 
 # Broken Windows Ledger
@@ -24,8 +24,9 @@ last_updated: 2026-09-29T21:28:22.438Z
 | 7 | 04 | deviation | test/e2e/focus_helper.py |  | 04-08 live smoke: INPUT-hit-through-focused-frame not drivable from background context (mutter denies activation; FLAGGED focus-lag case) — witness answered frame-fallback arm in budget; in-situ proof rides the owner's D-48 dispatch | open |  | 2026-09-17T11:53:10.594Z |  |
 | 8 | quick-260927-sy8 | unrun-verify | .planning/quick/260927-sy8-engine-self-reactivation-re-activate-the |  | Task 3 live desktop restart-and-type human-check deferred to orchestrator (automated grep gates + README edits done) | fixed |  | 2026-09-27T18:28:09.875Z | 2026-09-27T18:57:43.384Z |
 | 9 | 05 | unrun-verify | mise.toml | 153 | plan 05-02: mise run e2e-install-cycle full-case PASS deferred — live run proved the new two-source assertions (install wrapper machine-check, selfcheck ok input-source, verbatim restore) but the zenity correction step was focus-refused with the owner active; rerun consolidates in plan 05-05 | open |  | 2026-09-29T20:37:58.257Z |  |
-| 10 | 05 | unmet-truth | docs/adr/ADR-006-two-engine-revision.md |  | plan 05-01: P3 XKB-truth unresolved — spike entry surface focus-refused both runs (witness gnome-shell:WINDOW:chars=-1); re-opens at 05-05 live proofs (ADR-006 unresolved row) | open |  | 2026-09-29T21:28:22.157Z |  |
+| 10 | 05 | unmet-truth | docs/adr/ADR-006-two-engine-revision.md |  | plan 05-01: P3 XKB-truth unresolved — spike entry surface focus-refused both runs (witness gnome-shell:WINDOW:chars=-1); re-opens at 05-05 live proofs (ADR-006 unresolved row) | fixed |  | 2026-09-29T21:28:22.157Z | 2026-09-30T00:22:44.944Z |
 | 11 | 05 | unmet-truth | docs/adr/ADR-006-two-engine-revision.md |  | plan 05-01: indicator verdict unknown (owner 'не разглядел') — routes to UAT/verify-work; criterion-2 semantics fixed by spec-delta regardless | open |  | 2026-09-29T21:28:22.438Z |  |
+| 12 | 05 | unmet-truth | test/e2e/cases/matrix-v3.yaml |  | plan 05-05: word-mixed + phrase-mixed rows expect a correction ACROSS a flip boundary — under ADR-006 the two-source flip churns FocusOut/FocusIn and the designed context reset (05-CONTEXT: «переключение раскладки сбрасывает контекст») drops the pre-flip buffer; the daemon then corrects only the post-flip word (word-mixed: buffer привет → wholesale ru→en → gfbghbdtn; phrase-mixed → ghbdtn ghbdtn). Rows frozen (v3, CASES-FROZEN); the owner owns the verdict at the phase verify gate: either the rows re-shape to the reset semantics (new plan) or the reset semantics get revisited (architectural) | open |  | 2026-09-30T00:21:32.095Z |  |
 
 ````json
 [
@@ -144,10 +145,10 @@ last_updated: 2026-09-29T21:28:22.438Z
     "file": "docs/adr/ADR-006-two-engine-revision.md",
     "line": null,
     "description": "plan 05-01: P3 XKB-truth unresolved — spike entry surface focus-refused both runs (witness gnome-shell:WINDOW:chars=-1); re-opens at 05-05 live proofs (ADR-006 unresolved row)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-29T21:28:22.157Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-30T00:22:44.944Z"
   },
   {
     "id": 11,
@@ -159,6 +160,18 @@ last_updated: 2026-09-29T21:28:22.438Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T21:28:22.438Z",
+    "resolved_at": null
+  },
+  {
+    "id": 12,
+    "kind": "unmet-truth",
+    "phase": "05",
+    "file": "test/e2e/cases/matrix-v3.yaml",
+    "line": null,
+    "description": "plan 05-05: word-mixed + phrase-mixed rows expect a correction ACROSS a flip boundary — under ADR-006 the two-source flip churns FocusOut/FocusIn and the designed context reset (05-CONTEXT: «переключение раскладки сбрасывает контекст») drops the pre-flip buffer; the daemon then corrects only the post-flip word (word-mixed: buffer привет → wholesale ru→en → gfbghbdtn; phrase-mixed → ghbdtn ghbdtn). Rows frozen (v3, CASES-FROZEN); the owner owns the verdict at the phase verify gate: either the rows re-shape to the reset semantics (new plan) or the reset semantics get revisited (architectural)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T00:21:32.095Z",
     "resolved_at": null
   }
 ]

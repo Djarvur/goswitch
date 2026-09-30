@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 05
 current_phase_name: "Интеграция с GNOME: индикация и двухисточниковое переключение"
-status: executing
-stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-09-29T23:19:28.510Z"
+status: verifying
+stopped_at: Completed 05-05-PLAN.md (all 5 phase plans executed)
+last_updated: "2026-09-30T00:27:56.954Z"
 last_activity: 2026-09-29
 last_activity_desc: Phase 05 execution started
-state_head: e218ab3b3b609a544fd0f1e4ca2af00f2ea6c53c
+state_head: c55f255b5c3ecc19c134cbef04b5974d832cc81c
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 33
-  completed_plans: 31
+  completed_plans: 33
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 05 (Интеграция с GNOME: индикация и двухисточниковое переключение) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-29 — Phase 05 execution started
 
 Progress: [████████░░] 75%
@@ -96,6 +96,7 @@ Progress: [████████░░] 75%
 | Phase 05 P01 | 134 min | 3 tasks | 8 files |
 | Phase 05 P03 | 47 min | 2 tasks | 10 files |
 | Phase 05 P04 | 46 min | 2 tasks | 13 files |
+| Phase 05 P05 | 59 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -200,6 +201,7 @@ Recent decisions affecting current work:
 - [Phase 05]: [05-04] Sync-listener storm safety needs a custom dbus.SignalHandler: godbus v5.2.2's default handler defers a blocking goroutine per overflow signal (deferredDeliver) — unbounded memory under a storm; the daemon's stormHandler drops on a full channel with one bounded WARN per generation and Terminate closes the registered channels, which IS the errBusClosed bus-loss verdict
 - [Phase 05]: [05-04] Echo suppression per spike P4 = the same-mode branch of SyncEngine (the initiator's own GlobalEngineChanged confirms without a record); correction writes the byte-stable mode record then a 'mode corrected' WARN and NEVER touches the switcher — flip loop impossible by construction (single-writer)
 - [Phase 05]: [05-04] activate.IfOwned prefers the FACTUAL engine (generation-scoped GetGlobalEngine reader, bound before PostRegister) over the dead gsettings current key; a foreign factual name skips without consulting the key; cold bus falls back to the current-index derivation — Pitfall 3 (restart flips ru→en) closed at unit level, live proof in 05-05
+- [Phase 05]: Two-source live proofs (05-05): bus flip = mode+switch_engine pair (WARN form — the 40 ms deadline fires before the ~42 ms live completion, readback arbitrates); external flips followed without counter-flips; restart returns the FACTUAL engine (shell resets to its own source — daemon-flipped ru is restart-lost by mechanism, shell gestures survive); XKB does NOT follow flips (P3 answered, safety-net permanent); matrix v3 two-source: 30/32 ×2 — word-mixed/phrase-mixed frozen rows vs the designed flip-resets-context semantics (owner verdict at verify gate, WINDOWS #12); ADR-006 Accepted, README documents the model
 
 ### Pending Todos
 
@@ -228,6 +230,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-29T23:19:28.406Z
-Stopped at: Completed 05-04-PLAN.md
+Last session: 2026-09-30T00:27:41.220Z
+Stopped at: Completed 05-05-PLAN.md (all 5 phase plans executed)
 Resume file: None
