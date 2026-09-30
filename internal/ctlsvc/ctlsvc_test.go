@@ -579,3 +579,100 @@ func TestRenderStatusVersionToken(t *testing.T) {
 		}
 	})
 }
+
+// errHookInjected is the OnConn failure of the degradation corpus.
+var errHookInjected = errors.New("hook exploded")
+
+// TestRun_OnConnHook pins the post-export connection hook (quick plan
+// 260930-pf6): Run calls OnConn exactly once after the bus name and the ctl
+// object are live, and an OnConn failure is a WARN — serving continues (the
+// ctl-failure-never-kills-the-daemon rule). A nil OnConn is the no-hook
+// state the pre-existing corpus already covers.
+func TestRun_OnConnHook(t *testing.T) {
+	startTestBus(t)
+
+	t.Run("called once after export, serving continues", func(t *testing.T) {
+		var mu sync.Mutex
+		var calls int
+		deps := ctlsvc.Deps{
+			Status: fakeStatus{snap: session.Status{Mode: "en"}},
+			OnConn: func(_ *dbus.Conn) error {
+				mu.Lock()
+				calls++
+				mu.Unlock()
+
+				return nil
+			},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		runErr := make(chan error, 1)
+		go func() { runErr <- ctlsvc.Run(ctx, deps) }()
+
+		if err := waitCtlOwner(t, 5*time.Second); err != nil {
+			t.Fatalf("Run never owned the name: %v", err)
+		}
+		mu.Lock()
+		got := calls
+		mu.Unlock()
+		if got != 1 {
+			t.Fatalf("OnConn called %d times, want exactly 1", got)
+		}
+
+		// Serving continues after the hook: a plain client call answers.
+		conn, err := dbus.ConnectSessionBus()
+		if err != nil {
+			t.Fatalf("client connect: %v", err)
+		}
+		defer func() { _ = conn.Close() }()
+		var reply string
+		if err := conn.Object(ctlsvc.BusName, ctlsvc.ObjectPath).
+			CallWithContext(context.Background(), ctlsvc.BusName+".Status", 0).Store(&reply); err != nil {
+			t.Fatalf("client Status call after OnConn: %v", err)
+		}
+		if !strings.Contains(reply, "mode=en") {
+			t.Errorf("wire Status reply = %q, missing mode=en", reply)
+		}
+
+		cancel()
+		if err := <-runErr; err != nil {
+			t.Errorf("Run returned %v on clean cancel, want nil", err)
+		}
+	})
+
+	t.Run("hook failure never aborts serving", func(t *testing.T) {
+		deps := ctlsvc.Deps{
+			Status: fakeStatus{snap: session.Status{Mode: "ru"}},
+			OnConn: func(_ *dbus.Conn) error { return errHookInjected },
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		runErr := make(chan error, 1)
+		go func() { runErr <- ctlsvc.Run(ctx, deps) }()
+
+		if err := waitCtlOwner(t, 5*time.Second); err != nil {
+			t.Fatalf("Run never owned the name despite the OnConn failure: %v", err)
+		}
+
+		conn, err := dbus.ConnectSessionBus()
+		if err != nil {
+			t.Fatalf("client connect: %v", err)
+		}
+		defer func() { _ = conn.Close() }()
+		var reply string
+		if err := conn.Object(ctlsvc.BusName, ctlsvc.ObjectPath).
+			CallWithContext(context.Background(), ctlsvc.BusName+".Status", 0).Store(&reply); err != nil {
+			t.Fatalf("ctl serving aborted by the OnConn failure: %v", err)
+		}
+		if !strings.Contains(reply, "mode=ru") {
+			t.Errorf("wire Status reply = %q, missing mode=ru", reply)
+		}
+
+		cancel()
+		if err := <-runErr; err != nil {
+			t.Errorf("Run returned %v on clean cancel, want nil (a hook failure is a WARN, not a verdict)", err)
+		}
+	})
+}
