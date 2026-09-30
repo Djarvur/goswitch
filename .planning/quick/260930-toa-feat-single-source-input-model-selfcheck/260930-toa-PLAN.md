@@ -11,6 +11,7 @@ files_modified:
   - internal/install/selfcheck.go
   - internal/install/selfcheck_test.go
   - test/e2e/case_install.go
+  - test/e2e/case_resilience.go
   - test/e2e/case_switch.go
   - README.md
   - docs/adr/ADR-006-two-engine-revision.md
@@ -64,6 +65,7 @@ Output: wrapSources/resolveWrapInput accept at least one wrappable xkb source (s
 @internal/install/install_test.go
 @internal/install/selfcheck_test.go
 @test/e2e/case_install.go
+@test/e2e/case_resilience.go
 @README.md
 @docs/adr/ADR-006-two-engine-revision.md
 
@@ -142,7 +144,7 @@ GREEN (selfcheck.go), then commit feat(260930-toa):
 
 <task type="auto">
   <name>Task 3: e2e corpus — install-cycle oracle wraps ≥1 source; ibus-restart precondition count-agnostic</name>
-  <files>test/e2e/case_install.go, test/e2e/case_switch.go</files>
+  <files>test/e2e/case_install.go, test/e2e/case_resilience.go, test/e2e/case_switch.go</files>
   <action>
 The production code is already green from Tasks 1-2; this task aligns the oracle corpus that deliberately restates (never imports) the wrap rule. One commit test(260930-toa) after the gates pass.
 
