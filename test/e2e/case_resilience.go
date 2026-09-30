@@ -19,20 +19,48 @@ const (
 	kill9Text            = "test" // what kill9-survive types with the daemon dead
 )
 
+// The two-source restart semantics (LIVE FINDING, the first 05-05 runs,
+// deterministic ×2): gnome-shell does NOT follow daemon SetGlobalEngine
+// flips in its own current-source state (the spec-delta lag taken to the
+// restart limit), so after `ibus restart` the SHELL re-activates its own
+// current source (index 0, goswitch-en) before the daemon's backoff even
+// lands — and the daemon's IfOwned then correctly reactivates the FACTUAL
+// engine (en) and the sync listener corrects the mode to follow. A
+// daemon-flipped ru is therefore a restart-lost state BY MECHANISM, not a
+// daemon bug: the factual=ru branch of IfOwned is pinned hermetically
+// (05-04 corpus); the shell-gesture flips (Super+Space, which the shell
+// tracks) do survive. The case pins the MECHANISM truth — reactivation of
+// the factual engine + the mode following it — and never re-asserts ru
+// against the shell (that would be the forbidden war of mechanisms).
+
 // runIbusRestart proves INTEG-04 live: `ibus restart` tears down the private
 // bus (socket path included); the daemon's reconnect loop must re-discover
 // the NEW socket and re-register (ibus#2910), after which keys flow again.
+// The 05-05 two-source extension pins the reactivation MECHANISM: a
+// goswitch engine comes back, it IS the factual engine the bus reports,
+// and the daemon's mode follows it — the IfOwned factual-priority +
+// sync-follow pair of 05-04 proven live.
 func runIbusRestart(ctx context.Context, s *stand) error {
 	if err := s.activateGoswitchRetry(ctx); err != nil {
 		return err
 	}
+	if err := s.pinRestartEngineRU(ctx); err != nil {
+		return err
+	}
 	keysBefore := s.countSub(`"msg":"key"`)
+	reactivationsBefore := s.countSub(engineReactivatedMark)
 
 	if _, err := runCmd(ctx, "ibus", "restart"); err != nil {
 		return fmt.Errorf("ibus restart: %w", err)
 	}
 	if err := s.waitForLog(ctx, "re-registered", reRegisterWait); err != nil {
 		return fmt.Errorf("INTEG-04 re-registration: %w (the reconnect loop never reached the new socket)", err)
+	}
+
+	// The reactivation mechanism assertion (the LIVE FINDING semantics in
+	// the file header comment): what came back, and did the mode follow.
+	if err := s.verifyRestartReactivation(ctx, reactivationsBefore); err != nil {
+		return err
 	}
 
 	// GNOME re-activates the plain xkb sources after a bus restart —
@@ -55,6 +83,73 @@ func runIbusRestart(ctx context.Context, s *stand) error {
 	}
 
 	return nil
+}
+
+// verifyRestartReactivation proves the two-source reactivation mechanism
+// after the restart: a NEW engine-reactivation record within the
+// re-registration budget (IfOwned runs at PostRegister, so the record may
+// already be in the log when the re-registration line is seen), naming a
+// goswitch engine that agrees with the bus readback (the FACTUAL engine —
+// never a dead-key guess), with the mode following it (the sync path
+// closed the loop).
+func (s *stand) verifyRestartReactivation(ctx context.Context, before int) error {
+	if err := s.waitForNew(ctx, engineReactivatedMark, before+1, reRegisterWait); err != nil {
+		return fmt.Errorf("INTEG-04 two-source reactivation: %w (no owned engine came back)", err)
+	}
+	reactivated, err := s.lastReactivatedEngine()
+	if err != nil {
+		return err
+	}
+	if !isGoswitchEngine(reactivated) {
+		return fmt.Errorf("INTEG-04 two-source reactivation: reactivated %q — not a goswitch engine", reactivated)
+	}
+	readback, err := runCmd(ctx, "ibus", "engine")
+	if err != nil {
+		return fmt.Errorf("INTEG-04 factual readback: %w", err)
+	}
+	if readback != reactivated {
+		return fmt.Errorf("INTEG-04 two-source reactivation: reactivated %q but the bus reports %q —"+
+			" the reactivation is not the factual engine", reactivated, readback)
+	}
+	last, lerr := s.lastModeMark()
+	if lerr != nil {
+		return lerr
+	}
+	wantMode := flipTargetEN
+	if reactivated == spikeEngineRU {
+		wantMode = flipTargetRU
+	}
+	if last != wantMode {
+		return fmt.Errorf("INTEG-04 two-source reactivation: reactivated %q but the mode reads %q, want %q —"+
+			" the mode did not follow the factual engine", reactivated, last, wantMode)
+	}
+
+	return nil
+}
+
+// pinRestartEngineRU makes goswitch-ru the active engine before the bus
+// restart — the mechanism assertion needs a NON-DEFAULT engine active
+// across it, so the case can observe what the restart does to a
+// daemon-flipped state (the shell resets it; the daemon follows the
+// factual engine). The pin rides the busFlipRound discipline (one Shift_R
+// tap in the stand's own focused entry, the journal pair as proof, the
+// readback as the factual confirmation) — never an assumed boot default,
+// never a Super+Space injection (Pitfall 8). The two-source desktop is a
+// case precondition and is checked, not assumed.
+func (s *stand) pinRestartEngineRU(ctx context.Context) error {
+	if err := s.requireTwoSourceDesktop(ctx); err != nil {
+		return err
+	}
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("ibus-restart needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+
+	return s.busFlipRound(ctx, flipTargetRU)
 }
 
 // runKill9Survive proves INTEG-05 live: SIGKILL is uncatchable by design

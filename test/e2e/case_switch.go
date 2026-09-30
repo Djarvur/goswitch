@@ -865,9 +865,23 @@ const (
 )
 
 // switchEngineMarkPrefix is the stable prefix of the daemon's switch_engine
-// record — the per-target mark appends the engine literal and the closing
+// record — the per-target marks append the engine literal and the closing
 // quote.
 const switchEngineMarkPrefix = `"msg":"switch_engine","engine":"`
+
+// hasSwitchAttemptMark reports whether the journal line carries a
+// switch_engine record of either goswitch engine (INFO success or WARN
+// refusal — the any-outcome form; see flipEngineMark for the live-latency
+// reality that makes the WARN the common record on a real desktop).
+func hasSwitchAttemptMark(line string) bool {
+	for _, name := range goswitchEngineNames() {
+		if strings.Contains(line, switchEngineMarkPrefix+name+`"`) {
+			return true
+		}
+	}
+
+	return false
+}
 
 // flipEngineName returns the goswitch engine name a flip target's
 // switch_engine record carries; an unknown target is an error — the marks
@@ -892,23 +906,328 @@ func flipModeMark(target string) (string, error) {
 	return modeRecordMark + `"` + target + `"`, nil
 }
 
-// flipEngineMark returns the switch_engine-record mark for a flip target's
-// engine — the journal line the bound switcher's SetGlobalEngine leg writes.
+// flipEngineMark returns the ANY-OUTCOME mark of the switch_engine record
+// for a flip target's engine — the journal line the bound switcher's
+// SetGlobalEngine leg writes on success (INFO) AND on a timed-out switch
+// (the same prefix under a WARN with a trailing "err" attribute). LIVE
+// FINDING (the first 05-05 runs, deterministic): the live engine-creation
+// latency is ~41-42 ms, so the daemon's 40 ms switch deadline fires first
+// on EVERY live flip — the record is the WARN form while the switch still
+// lands, inside the <50 ms budget (the engine-created record trails by
+// ~1 ms). The pair oracle therefore pins the ATTEMPT in the pinned order,
+// and the `ibus engine` readback in the round arbitrates completion —
+// the two together are the observable form of the switching act.
 func flipEngineMark(target string) (string, error) {
-	engine, err := flipEngineName(target)
+	engineName, err := flipEngineName(target)
 	if err != nil {
 		return "", err
 	}
 
-	return switchEngineMarkPrefix + engine + `"`, nil
+	return switchEngineMarkPrefix + engineName + `"`, nil
+}
+
+// goswitchEngineNames returns both goswitch engine literals — the closed
+// set the matrix driver's additive oracle scans for (engine names are
+// config constants, D-20).
+func goswitchEngineNames() []string {
+	return []string{spikeEngineEN, spikeEngineRU}
+}
+
+// engineReactivatedMark is the prefix of the daemon's engine-reactivation
+// record (INFO "engine reactivated") — the journal proof that IfOwned
+// brought an owned engine back after a (re)registration.
+const engineReactivatedMark = `"msg":"engine reactivated","engine":"`
+
+// lastReactivatedEngine scans the daemon log backwards for the newest
+// engine-reactivation record and returns the engine name it carried —
+// the FACTUAL engine the post-restart IfOwned chose (the empty string
+// means no reactivation record yet).
+func (s *stand) lastReactivatedEngine() (string, error) {
+	lines := s.logLines()
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		if !strings.Contains(line, engineReactivatedMark) {
+			continue
+		}
+		rest := line[strings.Index(line, engineReactivatedMark)+len(engineReactivatedMark):]
+		end := strings.Index(rest, `"`)
+		if end < 0 {
+			return "", fmt.Errorf("unparsable reactivation record %q", line)
+		}
+
+		return rest[:end], nil
+	}
+
+	return "", nil
 }
 
 // flipMarksPaired verifies the daemon journal's two-record form of a bus
 // flip toward target: the mode record for the target and, STRICTLY AFTER
 // it (the offsets of the NEWEST occurrences), the switch_engine record
-// naming the target's engine. The GREEN implementation lands with plan
-// 05-05; the stub keeps the RED corpus compiling and failing on its
-// planned-behavior assertions.
-func flipMarksPaired(journal string, target string) error {
-	return errors.New("flip-marks pair oracle not implemented (RED stub)")
+// naming the target's engine. The daemon writes the pair only for its own
+// flips — a sync correction (an external flip the daemon follows) writes
+// the mode record alone — so the pair is what makes the switching ACT
+// observable in the criterion-6 live cases (D-34 heritage: the daemon's
+// journal, never dconf).
+func flipMarksPaired(journal, target string) error {
+	modeMark, err := flipModeMark(target)
+	if err != nil {
+		return err
+	}
+	engineMark, err := flipEngineMark(target)
+	if err != nil {
+		return err
+	}
+	iMode := strings.LastIndex(journal, modeMark)
+	if iMode < 0 {
+		return fmt.Errorf("flip pair (%s): the journal holds no mode record %s", target, modeMark)
+	}
+	iEngine := strings.LastIndex(journal, engineMark)
+	if iEngine < 0 {
+		return fmt.Errorf("flip pair (%s): the journal holds no switch_engine record %s", target, engineMark)
+	}
+	if iEngine < iMode {
+		return fmt.Errorf("flip pair (%s): the switch_engine record (offset %d) precedes its mode record (offset %d)"+
+			" — the flipTo order is mode first, SetGlobalEngine second", target, iEngine, iMode)
+	}
+
+	return nil
+}
+
+// modeFollowedOnly verifies the journal form of a SYNC correction toward
+// target: the mode record moved to the target while NO switch_engine
+// record followed the newest mode record. The daemon's sync listener
+// follows the factual engine and never flips the bus in response (the
+// single-writer guard, T-05-04-01) — any switch record after the
+// correction (WARN refusals included) would be the daemon fighting the
+// desktop for the engine truth.
+func modeFollowedOnly(journal, target string) error {
+	modeMark, err := flipModeMark(target)
+	if err != nil {
+		return err
+	}
+	engineMark, err := flipEngineMark(target)
+	if err != nil {
+		return err
+	}
+	iMode := strings.LastIndex(journal, modeMark)
+	if iMode < 0 {
+		return fmt.Errorf("sync follow (%s): the journal holds no mode record %s", target, modeMark)
+	}
+	if iEngine := strings.LastIndex(journal, engineMark); iEngine > iMode {
+		return fmt.Errorf("sync follow (%s): a switch_engine record (offset %d) followed the mode correction"+
+			" (offset %d) — the daemon must follow, never flip", target, iEngine, iMode)
+	}
+
+	return nil
+}
+
+// extFlipSettleWait is the bounded grace the sync case waits after the
+// mode correction before asserting ABSENCE (no switch_engine record may
+// follow the correction). Absence has no record to wait for, so the
+// negative oracle settles a grace instead: were the single-writer guard
+// broken, the daemon's illegal flip would write its record within the
+// flipTo budget (the 40 ms switch deadline) — well inside the grace.
+const extFlipSettleWait = 2 * time.Second
+
+// runTwoSourceFlip proves the phase's central live truth (criterion 6) in
+// BOTH directions: inside the 05-01 reversible two-source window a single
+// Shift_R tap flips ON THE BUS — the daemon journal carries the two-record
+// pair in the pinned order (mode, then switch_engine naming the goswitch
+// engine), and the `ibus engine` readback confirms the factual engine
+// after every flip. No Super+Space injection anywhere (Pitfall 8): the
+// flips ride Shift_R taps in the stand's own focused entry.
+func runTwoSourceFlip(ctx context.Context, s *stand) error {
+	unit := unitState(ctx)
+	fmt.Printf("two-source-flip: unit goswitchd state %q\n", unit)
+
+	if unit == unitActiveState {
+		if _, err := runCmd(ctx, "systemctl", "--user", "stop", "goswitchd"); err != nil {
+			return fmt.Errorf("two-source-flip: stop unit daemon: %w", err)
+		}
+	}
+	defer func() { s.restoreSpikeWindow(ctx, unit) }()
+
+	if err := waitNameFree(ctx); err != nil {
+		return err
+	}
+	if err := s.startDaemonRegistered(ctx); err != nil {
+		return err
+	}
+	if _, err := s.writeSourcesIfDiffers(ctx, twoSources); err != nil {
+		return err
+	}
+
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("two-source-flip needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+
+	// The rounds assume the EN starting side; the pin is journal-gated,
+	// never the assumed boot default (the spikePinMode discipline).
+	if err := s.spikePinMode(ctx, flipTargetEN); err != nil {
+		return fmt.Errorf("two-source-flip en pin: %w", err)
+	}
+	for _, target := range []string{flipTargetRU, flipTargetEN} {
+		if err := s.busFlipRound(ctx, target); err != nil {
+			return fmt.Errorf("two-source-flip %s: %w", target, err)
+		}
+	}
+
+	return nil
+}
+
+// busFlipRound drives ONE Shift_R tap through the focused entry and gates
+// the bus flip's complete observable form: the NEW mode record, the NEW
+// switch_engine record naming the target's engine, the pair ORDER pinned
+// by the pure oracle over the whole journal, and the `ibus engine`
+// readback confirming the factual engine moved with the flip.
+func (s *stand) busFlipRound(ctx context.Context, target string) error {
+	modeMark, err := flipModeMark(target)
+	if err != nil {
+		return err
+	}
+	engineMark, err := flipEngineMark(target)
+	if err != nil {
+		return err
+	}
+	modeBase := s.countSub(modeMark)
+	engineBase := s.countSub(engineMark)
+	if err := s.injectKeys(ctx, "Shift_R"); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, modeMark, modeBase+1, decisionWait); err != nil {
+		return fmt.Errorf("mode record: %w", err)
+	}
+	if err := s.waitForNew(ctx, engineMark, engineBase+1, decisionWait); err != nil {
+		return fmt.Errorf("switch_engine record (the SetGlobalEngine leg never landed): %w", err)
+	}
+	if err := flipMarksPaired(s.logText(), target); err != nil {
+		return err
+	}
+	readback, err := runCmd(ctx, "ibus", "engine")
+	if err != nil {
+		return fmt.Errorf("engine readback: %w", err)
+	}
+	want, err := flipEngineName(target)
+	if err != nil {
+		return err
+	}
+	if readback != want {
+		return fmt.Errorf("bus flip unproven: `ibus engine` readback %q, want %q", readback, want)
+	}
+
+	return nil
+}
+
+// runExternalFlipSync proves criterion 3 live: an EXTERNAL flip (`ibus
+// engine <name>` from a stand subprocess — the simulation of an indicator
+// click or another desktop actor) PULLS the daemon along — the daemon's
+// mode follows with the byte-stable mode correction record while the
+// daemon itself never writes a switch_engine record (it follows, it does
+// not flip: the single-writer guard's live face). Both directions run
+// inside the reversible two-source window; no Super+Space injection
+// (Pitfall 8).
+func runExternalFlipSync(ctx context.Context, s *stand) error {
+	unit := unitState(ctx)
+	fmt.Printf("external-flip-sync: unit goswitchd state %q\n", unit)
+
+	if unit == unitActiveState {
+		if _, err := runCmd(ctx, "systemctl", "--user", "stop", "goswitchd"); err != nil {
+			return fmt.Errorf("external-flip-sync: stop unit daemon: %w", err)
+		}
+	}
+	defer func() { s.restoreSpikeWindow(ctx, unit) }()
+
+	if err := waitNameFree(ctx); err != nil {
+		return err
+	}
+	if err := s.startDaemonRegistered(ctx); err != nil {
+		return err
+	}
+	if _, err := s.writeSourcesIfDiffers(ctx, twoSources); err != nil {
+		return err
+	}
+
+	for _, target := range []string{flipTargetRU, flipTargetEN} {
+		if err := s.externalSyncRound(ctx, target); err != nil {
+			return fmt.Errorf("external-flip-sync %s: %w", target, err)
+		}
+	}
+
+	return nil
+}
+
+// externalSyncRound drives ONE external flip against the live entry and
+// gates the follow's complete observable form: the factual engine moved
+// (readback), the daemon's mode followed with a NEW mode correction
+// record, and after a bounded settle the journal holds NO switch_engine
+// record after the correction — the daemon followed, it never flipped.
+func (s *stand) externalSyncRound(ctx context.Context, target string) error {
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("external-flip-sync needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+
+	engineName, err := flipEngineName(target)
+	if err != nil {
+		return err
+	}
+	modeMark, err := flipModeMark(target)
+	if err != nil {
+		return err
+	}
+	modeBase := s.countSub(modeMark)
+	if _, err := runCmd(ctx, "ibus", "engine", engineName); err != nil {
+		return fmt.Errorf("external flip: %w", err)
+	}
+	readback, err := runCmd(ctx, "ibus", "engine")
+	if err != nil {
+		return fmt.Errorf("engine readback: %w", err)
+	}
+	if readback != engineName {
+		return fmt.Errorf("external flip unproven: readback %q, want %q", readback, engineName)
+	}
+	if err := s.waitForNew(ctx, modeMark, modeBase+1, decisionWait); err != nil {
+		return fmt.Errorf("the daemon did not follow the external flip with a mode correction: %w", err)
+	}
+	if err := sleepCtx(ctx, extFlipSettleWait); err != nil {
+		return err
+	}
+	last, lerr := s.lastModeMark()
+	if lerr != nil {
+		return lerr
+	}
+	if last != target {
+		return fmt.Errorf("mode did not settle on the factual engine: newest mode record %q, want %q", last, target)
+	}
+
+	return modeFollowedOnly(s.logText(), target)
+}
+
+// requireTwoSourceDesktop fails fast when the live sources list does not
+// carry both goswitch engines — the two-source assertions (the
+// ibus-restart extension) presuppose the installed configuration
+// (goswitchctl install, plan 05-02) or an equivalent case window.
+func (s *stand) requireTwoSourceDesktop(ctx context.Context) error {
+	out, err := runCmd(ctx, "gsettings", "get", gsettingsSchema, keySources)
+	if err != nil {
+		return fmt.Errorf("two-source check: read sources: %w", err)
+	}
+	for _, engine := range []string{spikeEngineEN, spikeEngineRU} {
+		if !strings.Contains(out, engine) {
+			return fmt.Errorf("two-source check: sources %q misses %s — install the two-source"+
+				" configuration first (goswitchctl install, plan 05-02)", out, engine)
+		}
+	}
+
+	return nil
 }

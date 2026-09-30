@@ -211,50 +211,72 @@ const (
 	journalSwitchRU = `{"time":"2026-09-30T00:00:01.120Z","level":"INFO","msg":"switch_engine","engine":"goswitch-ru"}`
 	journalSwitchEN = `{"time":"2026-09-30T00:00:02.120Z","level":"INFO","msg":"switch_engine","engine":"goswitch-en"}`
 	journalTyping   = `{"time":"2026-09-30T00:00:01.050Z","level":"DEBUG","msg":"key","unicode":"x"}`
+	// The WARN form of a timed-out switch (live finding, the first 05-05
+	// restart runs): the same record prefix with a trailing "err"
+	// attribute — never the completed act.
+	journalSwitchRUWarn = `{"time":"2026-09-30T00:00:01.120Z","level":"WARN",` +
+		`"msg":"switch_engine","engine":"goswitch-ru","err":"context deadline exceeded"}`
 )
 
-// TestFlipMarksPaired pins the pair oracle: for a flip target the journal
-// must hold the target's mode record and a STRICTLY LATER switch_engine
-// record naming the target's engine; every deviation — a missing record,
-// an inverted order, a foreign engine name, an unknown target — is an
-// error naming what deviated. Both directions are pinned symmetrically.
-func TestFlipMarksPaired(t *testing.T) {
-	tests := []struct {
-		name    string
-		journal string
-		target  string
-		wantErr string // empty: the oracle must pass; else: a substring of the error
-	}{
-		{
-			name:    "ru pair in order",
-			journal: journalModeRU + "\n" + journalSwitchRU,
-			target:  flipTargetRU,
-		},
-		{
-			name:    "en pair in order (symmetric)",
-			journal: journalModeEN + "\n" + journalSwitchEN,
-			target:  flipTargetEN,
-		},
+// flipMarksCase is one TestFlipMarksPaired row: the journal sample, the
+// flip target, and (for the error rows) a substring of the expected error.
+type flipMarksCase struct {
+	name    string
+	journal string
+	target  string
+	wantErr string // empty: the oracle must pass; else: a substring of the error
+}
+
+// errNoSwitchRecord is the wantErr substring of the rows whose journal
+// must NOT carry a switch_engine record (goconst: three literal uses).
+const errNoSwitchRecord = "switch_engine"
+
+// flipMarksPairedCases is the TestFlipMarksPaired corpus — a function, not
+// a var: the strict lint forbids mutable globals (the matrix.go idiom).
+func flipMarksPairedCases() []flipMarksCase {
+	return append(flipMarksPairedPassCases(), flipMarksPairedErrorCases()...)
+}
+
+// flipMarksPairedPassCases is the corpus half whose journals MUST pass —
+// including the WARN form of a deadline-beaten switch (the live-latency
+// reality: the attempt is the act's trace, the readback arbitrates
+// completion).
+func flipMarksPairedPassCases() []flipMarksCase {
+	return []flipMarksCase{
+		{name: "ru pair in order", journal: journalModeRU + "\n" + journalSwitchRU, target: flipTargetRU},
+		{name: "en pair in order (symmetric)", journal: journalModeEN + "\n" + journalSwitchEN, target: flipTargetEN},
 		{
 			name:    "pair inside a fuller journal",
-			journal: journalTyping + "\n" + journalModeRU + "\n" + journalSwitchRU + "\n" + journalTyping,
+			journal: strings.Join([]string{journalTyping, journalModeRU, journalSwitchRU, journalTyping}, "\n"),
 			target:  flipTargetRU,
 		},
 		{
 			name:    "flip history keeps both pairs provable",
-			journal: journalModeRU + "\n" + journalSwitchRU + "\n" + journalModeEN + "\n" + journalSwitchEN,
+			journal: strings.Join([]string{journalModeRU, journalSwitchRU, journalModeEN, journalSwitchEN}, "\n"),
 			target:  flipTargetRU,
 		},
 		{
 			name:    "flip history keeps the newest pair provable",
-			journal: journalModeRU + "\n" + journalSwitchRU + "\n" + journalModeEN + "\n" + journalSwitchEN,
+			journal: strings.Join([]string{journalModeRU, journalSwitchRU, journalModeEN, journalSwitchEN}, "\n"),
 			target:  flipTargetEN,
 		},
+		{
+			name:    "a WARN of a deadline-beaten switch is still the act's trace",
+			journal: journalModeRU + "\n" + journalSwitchRUWarn,
+			target:  flipTargetRU,
+		},
+	}
+}
+
+// flipMarksPairedErrorCases is the corpus half whose journals MUST fail —
+// every deviation is an error naming what deviated.
+func flipMarksPairedErrorCases() []flipMarksCase {
+	return []flipMarksCase{
 		{
 			name:    "mode correction without a switch_engine record is not a flip",
 			journal: journalModeRU,
 			target:  flipTargetRU,
-			wantErr: "switch_engine",
+			wantErr: errNoSwitchRecord,
 		},
 		{
 			name:    "switch_engine record without a mode record proves nothing",
@@ -287,16 +309,83 @@ func TestFlipMarksPaired(t *testing.T) {
 			wantErr: "outside",
 		},
 	}
-	for _, tc := range tests {
+}
+
+// TestFlipMarksPaired pins the pair oracle: for a flip target the journal
+// must hold the target's mode record and a STRICTLY LATER switch_engine
+// record naming the target's engine; every deviation — a missing record,
+// an inverted order, a foreign engine name, an unknown target — is an
+// error naming what deviated. Both directions are pinned symmetrically.
+func TestFlipMarksPaired(t *testing.T) {
+	for _, tc := range flipMarksPairedCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			err := flipMarksPaired(tc.journal, tc.target)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
 			switch {
 			case tc.wantErr == "" && err != nil:
-				t.Errorf("flipMarksPaired(%q target %s) = %v, want nil", tc.journal, tc.target, err)
+				t.Errorf("target %s: = %v, want nil", tc.target, err)
 			case tc.wantErr != "" && err == nil:
-				t.Errorf("flipMarksPaired(%q target %s) = nil, want error containing %q", tc.journal, tc.target, tc.wantErr)
-			case tc.wantErr != "" && !strings.Contains(err.Error(), tc.wantErr):
-				t.Errorf("flipMarksPaired(%q target %s) = %q, want error containing %q", tc.journal, tc.target, err, tc.wantErr)
+				t.Errorf("target %s: = nil, want error containing %q", tc.target, tc.wantErr)
+			case tc.wantErr != "" && !strings.Contains(got, tc.wantErr):
+				t.Errorf("target %s: = %q, want error containing %q", tc.target, got, tc.wantErr)
+			}
+		})
+	}
+}
+
+// modeFollowedOnlyCases is the TestModeFollowedOnly corpus (same shape as
+// flipMarksPairedCases).
+func modeFollowedOnlyCases() []flipMarksCase {
+	return []flipMarksCase{
+		{name: "bare correction is a follow", journal: journalModeRU, target: flipTargetRU},
+		{
+			name:    "a flip that predates the correction stays behind it",
+			journal: strings.Join([]string{journalModeEN, journalSwitchEN, journalModeRU}, "\n"),
+			target:  flipTargetRU,
+		},
+		{
+			name:    "own target pair is not a follow",
+			journal: journalModeRU + "\n" + journalSwitchRU,
+			target:  flipTargetRU,
+			wantErr: "must follow, never flip",
+		},
+		{
+			name:    "a WARN attempt after the correction is still a fight",
+			journal: journalModeRU + "\n" + journalSwitchRUWarn,
+			target:  flipTargetRU,
+			wantErr: "must follow, never flip",
+		},
+		{
+			name:    "no correction is nothing to verify",
+			journal: journalModeEN + "\n" + journalSwitchEN,
+			target:  flipTargetRU,
+			wantErr: "no mode record",
+		},
+	}
+}
+
+// TestModeFollowedOnly pins the sync-case complement (05-05): the daemon
+// following an external flip writes the mode correction ALONE — a
+// switch_engine record after the newest mode record would be the daemon
+// flipping the bus in response (the single-writer guard broken live).
+func TestModeFollowedOnly(t *testing.T) {
+	for _, tc := range modeFollowedOnlyCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			err := modeFollowedOnly(tc.journal, tc.target)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("target %s: = %v, want nil", tc.target, err)
+			case tc.wantErr != "" && err == nil:
+				t.Errorf("target %s: = nil, want error containing %q", tc.target, tc.wantErr)
+			case tc.wantErr != "" && !strings.Contains(got, tc.wantErr):
+				t.Errorf("target %s: = %q, want error containing %q", tc.target, got, tc.wantErr)
 			}
 		})
 	}

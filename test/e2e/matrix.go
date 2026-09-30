@@ -1432,17 +1432,25 @@ func verifyMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
 // verifyFlipAfterDone enforces the expect_flip_after_done pin (owner
 // decision 2, 260927-vu8): the case's daemon log must hold a correction
 // done record FOLLOWED by a mode record — the settled completion first, the
-// flip second (the D-36 order extended). Last occurrences are compared, so
+// flip second (the D-36 order extended) — and, the 05-05 additive oracle,
+// a switch_engine record at or after the mode record: in the two-source
+// configuration every daemon flip journals its bus leg right after the
+// mode record (the WARN form of the 40 ms deadline racing the ~42 ms live
+// creation latency included — the attempt is the observable trace, the
+// field-content oracle pins the completion), so a missing record means the
+// switching act was not observable. Last occurrences are compared, so
 // earlier records of the episode (a ru-mode case's starting flip among
 // them) cannot satisfy or break the pin.
 func verifyFlipAfterDone(s *stand) error {
-	iDone, iMode := -1, -1
+	iDone, iMode, iEngine := -1, -1, -1
 	for i, line := range s.logLines() {
 		switch {
 		case strings.Contains(line, `"msg":"correction","outcome":"done"`):
 			iDone = i
 		case strings.Contains(line, `"msg":"mode"`):
 			iMode = i
+		case hasSwitchAttemptMark(line):
+			iEngine = i
 		}
 	}
 	switch {
@@ -1453,6 +1461,9 @@ func verifyFlipAfterDone(s *stand) error {
 	case iMode < iDone:
 		return fmt.Errorf("mode record (line %d) precedes the settled done record (line %d) — D-36 order extended",
 			iMode, iDone)
+	case iEngine < iMode:
+		return fmt.Errorf("expect_flip_after_done unproven: no switch_engine record after the mode record (line %d)"+
+			" — the bus flip is not observable (the 05-05 oracle)", iMode)
 	}
 
 	return nil

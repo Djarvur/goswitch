@@ -130,6 +130,14 @@ run = "go run ./test/e2e -case layout-single"
 description = "e2e: 03-04 SWCH-03 — native super+space leaves the daemon alive: name owner kept, correction works after (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case super-space-alive"
 
+[tasks.e2e-two-source-flip]
+description = "e2e: 05-05 criterion 6 — two-source bus flip: a Shift_R tap lands the mode+switch_engine pair (pinned order), `ibus engine` readback confirms the factual engine, both directions (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case two-source-flip"
+
+[tasks.e2e-external-flip-sync]
+description = "e2e: 05-05 criterion 3 — external flip sync: `ibus engine` CLI moves the factual engine, the daemon follows with a mode correction and never writes switch_engine (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case external-flip-sync"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"
