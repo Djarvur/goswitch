@@ -132,24 +132,22 @@ const (
 	oracleEngineTupleRU = "('ibus', 'goswitch-ru')"
 )
 
-// carriesOraclePair reports whether the raw line carries the wrappable
-// xkb us/ru pair (the oracle's own pair check over the canonical parser).
-func carriesOraclePair(raw string) bool {
+// carriesOracleSource reports whether the raw line carries AT LEAST ONE
+// wrappable xkb us/ru entry — the oracle's own ≥1 check over the canonical
+// parser (the single-source model of 2026-09-30; the mirror of the
+// production carriesWrappableXKB, restated never imported).
+func carriesOracleSource(raw string) bool {
 	tuples, err := activate.ParseSourceTuples(raw)
 	if err != nil {
 		return false
 	}
-	hasUS, hasRU := false, false
 	for _, t := range tuples {
-		switch {
-		case t.Kind == oracleKindXKB && t.ID == oracleLayoutUS:
-			hasUS = true
-		case t.Kind == oracleKindXKB && t.ID == oracleLayoutRU:
-			hasRU = true
+		if t.Kind == oracleKindXKB && (t.ID == oracleLayoutUS || t.ID == oracleLayoutRU) {
+			return true
 		}
 	}
 
-	return hasUS && hasRU
+	return false
 }
 
 // readStateSources returns the SAVED original sources from the installer's
@@ -175,10 +173,13 @@ func readStateSources() (string, error) {
 	return st.Sources, nil
 }
 
-// wrapForCheck recomputes the D-54 wrapper from a raw sources line: the
-// canonical parser (internal/activate) for the wire shape, the oracle's
-// own closed enum for the mapping, positions preserved, everything outside
-// the pair transiting verbatim.
+// wrapForCheck recomputes the takeover value from a raw sources line —
+// the ≥1 rule restated deliberately (an oracle sharing the production
+// wrap code could not catch a wrap bug): the canonical parser
+// (internal/activate) for the wire shape, the oracle's own closed enum
+// for the mapping, positions preserved, everything else transiting
+// verbatim. At least ONE wrappable us/ru source is required — single 'us'
+// → goswitch-en, single 'ru' → goswitch-ru, the pair → both.
 func wrapForCheck(raw string) (string, error) {
 	tuples, err := activate.ParseSourceTuples(raw)
 	if err != nil {
@@ -198,32 +199,34 @@ func wrapForCheck(raw string) (string, error) {
 			parts = append(parts, fmt.Sprintf("('%s', '%s')", t.Kind, t.ID))
 		}
 	}
-	if !hasUS || !hasRU {
-		return "", errors.New("no wrappable xkb us/ru pair")
+	if !hasUS && !hasRU {
+		return "", errors.New("no wrappable xkb us/ru source")
 	}
 
 	return "[" + strings.Join(parts, ", ") + "]", nil
 }
 
-// installSourcesWrapped machine-proves the D-54 criterion 1 on the live
+// installSourcesWrapped machine-proves the takeover criterion on the live
 // desktop: right after install the gsettings sources equal the wrapper
-// computed from the desk's OWN pair — both goswitch tuples in the pair's
-// positions, every other entry transiting verbatim. The pair source is
-// the case snapshot when it carries the xkb us/ru pair, and the SAVED
-// ORIGINAL from the state file otherwise (the D-54 upgrade form, Pitfall
-// 7: an already-goswitch desktop wraps from its saved pre-install pair).
+// computed from the desk's OWN wrappable source(s) — the goswitch
+// tuple(s) in the wrapped entries' positions, every other entry transiting
+// verbatim. The wrap input is the case snapshot when it carries at least
+// one wrappable xkb us/ru entry, and the SAVED ORIGINAL from the state
+// file otherwise (the upgrade form, Pitfall 7: an already-goswitch desktop
+// wraps from its saved pre-install list — the snapshot-else-saved
+// resolution also serves single-source snapshots).
 func installSourcesWrapped(ctx context.Context, s *stand) error {
-	pairSource := s.snap.sources
-	if !carriesOraclePair(pairSource) {
+	wrapInput := s.snap.sources
+	if !carriesOracleSource(wrapInput) {
 		saved, err := readStateSources()
 		if err != nil {
-			return fmt.Errorf("install-cycle: resolve the desk's pre-install pair: %w", err)
+			return fmt.Errorf("install-cycle: resolve the desk's pre-install sources: %w", err)
 		}
-		pairSource = saved
+		wrapInput = saved
 	}
-	wrapped, err := wrapForCheck(pairSource)
+	wrapped, err := wrapForCheck(wrapInput)
 	if err != nil {
-		return fmt.Errorf("install-cycle: the desk's pair does not wrap: %w", err)
+		return fmt.Errorf("install-cycle: the desk's sources do not wrap: %w", err)
 	}
 	now, err := runCmd(ctx, "gsettings", "get", gsettingsSchema, keySources)
 	if err != nil {
@@ -353,12 +356,12 @@ func installRegistered(ctx context.Context) error {
 // unit stops, the artifacts disappear, the registry drops goswitch, and
 // the input sources read back equal to the desktop's original list — the
 // case snapshot, or the SAVED ORIGINAL from the state file when the case
-// ran over an already-goswitch desktop (the D-54 upgrade form: the honest
-// verbatim restore is the pre-goswitch pair, read BEFORE the uninstall
-// consumes the state file).
+// ran over an already-goswitch desktop (the upgrade form: the honest
+// verbatim restore is the pre-goswitch list — one source or the pair —
+// read BEFORE the uninstall consumes the state file).
 func runUninstallAndVerify(ctx context.Context, ctlBin string, s *stand) error {
 	restoreTarget := s.snap.sources
-	if !carriesOraclePair(restoreTarget) {
+	if !carriesOracleSource(restoreTarget) {
 		if saved, err := readStateSources(); err == nil {
 			restoreTarget = saved
 		}

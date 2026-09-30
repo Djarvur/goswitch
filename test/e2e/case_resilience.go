@@ -134,10 +134,12 @@ func (s *stand) verifyRestartReactivation(ctx context.Context, before int) error
 // factual engine). The pin rides the busFlipRound discipline (one Shift_R
 // tap in the stand's own focused entry, the journal pair as proof, the
 // readback as the factual confirmation) — never an assumed boot default,
-// never a Super+Space injection (Pitfall 8). The two-source desktop is a
-// case precondition and is checked, not assumed.
+// never a Super+Space injection (Pitfall 8). The goswitch-owned desktop
+// is a case precondition and is checked, not assumed — of any sources
+// count: with one source the flip mechanism still works (SetGlobalEngine
+// targets any registered engine).
 func (s *stand) pinRestartEngineRU(ctx context.Context) error {
-	if err := s.requireTwoSourceDesktop(ctx); err != nil {
+	if err := s.requireGoswitchDesktop(ctx); err != nil {
 		return err
 	}
 	kind, err := s.openEntrySurface(ctx)

@@ -1213,21 +1213,23 @@ func (s *stand) externalSyncRound(ctx context.Context, target string) error {
 	return modeFollowedOnly(s.logText(), target)
 }
 
-// requireTwoSourceDesktop fails fast when the live sources list does not
-// carry both goswitch engines — the two-source assertions (the
-// ibus-restart extension) presuppose the installed configuration
-// (goswitchctl install, plan 05-02) or an equivalent case window.
-func (s *stand) requireTwoSourceDesktop(ctx context.Context) error {
+// requireGoswitchDesktop fails fast when the live sources list carries NO
+// goswitch engine — the ibus-restart extension presupposes a
+// goswitch-owned desktop of ANY count: with one source the flip mechanism
+// still works (SetGlobalEngine targets any registered engine; the
+// component registers both engines on the IBus bus regardless of the
+// sources list; v1.0.0 ran a single [('ibus','goswitch-en')] source with
+// internal flips).
+func (s *stand) requireGoswitchDesktop(ctx context.Context) error {
 	out, err := runCmd(ctx, "gsettings", "get", gsettingsSchema, keySources)
 	if err != nil {
-		return fmt.Errorf("two-source check: read sources: %w", err)
+		return fmt.Errorf("goswitch-desktop check: read sources: %w", err)
 	}
 	for _, engine := range []string{spikeEngineEN, spikeEngineRU} {
-		if !strings.Contains(out, engine) {
-			return fmt.Errorf("two-source check: sources %q misses %s — install the two-source"+
-				" configuration first (goswitchctl install, plan 05-02)", out, engine)
+		if strings.Contains(out, engine) {
+			return nil
 		}
 	}
 
-	return nil
+	return fmt.Errorf("goswitch-desktop check: sources %q carry no goswitch engine — install first", out)
 }
