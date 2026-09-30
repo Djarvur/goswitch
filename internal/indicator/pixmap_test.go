@@ -3,13 +3,20 @@ package indicator_test
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/Djarvur/goswitch/internal/indicator"
 )
+
+// updateGolden is the standard -update switch of the golden corpus (SPEC
+// §7.1): a registered flag needs a package global, and the switch is the
+// documented regeneration contract of the pins.
+//
+//nolint:gochecknoglobals // the canonical -update golden switch
+var updateGolden = flag.Bool("update", false, "rewrite the golden files with the renderer's current output")
 
 // The pinned tray corpus constants (quick plan 260930-pf6): named once so
 // the pins state intent instead of bare magic numbers (mnd) — the canvas
@@ -49,10 +56,7 @@ func goldenPath(symbol string) string {
 // regenerate the goldens after a deliberate renderer change; the default
 // run compares bytes exactly.
 func TestPixmapForGolden(t *testing.T) {
-	// The -update switch is scanned from os.Args instead of flag.Bool: a
-	// registered flag needs a package global (gochecknoglobals), and the
-	// scan keeps the corpus global-free.
-	update := slices.Contains(os.Args[1:], "-update")
+	update := *updateGolden
 	for _, symbol := range []string{testSymbolEN, testSymbolRU} {
 		t.Run(symbol, func(t *testing.T) {
 			pm, ok := indicator.PixmapFor(symbol)
@@ -80,7 +84,7 @@ func TestPixmapForGolden(t *testing.T) {
 			}
 			want, err := os.ReadFile(goldenPath(symbol))
 			if err != nil {
-				t.Fatalf("read golden (regenerate with: go test ./internal/indicator -run TestPixmapForGolden -update): %v", err)
+				t.Fatalf("read golden %s (regenerate with go test -update): %v", goldenPath(symbol), err)
 			}
 			if !bytes.Equal(body, want) {
 				t.Errorf("pixmap body drifted from %s — a deterministic renderer keeps the goldens byte-stable",
