@@ -1421,13 +1421,23 @@ func verifyMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
 		return err
 	}
 	if c.ExpectFlip {
-		if err := verifyFlipAfterDone(s); err != nil {
+		if err := verifyFlipAfterDone(ctx, s); err != nil {
 			return err
 		}
 	}
 
 	return verifyMatrixText(ctx, s, c)
 }
+
+// switchAfterModeWait bounds the additive oracle's wait for the switch
+// leg's journal record: the flipTo order writes the mode record first and
+// the switch_engine record only when the SetGlobalEngine leg RETURNS —
+// up to the 40 ms switch deadline (plus the journal write) later. The
+// first matrix-v3 run under the oracle failed flip-after-word-correction
+// on exactly this race: the check read the log milliseconds after the
+// mode record, before the leg's record landed. 2 s is ~50x the leg
+// budget — a genuinely dead switcher still fails the pin, just later.
+const switchAfterModeWait = 2 * time.Second
 
 // verifyFlipAfterDone enforces the expect_flip_after_done pin (owner
 // decision 2, 260927-vu8): the case's daemon log must hold a correction
@@ -1438,10 +1448,30 @@ func verifyMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
 // mode record (the WARN form of the 40 ms deadline racing the ~42 ms live
 // creation latency included — the attempt is the observable trace, the
 // field-content oracle pins the completion), so a missing record means the
-// switching act was not observable. Last occurrences are compared, so
-// earlier records of the episode (a ru-mode case's starting flip among
-// them) cannot satisfy or break the pin.
-func verifyFlipAfterDone(s *stand) error {
+// switching act was not observable. The check re-scans under a bounded
+// wait because the bus leg's record trails the mode record by up to the
+// switch deadline. Last occurrences are compared, so earlier records of
+// the episode (a ru-mode case's starting flip among them) cannot satisfy
+// or break the pin.
+func verifyFlipAfterDone(ctx context.Context, s *stand) error {
+	deadline := time.Now().Add(switchAfterModeWait)
+	for {
+		err := flipAfterDoneNow(s)
+		if err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+		if werr := sleepCtx(ctx, logPollInterval); werr != nil {
+			return werr
+		}
+	}
+}
+
+// flipAfterDoneNow is one scan of the expect_flip_after_done pin over the
+// current journal (verifyFlipAfterDone's bounded-wait body).
+func flipAfterDoneNow(s *stand) error {
 	iDone, iMode, iEngine := -1, -1, -1
 	for i, line := range s.logLines() {
 		switch {
