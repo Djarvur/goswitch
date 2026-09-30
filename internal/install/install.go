@@ -84,10 +84,13 @@ const (
 	// The layout-switch keybinding lives in the WINDOW-MANAGER keybindings
 	// schema, not in desktop.input-sources (live finding 2026-09-27: the
 	// desktop.input-sources schema carries no switch key at all — a
-	// gsettings get answers "No such key"). Owner decision 3, quick plan
-	// 260927-way: with goswitch as the only input source that binding only
-	// churns/disables the engine context — install clears both switch
-	// chords, uninstall restores the saved values.
+	// gsettings get answers "No such key"). ADR-006 two-source: the input
+	// sources are a pair of goswitch engines, so GNOME's switch chord
+	// cycles between them as a first-class VISIBLE switch and the daemon
+	// follows external flips via the 05-04 sync listener (GlobalEngineChanged
+	// + FocusIn engine-name feed, live proof "external-flip-sync", commit
+	// 1caf5b4) — install leaves both bindings untouched; saveState still
+	// snapshots them verbatim for the uninstall restore.
 	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
 	gsettingsKeySwitch         = "switch-input-source"
 	gsettingsKeySwitchBackward = "switch-input-source-backward"
@@ -95,9 +98,7 @@ const (
 
 // fallbackSources is the ASVS V5 safe restore when the saved state cannot
 // be trusted — a plain xkb US keyboard, so an uninstall never leaves the
-// desktop without input. clearedSwitchBindings is the handover value of the
-// switch-input-source binding (owner decision 3): set unconditionally on
-// install, idempotent. fallbackSwitchBindings is the ASVS V5 restore when
+// desktop without input. fallbackSwitchBindings is the ASVS V5 restore when
 // the saved switch binding cannot be trusted — the distro default
 // (live-verified on the owner's desktop 2026-09-27), so an uninstall never
 // silently rebinds the layout switch. systemComponentDir is the FHS ibus
@@ -108,7 +109,6 @@ const (
 // computes it from the user's own layout pair through wrapSources.
 const (
 	fallbackSources        = "[('xkb', 'us')]"
-	clearedSwitchBindings  = "[]"
 	fallbackSwitchBindings = "['<Super>space', 'XF86Keyboard']"
 	// fallbackSwitchBindingsBackward is the distro default of the backward
 	// switch chord (live-verified on the owner's desktop 2026-09-27), the
@@ -200,8 +200,9 @@ type Installer struct {
 
 // installState is the on-disk restore contract between install and
 // uninstall: the pre-install gsettings sources string AND the pre-install
-// switch chords of the window-manager keybindings schema (owner decision 3,
-// quick plan 260927-way), all verbatim.
+// switch chords of the window-manager keybindings schema (snapshotted
+// verbatim; install itself writes nothing to the chords, ADR-006
+// two-source), all verbatim.
 type installState struct {
 	Sources             string `json:"sources"`
 	SwitchInputSource   string `json:"switch_input_source"`
@@ -369,9 +370,11 @@ func (i *Installer) Install(ctx context.Context) ([]string, error) {
 	if err := i.takeoverSources(ctx); err != nil {
 		return nil, err
 	}
-	if err := i.clearSwitchBinding(ctx); err != nil {
-		return nil, err
-	}
+	// The GNOME switch chords stay untouched (ADR-006 two-source): with the
+	// sources a pair of goswitch engines, the chords cycle between them as
+	// a first-class visible switch — clearing them would disable the user's
+	// own switch (the old owner-decision-3 rationale is obsolete; the
+	// pre-install bindings are already snapshotted verbatim by saveState).
 	if err := i.activateEngine(ctx, engineEN); err != nil {
 		return nil, err
 	}
@@ -473,12 +476,13 @@ func (i *Installer) readSources(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// saveState reads the current sources AND the current switch-input-source
-// binding (owner decision 3, quick plan 260927-way) and stores both
-// verbatim — unless a state file already exists, in which case it is LEFT
-// UNTOUCHED: the FIRST install's backup is sacred (an install-over-install
-// must never save the post-takeover goswitch-only desktop — nor the
-// post-handover cleared switch binding — over the owner's original values).
+// saveState reads the current sources AND the current switch bindings and
+// stores them verbatim (the uninstall restore's material — install itself
+// writes nothing to the chords, ADR-006 two-source) — unless a state file
+// already exists, in which case it is LEFT UNTOUCHED: the FIRST install's
+// backup is sacred (an install-over-install must never save the
+// post-takeover goswitch-only desktop — nor any later live binding value —
+// over the owner's original values).
 //
 // Before ANY of that is written, the D-54 atomic refusal gate proves the
 // desktop carries a wrappable pair (resolveWrapInput + wrapSources): a
@@ -849,24 +853,6 @@ func (i *Installer) takeoverSources(ctx context.Context) error {
 	return nil
 }
 
-// clearSwitchBinding hands the GNOME layout-switch binding over to goswitch
-// (owner decision 3, quick plan 260927-way): with a single input source the
-// binding only churns/disables the engine context (the live finding — a
-// Super+Space press disabled the engine and keys silently bypassed
-// goswitch), so install sets the CLEARED value unconditionally — idempotent,
-// the pre-install binding already saved by saveState. Runs right after the
-// sources takeover.
-func (i *Installer) clearSwitchBinding(ctx context.Context) error {
-	for _, key := range []string{gsettingsKeySwitch, gsettingsKeySwitchBackward} {
-		args := []string{"set", gsettingsKeybindingsSchema, key, clearedSwitchBindings}
-		if _, err := i.call(ctx, binGSettings, args...); err != nil {
-			return fmt.Errorf("clear %s: %w", key, err)
-		}
-	}
-
-	return nil
-}
-
 // activateEngine sets the global engine (SetGlobalEngine via `ibus engine`):
 // the activation path the GNOME shell actually honors (the runtime
 // gsettings `current` write is ignored — Phase 1 live finding).
@@ -890,7 +876,7 @@ func (i *Installer) report(daemonPath string) []string {
 		"unit: daemon-reload + enable + restart done",
 		"engine: registered live (ListActiveEngines)",
 		"sources: wrapped pair (" + engineEN + ", " + engineRU + ")",
-		"switch-input-source: cleared (previous value saved)",
+		"switch-input-source: left untouched (saved for uninstall)",
 		"engine: activated " + engineEN,
 	}
 }
@@ -947,9 +933,11 @@ func (i *Installer) appendActivation(ctx context.Context, lines []string, value 
 	return append(lines, "engine: activated "+name)
 }
 
-// restoreSwitchBinding puts the saved switch chords back (owner decision 3,
-// quick plan 260927-way) — the uninstall half of the handover, run BEFORE
-// the state file is removed. Each saved value is shape-validated BEFORE it
+// restoreSwitchBinding puts the saved switch chords back — the uninstall
+// half of the verbatim snapshot install took (ADR-006 two-source: install
+// left the chords untouched, uninstall still restores them in case the
+// user changed them under goswitch), run BEFORE the state file is removed.
+// Each saved value is shape-validated BEFORE it
 // reaches gsettings (the savedSources/ASVS V5 T-04-01-02 discipline: a
 // forged or pre-batch state file must never brick the keyboard bindings
 // silently) — anything not shaped like a GVariant array (an empty `[]` IS

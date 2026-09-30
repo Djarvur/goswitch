@@ -621,8 +621,8 @@ func TestUninstall_FullRollback(t *testing.T) {
 		t.Fatalf("Uninstall() err = %v (report %v), want the full rollback to succeed", err, report)
 	}
 
-	// Owner decision 3: the saved switch binding goes back BEFORE the state
-	// file dies, and the report names the restored value.
+	// The verbatim snapshot's restore: the saved switch bindings go back
+	// BEFORE the state file dies, and the report names the restored values.
 	assertCallSequence(t, uninstallCalls(t, f), []struct{ name, args string }{
 		{binSystemctl, "--user stop goswitchd"},
 		{binSystemctl, "--user disable goswitchd"},
@@ -661,9 +661,9 @@ func TestUninstall_FullRollback(t *testing.T) {
 // FullRollback corpus asserts the uninstall suffix of the recording): three
 // gsettings gets (sources + the two switch bindings) at snapshot time, two
 // ibus cache steps, three systemctl steps, list-engine, the takeover's
-// live sources re-read, three gsettings sets (wrapper + two bindings),
+// live sources re-read, the wrapper set (ADR-006: no chord writes),
 // engine activation.
-const installCallCount = 14
+const installCallCount = 12
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did
@@ -738,10 +738,9 @@ func corruptSwitchCases() map[string]corruptSwitchCase {
 // state values that fail the shape check never reach gsettings verbatim —
 // the restore substitutes the safe fallbacks, REPORTS them, and the
 // rollback still completes (a corrupt backup must not brick the keyboard
-// or abort the uninstall). Owner decision 3 extends the discipline to the
-// switch binding: a state file whose switch field is absent (a pre-batch
-// JSON) or malformed restores the DISTRO DEFAULT binding with the
-// substitution reported.
+// or abort the uninstall). The same discipline covers the switch bindings:
+// a state file whose switch field is absent (a pre-batch JSON) or malformed
+// restores the DISTRO DEFAULT binding with the substitution reported.
 func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 	for name, tc := range corruptSwitchCases() {
 		t.Run(name, func(t *testing.T) {
