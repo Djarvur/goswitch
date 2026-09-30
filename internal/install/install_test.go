@@ -21,14 +21,17 @@ import (
 // live switch-input-source binding of the owner's desktop (verified
 // 2026-09-27) — the value install snapshots and uninstall restores.
 const (
-	ownerSources                   = `[('xkb', 'us'), ('xkb', 'ru')]`
-	goswitchSources                = `[('ibus', 'goswitch-en')]`
-	fallbackSources                = `[('xkb', 'us')]`
-	wrappedSources                 = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
-	sourcesUSFR                    = `[('xkb', 'us'), ('xkb', 'fr')]`
-	ownerSwitchBindings            = `['<Super>space', 'XF86Keyboard']`
-	ownerSwitchBindingsBackward    = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
-	clearedSwitchBindings          = `[]`
+	ownerSources                = `[('xkb', 'us'), ('xkb', 'ru')]`
+	goswitchSources             = `[('ibus', 'goswitch-en')]`
+	fallbackSources             = `[('xkb', 'us')]`
+	wrappedSources              = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
+	sourcesUSFR                 = `[('xkb', 'us'), ('xkb', 'fr')]`
+	ownerSwitchBindings         = `['<Super>space', 'XF86Keyboard']`
+	ownerSwitchBindingsBackward = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
+	// junkSwitchBinding is the junk live value the over-install's
+	// switch-binding gets answer — it must never reach the state file nor
+	// any `gsettings set` (ADR-006: install writes nothing to the chords).
+	junkSwitchBinding              = `[]`
 	fallbackSwitchBindings         = `['<Super>space', 'XF86Keyboard']`
 	fallbackSwitchBindingsBackward = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
 	listEngineOut                  = "goswitch-en - goswitch English (US)\ngoswitch-ru - goswitch Русская\n"
@@ -48,15 +51,17 @@ const (
 )
 
 // The gsettings schema keys of the input sources (D-40's single-owner
-// takeover writes and D-42's restore rewrites the sources; owner decision 3
-// hands the switch-input-source binding over to goswitch).
+// takeover writes and D-42's restore rewrites the sources; the
+// wm.keybindings schema hosts the GNOME layout-switch chords install must
+// leave untouched).
 const (
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
 	// gsettingsKeybindingsSchema hosts the GNOME layout-switch chords (live
 	// finding 2026-09-27: NOT desktop.input-sources — that schema carries
-	// no switch key at all). Owner decision 3, quick plan 260927-way:
-	// install clears both, uninstall restores the saved values.
+	// no switch key at all). ADR-006 two-source: install leaves both
+	// bindings untouched — the chords cycle the two goswitch engines as a
+	// first-class visible switch — uninstall restores the saved values.
 	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
 	gsettingsKeySwitch         = "switch-input-source"
 	gsettingsKeySwitchBackward = "switch-input-source-backward"
@@ -232,7 +237,9 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 // env-carrying write-cache → list-engine verification → unit →
 // daemon-reload → enable + restart → ibus restart → live-registration wait →
 // live sources re-read → the COMPUTED two-source wrapper (never a
-// constant) → switch-binding clear (owner decision 3) → engine activation.
+// constant) → engine activation — with NO write to the wm.keybindings
+// schema at all (ADR-006 two-source: the GNOME switch chords stay live and
+// cycle the two goswitch engines).
 func TestInstall_Sequence(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
@@ -257,11 +264,12 @@ func TestInstall_Sequence(t *testing.T) {
 		{binSystemctl, "--user restart goswitchd"},
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + wrappedSources},
-		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + clearedSwitchBindings},
-		{binGSettings, "set " + gsettingsKeybindingsSchema + " " +
-			gsettingsKeySwitchBackward + " " + clearedSwitchBindings},
 		{binIbus, "engine goswitch-en"},
 	})
+
+	// ADR-006 two-source: install records NO `gsettings set` against the
+	// wm.keybindings schema — the GNOME switch chords stay untouched.
+	assertSwitchBindingsUntouched(t, f.snapshot())
 
 	xmlPath, unitPath, statePath := installPaths(home)
 	assertSequenceState(t, xmlPath, unitPath, statePath, report)
@@ -271,8 +279,8 @@ func TestInstall_Sequence(t *testing.T) {
 // all three artifacts exist, the state carries the read switch bindings
 // VERBATIM (decoded — json.Marshal HTML-escapes the '<'/'>' of the raw
 // binding bytes; the restore path reads the fields back through the same
-// decode), and the report names both the cleared handover and the
-// two-source wrap verdict.
+// decode), and the report names both the preserved chords (left untouched,
+// saved for uninstall) and the two-source wrap verdict.
 func assertSequenceState(t *testing.T, xmlPath, unitPath, statePath string, report []string) {
 	t.Helper()
 	for _, p := range []string{xmlPath, unitPath, statePath} {
@@ -302,14 +310,30 @@ func assertSequenceState(t *testing.T, xmlPath, unitPath, statePath string, repo
 			stBw.SwitchInputSourceBackward, ownerSwitchBindingsBackward)
 	}
 	if !slices.ContainsFunc(report, func(line string) bool {
-		return strings.Contains(line, "switch-input-source: cleared")
+		return strings.Contains(line, "switch-input-source: left untouched (saved for uninstall)")
 	}) {
-		t.Errorf("report %v does not name the cleared switch binding", report)
+		t.Errorf("report %v does not name the preserved switch binding", report)
 	}
 	if !slices.ContainsFunc(report, func(line string) bool {
 		return strings.Contains(line, "sources: wrapped pair")
 	}) {
 		t.Errorf("report %v does not name the two-source wrap verdict", report)
+	}
+}
+
+// assertSwitchBindingsUntouched pins the ADR-006 two-source verdict on the
+// recorded calls: install records NO `gsettings set` against
+// gsettingsKeybindingsSchema — neither switch-input-source nor
+// switch-input-source-backward is written, so the GNOME switch chords stay
+// live and cycle the two goswitch engines as a first-class visible switch
+// (the daemon follows external flips via the 05-04 sync listener).
+func assertSwitchBindingsUntouched(t *testing.T, calls []instCall) {
+	t.Helper()
+	for _, c := range calls {
+		if c.name == binGSettings && len(c.args) >= 3 && c.args[0] == opSet && c.args[1] == gsettingsKeybindingsSchema {
+			t.Errorf("install recorded gsettings set %s %s — the GNOME switch chords must stay"+
+				" untouched (ADR-006 two-source)", c.args[1], c.args[2])
+		}
 	}
 }
 
@@ -495,11 +519,12 @@ func TestInstall_StateFileOutsideConfigDir(t *testing.T) {
 // TestInstall_SecondInstallKeepsOriginalBackup pins the idempotency core:
 // an existing state file is never overwritten — the FIRST install's backup
 // is sacred, so repeated installs cannot destroy the pre-goswitch desktop.
-// Owner decision 3 extends the rule to the switch binding: the over-install
-// reads the POST-HANDOVER cleared binding and must never save it over the
-// original. The 05-02 upgrade form extends it further: the takeover still
-// runs and computes the two-source wrapper FROM THE SAVED ORIGINAL (never
-// from the live goswitch-only value), while the backup stays byte-intact.
+// The over-install reads a junk live value for the switch-binding gets and
+// must never save it over the original — nor write it anywhere (ADR-006:
+// install touches no chord). The 05-02 upgrade form extends the rule
+// further: the takeover still runs and computes the two-source wrapper FROM
+// THE SAVED ORIGINAL (never from the live goswitch-only value), while the
+// backup stays byte-intact.
 func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
@@ -516,15 +541,15 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	}
 
 	// The second install sees the post-takeover desktop (goswitch-only
-	// sources, the cleared switch binding) — exactly the state it must NOT
-	// save over the marker.
+	// sources) and a junk live value for the switch-binding gets — exactly
+	// the state it must NOT save over the marker.
 	f.stub = func(name string, args []string) ([]byte, error) {
 		if name == binGSettings && len(args) == 3 && args[0] == opGet {
 			if args[2] == gsettingsKey {
 				return []byte(goswitchSources), nil
 			}
 			if args[2] == gsettingsKeySwitch || args[2] == gsettingsKeySwitchBackward {
-				return []byte(clearedSwitchBindings), nil
+				return []byte(junkSwitchBinding), nil
 			}
 		}
 
@@ -538,8 +563,12 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	}
 	if string(data) != marker {
 		t.Errorf("second install overwrote the original backup: state = %q, want %q byte-intact"+
-			" (the cleared binding must never be saved over it)", data, marker)
+			" (the junk live binding must never be saved over it)", data, marker)
 	}
+
+	// ADR-006: NEITHER install writes a chord — the junk live binding value
+	// must never reach `gsettings set` either.
+	assertSwitchBindingsUntouched(t, f.snapshot())
 
 	// The upgrade form (D-54): the takeover computes the wrapper from the
 	// saved original and writes it — the desktop leaves the phase-4
