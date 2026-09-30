@@ -583,15 +583,14 @@ func TestRenderStatusVersionToken(t *testing.T) {
 // errHookInjected is the OnConn failure of the degradation corpus.
 var errHookInjected = errors.New("hook exploded")
 
-// TestRun_OnConnHook pins the post-export connection hook (quick plan
-// 260930-pf6): Run calls OnConn exactly once after the bus name and the ctl
-// object are live, and an OnConn failure is a WARN — serving continues (the
-// ctl-failure-never-kills-the-daemon rule). A nil OnConn is the no-hook
-// state the pre-existing corpus already covers.
-func TestRun_OnConnHook(t *testing.T) {
+// TestRun_OnConnHookCalledOnce pins the happy path of the post-export
+// connection hook (quick plan 260930-pf6): Run calls OnConn exactly once
+// after the bus name and the ctl object are live, and serving continues. A
+// nil OnConn is the no-hook state the pre-existing corpus already covers.
+func TestRun_OnConnHookCalledOnce(t *testing.T) {
 	startTestBus(t)
 
-	t.Run("called once after export, serving continues", func(t *testing.T) {
+	{
 		var mu sync.Mutex
 		var calls int
 		deps := ctlsvc.Deps{
@@ -639,9 +638,16 @@ func TestRun_OnConnHook(t *testing.T) {
 		if err := <-runErr; err != nil {
 			t.Errorf("Run returned %v on clean cancel, want nil", err)
 		}
-	})
+	}
+}
 
-	t.Run("hook failure never aborts serving", func(t *testing.T) {
+// TestRun_OnConnHookFailureNeverAbortsServing pins the degradation: an
+// OnConn failure is a WARN — the ctl surface keeps serving (the
+// ctl-failure-never-kills-the-daemon rule).
+func TestRun_OnConnHookFailureNeverAbortsServing(t *testing.T) {
+	startTestBus(t)
+
+	{
 		deps := ctlsvc.Deps{
 			Status: fakeStatus{snap: session.Status{Mode: "ru"}},
 			OnConn: func(_ *dbus.Conn) error { return errHookInjected },
@@ -674,5 +680,5 @@ func TestRun_OnConnHook(t *testing.T) {
 		if err := <-runErr; err != nil {
 			t.Errorf("Run returned %v on clean cancel, want nil (a hook failure is a WARN, not a verdict)", err)
 		}
-	})
+	}
 }

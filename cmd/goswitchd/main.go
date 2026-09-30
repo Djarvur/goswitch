@@ -15,11 +15,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/godbus/dbus/v5"
+
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/activate"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
 	"github.com/Djarvur/goswitch/internal/hotkey"
+	"github.com/Djarvur/goswitch/internal/indicator"
 	"github.com/Djarvur/goswitch/internal/logging"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -92,7 +95,23 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 		reload = watcher // nil without -config: ReloadConfig answers "no config file"
 	}
 	go func() {
-		if err := ctlsvc.Run(ctx, ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}); err != nil {
+		deps := ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}
+		// The tray indicator rides the ctl connection (quick plan
+		// 260930-pf6): one bus name more visible at org.djarvur.goswitch,
+		// attached after the name and the ctl object go live. Attach errors
+		// are WARNed by Run and serving continues — the daemon types on
+		// without its tray icon. The display installs before engine.Run, so
+		// the icon is live from the first generation; SetModeDisplay's
+		// install push covers any ordering skew.
+		deps.OnConn = func(conn *dbus.Conn) error {
+			// Attach always succeeds: every degradation (no watcher on the
+			// bus, a failed register or export) is a one-WARN inert display
+			// inside the item.
+			actor.SetModeDisplay(indicator.Attach(conn, ctlsvc.BusName))
+
+			return nil
+		}
+		if err := ctlsvc.Run(ctx, deps); err != nil {
 			slog.Error("ctl service stopped", "error", err)
 		}
 	}()
