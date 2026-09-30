@@ -22,6 +22,7 @@ import (
 // 2026-09-27) — the value install snapshots and uninstall restores.
 const (
 	ownerSources                = `[('xkb', 'us'), ('xkb', 'ru')]`
+	singleUSSources             = `[('xkb', 'us')]`
 	goswitchSources             = `[('ibus', 'goswitch-en')]`
 	fallbackSources             = `[('xkb', 'us')]`
 	wrappedSources              = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
@@ -48,6 +49,7 @@ const (
 	opGet        = "get"
 	opSet        = "set"
 	engineENName = "goswitch-en"
+	engineRUName = "goswitch-ru"
 )
 
 // The gsettings schema keys of the input sources (D-40's single-owner
@@ -315,9 +317,64 @@ func assertSequenceState(t *testing.T, xmlPath, unitPath, statePath string, repo
 		t.Errorf("report %v does not name the preserved switch binding", report)
 	}
 	if !slices.ContainsFunc(report, func(line string) bool {
-		return strings.Contains(line, "sources: wrapped pair")
+		return strings.Contains(line, "sources: wrapped ("+engineENName+", "+engineRUName+")")
 	}) {
-		t.Errorf("report %v does not name the two-source wrap verdict", report)
+		t.Errorf("report %v does not name the wrapped engines", report)
+	}
+}
+
+// TestInstall_SequenceSingleSource pins the owner decision 2026-09-30 (one
+// source in the GNOME switcher) on the FULL sequence: a desktop carrying a
+// single xkb 'us' source installs into exactly [('ibus', 'goswitch-en')] —
+// one `gsettings set sources` carrying the single goswitch engine, the
+// explicit engine activation kept, the switch chords still untouched, and
+// the report naming the one wrapped engine.
+func TestInstall_SequenceSingleSource(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
+			return []byte(singleUSSources), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	report := runInstall(t, i)
+
+	// The same live-true order as the pair desktop — only the takeover's
+	// set carries the single-source wrapper.
+	assertCallSequence(t, f.snapshot(), []struct{ name, args string }{
+		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
+		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
+		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
+		{binIbus, opWriteCache},
+		{binIbus, opRestart},
+		{binIbus, "list-engine"},
+		{binSystemctl, "--user daemon-reload"},
+		{binSystemctl, "--user enable goswitchd"},
+		{binSystemctl, "--user restart goswitchd"},
+		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
+		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + goswitchSources},
+		{binIbus, "engine goswitch-en"},
+	})
+
+	// ADR-006: install records NO `gsettings set` against the wm.keybindings
+	// schema — the single-source model changes nothing about the chords.
+	assertSwitchBindingsUntouched(t, f.snapshot())
+
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "sources: wrapped ("+engineENName+")")
+	}) {
+		t.Errorf("report %v does not name the single wrapped engine", report)
+	}
+
+	// The single-source desktop's pre-install value is the uninstall
+	// restore's material — the state file carries it verbatim.
+	_, _, statePath := installPaths(home)
+	if got := readAll(t, statePath); !strings.Contains(got, singleUSSources) {
+		t.Errorf("state %q does not carry the single-source pre-install value %q", got, singleUSSources)
 	}
 }
 
@@ -1086,11 +1143,12 @@ func isMutatingCall(c instCall) bool {
 	return gsettingsSet || c.name == binSystemctl || ibusMutation
 }
 
-// TestInstall_RefusalBeforeAnyWrite pins the D-54 atomic refusal: a
-// desktop without the xkb us/ru pair refuses BEFORE any mutating call —
-// zero gsettings set, zero systemctl, zero ibus write-cache/restart — and
-// the state file is never created, so a refused install leaves the
-// desktop byte-identical.
+// TestInstall_RefusalBeforeAnyWrite pins the atomic refusal gate: a
+// desktop goswitch cannot own ENTIRELY — a foreign residue beside the
+// wrappable layout (us+fr) — refuses BEFORE any mutating call — zero
+// gsettings set, zero systemctl, zero ibus write-cache/restart — and the
+// state file is never created, so a refused install leaves the desktop
+// byte-identical.
 func TestInstall_RefusalBeforeAnyWrite(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
@@ -1105,7 +1163,7 @@ func TestInstall_RefusalBeforeAnyWrite(t *testing.T) {
 
 	report, err := i.Install(context.Background())
 	if err == nil {
-		t.Fatalf("Install() over us+fr = (%v, nil), want the D-54 refusal", report)
+		t.Fatalf("Install() over the foreign-residue desktop = (%v, nil), want the residue refusal", report)
 	}
 	if !strings.Contains(err.Error(), "fix") {
 		t.Errorf("refusal %q carries no fix hint", err)

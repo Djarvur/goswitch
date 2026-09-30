@@ -41,17 +41,20 @@ func TestVerifyWritten(t *testing.T) {
 
 // The wrap corpus's raw gsettings shapes (goconst: named once).
 const (
-	wrapPairENRU      = `[('xkb', 'us'), ('xkb', 'ru')]`
-	wrapPairRUEN      = `[('xkb', 'ru'), ('xkb', 'us')]`
-	wrapWrappedENRU   = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
-	wrapWrappedRUEN   = `[('ibus', 'goswitch-ru'), ('ibus', 'goswitch-en')]`
-	wrapTriple        = `[('xkb', 'us'), ('xkb', 'ru'), ('xkb', 'fr')]`
-	wrapTripleWrapped = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru'), ('xkb', 'fr')]`
-	wrapUSFR          = `[('xkb', 'us'), ('xkb', 'fr')]`
-	wrapSingleUS      = `[('xkb', 'us')]`
-	wrapForeignKind   = `[('xkb', 'us'), ('wayland', 'ru')]`
-	wrapHalfWrapped   = `[('ibus', 'goswitch-en'), ('xkb', 'ru')]`
-	wrapOwnedSingle   = `[('ibus', 'goswitch-en')]`
+	wrapPairENRU       = `[('xkb', 'us'), ('xkb', 'ru')]`
+	wrapPairRUEN       = `[('xkb', 'ru'), ('xkb', 'us')]`
+	wrapWrappedENRU    = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
+	wrapWrappedRUEN    = `[('ibus', 'goswitch-ru'), ('ibus', 'goswitch-en')]`
+	wrapTriple         = `[('xkb', 'us'), ('xkb', 'ru'), ('xkb', 'fr')]`
+	wrapUSFR           = `[('xkb', 'us'), ('xkb', 'fr')]`
+	wrapSingleUS       = `[('xkb', 'us')]`
+	wrapSingleRU       = `[('xkb', 'ru')]`
+	wrapSingleFR       = `[('xkb', 'fr')]`
+	wrapSingleUSWrapped = `[('ibus', 'goswitch-en')]`
+	wrapSingleRUWrapped = `[('ibus', 'goswitch-ru')]`
+	wrapForeignKind    = `[('xkb', 'us'), ('wayland', 'ru')]`
+	wrapHalfWrapped    = `[('ibus', 'goswitch-en'), ('xkb', 'ru')]`
+	wrapOwnedSingle    = `[('ibus', 'goswitch-en')]`
 )
 
 // TestWrapSourcesPairPreserved pins the D-54 wrap of the user's own pair:
@@ -79,33 +82,63 @@ func TestWrapSourcesPairPreserved(t *testing.T) {
 	})
 }
 
-// TestWrapSourcesThirdSourcePassthrough pins the transit rule: an entry
-// outside the us/ru pair copies VERBATIM into its own position while the
-// pair wraps around it.
-func TestWrapSourcesThirdSourcePassthrough(t *testing.T) {
-	got, err := wrapSources(wrapTriple)
-	if err != nil {
-		t.Fatalf("wrapSources() err = %v, want nil", err)
+// TestWrapSourcesSingleSource pins the owner decision of 2026-09-30 (one
+// source in the GNOME switcher): a desktop carrying ONE wrappable xkb
+// source wraps into exactly its own goswitch engine — single 'us' →
+// goswitch-en, single 'ru' → goswitch-ru.
+func TestWrapSourcesSingleSource(t *testing.T) {
+	t.Run("single us wraps to goswitch-en", func(t *testing.T) {
+		got, err := wrapSources(wrapSingleUS)
+		if err != nil {
+			t.Fatalf("wrapSources() err = %v, want nil", err)
+		}
+		if got != wrapSingleUSWrapped {
+			t.Errorf("wrapSources() = %q, want %q", got, wrapSingleUSWrapped)
+		}
+	})
+
+	t.Run("single ru wraps to goswitch-ru", func(t *testing.T) {
+		got, err := wrapSources(wrapSingleRU)
+		if err != nil {
+			t.Fatalf("wrapSources() err = %v, want nil", err)
+		}
+		if got != wrapSingleRUWrapped {
+			t.Errorf("wrapSources() = %q, want %q", got, wrapSingleRUWrapped)
+		}
+	})
+}
+
+// TestWrapSourcesForeignResidueRefused pins the ≥1-model residue refusal:
+// a foreign source beside wrappable xkb us/ru entries leaves a list
+// goswitch cannot own ENTIRELY — refused, never wrapped around (D-53: the
+// daemon sees no keys through a foreign source, so install must never
+// write a list its own audit rejects).
+func TestWrapSourcesForeignResidueRefused(t *testing.T) {
+	_, err := wrapSources(wrapTriple)
+	if !errors.Is(err, errMixedSources) {
+		t.Fatalf("wrapSources(%s) err = %v, want an errMixedSources wrap", wrapTriple, err)
 	}
-	if got != wrapTripleWrapped {
-		t.Errorf("wrapSources() = %q, want %q (the third source must transit verbatim)", got, wrapTripleWrapped)
+	if !strings.Contains(err.Error(), "fix") {
+		t.Errorf("verdict %q carries no fix hint", err)
 	}
 }
 
-// TestWrapSourcesRefusalTable pins the D-54 refusal table: a pair without
-// us/ru, a single source, an entry of an unsupported kind, and a
-// hand-edited half-wrapped list are named refusals — never a forced pair.
-// Every verdict names the failing tuple TYPE and the fix, never the raw
-// user line (D-20-safe).
+// TestWrapSourcesRefusalTable pins the refusal table of the ≥1 model: a
+// foreign residue beside a wrappable layout, a layout outside us/ru, an
+// entry of an unsupported kind, a hand-edited half-wrapped list, and an
+// already-owned list with nothing wrappable are named refusals — never a
+// forced pair. Every verdict names the failing tuple TYPE and the fix,
+// never the raw user line (D-20-safe).
 func TestWrapSourcesRefusalTable(t *testing.T) {
 	cases := map[string]struct {
 		raw  string
 		want error
 	}{
-		"us+fr has no pair":        {raw: wrapUSFR, want: errUnsupportedPair},
-		"single source":            {raw: wrapSingleUS, want: errUnsupportedPair},
-		"unsupported kind in list": {raw: wrapForeignKind, want: errUnsupportedPair},
-		"half-wrapped list":        {raw: wrapHalfWrapped, want: errMixedSources},
+		"us+fr leaves a foreign residue":           {raw: wrapUSFR, want: errMixedSources},
+		"single foreign layout":                    {raw: wrapSingleFR, want: errUnsupportedPair},
+		"unsupported kind in list":                 {raw: wrapForeignKind, want: errUnsupportedPair},
+		"half-wrapped list":                        {raw: wrapHalfWrapped, want: errMixedSources},
+		"already-owned single (nothing wrappable)": {raw: wrapOwnedSingle, want: errUnsupportedPair},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
