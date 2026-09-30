@@ -3955,8 +3955,16 @@ func TestActor_FlipDirectionFollowsConvertedScript(t *testing.T) {
 var errSwitchInjected = errors.New("injected switch failure")
 
 // flipBudget is the switchTimeout contract from the outside: the switcher's
-// context deadline is at most this far from the call instant.
-const flipBudget = 40 * time.Millisecond
+// context deadline is at most this far from the call instant. It mirrors
+// switchTimeout and sits ABOVE the measured live SetGlobalEngine round trip,
+// so the deadline guards the wedge path without firing on healthy flips.
+const flipBudget = 150 * time.Millisecond
+
+// liveSwitchRTTMax is the measured maximum of a real SetGlobalEngine round
+// trip: every live proof lands at ~41-45 ms (the 05-05 flip proofs and the
+// 2026-09-30 journal — the old 40 ms deadline fired before completion on
+// every flip). The seam-entry budget must sit strictly above it.
+const liveSwitchRTTMax = 45 * time.Millisecond
 
 // switchProbe is the switcher-seam double: it records every call's target
 // and context deadline — the flip path's observable — with the hook form of
@@ -4126,10 +4134,11 @@ func TestActor_SwitcherFailureWarnsNotFatal(t *testing.T) {
 
 // TestActor_SwitcherDeadlineBounded pins the flip's deadline discipline
 // (T-05-03-01, Pitfall 4): the switcher receives a context with a hard
-// deadline ≤ 40 ms, and a seam stuck until that deadline stalls the actor
-// only boundedly — a Status snapshot served THROUGH the stalled flip
-// completes within the budget, so the keystroke path can never hang on a
-// wedged bus.
+// deadline that sits ABOVE the measured live SetGlobalEngine round trip and
+// at most flipBudget — every healthy flip completes inside it, and a seam
+// stuck until that deadline stalls the actor only boundedly — a Status
+// snapshot served THROUGH the stalled flip completes within the budget, so
+// the keystroke path can never hang on a wedged bus.
 func TestActor_SwitcherDeadlineBounded(t *testing.T) {
 	a, _ := wiredActor()
 	entered := make(chan struct{}, 1)
@@ -4157,9 +4166,11 @@ func TestActor_SwitcherDeadlineBounded(t *testing.T) {
 	case <-time.After(flipBudget + 5*time.Second):
 		t.Fatal("the flip never called the switcher — the seam is not wired into the flip path")
 	}
-	if remaining := <-remainingCh; remaining <= 0 || remaining > flipBudget {
-		t.Errorf("switcher context deadline budget = %v at entry, want in (0, %v] — the flip must be hard-bounded",
-			remaining, flipBudget)
+	if remaining := <-remainingCh; remaining <= liveSwitchRTTMax || remaining > flipBudget {
+		t.Errorf("switcher context deadline budget = %v at entry, want in (%v, %v] — above the measured live"+
+			" SetGlobalEngine round trip (a smaller deadline fires before every real flip completes),"+
+			" at most the flip budget",
+			remaining, liveSwitchRTTMax, flipBudget)
 	}
 
 	// While the seam is stuck, the stall is bounded: a Status snapshot
