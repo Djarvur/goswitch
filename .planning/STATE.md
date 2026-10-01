@@ -4,11 +4,11 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Система автокоррекции
 status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-10-01T21:26:04.283Z"
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-10-01T21:47:13.437Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 06 execution started
-state_head: 00d72786a14caf792048c5158165f48fc34eca8f
+state_head: 898139744ed0ad0a30b2fefce98870089015e2fc
 progress:
   total_phases: 6
   completed_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 06 (Система автокоррекции) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 06 execution started
 
@@ -100,6 +100,7 @@ Progress: [████████░░] 75%
 | Phase 06 P01 | 6 min | 2 tasks | 2 files |
 | Phase 06 P02 | 38 min | 2 tasks | 11 files |
 | Phase 06 P03 | 23 min | 2 tasks | 4 files |
+| Phase 06 P04 | 10 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -212,6 +213,9 @@ Recent decisions affecting current work:
 - [Phase 06]: CI-независимость от hunspell доказана живьём через bwrap (пустой /usr/share/hunspell → тесты зелёные, TestGenerateLive SKIP) — золотой контракт CORR-08
 - [Phase 06]: appid Role(ctx): seam type dbus.Sender with conversion at the signal/call boundaries (godbus delivers Signal.Sender as a plain string); the live call is the arbiter of unknown — o.err not checked — Type documents the wire role; D-53 makes the live call the source of truth; an untested o.err branch was not added
 - [Phase 06]: err113 forced the ErrRoleUnknown sentinel into final form at Task 1 GREEN — Task 2 RED pins the enum, the other Role tests land green-by-design (continuity-pin precedent) — Dynamic errors are banned in internal code; a throwaway placeholder would be a lint violation
+- [Phase 06]: [06-04] Autocorrect threshold ranges gate on an ACTIVE section (enabled + non-empty apps): the plan-pinned behaviors (zero section valid, enabled+empty-list valid) make unconditional range checks contradictory; the white-list ceiling stays unconditional (DoS), thresholds are checked only where they can bite, and an ACTIVE section with omitted thresholds refuses loudly (complete-document contract 03-02)
+- [Phase 06]: [06-04] Threshold validation errors name their own field (trigram_floor <= 0 names autocorrect.trigram_floor, not the plan action's combined margin-only form) — the must_haves truth 'every error names its field' wins over the action's shorthand
+- [Phase 06]: [06-04] RED-stub pattern reused (06-03 continuity-pin precedent): the RED commit carries the schema shape only (struct + Config field + zero Defaults entry), GREEN sets the documented defaults/ceiling/validation; D-32/D-33 propagation tests land green-by-design — the sections' strict decode and last-good reload need zero new code in load.go/watch.go
 
 ### Pending Todos
 
@@ -244,6 +248,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-01T21:25:53.884Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-10-01T21:47:13.343Z
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None
