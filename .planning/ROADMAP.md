@@ -255,8 +255,31 @@ Plans:
   4. Двойной Shift остаётся ручным переопределением поверх автокоррекции
   5. e2e-матрица расширена автокоррекционными кейсами (вкл/выкл, роль поля, OOV), ночная двойная зелёная
 
-**Plans:** 0 plans
+**Plans:** 8 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 6 to break down)
+- [ ] 06-01-PLAN.md — Spec-delta §2/§10/§11 + ADR-007 скелет (D-55: спека ДО кода; D-51 v1.1.0) — SPEC §10/§11, MACR-ACL
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06-02-PLAN.md — layouts/dictgen: hunspell → golden DictRU/DictEN (sorted slices) + TriRU/TriEN, лицензионные нотисы, dictgen-regen — CORR-08
+- [ ] 06-03-PLAN.md — internal/appid: (sender,path) + Role(ctx) живой GetRole enum + ErrRoleUnknown — MACR-ACL
+- [ ] 06-04-PLAN.md — internal/config: секция autocorrect (default off, strict decode, потолки) + docs/CONFIG.md — MACR-ACL
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06-05-PLAN.md — internal/detect: словарный путь D-52(а) + триграммный fallback D-52(б) + обязательный golden-корпус (0 ложных) — CORR-04/05/06
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 06-06-PLAN.md — Актор: граница слова (Buffer.PushFeed), конъюнкция D-53 fail-closed, счётчики/Status, renderStatus-токены — CORR-01/07/09, MACR-ACL
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 06-07-PLAN.md — e2e: fires / password-silent (GTK4-фикстура) / terminal-silent + матрица v4 (superset v3) + ночной конвейер на v4 — CORR-01, MACR-ACL
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 06-08-PLAN.md — Приёмка: perf p95-гейт (Pitfall 5), двойной регресс v4, README, ADR-007 Accepted — CORR-01..09 (регресс)
