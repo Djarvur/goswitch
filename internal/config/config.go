@@ -90,13 +90,28 @@ type MACR struct {
 	AltModifier string   `yaml:"alt_modifier"`
 }
 
-// Config is the whole daemon configuration: exactly the four sections
-// hotkeys / timeouts / correction / macr (D-31).
+// Autocorrect is the automatic wrong-layout correction layer's schema
+// section (D-54, opt-in): the global switch, the per-app white list of
+// bridge-namespace names — exact string matches, order carries no
+// meaning — and the detector thresholds. The zero value is the OFF
+// state: a document without the section decodes disabled, never
+// activated (default off everywhere, D-54).
+type Autocorrect struct {
+	Enabled       bool     `yaml:"enabled"`
+	Apps          []string `yaml:"apps"`
+	MinWordLen    int      `yaml:"min_word_len"`
+	TrigramMargin float64  `yaml:"trigram_margin"`
+	TrigramFloor  float64  `yaml:"trigram_floor"`
+}
+
+// Config is the whole daemon configuration: exactly the five sections
+// hotkeys / timeouts / correction / macr / autocorrect (D-31, D-54).
 type Config struct {
-	Hotkeys    Hotkeys    `yaml:"hotkeys"`
-	Timeouts   Timeouts   `yaml:"timeouts"`
-	Correction Correction `yaml:"correction"`
-	MACR       MACR       `yaml:"macr"`
+	Hotkeys     Hotkeys     `yaml:"hotkeys"`
+	Timeouts    Timeouts    `yaml:"timeouts"`
+	Correction  Correction  `yaml:"correction"`
+	MACR        MACR        `yaml:"macr"`
+	Autocorrect Autocorrect `yaml:"autocorrect"`
 }
 
 // Defaults returns the documented built-in defaults: the daemon runs on
@@ -127,6 +142,9 @@ func Defaults() Config {
 			Apps:        nil,
 			AltModifier: "",
 		},
+		// RED stub (06-04): the zero section — GREEN pins the documented
+		// default-off shape (D-54: enabled false, empty white list, 4/2.0/1.0).
+		Autocorrect: Autocorrect{},
 	}
 }
 
