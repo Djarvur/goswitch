@@ -60,14 +60,17 @@ func captureLogs(t *testing.T) *syncBuffer {
 	return buf
 }
 
-// fakeWatcher is the watcher-probe double: canned owner presence and
-// register verdicts, with the registration calls recorded under a mutex.
+// fakeWatcher is the watcher-probe double: canned owner presence, item
+// registry and register verdicts, with the registration calls recorded
+// under a mutex.
 type fakeWatcher struct {
 	mu          sync.Mutex
 	owner       bool
 	probeErr    error
 	registerErr error
 	registered  []string
+	items       []string
+	itemsErr    error
 }
 
 // NameHasOwner answers the canned probe.
@@ -87,6 +90,31 @@ func (f *fakeWatcher) RegisterStatusNotifierItem(service string) error {
 	f.registered = append(f.registered, service)
 
 	return f.registerErr
+}
+
+// RegisteredStatusNotifierItems answers the canned registry (a copy — the
+// caller must not alias the double's slice).
+func (f *fakeWatcher) RegisteredStatusNotifierItems() ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.items...), f.itemsErr
+}
+
+// setOwner retunes the canned probe between beats.
+func (f *fakeWatcher) setOwner(owner bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.owner = owner
+}
+
+// setItems retunes the canned registry between beats.
+func (f *fakeWatcher) setItems(items []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.items = items
 }
 
 // registerCalls snapshots the recorded registrations.
@@ -173,7 +201,8 @@ func attachOK() (*Item, *fakeWatcher, *fakeEmitter, *fakeExporter) {
 
 // TestAttachWatcherAbsentIsInert pins the absent-watcher degradation: one
 // WARN, no registration, no export — Attach succeeds and the indicator is
-// a permanent no-op that never re-checks (v0).
+// an inert display (the supervisor owns re-checking now; quick plan
+// 261001-fg3).
 func TestAttachWatcherAbsentIsInert(t *testing.T) {
 	buf := captureLogs(t)
 	w, em, exp := &fakeWatcher{}, &fakeEmitter{}, &fakeExporter{}

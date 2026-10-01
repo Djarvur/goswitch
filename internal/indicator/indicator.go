@@ -15,8 +15,14 @@ import (
 const (
 	watcherName = "org.kde.StatusNotifierWatcher"
 	watcherPath = dbus.ObjectPath("/StatusNotifierWatcher")
-	itemPath    = dbus.ObjectPath("/StatusNotifierItem")
-	sniIface    = "org.kde.StatusNotifierItem"
+	// watcherIface is the watcher's D-Bus interface — the prefix the
+	// RegisteredStatusNotifierItems property read goes through. The bus
+	// name and the interface share the spelling; the item's sniIface is a
+	// different string.
+	watcherIface        = "org.kde.StatusNotifierWatcher"
+	propRegisteredItems = "RegisteredStatusNotifierItems"
+	itemPath            = dbus.ObjectPath("/StatusNotifierItem")
+	sniIface            = "org.kde.StatusNotifierItem"
 	// propertiesIface is the org.freedesktop.DBus.Properties interface the
 	// item exports itself under — godbus routes method calls strictly by
 	// (path, interface), so serving Get/GetAll means exporting the item a
@@ -65,15 +71,20 @@ const (
 // attach degradation names (the daemon's one WARN).
 var errNoWatcher = errors.New("no StatusNotifierWatcher on the session bus")
 
-// Watcher probes the org.kde.StatusNotifierWatcher owner and registers the
-// item with it — the daemon's point-of-use view of the watcher surface
-// (the fakeSink precedent: the corpus runs without a live bus).
+// Watcher probes the org.kde.StatusNotifierWatcher owner, registers the
+// item with it and reads the watcher's live item registry — the daemon's
+// point-of-use view of the watcher surface (the fakeSink precedent: the
+// corpus runs without a live bus).
 type Watcher interface {
 	// NameHasOwner reports the presence of the watcher's well-known name.
 	NameHasOwner() (bool, error)
 	// RegisterStatusNotifierItem registers the item's service with the
 	// watcher (the SNI registration act).
 	RegisterStatusNotifierItem(service string) error
+	// RegisteredStatusNotifierItems reads the watcher's item list — the
+	// supervisor's silent-eviction check (our service missing from the
+	// list is the eviction verdict).
+	RegisteredStatusNotifierItems() ([]string, error)
 }
 
 // Emitter sends one signal on the daemon's session-bus connection — the
@@ -117,6 +128,22 @@ func (w connWatcher) RegisterStatusNotifierItem(service string) error {
 	return nil
 }
 
+// RegisteredStatusNotifierItems reads the watcher's item registry — the
+// as-typed as-list property on the watcher object.
+func (w connWatcher) RegisteredStatusNotifierItems() ([]string, error) {
+	v, err := w.conn.Object(watcherName, watcherPath).
+		GetProperty(watcherIface + "." + propRegisteredItems)
+	if err != nil {
+		return nil, fmt.Errorf("read %s.%s: %w", watcherIface, propRegisteredItems, err)
+	}
+	items, ok := v.Value().([]string)
+	if !ok {
+		return nil, fmt.Errorf("read %s.%s: unexpected variant payload %T", watcherIface, propRegisteredItems, v.Value())
+	}
+
+	return items, nil
+}
+
 // connEmitter is the Emitter over the daemon's live connection.
 type connEmitter struct {
 	conn *dbus.Conn
@@ -141,10 +168,12 @@ type Item struct {
 	pix          Pixmap  // the pixmap the Properties surface serves
 	emitter      Emitter // the NewIcon channel (always non-nil at construction)
 	path         dbus.ObjectPath
-	disabled     bool // permanent inert state: a degraded attach or a failed emit
+	registered   bool // the watcher holds the item — supervisor-managed
+	emitDead     bool // a failed emit — permanent per connection
 	attachWarned bool // one WARN per degradation type per item lifetime
 	emitWarned   bool
 	symbolWarned bool
+	sup          *supervisor // the lifecycle owner; born with the item
 }
 
 // Attach builds the tray item on conn — the daemon's EXISTING session-bus
@@ -159,7 +188,8 @@ func Attach(conn *dbus.Conn, service string) *Item {
 // attach is the testable core of Attach: probe → export → register, one
 // shot, off the key path. The export precedes the register so the
 // watcher's immediate property reads after the registration find the
-// object served.
+// object served. A failed registration is no longer the last word — the
+// supervisor born with the item re-checks (quick plan 261001-fg3).
 func attach(w Watcher, em Emitter, exp exporter, service string) *Item {
 	it := &Item{
 		emitter: em,
@@ -168,11 +198,14 @@ func attach(w Watcher, em Emitter, exp exporter, service string) *Item {
 	if pm, ok := PixmapFor(symbolEN); ok {
 		it.pix = pm // EN at start (ADR-001); the install-push corrects any skew
 	}
+	it.sup = &supervisor{item: it, w: w, exp: exp, service: service}
 	if err := registerItem(w, exp, it, service); err != nil {
-		it.disabled = true
 		it.attachWarned = true
 		slog.Warn("tray indicator attach failed", "component", "tray indicator", "error", err)
+
+		return it
 	}
+	it.registered = true
 
 	return it
 }
@@ -206,15 +239,17 @@ func registerItem(w Watcher, exp exporter, it *Item, service string) error {
 
 // ModeChanged implements the actor's ModeDisplay seam (the observer is
 // invoked last in every mode record, under the actor's mutex). A known
-// symbol swaps the served pixmap and emits NewIcon — a queued message
-// send, no round trip, so the call stays quick (T-Q6-03). An unknown
-// symbol is one WARN no-op; an emit error is one WARN and the display
-// self-disables (the dead-connection case after ctl shutdown).
+// symbol ALWAYS swaps the served pixmap — the icon stays fresh through a
+// lost registration period — and, while the item is registered, emits
+// NewIcon: a queued message send, no round trip, so the call stays quick
+// (T-Q6-03). An unregistered item emits nothing (no shell listener), an
+// unknown symbol is one WARN no-op, and an emit error is one WARN with the
+// display self-disabling (the dead-connection case after ctl shutdown).
 func (it *Item) ModeChanged(symbol string) {
 	it.mu.Lock()
 	defer it.mu.Unlock()
 
-	if it.disabled {
+	if it.emitDead {
 		return
 	}
 	pm, ok := PixmapFor(symbol)
@@ -227,13 +262,45 @@ func (it *Item) ModeChanged(symbol string) {
 		return
 	}
 	it.pix = pm
+	if it.registered {
+		it.emitNewIcon()
+	}
+}
+
+// emitNewIcon sends the NewIcon signal; a failed emit is the one-WARN
+// self-disable — permanent per connection. The caller holds the mutex.
+func (it *Item) emitNewIcon() {
 	if err := it.emitter.Emit(it.path, sniIface, signalNewIcon); err != nil {
-		it.disabled = true
+		it.emitDead = true
 		if !it.emitWarned {
 			it.emitWarned = true
 			slog.Warn("tray indicator emit failed", "component", "tray indicator", "error", err)
 		}
 	}
+}
+
+// revive marks the item registered with the watcher again and refreshes the
+// shell's copy with ONE NewIcon emit — the pix is already current (the
+// lost-period ModeChanged calls kept swapping it); a failed revival emit
+// follows the emitDead path. The supervisor calls it after a successful
+// re-attach.
+func (it *Item) revive() {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+
+	it.registered = true
+	it.emitNewIcon()
+}
+
+// markUnregistered clears the watcher-registration state — the supervisor
+// calls it when a beat proves the watcher no longer holds the item.
+// ModeChanged keeps the pixmap fresh but stops emitting (an unregistered
+// item has no shell listener).
+func (it *Item) markUnregistered() {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+
+	it.registered = false
 }
 
 // Get serves org.freedesktop.DBus.Properties.Get for the item — the
