@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Система автокоррекции
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-10-01T20:16:06.016Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-10-01T20:58:38.165Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 06 execution started
-state_head: 5603d0e2c16ab0ff6c98f87c973e7dab4b8ff207
+state_head: 6455c96500e8bfef08210984e2f546bb4f346627
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 41
-  completed_plans: 34
+  completed_plans: 35
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 06 (Система автокоррекции) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 06 execution started
 
@@ -98,6 +98,7 @@ Progress: [████████░░] 75%
 | Phase 05 P04 | 46 min | 2 tasks | 13 files |
 | Phase 05 P05 | 59 min | 2 tasks | 12 files |
 | Phase 06 P01 | 6 min | 2 tasks | 2 files |
+| Phase 06 P02 | 38 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -205,6 +206,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Two-source live proofs (05-05): bus flip = mode+switch_engine pair (WARN form — the 40 ms deadline fires before the ~42 ms live completion, readback arbitrates); external flips followed without counter-flips; restart returns the FACTUAL engine (shell resets to its own source — daemon-flipped ru is restart-lost by mechanism, shell gestures survive); XKB does NOT follow flips (P3 answered, safety-net permanent); matrix v3 two-source: 30/32 ×2 — word-mixed/phrase-mixed frozen rows vs the designed flip-resets-context semantics (owner verdict at verify gate, WINDOWS #12); ADR-006 Accepted, README documents the model
 - [Phase 06]: D-55 соблюдён: spec-delta §2/§10/§11 выполнен до кода детектора (ноль .go в дифе 06-01) — Спека правится до кода; аудит-трейл §11 сохранён — старый вердикт виден рядом с новым решением
 - [Phase 06]: ADR-007 Proposed — контракт фазы (гибридный детектор, живой GetRole, fail-closed, лицензии доноров); Accepted — план 06-08 — Кодовые планы 06-02..06-07 ссылаются на kill-таблицу и лицензионную позицию как на непреложный контракт
+- [Phase 06]: Запечены ПОЛНЫЕ hunspell-словари как отсортированные []string-литералы в rodata: DictRU 138 914 (после ё→е-фолдинга; 146 261 из research Q3 — до фолдинга, фолдинг сливает 7347 е/ё-пар), DictEN 78 951; никаких рантайм-map — Конверт счётчика DictRU скорректирован по оговорке плана (уточнить по факту): границы [137000, 140500] с полной декомпозицией в комментариях тестов
+- [Phase 06]: Триграммные таблицы TriRU/TriEN — ровно 4096 записей/язык (log10-вероятности, top-count + алфавитный tie-break), trigrams.go 244 КБ; потолок пинится в dict_test.go независимо от генератора
+- [Phase 06]: CI-независимость от hunspell доказана живьём через bwrap (пустой /usr/share/hunspell → тесты зелёные, TestGenerateLive SKIP) — золотой контракт CORR-08
 
 ### Pending Todos
 
@@ -237,6 +241,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-01T20:15:36.425Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-10-01T20:58:19.595Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
