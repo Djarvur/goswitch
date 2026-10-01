@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 Phase: 05 (Интеграция с GNOME: индикация и двухисточниковое переключение) — EXECUTING
 Plan: 5 of 5
 Status: Phase complete — ready for verification
-Last activity: 2026-09-30 — Completed quick task 260930-toa: single-source input model — machine moved to one goswitch source, GNOME's native indicator hidden by design, selfcheck 6×ok
+Last activity: 2026-10-01 — Completed quick task 261001-fg3: interactive tray — self-healing supervisor live, DBusMenu toggle-first (com.canonical.dbusmenu fix e8dae38), Activate; owner visual check pending
 
 Progress: [████████░░] 75%
 
@@ -222,6 +222,7 @@ None yet.
 | 260930-nxd | fix: switchTimeout 40→150ms (actor.go, live RTT 41–45 ms made the 40 ms deadline WARN on every flip) + installer leaves GNOME switch-input-source/-backward bindings untouched (ADR-006 two-source: external flips synced by 05-04 listener; uninstall restore kept) | 2026-09-30 | 65670b8 | Needs Review | [260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst](./quick/260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst/) |
 | 260930-pf6 | feat: tray indicator (SNI/AppIndicator) — goswitchd publishes an EN/RU icon on its existing ctl connection, ModeDisplay seam observer-last in flipTo/syncMode, one-WARN degradations, Menu /NO_DBUSMENU sentinel (checker PASSED, verifier gap fixed); owner pixel check pending | 2026-09-30 | 9063703 | Verified | [260930-pf6-feat-tray-indicator-statusnotifieritem-a](./quick/260930-pf6-feat-tray-indicator-statusnotifieritem-a/) |
 | 260930-toa | feat: single-source input model — installer/selfcheck accept 1..N goswitch-wrapped sources (foreign residue still refused, atomic-refusal gate fixed in saveState), e2e oracle count-agnostic, README user-model rewrite + ADR-006 amendment; live machine on [('ibus','goswitch-en')], selfcheck 6×ok; owner visual check pending | 2026-09-30 | 0e34a83 | Verified (human_needed) | [260930-toa-feat-single-source-input-model-selfcheck](./quick/260930-toa-feat-single-source-input-model-selfcheck/) |
+| 261001-fg3 | feat: interactive tray — supervisor re-attaches on watcher appearance (NameOwnerChanged) + ~30 s health check (owner-requested silent-eviction self-heal, proven live twice), DBusMenu (com.canonical.dbusmenu, toggle-first/status/reload), SNI Activate; interface-name gap caught in live leg and fixed with a literal wire-name pin; owner visual check pending | 2026-10-01 | e8dae38 | Verified (human_needed) | [261001-fg3-feat-interactive-tray-daemon-re-attaches](./quick/261001-fg3-feat-interactive-tray-daemon-re-attaches/) |
 
 ## Deferred Items
 
