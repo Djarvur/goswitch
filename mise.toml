@@ -165,3 +165,10 @@ run = "go run ./test/e2e -case install-cycle"
 [tasks.e2e-perf]
 description = "e2e: 04-04 INST-03 — dedicated perf run: 40 homogeneous combo hot-case repeats (correct+flip chord), resident AT-SPI event witness, p50/p95/p99 + VmRSS/VmHWM report, budget gate exit≠0, perf-report.txt (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case perf"
+
+# Dictionary regeneration (06-02): a dev-only task — it reads the system
+# hunspell dictionaries, which exist on the dev machine only. CI never runs
+# it: CI гоняет только golden-тесты по закоммиченным данным (CORR-08).
+[tasks.dictgen-regen]
+description = "regen: dictgen — пересобрать golden-словари/триграммы из системных hunspell (dev-only; CI гоняет только goldens)"
+run = "go generate ./layouts"
