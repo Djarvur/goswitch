@@ -16,6 +16,7 @@ import (
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/config"
+	"github.com/Djarvur/goswitch/internal/ctlsvc"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -5094,6 +5095,121 @@ func TestAutoCorrect_CountersAndReasons(t *testing.T) {
 	for _, word := range []string{wordEN, wordRU, "cnhjrf", "vjcrdf"} {
 		if strings.Contains(logged, word) {
 			t.Errorf("the log leaked %q (D-20/D-21)", word)
+		}
+	}
+}
+
+// The status/fold corpus of plan 06-06 Task 3 (D-54): the autocorrect
+// state and counters ride the status snapshot, the config section folds
+// live through applySnapshot, and the ctl line carries the new tokens.
+
+// acEnabledCfg is a defaults-based document with the autocorrect section
+// ACTIVE on the corpus white list.
+func acEnabledCfg() config.Config {
+	cfg := config.Defaults()
+	cfg.Autocorrect = config.Autocorrect{
+		Enabled:       true,
+		Apps:          []string{acListedApp},
+		MinWordLen:    acMinWordLen,
+		TrigramMargin: acTrigramMargin,
+		TrigramFloor:  acTrigramFloor,
+	}
+
+	return cfg
+}
+
+// TestStatus_AutocorrectFields pins the snapshot surface (D-54): the
+// in-force switch, the fired/abstained counts and the CLONED reason map —
+// zeros with the layer off, the real counts after a fired round, and a
+// snapshot mutation never reaches the actor's own counters.
+func TestStatus_AutocorrectFields(t *testing.T) {
+	a, sink := wiredActor()
+	st := a.StatusSnapshot()
+	if st.AutoCorrectEnabled || st.AutoCorrectFired != 0 || st.AutoCorrectAbstained != 0 || len(st.AutoCorrectSkipReasons) != 0 {
+		t.Fatalf("off-state snapshot = %+v, want the zero autocorrect state", st)
+	}
+
+	a.UseAppid(fakeAppid{app: acListedApp})
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	st = a.StatusSnapshot()
+	if !st.AutoCorrectEnabled || st.AutoCorrectFired != 1 || st.AutoCorrectAbstained != 0 {
+		t.Fatalf("snapshot after the fired round = %+v, want {enabled true, fired 1, abstained 0}", st)
+	}
+	// The clone: mutating the snapshot's map must not touch the actor.
+	st.AutoCorrectSkipReasons["mutated"] = 99
+	if again := a.StatusSnapshot(); len(again.AutoCorrectSkipReasons) != 0 {
+		t.Errorf("the snapshot map is not a clone: %v", again.AutoCorrectSkipReasons)
+	}
+}
+
+// TestApplySnapshot_AutocorrectFold pins the live fold (the MACR-fold
+// precedent): the attached document's autocorrect section governs the
+// boundary gates — the feature appears and disappears LIVE on reload, the
+// folded MinWordLen gates the detector, and the white list starts the
+// identity observer.
+func TestApplySnapshot_AutocorrectFold(t *testing.T) {
+	a, sink := wiredActor()
+	starts := 0
+	a.UseAppidStarter(func() (session.AppidSource, error) {
+		starts++
+
+		return fakeAppid{app: acListedApp}, nil
+	})
+	src := &reloadSource{cfg: acEnabledCfg()}
+	a.AttachConfig(src)
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+	if starts != 1 {
+		t.Errorf("the folded white list started the observer %d times, want exactly 1", starts)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 1 {
+		t.Fatalf("counters after the enabled fold = %+v, want Fired 1", got)
+	}
+
+	// The section disappears live: the same boundary is now the off
+	// no-op (zero behavior, zero counters).
+	cfg := config.Defaults()
+	src.set(cfg)
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	typeWord(a, "cegth")
+	a.HandleKey(spaceKey())
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Errorf("counters after the disabled fold = %+v, want unchanged — the off fold is byte-as-today", got)
+	}
+
+	// The thresholds fold too: min_word_len 16 refuses the six-rune word
+	// with the detector's own slug.
+	cfg = acEnabledCfg()
+	cfg.Autocorrect.MinWordLen = 16
+	src.set(cfg)
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	typeWord(a, "vtyz")
+	a.HandleKey(spaceKey())
+	if got := a.AutoCorrectCounters().Reasons["abstain-short"]; got != 1 {
+		t.Errorf("abstain-short after the threshold fold = %d, want 1", got)
+	}
+}
+
+// TestCtlStatus_EndToEnd drives the real actor's snapshot through the
+// control line: a fired autocorrect shows as autocorrect_enabled=true with
+// the fired count — the goswitchctl grammar needs no change (the generic
+// key=value parser).
+func TestCtlStatus_EndToEnd(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{Status: a})
+	reply, err := svc.Status()
+	if err != nil {
+		t.Fatalf("Status error = %v, want nil", err)
+	}
+	for _, want := range []string{"autocorrect_enabled=true", "autocorrect_fired=1"} {
+		if !strings.Contains(reply, want) {
+			t.Errorf("Status reply %q missing %q", reply, want)
 		}
 	}
 }

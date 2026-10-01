@@ -711,3 +711,43 @@ func TestRun_OnConnHookFailureNeverAbortsServing(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderStatus_AutocorrectTokens pins the ctl token grammar (plan
+// 06-06, D-54): the three state/count tokens and the dash-flattened, sorted
+// ac_skip_* slugs sit BEFORE the config block, and config_error stays the
+// LAST token of the line.
+func TestRenderStatus_AutocorrectTokens(t *testing.T) {
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{Status: fakeStatus{snap: session.Status{
+		Mode:                   "en",
+		Version:                "dev",
+		AutoCorrectEnabled:     true,
+		AutoCorrectFired:       2,
+		AutoCorrectAbstained:   3,
+		AutoCorrectSkipReasons: map[string]int{"no-caps": 1, "abstain-short": 2},
+		ConfigPath:             "/tmp/goswitch-ac.yaml",
+		ConfigValid:            false,
+		ConfigError:            "decode config: boom",
+	}}})
+
+	reply, err := svc.Status()
+	if err != nil {
+		t.Fatalf("Status error = %v, want nil", err)
+	}
+	for _, want := range []string{
+		"autocorrect_enabled=true", "autocorrect_fired=2", "autocorrect_abstained=3",
+		"ac_skip_abstain_short=2", "ac_skip_no_caps=1",
+	} {
+		if !strings.Contains(reply, want) {
+			t.Errorf("Status reply %q missing %q", reply, want)
+		}
+	}
+	// The ac block ends before the config block opens.
+	acAt := strings.Index(reply, "ac_skip_no_caps=1")
+	cfgAt := strings.Index(reply, "config_path=")
+	if acAt < 0 || cfgAt < 0 || acAt > cfgAt {
+		t.Errorf("the autocorrect tokens must precede the config block: %q", reply)
+	}
+	if !strings.HasSuffix(reply, "config_error=decode config: boom") {
+		t.Errorf("config_error must stay the LAST token: %q", reply)
+	}
+}

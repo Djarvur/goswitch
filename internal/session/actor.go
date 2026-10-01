@@ -521,9 +521,16 @@ type Status struct {
 	SkipReasons           map[string]int
 	SuperIntercepted      int
 	SuperUpstreamConsumed int
-	ConfigPath            string
-	ConfigValid           bool
-	ConfigError           string
+	// The autocorrect layer's state and counters (plan 06-06, D-54): the
+	// in-force switch and the D-53 outcome counts with their closed-slug
+	// breakdown — counts and states only, never the word (D-20/D-21).
+	AutoCorrectEnabled     bool
+	AutoCorrectFired       int
+	AutoCorrectAbstained   int
+	AutoCorrectSkipReasons map[string]int
+	ConfigPath             string
+	ConfigValid            bool
+	ConfigError            string
 }
 
 // configStatus is the optional status surface of a config source: the
