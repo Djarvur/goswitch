@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"maps"
 	"slices"
@@ -67,6 +68,17 @@ const switchTimeout = 150 * time.Millisecond
 // ceiling.
 const autoRoleTimeout = 25 * time.Millisecond
 
+// The AT-SPI text-input roles the D-53 role gate allows: text box (61),
+// entry (79) and document text (94) — the live-verified enum of
+// internal/appid (gi Atspi 2.52.0, 06-RESEARCH Q4). password-text (40),
+// terminal (60) and every other value refuse. The gate compares NUMBERS
+// only: role-name strings localize ("text box" vs the gi-nick "text").
+const (
+	acRoleText         uint32 = 61
+	acRoleEntry        uint32 = 79
+	acRoleDocumentText uint32 = 94
+)
+
 // The autocorrect abstention vocabulary (plan 06-06, D-53 fail-closed):
 // every refusal of the boundary/confirm conjunction counts exactly one of
 // these slugs; the arming gate additionally reuses the detector's own
@@ -82,10 +94,6 @@ const (
 	acReasonRoleTimeout     = "role-timeout"
 	acReasonRecheckDisabled = "recheck-disabled"
 )
-
-// Task-2 keepalive: the confirm goroutine spends this budget on the live
-// GetRole ctx (the D-53 role contour of plan 06-06 Task 2).
-var _ = autoRoleTimeout
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
 // flip toggles it on every Single decision while the session's XKB group
@@ -176,21 +184,22 @@ type Actor struct {
 	// fail-closed abstentions with their reason slugs — counts and closed
 	// slugs only, never the typed or corrected word (D-20/D-21, Pitfall 6).
 	// acGeneration tags armed payloads so a newer boundary supersedes a
-	// mid-flight confirm; acAppWarned keeps the one-WARN discipline per
-	// degradation episode (the appidWarned precedent).
+	// mid-flight confirm; acAppWarned/acRoleWarned keep the one-WARN
+	// discipline per degradation episode (the appidWarned precedent).
 	acFired      int
 	acAbstained  int
 	acReasons    map[string]int
 	acGeneration uint64
 	acAppWarned  bool
+	acRoleWarned bool
 	appid        AppidSource
 	appidStarted bool
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
-	role         RoleSource
-	appidWarned  bool // one WARN per degradation episode — a broken source must not spam per keystroke
-	startAppid   func() (AppidSource, error)
+	role        RoleSource
+	appidWarned bool // one WARN per degradation episode — a broken source must not spam per keystroke
+	startAppid  func() (AppidSource, error)
 	// version is the daemon's build identity (D-37) pinned at construction;
 	// the status snapshot lifts it so goswitchctl status identifies the
 	// running build.
@@ -1855,21 +1864,87 @@ func (a *Actor) recordACAbstain(reason string) {
 	slog.Info("autocorrect skipped", "reason", reason)
 }
 
-// autoConfirm executes one armed autocorrect payload — the Task-1
-// scaffold: the armed range launches THE one correction pipeline
-// (startRangeCorrection — no second replacement mechanism, Pitfall 7) from
-// the confirm goroutine, off the keystroke path. A newer boundary
-// supersedes a mid-flight confirm by generation: the stale one drops. The
-// D-53 role contour (the live GetRole gate spending autoRoleTimeout, the
-// fail-closed verdicts, the fired counter) arrives with Task 2.
+// autoConfirm resolves one armed autocorrect payload OFF the actor mutex
+// (plan 06-06, the D-53 role contour): one LIVE GetRole round trip under
+// the hard autoRoleTimeout deadline — the stored pair is the address of
+// the query, never a cached answer (D-53/ADR-007) — then the verdict lands
+// back under the mutex. The re-entry re-checks enabled (a reload may have
+// switched the layer off between the boundary and this confirm — the
+// stale-payload guard, T-06-06-06) and the generation (a newer boundary
+// owns the decision). Any unknown means SILENCE with its counted slug —
+// the fail-closed direction INVERTED from macrTargetActive's degradation
+// (no rung upward, ADR-007): a role error or the deadline is
+// role-unknown/role-timeout with one WARN per episode, a non-text role
+// (password 40, terminal 60, anything unlisted) is role-forbidden. Only
+// the full conjunction FIRES: the counter moves and the armed range
+// launches THE one correction pipeline (startRangeCorrection — no second
+// replacement mechanism, Pitfall 7). No branch ever logs the word
+// (D-20/D-21).
 func (a *Actor) autoConfirm(payload acPayload) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	rs := a.role
+	a.mu.Unlock()
+	if rs == nil {
+		a.mu.Lock()
+		a.warnACRole(nil)
+		a.recordACAbstain(acReasonRoleUnknown)
+		a.mu.Unlock()
 
-	if payload.gen != a.acGeneration {
-		return // a newer boundary owns the decision now
+		return
 	}
-	a.startRangeCorrection(payload.rng)
+
+	// The live call: outside the actor mutex, under its own deadline —
+	// a stuck a11y object costs the budget, never a keystroke stall.
+	ctx, cancel := context.WithTimeout(context.Background(), autoRoleTimeout)
+	defer cancel()
+	role, err := rs.Role(ctx)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if payload.gen != a.acGeneration {
+		return // superseded mid-flight by a newer boundary — the stale verdict drops
+	}
+	if !a.opts.AutoCorrectEnabled {
+		a.recordACAbstain(acReasonRecheckDisabled)
+
+		return
+	}
+	if err != nil {
+		reason := acReasonRoleUnknown
+		if errors.Is(err, context.DeadlineExceeded) {
+			reason = acReasonRoleTimeout
+		}
+		a.warnACRole(err)
+		a.recordACAbstain(reason)
+
+		return
+	}
+	a.acRoleWarned = false // a healthy answer closes the episode
+	switch role {
+	case acRoleText, acRoleEntry, acRoleDocumentText:
+		a.acFired++
+		slog.Info("autocorrect", "reason", "fired")
+		a.startRangeCorrection(payload.rng)
+	default:
+		a.recordACAbstain(acReasonRoleForbidden)
+	}
+}
+
+// warnACRole records one live role-source failure: the WARN fires once per
+// degradation episode (the warnAppid form — per boundary would spam the
+// journal of a broken source). The error is transport-class only — it
+// never carries the word (D-20/D-21). The caller holds the mutex.
+func (a *Actor) warnACRole(err error) {
+	if a.acRoleWarned {
+		return
+	}
+	a.acRoleWarned = true
+	if err == nil {
+		slog.Warn("autocorrect role unavailable")
+
+		return
+	}
+	slog.Warn("autocorrect role unavailable", "error", err)
 }
 
 // modeSwitchChord is the mode-switch chord branch of feedKey (owner

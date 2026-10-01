@@ -4648,6 +4648,7 @@ func TestActor_ResetKeyBoundary(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
 	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed}) // the armed decision fires through the pipeline
 	a.SetOptions(acOptions())
 
 	typeWord(a, wordEN)
@@ -4725,8 +4726,11 @@ const (
 )
 
 // acReasonFired is the fired record's reason literal (the INFO log class
-// of the fired decision).
-const acReasonFired = "fired"
+// of the fired decision); acReasonRoleForbidden is the shared matrix slug.
+const (
+	acReasonFired         = "fired"
+	acReasonRoleForbidden = "role-forbidden"
+)
 
 // boundaryWord types one wrong-layout token and lands its separator — the
 // raw boundary of the counter/warn corpora (no verify dance: the cells
@@ -4796,14 +4800,6 @@ func (f *fakeRole) set(role uint32, err error) {
 	f.role, f.err = role, err
 }
 
-// callCount snapshots the call counter.
-func (f *fakeRole) callCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	return f.calls
-}
-
 // assertSilence checks the shared silence invariants of one matrix cell:
 // nothing fired, no correction op touched the field, exactly one
 // abstention with the cell's reason slug.
@@ -4861,29 +4857,35 @@ func TestAutoCorrect_FiresThroughPipeline(t *testing.T) {
 	}
 }
 
-// TestAutoCorrect_SilenceMatrix pins the fail-closed conjunction cell by
-// cell: EVERY unknown — a forbidden role (password 40, terminal 60), a
-// role error, a role deadline, a missing identity source, an unlisted
-// app, a missing capability, an unsure verdict, a short word — stays
-// silent (zero correction ops, the word stays in the field) and counts
-// exactly one abstention with its reason slug.
-func TestAutoCorrect_SilenceMatrix(t *testing.T) {
-	cells := []struct {
+// silenceMatrixCells is the plan-06-06 silence matrix (D-53): every
+// unknown cell of the conjunction with its expected reason slug. The role
+// cells conclude on their own goroutine (async); the cheap-gate cells
+// abstain synchronously.
+func silenceMatrixCells() []struct {
+	name   string
+	token  string
+	caps   uint32
+	appid  func(a *session.Actor)
+	role   *fakeRole
+	reason string
+	async  bool
+} {
+	return []struct {
 		name   string
 		token  string
 		caps   uint32
 		appid  func(a *session.Actor)
 		role   *fakeRole
 		reason string
-		async  bool // the role cells conclude on their own goroutine
+		async  bool
 	}{
 		{
 			name: "role 40 password text is forbidden", token: wordEN,
-			role: &fakeRole{role: acRoleForbiddenEntry}, reason: "role-forbidden", async: true,
+			role: &fakeRole{role: acRoleForbiddenEntry}, reason: acReasonRoleForbidden, async: true,
 		},
 		{
 			name: "role 60 terminal is forbidden", token: wordEN,
-			role: &fakeRole{role: acRoleForbiddenTerminal}, reason: "role-forbidden", async: true,
+			role: &fakeRole{role: acRoleForbiddenTerminal}, reason: acReasonRoleForbidden, async: true,
 		},
 		{
 			name: "role error is unknown", token: wordEN,
@@ -4909,7 +4911,16 @@ func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 		{name: "detector unsure on a both-dictionary miss", token: "vjcrdf", reason: "trigram-unsure"},
 		{name: "short word abstains", token: "ok", reason: "abstain-short"},
 	}
-	for _, tc := range cells {
+}
+
+// TestAutoCorrect_SilenceMatrix pins the fail-closed conjunction cell by
+// cell: EVERY unknown — a forbidden role (password 40, terminal 60), a
+// role error, a role deadline, a missing identity source, an unlisted
+// app, a missing capability, an unsure verdict, a short word — stays
+// silent (zero correction ops, the word stays in the field) and counts
+// exactly one abstention with its reason slug.
+func TestAutoCorrect_SilenceMatrix(t *testing.T) {
+	for _, tc := range silenceMatrixCells() {
 		t.Run(tc.name, func(t *testing.T) {
 			caps := tc.caps
 			if caps == 0 && tc.reason != "no-caps" {
@@ -5067,14 +5078,14 @@ func TestAutoCorrect_CountersAndReasons(t *testing.T) {
 		t.Fatalf("abstained after the sync cells = %d, want 2", got.Abstained)
 	}
 
-	fireAutocorrect(t, a, sink, wordEN, wordRU) // fired (role 61)
-	role.set(acRoleForbiddenEntry, nil)
-	boundaryWord(t, a, "cnhjrf") // role 40 → role-forbidden
+	fireAutocorrect(t, a, sink, wordEN, wordRU)      // fired (role 61)
+	a.UseRole(&fakeRole{role: acRoleForbiddenEntry}) // fireAutocorrect installed its own double
+	boundaryWord(t, a, "cnhjrf")                     // role 40 → role-forbidden
 	eventually(t, func() bool { return a.AutoCorrectCounters().Abstained == 3 },
 		"the forbidden-role boundary never counted")
 
 	counters := a.AutoCorrectCounters()
-	want := map[string]int{"abstain-short": 1, "trigram-unsure": 1, "role-forbidden": 1}
+	want := map[string]int{"abstain-short": 1, "trigram-unsure": 1, acReasonRoleForbidden: 1}
 	if counters.Fired != 1 || counters.Abstained != 3 || !maps.Equal(counters.Reasons, want) {
 		t.Errorf("counters = {Fired:%d Abstained:%d Reasons:%v}, want {Fired:1 Abstained:3 Reasons:%v}",
 			counters.Fired, counters.Abstained, counters.Reasons, want)
