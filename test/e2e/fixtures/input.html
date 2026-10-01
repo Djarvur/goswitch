@@ -6,5 +6,12 @@
 </head>
 <body>
   <input id="e" type="text" autofocus>
+  <!-- Research A2 pinned LIVE 2026-10-01 (plan 06-07, google-chrome 153
+       Wayland, --force-renderer-accessibility, probe walk + Tab witness):
+       <input type=password> exposes AT-SPI PASSWORD_TEXT (40) — the
+       password class, same enum the GTK4 GtkPasswordEntry carries; the
+       text input exposes ENTRY (79). One Tab from the autofocus text
+       input lands on the password field (witness PASSWORD_TEXT:chars=0). -->
+  <input id="p" type="password">
 </body>
 </html>
