@@ -198,9 +198,14 @@ func TestSupervisorOwnerChangedGuards(t *testing.T) {
 	baseline := len(w.registerCalls())
 
 	for name, sig := range map[string]*dbus.Signal{
-		"nil signal":      nil,
-		"foreign member":  {Name: dbusSignalIface + ".NameAcquired", Body: []any{watcherName, "", watcherName}},
-		"foreign name":    {Name: ownerChangedSignal, Body: []any{"org.freedesktop.Notifications", "", "org.freedesktop.Notifications"}},
+		"nil signal": nil,
+		"foreign member": {
+			Name: dbusSignalIface + ".NameAcquired", Body: []any{watcherName, "", watcherName},
+		},
+		"foreign name": {
+			Name: ownerChangedSignal,
+			Body: []any{"org.freedesktop.Notifications", "", "org.freedesktop.Notifications"},
+		},
 		"two-part body":   {Name: ownerChangedSignal, Body: []any{watcherName, ""}},
 		"empty new owner": {Name: ownerChangedSignal, Body: []any{watcherName, watcherName, ""}},
 		"non-string body": {Name: ownerChangedSignal, Body: []any{watcherName, "", 42}},
@@ -326,7 +331,8 @@ func TestSupervisorConsecutiveFailuresOneWarn(t *testing.T) {
 // run returns when the context is cancelled — the daemon's shutdown must
 // never strand the supervisor.
 func TestSupervisorRunExitsOnContextDone(t *testing.T) {
-	_, sup, w, _, _ := attachSupervised()
+	item, sup, w, _, _ := attachSupervised()
+	_ = item
 	w.setItems([]string{watcherItem})
 	sup.signals = make(chan *dbus.Signal, 1)
 	sup.ticks = make(chan time.Time)

@@ -71,6 +71,12 @@ const (
 // attach degradation names (the daemon's one WARN).
 var errNoWatcher = errors.New("no StatusNotifierWatcher on the session bus")
 
+// errItemsType is the registry-read type-mismatch verdict: the
+// RegisteredStatusNotifierItems property arrived as something other than
+// the as-typed string list (never seen on the wire — the wrap names the
+// property for the log).
+var errItemsType = errors.New("unexpected registered-items variant payload")
+
 // Watcher probes the org.kde.StatusNotifierWatcher owner, registers the
 // item with it and reads the watcher's live item registry — the daemon's
 // point-of-use view of the watcher surface (the fakeSink precedent: the
@@ -138,7 +144,7 @@ func (w connWatcher) RegisteredStatusNotifierItems() ([]string, error) {
 	}
 	items, ok := v.Value().([]string)
 	if !ok {
-		return nil, fmt.Errorf("read %s.%s: unexpected variant payload %T", watcherIface, propRegisteredItems, v.Value())
+		return nil, fmt.Errorf("read %s.%s: %w", watcherIface, propRegisteredItems, errItemsType)
 	}
 
 	return items, nil
@@ -267,6 +273,40 @@ func (it *Item) ModeChanged(symbol string) {
 	}
 }
 
+// Get serves org.freedesktop.DBus.Properties.Get for the item — the
+// dispatch re-entry the SNI extension drives on its own goroutine. Error
+// returns carry the zero Variant: MakeVariant(nil) would panic in the
+// signature computation, and the value is unspecified whenever the error
+// is non-nil anyway.
+func (it *Item) Get(iface, property string) (dbus.Variant, *dbus.Error) {
+	if iface != sniIface {
+		return dbus.Variant{}, dbus.NewError(errNameUnknownIface, []any{iface})
+	}
+
+	props := it.properties()
+	v, ok := props[property]
+	if !ok {
+		return dbus.Variant{}, dbus.NewError(errNameUnknownProperty, []any{property})
+	}
+
+	return v, nil
+}
+
+// GetAll serves org.freedesktop.DBus.Properties.GetAll for the item.
+func (it *Item) GetAll(iface string) (map[string]dbus.Variant, *dbus.Error) {
+	if iface != sniIface {
+		return nil, dbus.NewError(errNameUnknownIface, []any{iface})
+	}
+
+	return it.properties(), nil
+}
+
+// Set refuses: every SNI property of the item is read-only — the mode
+// changes ride ModeChanged, never a property write.
+func (it *Item) Set(iface, property string, _ dbus.Variant) *dbus.Error {
+	return dbus.NewError(errNameReadOnly, []any{property + " on " + iface + " is read-only"})
+}
+
 // emitNewIcon sends the NewIcon signal; a failed emit is the one-WARN
 // self-disable — permanent per connection. The caller holds the mutex.
 func (it *Item) emitNewIcon() {
@@ -301,40 +341,6 @@ func (it *Item) markUnregistered() {
 	defer it.mu.Unlock()
 
 	it.registered = false
-}
-
-// Get serves org.freedesktop.DBus.Properties.Get for the item — the
-// dispatch re-entry the SNI extension drives on its own goroutine. Error
-// returns carry the zero Variant: MakeVariant(nil) would panic in the
-// signature computation, and the value is unspecified whenever the error
-// is non-nil anyway.
-func (it *Item) Get(iface, property string) (dbus.Variant, *dbus.Error) {
-	if iface != sniIface {
-		return dbus.Variant{}, dbus.NewError(errNameUnknownIface, []any{iface})
-	}
-
-	props := it.properties()
-	v, ok := props[property]
-	if !ok {
-		return dbus.Variant{}, dbus.NewError(errNameUnknownProperty, []any{property})
-	}
-
-	return v, nil
-}
-
-// GetAll serves org.freedesktop.DBus.Properties.GetAll for the item.
-func (it *Item) GetAll(iface string) (map[string]dbus.Variant, *dbus.Error) {
-	if iface != sniIface {
-		return nil, dbus.NewError(errNameUnknownIface, []any{iface})
-	}
-
-	return it.properties(), nil
-}
-
-// Set refuses: every SNI property of the item is read-only — the mode
-// changes ride ModeChanged, never a property write.
-func (it *Item) Set(iface, property string, _ dbus.Variant) *dbus.Error {
-	return dbus.NewError(errNameReadOnly, []any{property + " on " + iface + " is read-only"})
 }
 
 // properties snapshots the served property set under the mutex — the one
