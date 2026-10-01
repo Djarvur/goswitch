@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Система автокоррекции
 status: executing
-stopped_at: Completed 06-04-PLAN.md
-last_updated: "2026-10-01T21:47:13.437Z"
+stopped_at: Completed 06-05-PLAN.md
+last_updated: "2026-10-01T22:40:43.900Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 06 execution started
-state_head: 898139744ed0ad0a30b2fefce98870089015e2fc
+state_head: 88259084fac4cdb6f4fa970e4fd8cd3a571a2f2e
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 41
-  completed_plans: 36
+  completed_plans: 37
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 06 (Система автокоррекции) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 06 execution started
 
@@ -101,6 +101,7 @@ Progress: [████████░░] 75%
 | Phase 06 P02 | 38 min | 2 tasks | 11 files |
 | Phase 06 P03 | 23 min | 2 tasks | 4 files |
 | Phase 06 P04 | 10 min | 2 tasks | 5 files |
+| Phase 06 P05 | 42 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -216,6 +217,9 @@ Recent decisions affecting current work:
 - [Phase 06]: [06-04] Autocorrect threshold ranges gate on an ACTIVE section (enabled + non-empty apps): the plan-pinned behaviors (zero section valid, enabled+empty-list valid) make unconditional range checks contradictory; the white-list ceiling stays unconditional (DoS), thresholds are checked only where they can bite, and an ACTIVE section with omitted thresholds refuses loudly (complete-document contract 03-02)
 - [Phase 06]: [06-04] Threshold validation errors name their own field (trigram_floor <= 0 names autocorrect.trigram_floor, not the plan action's combined margin-only form) — the must_haves truth 'every error names its field' wins over the action's shorthand
 - [Phase 06]: [06-04] RED-stub pattern reused (06-03 continuity-pin precedent): the RED commit carries the schema shape only (struct + Config field + zero Defaults entry), GREEN sets the documented defaults/ceiling/validation; D-32/D-33 propagation tests land green-by-design — the sections' strict decode and last-good reload need zero new code in load.go/watch.go
+- [Phase 06]: Гибридный детектор D-52: словарный путь с двухпробным lookup (точное написание + нормализованный запрос lower+ё→е — регистр- и ё-варианты набираемого находят свои словарные статьи) и триграммный fallback scoreLang (log10-окна по 3 руны, neutralPenalty -6.0, нормировка длиной); пороги подтверждены корпусом на дефолтах 4/2.0/1.0
+- [Phase 06]: Порог floor 1.0 лежит ВЫШЕ log10-шкалы таблиц 06-02 (все вероятности ≤ 0): fallback при дефолтах честно отвечает trigram-unsure — санкционированный планом консервативный старт (research A4); корпус это подтвердил, config 06-04 не менялся (пара мест согласована)
+- [Phase 06]: OOV-класс Pitfall 2 определён как двусторонний словарный miss: план-примеры Vfrcbv (ремап максим — словарная статья) и vjcrdf (ремап москва — НЕ статья) лежат по разные стороны словарной границы; Vfrcbv перенесён в wrong-layout-корпус (уверенная коррекция = работа фичи), OOV-набор (34 кейса) требует unsure
 
 ### Pending Todos
 
@@ -248,6 +252,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-01T21:47:13.343Z
-Stopped at: Completed 06-04-PLAN.md
+Last session: 2026-10-01T22:40:35.902Z
+Stopped at: Completed 06-05-PLAN.md
 Resume file: None
