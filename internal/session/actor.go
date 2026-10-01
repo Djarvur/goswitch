@@ -185,6 +185,10 @@ type Actor struct {
 	acAppWarned  bool
 	appid        AppidSource
 	appidStarted bool
+	// role is the live AT-SPI role seam of the autocorrect policy (plan
+	// 06-06): the SAME observer as appid when the concrete source implements
+	// RoleSource, or a test double installed via UseRole.
+	role         RoleSource
 	appidWarned  bool // one WARN per degradation episode — a broken source must not spam per keystroke
 	startAppid   func() (AppidSource, error)
 	// version is the daemon's build identity (D-37) pinned at construction;
@@ -440,6 +444,27 @@ func (a *Actor) UseAppidStarter(fn func() (AppidSource, error)) {
 	defer a.mu.Unlock()
 
 	a.startAppid = fn
+}
+
+// RoleSource is the live AT-SPI role seam of the autocorrect policy (plan
+// 06-06, D-53 condition 2): Role queries the role of the focused object
+// NOW — the live call at the decision moment, never a cached answer
+// (ADR-007). The observer of internal/appid implements it; a test double
+// stands in for the corpus. Defined at the point of use; the interface
+// travels with the consumer (the AppidSource precedent).
+type RoleSource interface {
+	Role(ctx context.Context) (uint32, error)
+}
+
+// UseRole installs a prepared role source — the wiring/test seam of the
+// D-53 role contour (the UseAppid mirror). The daemon path never calls it:
+// the observer arrives through ensureAppid's lazy start and the RoleSource
+// type assertion.
+func (a *Actor) UseRole(rs RoleSource) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.role = rs
 }
 
 // SetVersion pins the daemon's build identity into the status snapshot
@@ -1367,7 +1392,7 @@ func (a *Actor) warnAppid(err error) {
 // (one documented degradation, not a retry loop). The caller holds the
 // mutex.
 func (a *Actor) ensureAppid() {
-	if a.appidStarted || len(a.opts.MACRApps) == 0 {
+	if a.appidStarted || (len(a.opts.MACRApps) == 0 && len(a.opts.AutoCorrectApps) == 0) {
 		return
 	}
 	a.appidStarted = true
@@ -1378,6 +1403,9 @@ func (a *Actor) ensureAppid() {
 		return
 	}
 	a.appid = src
+	if rs, ok := src.(RoleSource); ok {
+		a.role = rs // one Observer, two seams (the plan-06-06 role contour)
+	}
 }
 
 // isSuperKeyval reports whether keyval is one of the Super modifier
