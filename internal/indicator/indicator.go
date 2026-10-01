@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 
 	"github.com/godbus/dbus/v5"
@@ -30,6 +31,11 @@ const (
 	// keep the corpus hermetic).
 	propertiesIface = "org.freedesktop.DBus.Properties"
 	signalNewIcon   = "NewIcon"
+	// menuPath and menuIface locate the DBusMenu object — exported at /Menu
+	// under org.canonical.dbusmenu once the menu exports succeed; the value
+	// the Menu property serves before that is the sentinel below.
+	menuPath  = dbus.ObjectPath("/Menu")
+	menuIface = "org.canonical.dbusmenu"
 )
 
 // The served SNI v0 property surface: icon-only (no Menu, no ToolTip —
@@ -65,6 +71,7 @@ const (
 	errNameUnknownProperty = "org.freedesktop.DBus.Error.UnknownProperty"
 	errNameUnknownIface    = "org.freedesktop.DBus.Error.UnknownInterface"
 	errNameReadOnly        = "org.freedesktop.DBus.Error.PropertyReadOnly"
+	errNameFailed          = "org.freedesktop.DBus.Error.Failed"
 )
 
 // errNoWatcher is the absent-watcher verdict of the probe — the reason the
@@ -76,6 +83,18 @@ var errNoWatcher = errors.New("no StatusNotifierWatcher on the session bus")
 // the as-typed string list (never seen on the wire — the wrap names the
 // property for the log).
 var errItemsType = errors.New("unexpected registered-items variant payload")
+
+// Callbacks carries the daemon's interactive surface — small func fields the
+// daemon wiring fills (quick plan 261001-fg3). Reload nil means the daemon
+// runs without -config (the menu serves item 3 disabled); a nil Toggle or
+// Status makes the corresponding gesture a contained no-op. The callbacks
+// run on godbus dispatch goroutines and must carry their own
+// synchronization (the actor's mutex).
+type Callbacks struct {
+	Toggle func()
+	Status func()
+	Reload func()
+}
 
 // Watcher probes the org.kde.StatusNotifierWatcher owner, registers the
 // item with it and reads the watcher's live item registry — the daemon's
@@ -170,16 +189,20 @@ func (e connEmitter) Emit(objectPath dbus.ObjectPath, iface, signal string, args
 // goroutines, so the pixmap swap and every read go through the item's own
 // mutex (T-Q6-04: no path leads back into the actor — no lock cycle).
 type Item struct {
-	mu           sync.Mutex
-	pix          Pixmap  // the pixmap the Properties surface serves
-	emitter      Emitter // the NewIcon channel (always non-nil at construction)
-	path         dbus.ObjectPath
-	registered   bool // the watcher holds the item — supervisor-managed
-	emitDead     bool // a failed emit — permanent per connection
-	attachWarned bool // one WARN per degradation type per item lifetime
-	emitWarned   bool
-	symbolWarned bool
-	sup          *supervisor // the lifecycle owner; born with the item
+	mu             sync.Mutex
+	pix            Pixmap  // the pixmap the Properties surface serves
+	emitter        Emitter // the NewIcon channel (always non-nil at construction)
+	path           dbus.ObjectPath
+	registered     bool // the watcher holds the item — supervisor-managed
+	emitDead       bool // a failed emit — permanent per connection
+	attachWarned   bool // one WARN per degradation type per item lifetime
+	emitWarned     bool
+	symbolWarned   bool
+	menuWarned     bool
+	activateWarned bool
+	cb             Callbacks   // the interactive surface; immutable after attach
+	menuPath       string      // the served Menu value: /Menu or the sentinel
+	sup            *supervisor // the lifecycle owner; born with the item
 }
 
 // Attach builds the tray item on conn — the daemon's EXISTING session-bus
@@ -187,8 +210,8 @@ type Item struct {
 // is reachable at <service>/StatusNotifierItem, and service is the
 // well-known name the control service already owns). Attach ALWAYS
 // succeeds: every degradation is a one-WARN inert display inside the item.
-func Attach(conn *dbus.Conn, service string) *Item {
-	return attach(connWatcher{conn: conn}, connEmitter{conn: conn}, conn, service)
+func Attach(conn *dbus.Conn, service string, cb Callbacks) *Item {
+	return attach(connWatcher{conn: conn}, connEmitter{conn: conn}, conn, service, cb)
 }
 
 // attach is the testable core of Attach: probe → export → register, one
@@ -196,10 +219,12 @@ func Attach(conn *dbus.Conn, service string) *Item {
 // watcher's immediate property reads after the registration find the
 // object served. A failed registration is no longer the last word — the
 // supervisor born with the item re-checks (quick plan 261001-fg3).
-func attach(w Watcher, em Emitter, exp exporter, service string) *Item {
+func attach(w Watcher, em Emitter, exp exporter, service string, cb Callbacks) *Item {
 	it := &Item{
-		emitter: em,
-		path:    itemPath,
+		emitter:  em,
+		path:     itemPath,
+		cb:       cb,
+		menuPath: menuNoDBusMenu, // icon-only until the menu exports succeed
 	}
 	if pm, ok := PixmapFor(symbolEN); ok {
 		it.pix = pm // EN at start (ADR-001); the install-push corrects any skew
@@ -216,11 +241,14 @@ func attach(w Watcher, em Emitter, exp exporter, service string) *Item {
 	return it
 }
 
-// registerItem runs the one-shot attach-time registration sequence: the
-// watcher probe first (absent — the indicator is a permanent no-op, v0
-// never re-checks), then the double export, then the register. The EXPORTED
-// value is the live item itself — a throwaway instance would serve an empty
-// pixmap to every property read.
+// registerItem runs the attach-time registration sequence: the watcher
+// probe first, then the menu exports (their outcome decides the Menu
+// property BEFORE the item is registered — the watcher's immediate property
+// reads must find the decision), then the item's double export, then the
+// register. The EXPORTED value is the live item itself — a throwaway
+// instance would serve an empty pixmap to every property read. A menu
+// export failure degrades to the sentinel and CONTINUES; everything else
+// fails the sequence (the supervisor re-runs it).
 func registerItem(w Watcher, exp exporter, it *Item, service string) error {
 	has, err := w.NameHasOwner()
 	if err != nil {
@@ -229,6 +257,18 @@ func registerItem(w Watcher, exp exporter, it *Item, service string) error {
 	if !has {
 		return errNoWatcher
 	}
+
+	menu := &Menu{cb: it.cb}
+	if err := exp.Export(menu, menuPath, menuIface); err != nil {
+		it.menuFailed(fmt.Errorf("export %s: %w", menuIface, err))
+	} else if err := exp.Export(menu, menuPath, propertiesIface); err != nil {
+		it.menuFailed(fmt.Errorf("export %s: %w", propertiesIface, err))
+	} else {
+		it.mu.Lock()
+		it.menuPath = string(menuPath)
+		it.mu.Unlock()
+	}
+
 	if err := exp.Export(it, itemPath, sniIface); err != nil {
 		return fmt.Errorf("export %s: %w", sniIface, err)
 	}
@@ -307,6 +347,35 @@ func (it *Item) Set(iface, property string, _ dbus.Variant) *dbus.Error {
 	return dbus.NewError(errNameReadOnly, []any{property + " on " + iface + " is read-only"})
 }
 
+// Activate implements the SNI Activate method — the menu-less environment's
+// path into the toggle (quick plan 261001-fg3): the same Callbacks.Toggle
+// the menu's first item drives. A nil toggle is a one-WARN no-op (the
+// emitWarned discipline pattern); the recover shim contains anything a
+// toggle panics with (T-FG3-01).
+func (it *Item) Activate(_ int32, _ int32) (err *dbus.Error) {
+	defer recoverMenuCall("Activate", &err)
+
+	it.mu.Lock()
+	toggle := it.cb.Toggle
+	firstNil := toggle == nil && !it.activateWarned
+	if firstNil {
+		it.activateWarned = true
+	}
+	it.mu.Unlock()
+
+	if toggle == nil {
+		if firstNil {
+			slog.Warn("tray indicator activate unavailable",
+				"component", "tray indicator", "reason", "no toggle callback")
+		}
+
+		return nil
+	}
+	toggle()
+
+	return nil
+}
+
 // emitNewIcon sends the NewIcon signal; a failed emit is the one-WARN
 // self-disable — permanent per connection. The caller holds the mutex.
 func (it *Item) emitNewIcon() {
@@ -343,6 +412,35 @@ func (it *Item) markUnregistered() {
 	it.registered = false
 }
 
+// menuFailed degrades the menu decision to the icon-only sentinel: exactly
+// one WARN per item lifetime, and the registration CONTINUES — the
+// sentinel is what keeps the watcher from destroying an icon-only item.
+func (it *Item) menuFailed(err error) {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+
+	it.menuPath = menuNoDBusMenu
+	if it.menuWarned {
+		return
+	}
+	it.menuWarned = true
+	slog.Warn("tray indicator menu export failed", "component", "tray indicator", "error", err)
+}
+
+// recoverMenuCall contains a panic raised anywhere below a menu click or an
+// item Activate: the panic is swallowed and logged at ERROR with its stack,
+// and the caller answers with a D-Bus error — a click can never kill the
+// daemon (the ctlsvc recoverMethod precedent, T-FG3-01).
+func recoverMenuCall(method string, dbusErr **dbus.Error) {
+	if r := recover(); r != nil {
+		slog.Error("menu call panic contained",
+			"method", method,
+			"panic", fmt.Sprint(r),
+			"stack", string(debug.Stack()))
+		*dbusErr = dbus.NewError(errNameFailed, []any{"internal error in " + method})
+	}
+}
+
 // properties snapshots the served property set under the mutex — the one
 // map both Get and GetAll read from.
 func (it *Item) properties() map[string]dbus.Variant {
@@ -357,6 +455,6 @@ func (it *Item) properties() map[string]dbus.Variant {
 		propIconName:   dbus.MakeVariant(""),
 		propIconPixmap: dbus.MakeVariant([]Pixmap{it.pix}),
 		propWindowID:   dbus.MakeVariant(int32(0)),
-		propMenu:       dbus.MakeVariant(dbus.ObjectPath(menuNoDBusMenu)),
+		propMenu:       dbus.MakeVariant(dbus.ObjectPath(it.menuPath)),
 	}
 }

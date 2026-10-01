@@ -26,6 +26,9 @@ var errWatchInjected = errors.New("watcher exploded")
 // errEmitInjected is the emit failure of the self-disable corpus.
 var errEmitInjected = errors.New("emit exploded")
 
+// errMenuExportInjected is the menu-export failure of the sentinel corpus.
+var errMenuExportInjected = errors.New("menu export exploded")
+
 // syncBuffer is the guarded log buffer of the degradation corpus (the
 // session corpus's captureLogs discipline, local copy — dupl is relaxed in
 // tests).
@@ -166,11 +169,14 @@ type exportCall struct {
 }
 
 // fakeExporter is the object-export double: every Export recorded under a
-// mutex, with an injected failure for the degradation corpus.
+// mutex, with an injected failure for the degradation corpus and a per-call
+// failure predicate for the menu-fallback corpus (the predicate wins over
+// the blanket err).
 type fakeExporter struct {
 	mu    sync.Mutex
 	calls []exportCall
 	err   error
+	fail  func(call exportCall) error
 }
 
 // Export records the object and answers the canned verdict.
@@ -178,7 +184,13 @@ func (f *fakeExporter) Export(_ any, path dbus.ObjectPath, iface string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.calls = append(f.calls, exportCall{path: path, iface: iface})
+	call := exportCall{path: path, iface: iface}
+	f.calls = append(f.calls, call)
+	if f.fail != nil {
+		if err := f.fail(call); err != nil {
+			return err
+		}
+	}
 
 	return f.err
 }
@@ -192,11 +204,13 @@ func (f *fakeExporter) exportCalls() []exportCall {
 }
 
 // attachOK builds an item over healthy doubles: the watcher owns the name,
-// registration and exports succeed. The corpus's happy-path base.
+// registration and exports succeed. The corpus's happy-path base — zero
+// callbacks (the no-wiring daemon; reload disabled, Activate/Event
+// nil-guarded).
 func attachOK() (*Item, *fakeWatcher, *fakeEmitter, *fakeExporter) {
 	w, em, exp := &fakeWatcher{owner: true}, &fakeEmitter{}, &fakeExporter{}
 
-	return attach(w, em, exp, testService), w, em, exp
+	return attach(w, em, exp, testService, Callbacks{}), w, em, exp
 }
 
 // TestAttachWatcherAbsentIsInert pins the absent-watcher degradation: one
@@ -260,10 +274,13 @@ func TestAttachProbeFailureIsInert(t *testing.T) {
 }
 
 // TestAttachRegistersAndExports pins the healthy attach: the watcher probe
-// passes, the item is exported at /StatusNotifierItem under BOTH the SNI
-// interface and the Properties surface (the export precedes the register —
-// the watcher's immediate property reads must find the object), and the
-// registration names exactly the daemon's well-known service.
+// passes, the menu is exported at /Menu under BOTH the dbusmenu interface
+// and the Properties surface, then the item at /StatusNotifierItem under
+// the SNI interface and the Properties surface (the menu exports PRECEDE
+// the item's so the Menu property is decided before the watcher reads it;
+// every export precedes the register — the watcher's immediate property
+// reads must find the objects), and the registration names exactly the
+// daemon's well-known service.
 func TestAttachRegistersAndExports(t *testing.T) {
 	buf := captureLogs(t)
 	item, w, _, exp := attachOK()
@@ -275,11 +292,14 @@ func TestAttachRegistersAndExports(t *testing.T) {
 		t.Errorf("registrations = %q, want exactly [%s] once", got, testService)
 	}
 	wantExports := []exportCall{
+		{path: menuPath, iface: menuIface},
+		{path: menuPath, iface: propertiesIface},
 		{path: itemPath, iface: sniIface},
 		{path: itemPath, iface: propertiesIface},
 	}
 	if got := exp.exportCalls(); !equalExports(got, wantExports) {
-		t.Errorf("exports = %v, want the item at %s under %s and %s", got, itemPath, sniIface, propertiesIface)
+		t.Errorf("exports = %v, want the menu then the item, each under its interface and %s",
+			got, propertiesIface)
 	}
 
 	// The served pixmap starts at EN (ADR-001) — the install-push corrects
@@ -404,15 +424,13 @@ func TestItemProperties(t *testing.T) {
 		}
 	}
 	if len(all) != 8 {
-		t.Errorf("GetAll serves %d properties, want exactly 8 (icon-only v0 surface + the Menu sentinel)", len(all))
+		t.Errorf("GetAll serves %d properties, want exactly 8 (icon-only v0 surface + the Menu decision)", len(all))
 	}
-	// The Menu sentinel: the ubuntu-appindicators watcher DESTROYS an item
-	// without the Menu property (NEEDED_PROPERTIES = ['Id', 'Menu']); the
-	// /NO_DBUSMENU object path is the extension's own icon-only sentinel
-	// (appIndicator.js menuPath) — served, never dereferenced.
+	// The Menu decision in the healthy path: the live DBusMenu object at
+	// /Menu (the sentinel pin migrated to the menu-failure corpus).
 	if got, derr := item.Get(sniIface, propMenu); derr != nil ||
-		got.Value() != dbus.ObjectPath(menuNoDBusMenu) {
-		t.Errorf("Get(Menu) = (%v, %v), want the /NO_DBUSMENU sentinel", got.Value(), derr)
+		got.Value() != menuPath {
+		t.Errorf("Get(Menu) = (%v, %v), want the /Menu object path", got.Value(), derr)
 	}
 	if derr := item.Set(sniIface, propStatus, dbus.MakeVariant("Passive")); derr == nil {
 		t.Error("Set returned no error — every item property is read-only")
@@ -423,6 +441,45 @@ func TestItemProperties(t *testing.T) {
 	// emits coexist under the same mutex (the concurrent hammer below is
 	// the race detector's real subject).
 	_ = em
+}
+
+// TestAttachMenuExportFailureServesSentinel pins the menu degradation: a
+// failed menu export is ONE WARN per item lifetime, the Menu property falls
+// back to the /NO_DBUSMENU sentinel (the ubuntu-appindicators watcher
+// DESTROYS an item without the Menu property — NEEDED_PROPERTIES
+// = ['Id', 'Menu']; the sentinel is the extension's own icon-only path,
+// appIndicator.js menuPath — served, never dereferenced) and the item STILL
+// registers and works as a display.
+func TestAttachMenuExportFailureServesSentinel(t *testing.T) {
+	buf := captureLogs(t)
+	w, em := &fakeWatcher{owner: true}, &fakeEmitter{}
+	exp := &fakeExporter{fail: func(c exportCall) error {
+		if c.path == menuPath {
+			return errMenuExportInjected
+		}
+
+		return nil
+	}}
+
+	item := attach(w, em, exp, testService, Callbacks{})
+
+	if got := strings.Count(buf.String(), `"level":"WARN"`); got != 1 {
+		t.Errorf("menu failure warned %d times, want exactly one; log:\n%s", got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `"component":"tray indicator"`) {
+		t.Errorf("menu-failure WARN missing the component token; log:\n%s", buf.String())
+	}
+	if got, derr := item.Get(sniIface, propMenu); derr != nil ||
+		got.Value() != dbus.ObjectPath(menuNoDBusMenu) {
+		t.Errorf("Get(Menu) = (%v, %v), want the /NO_DBUSMENU sentinel", got.Value(), derr)
+	}
+	if got := w.registerCalls(); !equalStrings(got, []string{testService}) {
+		t.Errorf("registrations = %q — the item must register through a menu failure", got)
+	}
+	item.ModeChanged(symbolRU)
+	if got := len(em.emitCalls()); got != 1 {
+		t.Errorf("post-failure ModeChanged emits = %d, want exactly one — the display must survive", got)
+	}
 }
 
 // TestItemConcurrentModeAndReads hammers the item's mutex the way godbus
