@@ -20,15 +20,16 @@ const (
 
 // The test dictionaries: a hand-picked core per language plus a
 // deterministic stride sample of the real baked data for plausibility —
-// sorted, the SearchStrings contract. "anagram" deliberately sits in BOTH
-// fixtures: the both-hit veto needs a word valid in two layouts at once (a
-// random cross-script anagram), which the script-disjoint real data cannot
-// provide (its disjointness is pinned by layouts/dict_test.go).
+// sorted, the SearchStrings contract. The pair "анаграмма"/"fyfuhfvvf"
+// (the RUToEN remap of the word) deliberately sits in BOTH fixtures: the
+// both-hit veto needs a token whose dictionary hit exists on both sides at
+// once (a random cross-script anagram), which the script-disjoint real
+// data cannot provide (its disjointness is pinned by layouts/dict_test.go).
 var (
 	//nolint:gochecknoglobals // the shared fixture corpus: every test judges the same dictionaries
-	fixtureRU = buildFixture([]string{"привет", "мир", "работает", "небо", "anagram"}, layouts.DictRU, 1499, 200)
+	fixtureRU = buildFixture([]string{"привет", "мир", "работает", "небо", "анаграмма"}, layouts.DictRU, 1499, 200)
 	//nolint:gochecknoglobals // the shared fixture corpus: every test judges the same dictionaries
-	fixtureEN = buildFixture([]string{"hello", "world", "layout", "test", "anagram"}, layouts.DictEN, 997, 200)
+	fixtureEN = buildFixture([]string{"hello", "world", "layout", "test", "fyfuhfvvf"}, layouts.DictEN, 997, 200)
 
 	//nolint:gochecknoglobals // the fixtures above, wrapped once for Check
 	fixtures = detect.Data{RU: fixtureRU, EN: fixtureEN}
@@ -114,16 +115,17 @@ func TestCheck_DictCurHitVetoes(t *testing.T) {
 	}
 }
 
-// TestCheck_DictBothHitVetoes pins the second veto: a word valid in BOTH
-// layouts (the random-anagram case — "anagram" sits in both fixtures) is
-// nobody's wrong-layout.
+// TestCheck_DictBothHitVetoes pins the second veto: a token whose
+// dictionary hit exists on BOTH sides (the random-anagram case — the
+// "анаграмма"/"fyfuhfvvf" remap pair sits in both fixtures) is nobody's
+// wrong-layout.
 func TestCheck_DictBothHitVetoes(t *testing.T) {
 	t.Parallel()
 
-	got := detect.Check([]rune("anagram"), testModeEN, fixtures, trigrams, detect.DefaultParams())
+	got := detect.Check([]rune("анаграмма"), testModeRU, fixtures, trigrams, detect.DefaultParams())
 	want := detect.Verdict{Reason: detect.ReasonDictBothHit}
 	if got != want {
-		t.Errorf("Check(anagram, en) = %+v, want %+v", got, want)
+		t.Errorf("Check(анаграмма, ru) = %+v, want %+v", got, want)
 	}
 }
 

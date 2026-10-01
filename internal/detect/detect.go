@@ -12,7 +12,18 @@
 package detect
 
 import (
+	"sort"
+	"strings"
+	"unicode"
+
 	"github.com/Djarvur/goswitch/internal/correct"
+)
+
+// Input modes: the layout the token was typed in. Check takes the mode as
+// a string because the actor's mode record (D-34) is the caller's state.
+const (
+	modeEN = "en"
+	modeRU = "ru"
 )
 
 // The closed reason vocabulary: every Check outcome reports exactly one of
@@ -116,5 +127,188 @@ func DefaultParams() Params {
 // without a letter of the mode's script, mixed tokens, unknown modes. The
 // function is deterministic over its arguments and owns no state.
 func Check(tok []rune, mode string, d Data, t Trigrams, p Params) Verdict {
+	if len(tok) < p.MinWordLen {
+		return Verdict{Reason: ReasonAbstainShort}
+	}
+
+	// An unknown mode has no target side at all and falls into the same
+	// abstention as a letterless token (the closed-input pin).
+	dir, known := dirOf(mode)
+	if !known || !hasScriptLetters(tok, mode) {
+		return Verdict{Reason: ReasonAbstainNoLetters}
+	}
+
+	// Dictionary path (D-52а): both memberships first, then one verdict —
+	// a current hit vetoes BEFORE the other side is even considered, and a
+	// word valid in both layouts (a random anagram) is nobody's
+	// wrong-layout.
+	inCur := inDict(dictOf(d, mode), tok)
+	conv, convOK := correct.Convert(tok, dir)
+	inOther := convOK && inDict(dictOf(d, otherMode(mode)), conv)
+
+	switch {
+	case inCur && inOther:
+		return Verdict{Reason: ReasonDictBothHit}
+	case inCur:
+		return Verdict{Reason: ReasonDictCurHit}
+	case inOther:
+		return Verdict{
+			WrongLayout: true,
+			Confident:   true,
+			Dir:         dir,
+			Reason:      ReasonDictWrongLayout,
+		}
+	case !convOK:
+		return Verdict{Reason: ReasonAbstainConvertFail}
+	}
+
+	// Neither dictionary answered (D-52б): the trigram fallback scores the
+	// plausibility of the token in the current layout against the remap in
+	// the other one.
+	if trigramWrongLayout(tok, conv, mode, t, p) {
+		return Verdict{
+			WrongLayout: true,
+			Confident:   true,
+			Dir:         dir,
+			Reason:      ReasonTrigramWrongLayout,
+		}
+	}
+
 	return Verdict{Reason: ReasonTrigramUnsure}
+}
+
+// dirOf resolves the mode to its correction direction: en-typed tokens
+// convert ENtoRU, ru-typed ones RUtoEN.
+func dirOf(mode string) (correct.Dir, bool) {
+	switch mode {
+	case modeEN:
+		return correct.ENtoRU, true
+	case modeRU:
+		return correct.RUtoEN, true
+	}
+
+	return 0, false
+}
+
+// otherMode returns the opposite layout of a known mode.
+func otherMode(mode string) string {
+	if mode == modeEN {
+		return modeRU
+	}
+
+	return modeEN
+}
+
+// dictOf picks the dictionary of the mode's own layout.
+func dictOf(d Data, mode string) []string {
+	if mode == modeEN {
+		return d.EN
+	}
+
+	return d.RU
+}
+
+// triOf picks the trigram table of the mode's own language.
+func triOf(t Trigrams, mode string) map[string]float64 {
+	if mode == modeEN {
+		return t.EN
+	}
+
+	return t.RU
+}
+
+// hasScriptLetters reports whether the token carries at least one letter
+// of the mode's script: an en-typed token needs a latin letter, a ru-typed
+// one a cyrillic letter. Digits and punctuation have no script of their
+// own; an unknown mode matches nothing.
+func hasScriptLetters(tok []rune, mode string) bool {
+	for _, r := range tok {
+		switch {
+		case mode == modeEN && unicode.Is(unicode.Latin, r):
+			return true
+		case mode == modeRU && unicode.Is(unicode.Cyrillic, r):
+			return true
+		}
+	}
+
+	return false
+}
+
+// inDict reports a dictionary hit for either the exact spelling or the
+// normalized one (normalizeLookup): the exact probe keeps the capitalized
+// entries (АЗС, Москва) suppressive, the normalized probe lets a register
+// or yo variant of a lowercase entry (ПРИВЕТ, ёлка) still find it — a miss
+// here would feed the fallback and erode the veto that makes full
+// dictionary coverage safety (Pitfall 3).
+func inDict(dict []string, word []rune) bool {
+	s := string(word)
+	if has(dict, s) {
+		return true
+	}
+
+	norm := normalizeLookup(s)
+
+	return norm != s && has(dict, norm)
+}
+
+// has binary-searches one sorted dictionary — the only lookup mechanism
+// (research Q3: ~17 comparisons over 146k entries, zero heap).
+func has(dict []string, w string) bool {
+	i := sort.SearchStrings(dict, w)
+
+	return i < len(dict) && dict[i] == w
+}
+
+// normalizeLookup folds a query the same way the 06-02 dictgen folded the
+// data: lower case for register-free matching, ё→е for the yo-less ru
+// dictionary (Pitfall 3).
+func normalizeLookup(s string) string {
+	return strings.ReplaceAll(strings.ToLower(s), "ё", "е")
+}
+
+// trigramWrongLayout is the D-52(б) fallback verdict for the words both
+// dictionaries miss: the other-language profile of the remap must beat the
+// current-language profile of the token by more than the margin AND be
+// absolutely plausible above the floor — both thresholds come from Params,
+// no literals live in this branch.
+func trigramWrongLayout(tok, conv []rune, mode string, t Trigrams, p Params) bool {
+	curScore := scoreLang(tok, triOf(t, mode))
+	otherScore := scoreLang(conv, triOf(t, otherMode(mode)))
+
+	return otherScore-curScore > p.TrigramMargin && otherScore > p.TrigramFloor
+}
+
+// neutralPenalty is the log10 probability of a trigram the training
+// dictionaries never saw (1e-6): below every baked entry (the tables floor
+// near -4.7), so an unknown window penalizes more than any known one while
+// staying finite. The golden corpus pins the value through behavior.
+const neutralPenalty = -6.0
+
+// trigramLen is the n of the n-gram model: the detector scores 3-rune
+// windows, the tables of plan 06-02 are trained over the same shape.
+const trigramLen = 3
+
+// scoreLang averages the log10 trigram probabilities of the word under one
+// language table: Σ log P over the 3-rune windows, normalized by the
+// window count so doubling the word never changes the score. Windows
+// absent from the table contribute neutralPenalty; a word shorter than one
+// window has no evidence and scores 0 — never above a log-scale floor, so
+// it can never become a confident verdict on its own.
+func scoreLang(word []rune, table map[string]float64) float64 {
+	windows := len(word) - trigramLen + 1
+	if windows <= 0 {
+		return 0
+	}
+
+	var sum float64
+	for i := range windows {
+		if p, ok := table[string(word[i:i+trigramLen])]; ok {
+			sum += p
+
+			continue
+		}
+		sum += neutralPenalty
+	}
+
+	return sum / float64(windows)
 }
