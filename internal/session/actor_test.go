@@ -5104,9 +5104,12 @@ func TestAutoCorrect_CountersAndReasons(t *testing.T) {
 // live through applySnapshot, and the ctl line carries the new tokens.
 
 // acEnabledCfg is a defaults-based document with the autocorrect section
-// ACTIVE on the corpus white list.
+// ACTIVE on the corpus white list. The post-correction flip is pinned OFF
+// here: the fold corpus asserts counters, not the owner's mode rule, and
+// a mid-test script flip would retarget the detector's mode side.
 func acEnabledCfg() config.Config {
 	cfg := config.Defaults()
+	cfg.Correction.FlipAfterCorrection = false
 	cfg.Autocorrect = config.Autocorrect{
 		Enabled:       true,
 		Apps:          []string{acListedApp},
@@ -5125,20 +5128,32 @@ func acEnabledCfg() config.Config {
 func TestStatus_AutocorrectFields(t *testing.T) {
 	a, sink := wiredActor()
 	st := a.StatusSnapshot()
-	if st.AutoCorrectEnabled || st.AutoCorrectFired != 0 || st.AutoCorrectAbstained != 0 || len(st.AutoCorrectSkipReasons) != 0 {
+	off := st.AutoCorrectEnabled || st.AutoCorrectFired != 0 ||
+		st.AutoCorrectAbstained != 0 || len(st.AutoCorrectSkipReasons) != 0
+	if off {
 		t.Fatalf("off-state snapshot = %+v, want the zero autocorrect state", st)
 	}
 
 	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
 	fireAutocorrect(t, a, sink, wordEN, wordRU)
 
 	st = a.StatusSnapshot()
 	if !st.AutoCorrectEnabled || st.AutoCorrectFired != 1 || st.AutoCorrectAbstained != 0 {
 		t.Fatalf("snapshot after the fired round = %+v, want {enabled true, fired 1, abstained 0}", st)
 	}
-	// The clone: mutating the snapshot's map must not touch the actor.
+
+	// One abstention gives the reason map a carried entry; the clone probe
+	// mutates the snapshot's map and demands the actor's own counters
+	// untouched (maps.Clone semantics — a nil source stays nil).
+	boundaryWord(t, a, "ok")
+	st = a.StatusSnapshot()
+	if st.AutoCorrectAbstained != 1 || st.AutoCorrectSkipReasons["abstain-short"] != 1 {
+		t.Fatalf("snapshot after the abstention = %+v, want [abstain-short:1]", st)
+	}
 	st.AutoCorrectSkipReasons["mutated"] = 99
-	if again := a.StatusSnapshot(); len(again.AutoCorrectSkipReasons) != 0 {
+	again := a.StatusSnapshot()
+	if again.AutoCorrectSkipReasons["mutated"] != 0 || again.AutoCorrectSkipReasons["abstain-short"] != 1 {
 		t.Errorf("the snapshot map is not a clone: %v", again.AutoCorrectSkipReasons)
 	}
 }

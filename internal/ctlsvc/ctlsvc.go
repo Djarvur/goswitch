@@ -153,7 +153,18 @@ func renderStatus(st session.Status) string {
 	tokens = append(tokens,
 		"super_intercepted="+strconv.Itoa(st.SuperIntercepted),
 		"super_upstream_consumed="+strconv.Itoa(st.SuperUpstreamConsumed),
+		// The autocorrect block (plan 06-06, D-54): the state and counters
+		// as fixed tokens, then the dash-flattened abstention slugs, sorted
+		// — the skip_-token form. It sits BEFORE the config block;
+		// config_error stays the LAST token of the line.
+		"autocorrect_enabled="+strconv.FormatBool(st.AutoCorrectEnabled),
+		"autocorrect_fired="+strconv.Itoa(st.AutoCorrectFired),
+		"autocorrect_abstained="+strconv.Itoa(st.AutoCorrectAbstained),
 	)
+	for _, reason := range slices.Sorted(maps.Keys(st.AutoCorrectSkipReasons)) {
+		tokens = append(tokens, "ac_skip_"+strings.ReplaceAll(reason, "-", "_")+
+			"="+strconv.Itoa(st.AutoCorrectSkipReasons[reason]))
+	}
 	if st.ConfigPath == "" {
 		tokens = append(tokens, "config=none")
 	} else {

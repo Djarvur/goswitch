@@ -509,7 +509,8 @@ func (a *Actor) AutoCorrectCounters() AutoCorrectStats {
 
 // Status is the daemon state snapshot for the control surface (INST-02):
 // the build identity (D-37), the internal mode, the correction outcome
-// counters with their skip-reason breakdown, the MACR interception counters
+// counters with their skip-reason breakdown, the MACR interception
+// counters, the autocorrect layer's state and counters (plan 06-06, D-54)
 // and the config-source status (D-32 last-good visibility). Counts and
 // states ONLY — never typed or corrected text (D-20, T-03-06-03).
 type Status struct {
@@ -560,7 +561,12 @@ func (a *Actor) StatusSnapshot() Status {
 		SkipReasons:           maps.Clone(a.skipReasons),
 		SuperIntercepted:      a.macrIntercepted,
 		SuperUpstreamConsumed: a.macrConsumed,
-		ConfigValid:           true, // built-in defaults, or a source without a status surface
+		AutoCorrectEnabled:    a.opts.AutoCorrectEnabled,
+		AutoCorrectFired:      a.acFired,
+		AutoCorrectAbstained:  a.acAbstained,
+
+		AutoCorrectSkipReasons: maps.Clone(a.acReasons),
+		ConfigValid:            true, // built-in defaults, or a source without a status surface
 	}
 	if a.mode == modeRU {
 		st.Mode = "ru"
@@ -1015,6 +1021,15 @@ func (a *Actor) applySnapshot() {
 		a.macrLettersName = snap.MACR.Letters
 		a.opts.MACRLetters = parseMACRLetters(snap.MACR.Letters)
 	}
+	// The autocorrect section folds live (plan 06-06, the MACR-fold
+	// precedent): the D-54 defaults are off, so a document without the
+	// section keeps the boundary byte-as-today; the thresholds mirror
+	// detect.Params (the config 06-04 pair — change the places together).
+	a.opts.AutoCorrectEnabled = snap.Autocorrect.Enabled
+	a.opts.AutoCorrectApps = snap.Autocorrect.Apps
+	a.opts.AutoCorrectMinWordLen = snap.Autocorrect.MinWordLen
+	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
+	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
 	a.ensureAppid() // the per-app list may have appeared with this document
 }
 
