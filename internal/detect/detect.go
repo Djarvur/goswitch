@@ -162,8 +162,18 @@ func Check(tok []rune, mode string, d Data, t Trigrams, p Params) Verdict {
 		return Verdict{Reason: ReasonAbstainConvertFail}
 	}
 
-	// Neither dictionary answered (D-52б): the trigram fallback owns this
-	// branch — until the scoring lands it reports the undecided verdict.
+	// Neither dictionary answered (D-52б): the trigram fallback scores the
+	// plausibility of the token in the current layout against the remap in
+	// the other one.
+	if trigramWrongLayout(tok, conv, mode, t, p) {
+		return Verdict{
+			WrongLayout: true,
+			Confident:   true,
+			Dir:         dir,
+			Reason:      ReasonTrigramWrongLayout,
+		}
+	}
+
 	return Verdict{Reason: ReasonTrigramUnsure}
 }
 
@@ -196,6 +206,15 @@ func dictOf(d Data, mode string) []string {
 	}
 
 	return d.RU
+}
+
+// triOf picks the trigram table of the mode's own language.
+func triOf(t Trigrams, mode string) map[string]float64 {
+	if mode == modeEN {
+		return t.EN
+	}
+
+	return t.RU
 }
 
 // hasScriptLetters reports whether the token carries at least one letter
@@ -245,4 +264,51 @@ func has(dict []string, w string) bool {
 // dictionary (Pitfall 3).
 func normalizeLookup(s string) string {
 	return strings.ReplaceAll(strings.ToLower(s), "ё", "е")
+}
+
+// trigramWrongLayout is the D-52(б) fallback verdict for the words both
+// dictionaries miss: the other-language profile of the remap must beat the
+// current-language profile of the token by more than the margin AND be
+// absolutely plausible above the floor — both thresholds come from Params,
+// no literals live in this branch.
+func trigramWrongLayout(tok, conv []rune, mode string, t Trigrams, p Params) bool {
+	curScore := scoreLang(tok, triOf(t, mode))
+	otherScore := scoreLang(conv, triOf(t, otherMode(mode)))
+
+	return otherScore-curScore > p.TrigramMargin && otherScore > p.TrigramFloor
+}
+
+// neutralPenalty is the log10 probability of a trigram the training
+// dictionaries never saw (1e-6): below every baked entry (the tables floor
+// near -4.7), so an unknown window penalizes more than any known one while
+// staying finite. The golden corpus pins the value through behavior.
+const neutralPenalty = -6.0
+
+// trigramLen is the n of the n-gram model: the detector scores 3-rune
+// windows, the tables of plan 06-02 are trained over the same shape.
+const trigramLen = 3
+
+// scoreLang averages the log10 trigram probabilities of the word under one
+// language table: Σ log P over the 3-rune windows, normalized by the
+// window count so doubling the word never changes the score. Windows
+// absent from the table contribute neutralPenalty; a word shorter than one
+// window has no evidence and scores 0 — never above a log-scale floor, so
+// it can never become a confident verdict on its own.
+func scoreLang(word []rune, table map[string]float64) float64 {
+	windows := len(word) - trigramLen + 1
+	if windows <= 0 {
+		return 0
+	}
+
+	var sum float64
+	for i := range windows {
+		if p, ok := table[string(word[i:i+trigramLen])]; ok {
+			sum += p
+
+			continue
+		}
+		sum += neutralPenalty
+	}
+
+	return sum / float64(windows)
 }
