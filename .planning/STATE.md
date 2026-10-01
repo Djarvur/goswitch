@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 05
-current_phase_name: "Интеграция с GNOME: индикация и двухисточниковое переключение"
-status: verifying
+current_phase: 06
+current_phase_name: Система автокоррекции
+status: executing
 stopped_at: Completed 05-05-PLAN.md (all 5 phase plans executed)
-last_updated: "2026-09-30T00:27:56.954Z"
-last_activity: 2026-09-29
+last_updated: "2026-10-01T20:03:12.962Z"
+last_activity: 2026-10-01
 last_activity_desc: Phase 05 execution started
-state_head: c55f255b5c3ecc19c134cbef04b5974d832cc81c
+state_head: 2ac2d93926df89ffa286d104a775a48940c2a252
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 33
+  total_plans: 41
   completed_plans: 33
 ---
 
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 ## Current Position
 
-Phase: 05 (Интеграция с GNOME: индикация и двухисточниковое переключение) — EXECUTING
+Phase: 06 (Система автокоррекции) — READY TO EXECUTE
 Plan: 5 of 5
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-10-01 — Completed quick task 261001-fg3: interactive tray — self-healing supervisor live, DBusMenu toggle-first (com.canonical.dbusmenu fix e8dae38), Activate; owner visual check pending
 
 Progress: [████████░░] 75%
