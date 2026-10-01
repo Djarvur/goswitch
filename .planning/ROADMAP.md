@@ -220,11 +220,25 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 3.1 → 4
   5. GNOME-переключение по клавишам остаётся у goswitch (wm.keybindings-чорды очищены install'ом, восстанавливаются при uninstall — уже в коде); selfcheck отражает двухисточниковое состояние
   6. e2e-матрица зелёная дважды на живом столе в двухисточниковой конфигурации (ночной D-48 гейт), включая кейсы переключения; акт переключения наблюдаем в журнале (`SetGlobalEngine` запись)
 
-**Plans:** 0 plans
+**Plans:** 5/5 plans executed
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 5 to break down)
+- [x] 05-01-PLAN.md — живой спайк двухисточникового окна (switch-spike): следует ли GNOME Shell 46 за внешним SetGlobalEngine (индикатор/XKB/сигнал), вердикт владельца + ADR-006 скелет (SWCH-03)
+- [x] 05-02-PLAN.md — install оборачивает пару пользователя в два goswitch-движка (D-54): closed-enum wrap, отказы, апгрейд-путь, selfcheck двух источников, живой install-cycle (INST-01, INTEG-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 05-03-PLAN.md — шов флипа engine.BindSwitcher → actor.flipTo: все жесты через SetGlobalEngine на шине демона, порядок записей mode→switch_engine, дедлайн без блокировки (SWCH-01/02/04, INTEG-01/05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 05-04-PLAN.md — sync-контур: подписка GlobalEngineChanged + FocusIn-имя → Actor.SyncEngine (без flip-loop), activate.IfOwned предпочитает GetGlobalEngine мёртвому current (INTEG-04)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 05-05-PLAN.md — живые кейсы переключения (two-source-flip, external-flip-sync, ibus-restart), матрица зелёная в двухисточниковой конфигурации, ADR-006 Accepted, README (SWCH-03, INTEG-02, критерий 6)
 
 ### Phase 6: Система автокоррекции
 

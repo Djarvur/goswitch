@@ -123,11 +123,19 @@ func runComboWordLayout(ctx context.Context, s *stand) error {
 		return fmt.Errorf("combo-word-layout live reload application: %w", err)
 	}
 	enBase := s.countSub(`"msg":"mode","to":"en"`)
+	engineMark, err := flipEngineMark(flipTargetEN)
+	if err != nil {
+		return err
+	}
+	engineBase := s.countSub(engineMark)
 	if err := s.injectKeys(ctx, "Shift_R"); err != nil {
 		return err
 	}
 	if err := s.waitForNew(ctx, `"msg":"mode","to":"en"`, enBase+1, decisionWait); err != nil {
 		return fmt.Errorf("combo-word-layout post-reload single tap: %w", err)
+	}
+	if err := s.waitForNew(ctx, engineMark, engineBase+1, decisionWait); err != nil {
+		return fmt.Errorf("combo-word-layout post-reload switch_engine: %w", err)
 	}
 
 	return nil
@@ -224,11 +232,19 @@ func (s *stand) comboWordLayoutRound(ctx context.Context, name string) error {
 // gateComboRound fires the combo and gates its three records as NEW
 // occurrences (the probe already produced one of each), then pins the D-36
 // order: the flip record of THIS round (the last mode-ru record) must
-// postdate the round's settled completion record.
+// postdate the round's settled completion record. The 05-05 additive
+// oracle gates the flip's bus leg too — a switch_engine record lands right
+// after the mode record in the two-source configuration; the existing
+// waits and the order pin are untouched.
 func (s *stand) gateComboRound(ctx context.Context, name string) error {
 	comboBase := s.countSub(comboLogMark)
 	doneBase := s.countSub(`"msg":"correction","outcome":"done"`)
 	modeBase := s.countSub(`"msg":"mode","to":"ru"`)
+	engineMark, err := flipEngineMark(flipTargetRU)
+	if err != nil {
+		return err
+	}
+	engineBase := s.countSub(engineMark)
 	if err := s.pressKey(ctx, name); err != nil {
 		return err
 	}
@@ -240,6 +256,9 @@ func (s *stand) gateComboRound(ctx context.Context, name string) error {
 	}
 	if err := s.waitForNew(ctx, `"msg":"mode","to":"ru"`, modeBase+1, decisionWait); err != nil {
 		return fmt.Errorf("combo round layout flip: %w", err)
+	}
+	if err := s.waitForNew(ctx, engineMark, engineBase+1, decisionWait); err != nil {
+		return fmt.Errorf("combo round switch_engine: %w", err)
 	}
 
 	tDone, err := s.lastRecordTime(`"msg":"correction","outcome":"done"`)
@@ -282,11 +301,12 @@ func (s *stand) lastRecordTime(sub string) (time.Time, error) {
 }
 
 // runLayoutSingle proves SWCH-01 live under the D-34 oracle: a single Right
-// Shift flips the INTERNAL mode EN→RU and a second flips it back RU→EN —
-// the daemon's own mode records are the ONLY oracle (the internal flip
-// never touches the session's XKB state, so there is no desktop source
-// state to read — and reading one would be the forbidden Pitfall 3 of
-// ADR-001).
+// Shift flips the mode EN→RU and a second flips it back RU→EN — the
+// daemon's own mode records remain the mode-half oracle (the journal,
+// never a desktop dconf value, is the D-34 heritage surface). The 05-05
+// additive extension gates each flip's bus leg too: in the two-source
+// configuration every flip lands a switch_engine record right after its
+// mode record — the existing mode expectations are byte-stable, untouched.
 func runLayoutSingle(ctx context.Context, s *stand) error {
 	if err := s.activateGoswitch(ctx); err != nil {
 		return err
@@ -301,18 +321,30 @@ func runLayoutSingle(ctx context.Context, s *stand) error {
 	}
 
 	for _, tc := range []struct {
-		tap  string
-		mark string
+		tap    string
+		target string
 	}{
-		{"first tap flips EN→RU", `"msg":"mode","to":"ru"`},
-		{"second tap flips RU→EN", `"msg":"mode","to":"en"`},
+		{"first tap flips EN→RU", flipTargetRU},
+		{"second tap flips RU→EN", flipTargetEN},
 	} {
-		base := s.countSub(tc.mark)
+		modeMark, merr := flipModeMark(tc.target)
+		if merr != nil {
+			return merr
+		}
+		engineMark, eerr := flipEngineMark(tc.target)
+		if eerr != nil {
+			return eerr
+		}
+		modeBase := s.countSub(modeMark)
+		engineBase := s.countSub(engineMark)
 		if err := s.injectKeys(ctx, "Shift_R"); err != nil {
 			return err
 		}
-		if err := s.waitForNew(ctx, tc.mark, base+1, decisionWait); err != nil {
+		if err := s.waitForNew(ctx, modeMark, modeBase+1, decisionWait); err != nil {
 			return fmt.Errorf("layout-single %s: %w", tc.tap, err)
+		}
+		if err := s.waitForNew(ctx, engineMark, engineBase+1, decisionWait); err != nil {
+			return fmt.Errorf("layout-single %s switch_engine: %w", tc.tap, err)
 		}
 	}
 

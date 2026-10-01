@@ -21,16 +21,21 @@ import (
 // live switch-input-source binding of the owner's desktop (verified
 // 2026-09-27) — the value install snapshots and uninstall restores.
 const (
-	ownerSources                   = `[('xkb', 'us'), ('xkb', 'ru')]`
-	goswitchSources                = `[('ibus', 'goswitch-en')]`
-	fallbackSources                = `[('xkb', 'us')]`
-	ownerSwitchBindings            = `['<Super>space', 'XF86Keyboard']`
-	ownerSwitchBindingsBackward    = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
-	clearedSwitchBindings          = `[]`
+	ownerSources                = `[('xkb', 'us'), ('xkb', 'ru')]`
+	singleUSSources             = `[('xkb', 'us')]`
+	goswitchSources             = `[('ibus', 'goswitch-en')]`
+	fallbackSources             = `[('xkb', 'us')]`
+	wrappedSources              = `[('ibus', 'goswitch-en'), ('ibus', 'goswitch-ru')]`
+	sourcesUSFR                 = `[('xkb', 'us'), ('xkb', 'fr')]`
+	ownerSwitchBindings         = `['<Super>space', 'XF86Keyboard']`
+	ownerSwitchBindingsBackward = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
+	// junkSwitchBinding is the junk live value the over-install's
+	// switch-binding gets answer — it must never reach the state file nor
+	// any `gsettings set` (ADR-006: install writes nothing to the chords).
+	junkSwitchBinding              = `[]`
 	fallbackSwitchBindings         = `['<Super>space', 'XF86Keyboard']`
 	fallbackSwitchBindingsBackward = `['<Shift><Super>space', '<Shift>XF86Keyboard']`
 	listEngineOut                  = "goswitch-en - goswitch English (US)\ngoswitch-ru - goswitch Русская\n"
-	markerSources                  = "MARKER-ORIGINAL"
 )
 
 // The pinned binary/operation names the corpus asserts on (goconst: named
@@ -40,20 +45,28 @@ const (
 	binIbus      = "ibus"
 	binSystemctl = "systemctl"
 	opWriteCache = "write-cache"
+	opRestart    = "restart"
 	opGet        = "get"
-	engineENName = "goswitch-en"
+	opSet        = "set"
+	// opDaemonReload is the systemctl daemon-reload argv the sequence and
+	// the rollback corpora pin (goconst: named once).
+	opDaemonReload = "--user daemon-reload"
+	engineENName   = "goswitch-en"
+	engineRUName   = "goswitch-ru"
 )
 
 // The gsettings schema keys of the input sources (D-40's single-owner
-// takeover writes and D-42's restore rewrites the sources; owner decision 3
-// hands the switch-input-source binding over to goswitch).
+// takeover writes and D-42's restore rewrites the sources; the
+// wm.keybindings schema hosts the GNOME layout-switch chords install must
+// leave untouched).
 const (
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
 	// gsettingsKeybindingsSchema hosts the GNOME layout-switch chords (live
 	// finding 2026-09-27: NOT desktop.input-sources — that schema carries
-	// no switch key at all). Owner decision 3, quick plan 260927-way:
-	// install clears both, uninstall restores the saved values.
+	// no switch key at all). ADR-006 two-source: install leaves both
+	// bindings untouched — the chords cycle the two goswitch engines as a
+	// first-class visible switch — uninstall restores the saved values.
 	gsettingsKeybindingsSchema = "org.gnome.desktop.wm.keybindings"
 	gsettingsKeySwitch         = "switch-input-source"
 	gsettingsKeySwitchBackward = "switch-input-source-backward"
@@ -223,12 +236,15 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 	}
 }
 
-// TestInstall_Sequence pins the D-39/D-40 subprocess order end to end over
-// the fake desktop: sources + switch-binding snapshot → state save → XML →
+// TestInstall_Sequence pins the D-54/D-39/D-40 subprocess order end to end
+// over the fake desktop: sources + switch-binding snapshot (the pair check
+// gates the whole install BEFORE any mutation, D-54) → state save → XML →
 // env-carrying write-cache → list-engine verification → unit →
 // daemon-reload → enable + restart → ibus restart → live-registration wait →
-// single-owner sources set → switch-binding clear (owner decision 3) →
-// engine activation.
+// live sources re-read → the COMPUTED two-source wrapper (never a
+// constant) → engine activation — with NO write to the wm.keybindings
+// schema at all (ADR-006 two-source: the GNOME switch chords stay live and
+// cycle the two goswitch engines).
 func TestInstall_Sequence(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
@@ -239,33 +255,44 @@ func TestInstall_Sequence(t *testing.T) {
 	// The live-true order (first install-cycle run): the cache-file probe
 	// verifies write-cache immediately (list-engine stays stale until the
 	// restart), and the daemon-view list-engine gate runs AFTER the restart.
+	// The takeover re-reads the live value and writes the wrapper computed
+	// from the user's own us/ru pair (D-54) — never the old constant.
 	assertCallSequence(t, f.snapshot(), []struct{ name, args string }{
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
 		{binIbus, opWriteCache},
-		{binIbus, "restart"},
-		{binIbus, "list-engine"},
-		{binSystemctl, "--user daemon-reload"},
+		{binIbus, opRestart},
+		{binIbus, opListEngine},
+		{binSystemctl, opDaemonReload},
 		{binSystemctl, "--user enable goswitchd"},
 		{binSystemctl, "--user restart goswitchd"},
-		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + goswitchSources},
-		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + clearedSwitchBindings},
-		{binGSettings, "set " + gsettingsKeybindingsSchema + " " +
-			gsettingsKeySwitchBackward + " " + clearedSwitchBindings},
+		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
+		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + wrappedSources},
 		{binIbus, "engine goswitch-en"},
 	})
 
+	// ADR-006 two-source: install records NO `gsettings set` against the
+	// wm.keybindings schema — the GNOME switch chords stay untouched.
+	assertSwitchBindingsUntouched(t, f.snapshot())
+
 	xmlPath, unitPath, statePath := installPaths(home)
+	assertSequenceState(t, xmlPath, unitPath, statePath, report)
+}
+
+// assertSequenceState pins the file/report tail of TestInstall_Sequence:
+// all three artifacts exist, the state carries the read switch bindings
+// VERBATIM (decoded — json.Marshal HTML-escapes the '<'/'>' of the raw
+// binding bytes; the restore path reads the fields back through the same
+// decode), and the report names both the preserved chords (left untouched,
+// saved for uninstall) and the two-source wrap verdict.
+func assertSequenceState(t *testing.T, xmlPath, unitPath, statePath string, report []string) {
+	t.Helper()
 	for _, p := range []string{xmlPath, unitPath, statePath} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("install artifact %s missing: %v", p, err)
 		}
 	}
-	// Owner decision 3: the state carries the read switch binding VERBATIM
-	// (decoded — json.Marshal HTML-escapes the '<'/'>' of the raw binding
-	// bytes; the restore path reads the field back through the same
-	// decode), and the report names the handover.
 	var st struct {
 		Sources           string `json:"sources"`
 		SwitchInputSource string `json:"switch_input_source"`
@@ -288,9 +315,85 @@ func TestInstall_Sequence(t *testing.T) {
 			stBw.SwitchInputSourceBackward, ownerSwitchBindingsBackward)
 	}
 	if !slices.ContainsFunc(report, func(line string) bool {
-		return strings.Contains(line, "switch-input-source: cleared")
+		return strings.Contains(line, "switch-input-source: left untouched (saved for uninstall)")
 	}) {
-		t.Errorf("report %v does not name the cleared switch binding", report)
+		t.Errorf("report %v does not name the preserved switch binding", report)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "sources: wrapped ("+engineENName+", "+engineRUName+")")
+	}) {
+		t.Errorf("report %v does not name the wrapped engines", report)
+	}
+}
+
+// TestInstall_SequenceSingleSource pins the owner decision 2026-09-30 (one
+// source in the GNOME switcher) on the FULL sequence: a desktop carrying a
+// single xkb 'us' source installs into exactly [('ibus', 'goswitch-en')] —
+// one `gsettings set sources` carrying the single goswitch engine, the
+// explicit engine activation kept, the switch chords still untouched, and
+// the report naming the one wrapped engine.
+func TestInstall_SequenceSingleSource(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
+			return []byte(singleUSSources), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	report := runInstall(t, i)
+
+	// The same live-true order as the pair desktop — only the takeover's
+	// set carries the single-source wrapper.
+	assertCallSequence(t, f.snapshot(), []struct{ name, args string }{
+		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
+		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
+		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
+		{binIbus, opWriteCache},
+		{binIbus, opRestart},
+		{binIbus, opListEngine},
+		{binSystemctl, opDaemonReload},
+		{binSystemctl, "--user enable goswitchd"},
+		{binSystemctl, "--user restart goswitchd"},
+		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
+		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + goswitchSources},
+		{binIbus, "engine goswitch-en"},
+	})
+
+	// ADR-006: install records NO `gsettings set` against the wm.keybindings
+	// schema — the single-source model changes nothing about the chords.
+	assertSwitchBindingsUntouched(t, f.snapshot())
+
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "sources: wrapped ("+engineENName+")")
+	}) {
+		t.Errorf("report %v does not name the single wrapped engine", report)
+	}
+
+	// The single-source desktop's pre-install value is the uninstall
+	// restore's material — the state file carries it verbatim.
+	_, _, statePath := installPaths(home)
+	if got := readAll(t, statePath); !strings.Contains(got, singleUSSources) {
+		t.Errorf("state %q does not carry the single-source pre-install value %q", got, singleUSSources)
+	}
+}
+
+// assertSwitchBindingsUntouched pins the ADR-006 two-source verdict on the
+// recorded calls: install records NO `gsettings set` against
+// gsettingsKeybindingsSchema — neither switch-input-source nor
+// switch-input-source-backward is written, so the GNOME switch chords stay
+// live and cycle the two goswitch engines as a first-class visible switch
+// (the daemon follows external flips via the 05-04 sync listener).
+func assertSwitchBindingsUntouched(t *testing.T, calls []instCall) {
+	t.Helper()
+	for _, c := range calls {
+		if c.name == binGSettings && len(c.args) >= 3 && c.args[0] == opSet && c.args[1] == gsettingsKeybindingsSchema {
+			t.Errorf("install recorded gsettings set %s %s — the GNOME switch chords must stay"+
+				" untouched (ADR-006 two-source)", c.args[1], c.args[2])
+		}
 	}
 }
 
@@ -476,9 +579,12 @@ func TestInstall_StateFileOutsideConfigDir(t *testing.T) {
 // TestInstall_SecondInstallKeepsOriginalBackup pins the idempotency core:
 // an existing state file is never overwritten — the FIRST install's backup
 // is sacred, so repeated installs cannot destroy the pre-goswitch desktop.
-// Owner decision 3 extends the rule to the switch binding: the over-install
-// reads the POST-HANDOVER cleared binding and must never save it over the
-// original.
+// The over-install reads a junk live value for the switch-binding gets and
+// must never save it over the original — nor write it anywhere (ADR-006:
+// install touches no chord). The 05-02 upgrade form extends the rule
+// further: the takeover still runs and computes the two-source wrapper FROM
+// THE SAVED ORIGINAL (never from the live goswitch-only value), while the
+// backup stays byte-intact.
 func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	f := &fakeRunner{}
 	home := t.TempDir()
@@ -487,21 +593,23 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	runInstall(t, i)
 
 	_, _, statePath := installPaths(home)
-	marker := `{"sources":"` + markerSources + `"}`
+	// The planted original is the owner's real pair — shape-valid, so the
+	// D-54 upgrade path may compute the wrapper from it.
+	marker := `{"sources":"` + ownerSources + `"}`
 	if err := os.WriteFile(statePath, []byte(marker), 0o600); err != nil {
 		t.Fatalf("plant the marker state: %v", err)
 	}
 
 	// The second install sees the post-takeover desktop (goswitch-only
-	// sources, the cleared switch binding) — exactly the state it must NOT
-	// save over the marker.
+	// sources) and a junk live value for the switch-binding gets — exactly
+	// the state it must NOT save over the marker.
 	f.stub = func(name string, args []string) ([]byte, error) {
 		if name == binGSettings && len(args) == 3 && args[0] == opGet {
 			if args[2] == gsettingsKey {
 				return []byte(goswitchSources), nil
 			}
 			if args[2] == gsettingsKeySwitch || args[2] == gsettingsKeySwitchBackward {
-				return []byte(clearedSwitchBindings), nil
+				return []byte(junkSwitchBinding), nil
 			}
 		}
 
@@ -515,7 +623,36 @@ func TestInstall_SecondInstallKeepsOriginalBackup(t *testing.T) {
 	}
 	if string(data) != marker {
 		t.Errorf("second install overwrote the original backup: state = %q, want %q byte-intact"+
-			" (the cleared binding must never be saved over it)", data, marker)
+			" (the junk live binding must never be saved over it)", data, marker)
+	}
+
+	// ADR-006: NEITHER install writes a chord — the junk live binding value
+	// must never reach `gsettings set` either.
+	assertSwitchBindingsUntouched(t, f.snapshot())
+
+	// The upgrade form (D-54): the takeover computes the wrapper from the
+	// saved original and writes it — the desktop leaves the phase-4
+	// single-owner form for the two-source wrapper in this same install.
+	assertWrapperFromSavedOriginal(t, f.snapshot())
+}
+
+// assertWrapperFromSavedOriginal pins the D-54 upgrade verdict: exactly the
+// wrapper computed from the SAVED original reaches `gsettings set …
+// sources`, never the live goswitch-only value and never the old constant.
+func assertWrapperFromSavedOriginal(t *testing.T, calls []instCall) {
+	t.Helper()
+	wrapperSet := false
+	for _, c := range calls {
+		if c.name == binGSettings && len(c.args) == 4 && c.args[0] == opSet && c.args[2] == gsettingsKey {
+			wrapperSet = true
+			if c.args[3] != wrappedSources {
+				t.Errorf("upgrade set %q, want the wrapper computed from the SAVED original %q",
+					c.args[3], wrappedSources)
+			}
+		}
+	}
+	if !wrapperSet {
+		t.Error("second install recorded no sources set — the upgrade must write the two-source wrapper")
 	}
 }
 
@@ -544,14 +681,14 @@ func TestUninstall_FullRollback(t *testing.T) {
 		t.Fatalf("Uninstall() err = %v (report %v), want the full rollback to succeed", err, report)
 	}
 
-	// Owner decision 3: the saved switch binding goes back BEFORE the state
-	// file dies, and the report names the restored value.
+	// The verbatim snapshot's restore: the saved switch bindings go back
+	// BEFORE the state file dies, and the report names the restored values.
 	assertCallSequence(t, uninstallCalls(t, f), []struct{ name, args string }{
 		{binSystemctl, "--user stop goswitchd"},
 		{binSystemctl, "--user disable goswitchd"},
-		{binSystemctl, "--user daemon-reload"},
+		{binSystemctl, opDaemonReload},
 		{binIbus, opWriteCache},
-		{binIbus, "restart"},
+		{binIbus, opRestart},
 		{binGSettings, "set " + gsettingsSchema + " " + gsettingsKey + " " + ownerSources},
 		{binIbus, "engine " + derivedActivation},
 		{binGSettings, "set " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch + " " + ownerSwitchBindings},
@@ -581,10 +718,12 @@ func TestUninstall_FullRollback(t *testing.T) {
 }
 
 // installCallCount is the subprocess count of one happy-path install (the
-// FullRollback corpus asserts the uninstall suffix of the recording): two
-// gsettings gets (sources + switch binding), two ibus cache steps, three
-// systemctl steps, list-engine, two gsettings sets, engine activation.
-const installCallCount = 13
+// FullRollback corpus asserts the uninstall suffix of the recording): three
+// gsettings gets (sources + the two switch bindings) at snapshot time, two
+// ibus cache steps, three systemctl steps, list-engine, the takeover's
+// live sources re-read, the wrapper set (ADR-006: no chord writes),
+// engine activation.
+const installCallCount = 12
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did
@@ -659,10 +798,9 @@ func corruptSwitchCases() map[string]corruptSwitchCase {
 // state values that fail the shape check never reach gsettings verbatim —
 // the restore substitutes the safe fallbacks, REPORTS them, and the
 // rollback still completes (a corrupt backup must not brick the keyboard
-// or abort the uninstall). Owner decision 3 extends the discipline to the
-// switch binding: a state file whose switch field is absent (a pre-batch
-// JSON) or malformed restores the DISTRO DEFAULT binding with the
-// substitution reported.
+// or abort the uninstall). The same discipline covers the switch bindings:
+// a state file whose switch field is absent (a pre-batch JSON) or malformed
+// restores the DISTRO DEFAULT binding with the substitution reported.
 func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 	for name, tc := range corruptSwitchCases() {
 		t.Run(name, func(t *testing.T) {
@@ -939,5 +1077,106 @@ func TestUninstall_PurgeRemovesUserConfig(t *testing.T) {
 		if _, err := os.Stat(dir); !os.IsNotExist(err) {
 			t.Errorf("purge left %s behind — --purge removes it (D-42)", dir)
 		}
+	}
+}
+
+// countSourcesSets counts the recorded `gsettings set … sources` calls.
+func countSourcesSets(calls []instCall) int {
+	n := 0
+	for _, c := range calls {
+		if c.name == binGSettings && len(c.args) == 4 && c.args[0] == opSet && c.args[2] == gsettingsKey {
+			n++
+		}
+	}
+
+	return n
+}
+
+// hasEngineActivation reports whether the recording carries the explicit
+// `ibus engine goswitch-en` activation (the Pitfall-6 half of the
+// takeover contract).
+func hasEngineActivation(calls []instCall) bool {
+	return slices.ContainsFunc(calls, func(c instCall) bool {
+		return c.name == binIbus && len(c.args) == 2 && c.args[0] == "engine" && c.args[1] == engineENName
+	})
+}
+
+// TestInstall_TakeoverSkipsIdenticalWrite pins Pitfall 6 as a unit
+// contract: a live value already equal to the computed wrapper receives
+// ZERO `gsettings set … sources` calls — a value-identical write
+// live-resets the global engine and breaks input right after install —
+// while the rest of the sequence (the explicit engine activation among
+// it) still runs in its order.
+func TestInstall_TakeoverSkipsIdenticalWrite(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+	callsBefore := len(f.snapshot())
+
+	// The follow-up install sees the ALREADY-wrapped desktop: its live
+	// value equals the wrapper computed from the saved original — the
+	// sources set must be skipped entirely.
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
+			return []byte(wrappedSources), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	runInstall(t, i)
+
+	second := f.snapshot()[callsBefore:]
+	if n := countSourcesSets(second); n != 0 {
+		t.Errorf("value-identical takeover issued %d gsettings set sources calls, want 0 (Pitfall 6)", n)
+	}
+	if !hasEngineActivation(second) {
+		t.Error("identical takeover dropped the ibus engine goswitch-en activation — the sequence keeps it")
+	}
+}
+
+// isMutatingCall reports whether one recorded subprocess mutates the
+// desktop: a gsettings set, any systemctl call, an ibus write-cache or
+// restart — the atomic-refusal probe of TestInstall_RefusalBeforeAnyWrite.
+func isMutatingCall(c instCall) bool {
+	gsettingsSet := c.name == binGSettings && len(c.args) > 0 && c.args[0] == opSet
+	ibusMutation := c.name == binIbus && len(c.args) > 0 && (c.args[0] == opWriteCache || c.args[0] == opRestart)
+
+	return gsettingsSet || c.name == binSystemctl || ibusMutation
+}
+
+// TestInstall_RefusalBeforeAnyWrite pins the atomic refusal gate: a
+// desktop goswitch cannot own ENTIRELY — a foreign residue beside the
+// wrappable layout (us+fr) — refuses BEFORE any mutating call — zero
+// gsettings set, zero systemctl, zero ibus write-cache/restart — and the
+// state file is never created, so a refused install leaves the desktop
+// byte-identical.
+func TestInstall_RefusalBeforeAnyWrite(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet && args[2] == gsettingsKey {
+			return []byte(sourcesUSFR), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	report, err := i.Install(context.Background())
+	if err == nil {
+		t.Fatalf("Install() over the foreign-residue desktop = (%v, nil), want the residue refusal", report)
+	}
+	if !strings.Contains(err.Error(), "fix") {
+		t.Errorf("refusal %q carries no fix hint", err)
+	}
+	if idx := slices.IndexFunc(f.snapshot(), isMutatingCall); idx >= 0 {
+		c := f.snapshot()[idx]
+		t.Errorf("refused install still mutated the desktop: %s %v", c.name, c.args)
+	}
+	_, _, statePath := installPaths(home)
+	if _, serr := os.Stat(statePath); !os.IsNotExist(serr) {
+		t.Error("refused install created the state file — the refusal must precede the backup write")
 	}
 }

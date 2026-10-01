@@ -3512,7 +3512,7 @@ func pressSuperSpace(a *session.Actor) bool {
 // TestActor_SuperSpaceChordFlipsMode pins the chord itself: a Super+Space
 // press flips the script mode IMMEDIATELY (no ExpiryAt — the chord is not a
 // tap), CONSUMES the press (no space lands in the field), emits exactly one
-// panel-symbol update through flipScript (Task 1) and commits nothing; the
+// panel-symbol update through the flip body (vu8 Task 1) and commits nothing; the
 // buffer stays clean — typing "abc" afterwards yields the token "abc" with
 // no leading space.
 func TestActor_SuperSpaceChordFlipsMode(t *testing.T) {
@@ -3534,7 +3534,7 @@ func TestActor_SuperSpaceChordFlipsMode(t *testing.T) {
 		t.Errorf("the chord did not flip EN→RU; log:\n%s", logged)
 	}
 	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
-		t.Errorf("panel symbols = %q, want exactly [ru] (Task 1 through flipScript)", got)
+		t.Errorf("panel symbols = %q, want exactly [ru] (vu8 Task 1 through the flip body)", got)
 	}
 	if texts := sink.commitTexts(); len(texts) != 0 {
 		t.Errorf("chord commits = %q, want none — the press never lands in the field", texts)
@@ -3940,4 +3940,582 @@ func TestActor_FlipDirectionFollowsConvertedScript(t *testing.T) {
 			t.Errorf("the correction's record must set en (the converted script); log:\n%s", buf.String())
 		}
 	})
+}
+
+// The switcher-seam corpus of plan 05-03 (D-52): every flip gesture executes
+// org.freedesktop.IBus.SetGlobalEngine THROUGH the injected seam — the mode
+// record stays the byte-stable e2e oracle, the switch lands strictly between
+// the mode record and the panel-symbol emit (the D-36 extension), a failing
+// seam is a WARN that never stops typing, and the snapshot names the active
+// engine. The seam is a hard-deadline call: a wedged bus can cost a flip at
+// most switchTimeout, never an unbounded stall.
+
+// errSwitchInjected is the failing seam's static cause (err113) — the corpus
+// injects it to pin the WARN-not-fatal contract.
+var errSwitchInjected = errors.New("injected switch failure")
+
+// flipBudget is the switchTimeout contract from the outside: the switcher's
+// context deadline is at most this far from the call instant. It mirrors
+// switchTimeout and sits ABOVE the measured live SetGlobalEngine round trip,
+// so the deadline guards the wedge path without firing on healthy flips.
+const flipBudget = 150 * time.Millisecond
+
+// liveSwitchRTTMax is the measured maximum of a real SetGlobalEngine round
+// trip: every live proof lands at ~41-45 ms (the 05-05 flip proofs and the
+// 2026-09-30 journal — the old 40 ms deadline fired before completion on
+// every flip). The seam-entry budget must sit strictly above it.
+const liveSwitchRTTMax = 45 * time.Millisecond
+
+// switchProbe is the switcher-seam double: it records every call's target
+// and context deadline — the flip path's observable — with the hook form of
+// fakeSink's modeHook (the corpus interleaves the call with the journal and
+// the sink's op log).
+type switchProbe struct {
+	mu     sync.Mutex
+	names  []string
+	onCall func(name string)
+}
+
+// switcher is the SetSwitcher-shaped recording function.
+func (p *switchProbe) switcher(_ context.Context, name string) error {
+	p.mu.Lock()
+	p.names = append(p.names, name)
+	hook := p.onCall
+	p.mu.Unlock()
+
+	if hook != nil {
+		hook(name)
+	}
+
+	return nil
+}
+
+// targets snapshots the recorded switch targets.
+func (p *switchProbe) targets() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return append([]string(nil), p.names...)
+}
+
+// TestActor_FlipRoutesThroughSwitcher pins the D-52 execution: a single-tap
+// flip routes through the seam with the TARGET mode's engine — goswitch-ru
+// on EN→RU, goswitch-en on the flip back — while the byte-stable mode
+// records stay the flip's observable and the panel emit stays one per flip.
+func TestActor_FlipRoutesThroughSwitcher(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	flipMode(a) // EN → RU
+	flipMode(a) // RU → EN
+
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU, engine.NameEN}) {
+		t.Errorf("switch targets = %q, want exactly [%s %s] — the target mode's engine per flip",
+			got, engine.NameRU, engine.NameEN)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) || !strings.Contains(logged, `"msg":"mode","to":"en"`) {
+		t.Errorf("byte-stable mode records missing; log:\n%s", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en] — one emit per flip", got)
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("flip made %d RequireSurroundingText calls, want 0", got)
+	}
+}
+
+// TestActor_FlipOrderPinned pins the flip's record order (the D-36
+// extension): the byte-stable mode record lands strictly BEFORE the switcher
+// call, the switcher call strictly BEFORE the panel-symbol emit; on the combo
+// gesture the switch lands strictly after the settled done record.
+func TestActor_FlipOrderPinned(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	var swSawModeRecord, symbolSawSwitch bool
+	probe.onCall = func(name string) {
+		to := "en"
+		if name == engine.NameRU {
+			to = "ru"
+		}
+		swSawModeRecord = strings.Contains(buf.String(), `"msg":"mode","to":"`+to+`"`)
+	}
+	sink.modeHook = func(_ string) {
+		symbolSawSwitch = len(probe.targets()) == 1 && swSawModeRecord
+	}
+	a.SetSwitcher(probe.switcher)
+
+	flipMode(a) // EN → RU
+	if !swSawModeRecord {
+		t.Errorf("the switcher fired before the mode record — order is mode → switch; log:\n%s", buf.String())
+	}
+	if !symbolSawSwitch {
+		t.Error("UpdateModeSymbol fired before the switcher call — the pinned order is switch → emit")
+	}
+
+	// The combo leg: the word half settles FIRST (its done record is in the
+	// log), then the flip — mode record, then the switch (D-36 extended).
+	buf2 := captureLogs(t)
+	comboDone, comboMode := false, false
+	probe2 := &switchProbe{}
+	probe2.onCall = func(_ string) {
+		logged := buf2.String()
+		comboDone = strings.Contains(logged, `"msg":"correction","outcome":"done"`)
+		comboMode = strings.Contains(logged, `"msg":"mode","to":"ru"`)
+	}
+	a2, _ := wiredActor()
+	a2.SetSwitcher(probe2.switcher)
+	typeWord(a2, wordEN)
+	pressComboDefault(a2)
+	line := "abc " + wordEN
+	a2.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	if !comboDone || !comboMode {
+		t.Errorf("combo switch fired without its predecessors (done %t, mode %t) — the D-36 order is"+
+			" done → mode → switch", comboDone, comboMode)
+	}
+	if got := probe2.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("combo switch targets = %q, want exactly [%s] — one flip per gesture", got, engine.NameRU)
+	}
+}
+
+// TestActor_CorrectionFlipSetsResultEngine pins criterion 4 in two-engine
+// form (the SET semantics): the engine of the RESULT script becomes active —
+// ghbdtn→привет activates goswitch-ru, привет→ghbdtn-обратно activates
+// goswitch-en — the "режим = скрипт результата" rule carried by the seam.
+func TestActor_CorrectionFlipSetsResultEngine(t *testing.T) {
+	a, _ := wiredActor()
+	a.SetOptions(flipOnOptions())
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	settleWordCorrection(a) // lat→cyr: the result script is Cyrillic
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Fatalf("after ghbdtn→привет the switch targets = %q, want exactly [%s] (the result script's engine)",
+			got, engine.NameRU)
+	}
+
+	settleRUWordCorrection(a) // cyr→lat: привет corrects back to ghbdtn
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU, engine.NameEN}) {
+		t.Errorf("after привет→ghbdtn the switch targets = %q, want [%s %s]", got, engine.NameRU, engine.NameEN)
+	}
+}
+
+// TestActor_SwitcherFailureWarnsNotFatal pins the WARN-not-fatal contract
+// (criterion 3): a failing seam logs the engine-name WARN, the daemon's mode
+// is ALREADY switched, the panel symbol still updates and the next keys are
+// handled in the new mode — typing never stops.
+func TestActor_SwitcherFailureWarnsNotFatal(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetSwitcher(func(_ context.Context, _ string) error { return errSwitchInjected })
+
+	flipMode(a) // EN → RU — the bus call fails, the internal flip stands
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"engine switch failed","engine":"`+engine.NameRU+`"`) {
+		t.Errorf("failure WARN with the engine name missing; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("mode record missing — the internal flip must stand; log:\n%s", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] — the emit survives the failure", got)
+	}
+	if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32('g')}); !consume {
+		t.Fatal("post-failure RU press transited — the mode did not switch internally")
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != "п" {
+		t.Errorf("post-failure commits = %q, want exactly [п] — typing continues in the new mode", texts)
+	}
+}
+
+// TestActor_SwitcherDeadlineBounded pins the flip's deadline discipline
+// (T-05-03-01, Pitfall 4): the switcher receives a context with a hard
+// deadline that sits ABOVE the measured live SetGlobalEngine round trip and
+// at most flipBudget — every healthy flip completes inside it, and a seam
+// stuck until that deadline stalls the actor only boundedly — a Status
+// snapshot served THROUGH the stalled flip completes within the budget, so
+// the keystroke path can never hang on a wedged bus.
+func TestActor_SwitcherDeadlineBounded(t *testing.T) {
+	a, _ := wiredActor()
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	remainingCh := make(chan time.Duration, 1)
+	a.SetSwitcher(func(ctx context.Context, _ string) error {
+		remaining := 2 * flipBudget // no deadline at all — the failing probe value
+		if dl, ok := ctx.Deadline(); ok {
+			remaining = time.Until(dl) // measured at entry — the original budget's shape
+		}
+		remainingCh <- remaining
+		entered <- struct{}{}
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done(): // the seam honors the deadline — the real closure's shape
+			return ctx.Err()
+		}
+	})
+
+	tapShift(a)
+	go a.ExpiryAt(expiryAfterWindow) // the flip runs on the timer goroutine's path
+	select {
+	case <-entered:
+	case <-time.After(flipBudget + 5*time.Second):
+		t.Fatal("the flip never called the switcher — the seam is not wired into the flip path")
+	}
+	if remaining := <-remainingCh; remaining <= liveSwitchRTTMax || remaining > flipBudget {
+		t.Errorf("switcher context deadline budget = %v at entry, want in (%v, %v] — above the measured live"+
+			" SetGlobalEngine round trip (a smaller deadline fires before every real flip completes),"+
+			" at most the flip budget",
+			remaining, liveSwitchRTTMax, flipBudget)
+	}
+
+	// While the seam is stuck, the stall is bounded: a Status snapshot
+	// served THROUGH the stalled flip completes within the budget's slack —
+	// the mutex-holding call can cost a bounded slice, never a hang.
+	snapDone := make(chan struct{})
+	go func() {
+		_ = a.StatusSnapshot()
+		close(snapDone)
+	}()
+	select {
+	case <-snapDone:
+	case <-time.After(flipBudget + 500*time.Millisecond):
+		t.Error("StatusSnapshot blocked past the switch budget — the flip can stall the keystroke path unboundedly")
+	}
+	close(release)
+
+	// The flip concluded (deadline error or late success); the mode stands
+	// switched and the actor keeps serving.
+	if st := a.StatusSnapshot(); st.Mode != "ru" {
+		t.Errorf("mode after the stalled flip = %q, want ru — the internal flip stands", st.Mode)
+	}
+}
+
+// TestActor_NilSwitcherInternalFlip pins the nil-seam degradation: with no
+// switcher bound the flip stays the internal mode switch with exactly ONE
+// WARN at first use, the panel symbol rides, and typing works — the missing
+// seam degrades the flip, never the daemon.
+func TestActor_NilSwitcherInternalFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	flipMode(a) // EN → RU — no switcher bound
+	flipMode(a) // RU → EN
+
+	logged := buf.String()
+	if got := strings.Count(logged, `"msg":"switcher unavailable"`); got != 1 {
+		t.Errorf("nil-switcher WARNs = %d, want exactly 1 (one WARN per degradation episode); log:\n%s", got, logged)
+	}
+	if got := countModeRecords(buf); got != 2 {
+		t.Errorf("mode records = %d, want 2 — the internal flip stands", got)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en]", got)
+	}
+	if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32('g')}); consume {
+		t.Error("EN-mode press consumed without a switcher — the internal mode must still govern typing")
+	}
+}
+
+// TestStatus_ReportsActiveEngine pins the D-52 status surface: the snapshot
+// names the ACTIVE engine — the mode's engine literal (a config constant,
+// D-20), never user text.
+func TestStatus_ReportsActiveEngine(t *testing.T) {
+	a, _ := wiredActor()
+	if st := a.StatusSnapshot(); st.Engine != engine.NameEN {
+		t.Errorf("fresh snapshot engine = %q, want %s", st.Engine, engine.NameEN)
+	}
+
+	flipMode(a)
+	if st := a.StatusSnapshot(); st.Engine != engine.NameRU {
+		t.Errorf("post-flip snapshot engine = %q, want %s", st.Engine, engine.NameRU)
+	}
+}
+
+// TestActor_SyncEngineFollowsEngine pins the sync semantics (05-04,
+// criterion 3): an observed engine name matching the current mode is the
+// daemon's OWN flip echoed back (spike P4) — a silent confirmation without
+// a record; a drift corrects the internal mode with the byte-stable mode
+// record (the e2e oracle) plus a WARN, and the panel symbol follows the
+// corrected mode.
+func TestActor_SyncEngineFollowsEngine(t *testing.T) {
+	t.Run("same mode confirms without a record", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		a.SyncEngine(engine.NameEN) // EN at start: the daemon's own state echoed back
+
+		logged := buf.String()
+		if strings.Contains(logged, `"msg":"mode"`) {
+			t.Errorf("same-mode sync wrote a mode record — the echo must confirm silently; log:\n%s", logged)
+		}
+		if strings.Contains(logged, `"level":"WARN"`) {
+			t.Errorf("same-mode sync warned; log:\n%s", logged)
+		}
+		if st := a.StatusSnapshot(); st.Mode != "en" || st.Engine != engine.NameEN {
+			t.Errorf("snapshot mode/engine = %q/%q, want en/%s", st.Mode, st.Engine, engine.NameEN)
+		}
+		if got := sink.modeSymbols(); len(got) != 0 {
+			t.Errorf("same-mode sync emitted %v panel symbols, want none", got)
+		}
+	})
+
+	t.Run("drift corrects with the mode record and a WARN", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		a.SyncEngine(engine.NameRU) // an external flip (indicator click): EN → RU
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+			t.Errorf("byte-stable mode record missing; log:\n%s", logged)
+		}
+		if !strings.Contains(logged, `"msg":"mode corrected"`) {
+			t.Errorf("correction WARN missing; log:\n%s", logged)
+		}
+		if st := a.StatusSnapshot(); st.Mode != "ru" || st.Engine != engine.NameRU {
+			t.Errorf("snapshot mode/engine = %q/%q, want ru/%s", st.Mode, st.Engine, engine.NameRU)
+		}
+		if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+			t.Errorf("panel symbols after the correction = %q, want exactly [ru]", got)
+		}
+	})
+}
+
+// TestActor_SyncEngineForeignWarns pins the honest exit from under goswitch
+// (T-05-04-03): a third-party engine name — another ibus engine, an xkb
+// source — warns and leaves the mode untouched; the daemon owns no state it
+// cannot observe.
+func TestActor_SyncEngineForeignWarns(t *testing.T) {
+	for _, name := range []string{"anthy", "xkb:fr"} {
+		t.Run(name, func(t *testing.T) {
+			buf := captureLogs(t)
+			a, sink := wiredActor()
+
+			a.SyncEngine(name)
+
+			logged := buf.String()
+			if !strings.Contains(logged, `"msg":"foreign engine"`) {
+				t.Errorf("foreign-engine WARN missing; log:\n%s", logged)
+			}
+			if strings.Contains(logged, `"msg":"mode"`) {
+				t.Errorf("foreign sync moved the mode; log:\n%s", logged)
+			}
+			if st := a.StatusSnapshot(); st.Mode != "en" {
+				t.Errorf("mode = %q, want en — foreign names must not touch the state", st.Mode)
+			}
+			if got := sink.modeSymbols(); len(got) != 0 {
+				t.Errorf("foreign sync emitted %v panel symbols, want none", got)
+			}
+		})
+	}
+}
+
+// TestActor_SyncEngineNeverSwitches pins the flip-loop prohibition
+// (T-05-04-01): NO sync input ever reaches the switcher — the correction
+// moves the internal mode only; the daemon stays the single writer of the
+// bus, the shell's indicator clicks are followed, never fought.
+func TestActor_SyncEngineNeverSwitches(t *testing.T) {
+	a, _ := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	a.SyncEngine(engine.NameEN)
+	a.SyncEngine(engine.NameRU)
+	a.SyncEngine("anthy")
+
+	if got := probe.targets(); len(got) != 0 {
+		t.Errorf("SyncEngine called the switcher with %q — a flip loop is built on this; want zero calls", got)
+	}
+}
+
+// The op-log labels of the display-order corpus: the sink's modeHook records
+// the panel-symbol emit, fakeDisplay the display call — the D-36 order reads
+// through these exact strings.
+const (
+	opSymbolRU  = "symbol:ru"
+	opDisplayRU = "display:ru"
+	opSymbolEN  = "symbol:en"
+	opDisplayEN = "display:en"
+)
+
+// fakeDisplay is the actor's ModeDisplay double (quick plan 260930-pf6):
+// every ModeChanged recorded under a mutex, with an optional hook the order
+// pins interleave against the sink's modeHook.
+type fakeDisplay struct {
+	mu     sync.Mutex
+	calls  []string
+	onCall func(symbol string)
+}
+
+// ModeChanged records the symbol and plays the hook.
+func (d *fakeDisplay) ModeChanged(symbol string) {
+	d.mu.Lock()
+	d.calls = append(d.calls, symbol)
+	hook := d.onCall
+	d.mu.Unlock()
+	if hook != nil {
+		hook(symbol)
+	}
+}
+
+// symbols snapshots the recorded sequence.
+func (d *fakeDisplay) symbols() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return append([]string(nil), d.calls...)
+}
+
+// TestActor_SetModeDisplayPushesCurrentMode pins the install contract: the
+// display receives the CURRENT mode at SetModeDisplay — startup with the
+// initial mode AND late install after flips — and every later flip reaches
+// it.
+func TestActor_SetModeDisplayPushesCurrentMode(t *testing.T) {
+	a, _ := wiredActor()
+	disp := &fakeDisplay{}
+
+	a.SetModeDisplay(disp)
+	if got, want := disp.symbols(), []string{"en"}; !slices.Equal(got, want) {
+		t.Errorf("install push = %q, want exactly [en] — the display must self-sync at install", got)
+	}
+
+	flipMode(a) // EN → RU
+	if got, want := disp.symbols(), []string{"en", "ru"}; !slices.Equal(got, want) {
+		t.Errorf("symbols after the flip = %q, want [en ru]", got)
+	}
+
+	// Late install on a drifted actor: the fresh display gets the CURRENT
+	// mode, not the startup default.
+	flipMode(a) // RU → EN
+	late := &fakeDisplay{}
+	a.SetModeDisplay(late)
+	if got, want := late.symbols(), []string{"en"}; !slices.Equal(got, want) {
+		t.Errorf("late install push = %q, want exactly [en]", got)
+	}
+}
+
+// TestActor_FlipInvokesDisplayLast extends the D-36 order pin: the display
+// observer fires strictly AFTER the panel-symbol emit — mode record →
+// switcher → panel symbol → display.
+func TestActor_FlipInvokesDisplayLast(t *testing.T) {
+	a, sink := wiredActor()
+	var opMu sync.Mutex
+	var ops []string
+	sink.modeHook = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "symbol:"+symbol)
+		opMu.Unlock()
+	}
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "display:"+symbol)
+		opMu.Unlock()
+	}
+	a.SetModeDisplay(disp)
+	opMu.Lock()
+	ops = ops[:0] // the install push is pinned elsewhere; only the flip order matters here
+	opMu.Unlock()
+
+	flipMode(a) // EN → RU
+
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{opSymbolRU, opDisplayRU}
+	if !slices.Equal(ops, want) {
+		t.Errorf("flip op order = %q, want exactly %q — the display fires last", ops, want)
+	}
+}
+
+// TestActor_ToggleModeFlips pins the public toggle gesture (quick plan
+// 261001-fg3 — the tray menu's first item and the item's SNI Activate land
+// here): ToggleMode drives the SAME flipTo execution path as every other
+// gesture — two toggles yield the byte-stable mode records to=ru then to=en,
+// switch targets exactly goswitch-ru then goswitch-en, panel symbols ru then
+// en, and the ops strictly symbol:ru → display:ru → symbol:en → display:en
+// (the observer LAST — the D-36 order intact).
+func TestActor_ToggleModeFlips(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	var opMu sync.Mutex
+	var ops []string
+	sink.modeHook = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "symbol:"+symbol)
+		opMu.Unlock()
+	}
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "display:"+symbol)
+		opMu.Unlock()
+	}
+	a.SetSwitcher(probe.switcher)
+	a.SetModeDisplay(disp)
+	opMu.Lock()
+	ops = ops[:0] // the install push is pinned elsewhere; only the toggle order matters here
+	opMu.Unlock()
+
+	a.ToggleMode() // EN → RU
+	a.ToggleMode() // RU → EN
+
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU, engine.NameEN}) {
+		t.Errorf("switch targets = %q, want exactly [%s %s] — the target mode's engine per toggle",
+			got, engine.NameRU, engine.NameEN)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) || !strings.Contains(logged, `"msg":"mode","to":"en"`) {
+		t.Errorf("byte-stable mode records missing; log:\n%s", logged)
+	}
+	if strings.Index(logged, `"to":"ru"`) > strings.Index(logged, `"to":"en"`) {
+		t.Errorf("mode records out of order (ru must precede en); log:\n%s", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en] — one emit per toggle", got)
+	}
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{opSymbolRU, opDisplayRU, opSymbolEN, opDisplayEN}
+	if !slices.Equal(ops, want) {
+		t.Errorf("toggle op order = %q, want exactly %q — the display fires last", ops, want)
+	}
+}
+
+// TestActor_SyncDriftInvokesDisplay mirrors the order pin for syncMode: a
+// drift correction reaches the display too — the icon follows the FACTUAL
+// engine, not only the daemon's own flips.
+func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
+	a, sink := wiredActor()
+	var opMu sync.Mutex
+	var ops []string
+	sink.modeHook = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "symbol:"+symbol)
+		opMu.Unlock()
+	}
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "display:"+symbol)
+		opMu.Unlock()
+	}
+	a.SetModeDisplay(disp)
+	opMu.Lock()
+	ops = ops[:0] // the install push is pinned elsewhere; only the drift order matters here
+	opMu.Unlock()
+
+	a.SyncEngine(engine.NameRU) // an external flip: EN → RU
+
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{opSymbolRU, opDisplayRU}
+	if !slices.Equal(ops, want) {
+		t.Errorf("drift op order = %q, want exactly %q — the display fires last on sync too", ops, want)
+	}
 }

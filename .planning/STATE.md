@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 04
-current_phase_name: Поставка и приёмка
+current_phase: 05
+current_phase_name: "Интеграция с GNOME: индикация и двухисточниковое переключение"
 status: verifying
-stopped_at: Phases 1-3 re-verified and marked complete; Phase 4 UAT awaiting owner (test 2 — D-48 fresh-session run)
-last_updated: "2026-09-20T14:38:30.395Z"
-last_activity: 2026-09-20
-last_activity_desc: Phases 1-3 re-verified on post-04-09 tree (fingerprints refreshed), marked complete; Phase 4 UAT in progress
-state_head: 12859e206c96da42670b35749fb4baa409a3fc88
+stopped_at: Completed 05-05-PLAN.md (all 5 phase plans executed)
+last_updated: "2026-09-30T00:27:56.954Z"
+last_activity: 2026-09-29
+last_activity_desc: Phase 05 execution started
+state_head: c55f255b5c3ecc19c134cbef04b5974d832cc81c
 progress:
-  total_phases: 4
-  completed_phases: 3
-  total_plans: 28
-  completed_plans: 28
+  total_phases: 6
+  completed_phases: 0
+  total_plans: 33
+  completed_plans: 33
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 04 — Поставка и приёмка
+**Current focus:** Phase 05 — Интеграция с GNOME: индикация и двухисточниковое переключение
 
 ## Current Position
 
-Phase: 04 — Поставка и приёмка
-Plan: 9 of 9
-Status: Executed — D-48 tonight (real run after dispatcher-PATH + shell-idle fixes; PR #8 merged)
-Last activity: 2026-09-27 — Quick task 260927-vu8: correction UX batch A (bracket-row allow-set + flip_after_correction, needs-review); live e2e acceptance deferred to orchestrator
+Phase: 05 (Интеграция с GNOME: индикация и двухисточниковое переключение) — EXECUTING
+Plan: 5 of 5
+Status: Phase complete — ready for verification
+Last activity: 2026-10-01 — Completed quick task 261001-fg3: interactive tray — self-healing supervisor live, DBusMenu toggle-first (com.canonical.dbusmenu fix e8dae38), Activate; owner visual check pending
 
 Progress: [████████░░] 75%
 
@@ -92,6 +92,11 @@ Progress: [████████░░] 75%
 | Phase 04 P07 | 33 min | 3 tasks | 4 files |
 | Phase 04 P08 | 35 min | 2 tasks | 4 files |
 | Phase 04 P09 | 9 min | 3 tasks | 4 files |
+| Phase 05 P02 | 29 min | 2 tasks | 8 files |
+| Phase 05 P01 | 134 min | 3 tasks | 8 files |
+| Phase 05 P03 | 47 min | 2 tasks | 10 files |
+| Phase 05 P04 | 46 min | 2 tasks | 13 files |
+| Phase 05 P05 | 59 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -99,7 +104,6 @@ Progress: [████████░░] 75%
 
 - Phase 5 added (2026-09-28, owner directive «починить индикацию и интеграцию с gnome»): Интеграция с GNOME — индикация и двухисточниковое переключение (ревизия ADR-001 → ADR-006; решения D-52..D-54 в 05-CONTEXT.md).
 - Phase 6 added (2026-09-28): Система автокоррекции (артефакты переименованы 05→06, ADR 006→007; решения D-51..D-55, research HIGH готов).
-
 
 ### Decisions
 
@@ -192,6 +196,12 @@ Recent decisions affecting current work:
 - [Phase 04]: [04-09] Soft mode covers ONLY preflight failures (busy desk / stale session on schedule: warning + D48_SKIP + exit 0) — real run failures stay red for every trigger; nightly red remains a regression signal
 - [Phase 04]: [04-09] focused-app answers at the frames level only (first focused frame names its app, '(none)' when none) — shell surfaces deliberately unclassified, interpretation is the workflow preflight's job
 - [Phase 04]: [04-09] Nightly-gate shape: root timer restart gdm -> GDM autologin -> graphical-session.target raises user units -> oneshot dispatcher (sleep 120) runs scripts/d48-nightly-dispatch.sh; schedule cron 01:10 UTC is the post-merge redundant belt — machine-checked freshness stays the D-48 gate
+- [Phase 05]: D-52 resolved: d52-literal (owner, 2026-09-30) — flip = SetGlobalEngine engine-truth on the daemon's ibus connection; criterion 2 reworded via spec-delta (indicator reflects user gestures; daemon-flip changes input immediately, label at next user gesture); ADR-006 Proposed, Accepted at 05-05; 05-04 obligations: sync listener + self-echo suppression (P4 x2); sources-rewrite rejected; mru-seed deferred to v1.1
+- [Phase 05]: [05-03] Flip mechanism per ADR-006 d52-literal landed: engine.Config.BindSwitcher seam (per-generation SetGlobalEngine closure rebound beside PostRegister) + actor.flipTo — the single execution path of all four flip sites with a hard 40 ms switchTimeout under the actor mutex; deadline-under-mutex chosen over the async WR-01 handoff to keep the record order deterministic and rapid flips final-state-correct — [05-03] Fake-ibus-bus test seam: in-process unix-socket stand with hand-rolled EXTERNAL SASL server + godbus exported DecodeMessage/EncodeTo dispatch loop (godbus ships no server side; NewConn starts no workers — workers start in Auth) — the corpus proves the wire act end-to-end hermetically
+- [Phase 05]: [05-04] Sync-listener storm safety needs a custom dbus.SignalHandler: godbus v5.2.2's default handler defers a blocking goroutine per overflow signal (deferredDeliver) — unbounded memory under a storm; the daemon's stormHandler drops on a full channel with one bounded WARN per generation and Terminate closes the registered channels, which IS the errBusClosed bus-loss verdict
+- [Phase 05]: [05-04] Echo suppression per spike P4 = the same-mode branch of SyncEngine (the initiator's own GlobalEngineChanged confirms without a record); correction writes the byte-stable mode record then a 'mode corrected' WARN and NEVER touches the switcher — flip loop impossible by construction (single-writer)
+- [Phase 05]: [05-04] activate.IfOwned prefers the FACTUAL engine (generation-scoped GetGlobalEngine reader, bound before PostRegister) over the dead gsettings current key; a foreign factual name skips without consulting the key; cold bus falls back to the current-index derivation — Pitfall 3 (restart flips ru→en) closed at unit level, live proof in 05-05
+- [Phase 05]: Two-source live proofs (05-05): bus flip = mode+switch_engine pair (WARN form — the 40 ms deadline fires before the ~42 ms live completion, readback arbitrates); external flips followed without counter-flips; restart returns the FACTUAL engine (shell resets to its own source — daemon-flipped ru is restart-lost by mechanism, shell gestures survive); XKB does NOT follow flips (P3 answered, safety-net permanent); matrix v3 two-source: 30/32 ×2 — word-mixed/phrase-mixed frozen rows vs the designed flip-resets-context semantics (owner verdict at verify gate, WINDOWS #12); ADR-006 Accepted, README documents the model
 
 ### Pending Todos
 
@@ -209,6 +219,10 @@ None yet.
 |---|-------------|------|--------|--------|-----------|
 | 260927-sy8 | engine self-reactivation: re-activate the global IBus engine on daemon (re)registration when goswitch owns the current input source | 2026-09-27 | c543d2b | Needs Review | [260927-sy8-engine-self-reactivation-re-activate-the](./quick/260927-sy8-engine-self-reactivation-re-activate-the/) |
 | 260927-vu8 | correction UX batch A: convert the bracket-row punctuation during correction (allow-set, SPEC §4.2, owner decision 1 revised) + flip the script mode after a changed correction (flip_after_correction, default ON, owner decision 2) | 2026-09-27 | f679b95 | Needs Review | [260927-vu8-correction-ux-batch-a-convert-letter-map](./quick/260927-vu8-correction-ux-batch-a-convert-letter-map/) |
+| 260930-nxd | fix: switchTimeout 40→150ms (actor.go, live RTT 41–45 ms made the 40 ms deadline WARN on every flip) + installer leaves GNOME switch-input-source/-backward bindings untouched (ADR-006 two-source: external flips synced by 05-04 listener; uninstall restore kept) | 2026-09-30 | 65670b8 | Needs Review | [260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst](./quick/260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst/) |
+| 260930-pf6 | feat: tray indicator (SNI/AppIndicator) — goswitchd publishes an EN/RU icon on its existing ctl connection, ModeDisplay seam observer-last in flipTo/syncMode, one-WARN degradations, Menu /NO_DBUSMENU sentinel (checker PASSED, verifier gap fixed); owner pixel check pending | 2026-09-30 | 9063703 | Verified | [260930-pf6-feat-tray-indicator-statusnotifieritem-a](./quick/260930-pf6-feat-tray-indicator-statusnotifieritem-a/) |
+| 260930-toa | feat: single-source input model — installer/selfcheck accept 1..N goswitch-wrapped sources (foreign residue still refused, atomic-refusal gate fixed in saveState), e2e oracle count-agnostic, README user-model rewrite + ADR-006 amendment; live machine on [('ibus','goswitch-en')], selfcheck 6×ok; owner visual check pending | 2026-09-30 | 0e34a83 | Verified (human_needed) | [260930-toa-feat-single-source-input-model-selfcheck](./quick/260930-toa-feat-single-source-input-model-selfcheck/) |
+| 261001-fg3 | feat: interactive tray — supervisor re-attaches on watcher appearance (NameOwnerChanged) + ~30 s health check (owner-requested silent-eviction self-heal, proven live twice), DBusMenu (com.canonical.dbusmenu, toggle-first/status/reload), SNI Activate; interface-name gap caught in live leg and fixed with a literal wire-name pin; owner confirmed the menu | 2026-10-01 | e8dae38 | Verified | [261001-fg3-feat-interactive-tray-daemon-re-attaches](./quick/261001-fg3-feat-interactive-tray-daemon-re-attaches/) |
 
 ## Deferred Items
 
@@ -220,6 +234,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-20T14:40:00Z
-Stopped at: Phases 1–3 re-verified and marked complete; Phase 4 UAT awaiting owner (test 2 — D-48 fresh-session run)
+Last session: 2026-09-30T00:27:41.220Z
+Stopped at: Completed 05-05-PLAN.md (all 5 phase plans executed)
 Resume file: None

@@ -1,0 +1,392 @@
+package main
+
+// Switch-spike pure-logic corpus (plan 05-01, SWCH-03 criterion 2, D-07):
+// the verdict renderer, the probe plan and the XKB-class verdict derivation
+// are pure functions, so they are pinned here without a live desktop; the
+// live probe sequence itself is exercised by `mise run e2e-switch-spike`
+// on the owner's desktop. The indicator verdict is not code-checkable at
+// all (SWCH-03, the phase's only non-code criterion) — it belongs to the
+// owner's eyes at the Task-2 checkpoint, and the report ends with its
+// placeholder line.
+
+import (
+	"strings"
+	"testing"
+)
+
+// sampleProbes builds the four-probe corpus the way the live case does:
+// named probes, observed as engine names/counts/classes only (D-20 — never
+// the typed text), verdicts from the closed set.
+func sampleProbes(t *testing.T) []spikeProbe {
+	t.Helper()
+	rows := []struct {
+		id, name, observed, verdict, detail string
+	}{
+		{"P1", "shell-activation", "readback=goswitch-en focus_in(goswitch)=+1", verdictFollows, ""},
+		{"P2", "external-flip-signal", "flip=goswitch-ru signal=GlobalEngineChanged(goswitch-ru)", verdictFollows, ""},
+		{"P3", "xkb-truth", "en_pinned=cyrillic ru_pinned=latin", verdictFollows, ""},
+		{"P4", "self-echo", "initiator-signal=none within 6s", verdictNotFollows, ""},
+	}
+	probes := make([]spikeProbe, 0, len(rows))
+	for _, r := range rows {
+		p, err := newSpikeProbe(r.id, r.name, r.observed, r.verdict, r.detail)
+		if err != nil {
+			t.Fatalf("newSpikeProbe(%s): %v", r.id, err)
+		}
+		probes = append(probes, p)
+	}
+
+	return probes
+}
+
+func TestRenderSwitchVerdict(t *testing.T) {
+	probes := sampleProbes(t)
+	table := renderVerdictTable(probes)
+	lines := strings.Split(strings.TrimSuffix(table, "\n"), "\n")
+	if len(lines) != len(probes) {
+		t.Fatalf("renderer produced %d lines, want %d (one per probe):\n%s", len(lines), len(probes), table)
+	}
+	for i, p := range probes {
+		line := lines[i]
+		if !strings.HasPrefix(line, p.ID+" "+p.Name+" | ") {
+			t.Errorf("line %d = %q, want prefix %q", i, line, p.ID+" "+p.Name+" | ")
+		}
+		if !strings.Contains(line, "| "+p.Verdict) {
+			t.Errorf("line %d = %q misses verdict %q", i, line, p.Verdict)
+		}
+	}
+
+	// A non-error verdict never carries a renderer-appended reason: the
+	// row ends at the verdict token (an observed value may legitimately
+	// contain parentheses of its own, e.g. a delivered signal's engine).
+	for i, p := range probes {
+		if p.Verdict != verdictError && !strings.HasSuffix(lines[i], "| "+p.Verdict) {
+			t.Errorf("line %d = %q must end at the verdict token", i, lines[i])
+		}
+	}
+
+	// The error verdict carries its one-line reason (D-20: types and
+	// counts, one line — never field content).
+	errProbe, err := newSpikeProbe("P2", "external-flip-signal", "signal=none within 6s", verdictError,
+		"no GlobalEngineChanged within 6s")
+	if err != nil {
+		t.Fatalf("newSpikeProbe error row: %v", err)
+	}
+	errTable := renderVerdictTable([]spikeProbe{errProbe})
+	if !strings.Contains(errTable, "error (no GlobalEngineChanged within 6s)") {
+		t.Errorf("error verdict line misses the one-line reason:\n%s", errTable)
+	}
+	if trimmed := strings.TrimSuffix(errTable, "\n"); strings.ContainsAny(trimmed, "\n\r") {
+		t.Errorf("reason must stay on the verdict line, got a multi-line row:\n%s", errTable)
+	}
+
+	// The closed verdict set is enforced at construction — the report's
+	// verdicts must come from {follows, not-follows, error} only.
+	for _, bad := range []string{"switched", "not-switched", "", "FOLLOWS"} {
+		if _, err := newSpikeProbe("P1", "shell-activation", "observed", bad, ""); err == nil {
+			t.Errorf("verdict %q accepted — outside the closed set {follows, not-follows, error}", bad)
+		}
+	}
+
+	// D-20: the renderer's input corpus carries no typed text, so any leak
+	// could only come from the renderer synthesizing it — pin the absence.
+	if strings.Contains(table, wordProbeEN) {
+		t.Errorf("table carries the typed probe word (D-20):\n%s", table)
+	}
+}
+
+func TestSwitchSpikeProbesOrdered(t *testing.T) {
+	checkSpikePlanOrder(t)
+	probes := sampleProbes(t)
+	checkSpikeReportShape(t, probes)
+	checkXKBClassVerdicts(t)
+}
+
+// checkSpikePlanOrder pins the fixed probe sequence: P1..P4, complete,
+// in the research-prescribed order.
+func checkSpikePlanOrder(t *testing.T) {
+	t.Helper()
+	plan := spikeProbePlan()
+	want := []spikeProbeSpec{
+		{ID: "P1", Name: "shell-activation"},
+		{ID: "P2", Name: "external-flip-signal"},
+		{ID: "P3", Name: "xkb-truth"},
+		{ID: "P4", Name: "self-echo"},
+	}
+	if len(plan) != len(want) {
+		t.Fatalf("probe plan has %d entries, want %d", len(plan), len(want))
+	}
+	for i, w := range want {
+		if plan[i] != w {
+			t.Errorf("plan[%d] = %+v, want %+v", i, plan[i], w)
+		}
+	}
+}
+
+// checkSpikeReportShape renders the sample corpus and pins the report
+// shape: every probe line exactly once, in order, and the indicator
+// verdict line last; the P3 line carries BOTH readback classes.
+func checkSpikeReportShape(t *testing.T, probes []spikeProbe) {
+	t.Helper()
+	report := renderSpikeReport(probes)
+	lines := strings.Split(strings.TrimSuffix(report, "\n"), "\n")
+	if len(lines) != len(probes)+1 {
+		t.Fatalf("report has %d lines, want %d probe lines + the indicator line:\n%s",
+			len(lines), len(probes)+1, report)
+	}
+	pos := 0
+	for _, p := range probes {
+		found := -1
+		for i := pos; i < len(lines)-1; i++ {
+			if strings.HasPrefix(lines[i], p.ID+" ") {
+				found = i
+
+				break
+			}
+		}
+		if found < 0 {
+			t.Errorf("probe %s line missing (or out of order) in:\n%s", p.ID, report)
+
+			continue
+		}
+		pos = found + 1
+	}
+	if last := lines[len(lines)-1]; last != spikeIndicatorLine {
+		t.Errorf("report must END with the indicator-verdict line %q, got %q", spikeIndicatorLine, last)
+	}
+
+	p3Line := ""
+	for _, line := range lines {
+		if strings.HasPrefix(line, "P3 ") {
+			p3Line = line
+
+			break
+		}
+	}
+	if p3Line == "" {
+		t.Fatalf("no P3 line in the report:\n%s", report)
+	}
+	if !strings.Contains(p3Line, "en_pinned=cyrillic") || !strings.Contains(p3Line, "ru_pinned=latin") {
+		t.Errorf("P3 line misses the readback classes (en_pinned/ru_pinned):\n%s", p3Line)
+	}
+}
+
+// checkXKBClassVerdicts pins the P3 derivation: the verdict comes from
+// en_pinned ONLY — ru_pinned is the safety-net witness (cyrillic expected
+// in both XKB worlds), never a discriminator.
+func checkXKBClassVerdicts(t *testing.T) {
+	t.Helper()
+	verdictCases := []struct{ en, ru, want string }{
+		{readbackCyrillic, readbackLatin, verdictFollows},
+		{readbackCyrillic, readbackCyrillic, verdictFollows},
+		{readbackLatin, readbackCyrillic, verdictNotFollows},
+		{readbackLatin, readbackLatin, verdictNotFollows},
+	}
+	for _, tc := range verdictCases {
+		got, err := xkbVerdictFromClasses(tc.en, tc.ru)
+		if err != nil {
+			t.Errorf("xkbVerdictFromClasses(%s, %s): %v", tc.en, tc.ru, err)
+
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("xkbVerdictFromClasses(%s, %s) = %q, want %q", tc.en, tc.ru, got, tc.want)
+		}
+	}
+	if _, err := xkbVerdictFromClasses("gibberish", readbackCyrillic); err == nil {
+		t.Errorf("xkbVerdictFromClasses accepted a non-class readback value")
+	}
+}
+
+// The 05-05 flip-marks corpus: synthetic daemon-journal lines carrying
+// engine names and mode symbols only (D-20/D-21 — typed text never reaches
+// any report). The pair (mode, then switch_engine naming the goswitch
+// engine) is the only observable form of the switching act (D-34
+// heritage), so the pure oracle is pinned here without a live desktop;
+// the live halves are `mise run e2e-two-source-flip` and the matrix
+// driver's additive oracle.
+const (
+	journalModeRU   = `{"time":"2026-09-30T00:00:01.100Z","level":"INFO","msg":"mode","to":"ru"}`
+	journalModeEN   = `{"time":"2026-09-30T00:00:02.100Z","level":"INFO","msg":"mode","to":"en"}`
+	journalSwitchRU = `{"time":"2026-09-30T00:00:01.120Z","level":"INFO","msg":"switch_engine","engine":"goswitch-ru"}`
+	journalSwitchEN = `{"time":"2026-09-30T00:00:02.120Z","level":"INFO","msg":"switch_engine","engine":"goswitch-en"}`
+	journalTyping   = `{"time":"2026-09-30T00:00:01.050Z","level":"DEBUG","msg":"key","unicode":"x"}`
+	// The WARN form of a timed-out switch (live finding, the first 05-05
+	// restart runs): the same record prefix with a trailing "err"
+	// attribute — never the completed act.
+	journalSwitchRUWarn = `{"time":"2026-09-30T00:00:01.120Z","level":"WARN",` +
+		`"msg":"switch_engine","engine":"goswitch-ru","err":"context deadline exceeded"}`
+)
+
+// flipMarksCase is one TestFlipMarksPaired row: the journal sample, the
+// flip target, and (for the error rows) a substring of the expected error.
+type flipMarksCase struct {
+	name    string
+	journal string
+	target  string
+	wantErr string // empty: the oracle must pass; else: a substring of the error
+}
+
+// errNoSwitchRecord is the wantErr substring of the rows whose journal
+// must NOT carry a switch_engine record (goconst: three literal uses).
+const errNoSwitchRecord = "switch_engine"
+
+// flipMarksPairedCases is the TestFlipMarksPaired corpus — a function, not
+// a var: the strict lint forbids mutable globals (the matrix.go idiom).
+func flipMarksPairedCases() []flipMarksCase {
+	return append(flipMarksPairedPassCases(), flipMarksPairedErrorCases()...)
+}
+
+// flipMarksPairedPassCases is the corpus half whose journals MUST pass —
+// including the WARN form of a deadline-beaten switch (the live-latency
+// reality: the attempt is the act's trace, the readback arbitrates
+// completion).
+func flipMarksPairedPassCases() []flipMarksCase {
+	return []flipMarksCase{
+		{name: "ru pair in order", journal: journalModeRU + "\n" + journalSwitchRU, target: flipTargetRU},
+		{name: "en pair in order (symmetric)", journal: journalModeEN + "\n" + journalSwitchEN, target: flipTargetEN},
+		{
+			name:    "pair inside a fuller journal",
+			journal: strings.Join([]string{journalTyping, journalModeRU, journalSwitchRU, journalTyping}, "\n"),
+			target:  flipTargetRU,
+		},
+		{
+			name:    "flip history keeps both pairs provable",
+			journal: strings.Join([]string{journalModeRU, journalSwitchRU, journalModeEN, journalSwitchEN}, "\n"),
+			target:  flipTargetRU,
+		},
+		{
+			name:    "flip history keeps the newest pair provable",
+			journal: strings.Join([]string{journalModeRU, journalSwitchRU, journalModeEN, journalSwitchEN}, "\n"),
+			target:  flipTargetEN,
+		},
+		{
+			name:    "a WARN of a deadline-beaten switch is still the act's trace",
+			journal: journalModeRU + "\n" + journalSwitchRUWarn,
+			target:  flipTargetRU,
+		},
+	}
+}
+
+// flipMarksPairedErrorCases is the corpus half whose journals MUST fail —
+// every deviation is an error naming what deviated.
+func flipMarksPairedErrorCases() []flipMarksCase {
+	return []flipMarksCase{
+		{
+			name:    "mode correction without a switch_engine record is not a flip",
+			journal: journalModeRU,
+			target:  flipTargetRU,
+			wantErr: errNoSwitchRecord,
+		},
+		{
+			name:    "switch_engine record without a mode record proves nothing",
+			journal: journalSwitchRU,
+			target:  flipTargetRU,
+			wantErr: "mode record",
+		},
+		{
+			name:    "stale opposite pair does not satisfy the target",
+			journal: journalModeEN + "\n" + journalSwitchEN,
+			target:  flipTargetRU,
+			wantErr: "mode record",
+		},
+		{
+			name:    "inverted order is an error",
+			journal: journalSwitchRU + "\n" + journalModeRU,
+			target:  flipTargetRU,
+			wantErr: "precedes",
+		},
+		{
+			name:    "foreign engine record must not satisfy the target",
+			journal: journalModeRU + "\n" + journalSwitchEN,
+			target:  flipTargetRU,
+			wantErr: "switch_engine",
+		},
+		{
+			name:    "unknown target is refused",
+			journal: journalModeRU + "\n" + journalSwitchRU,
+			target:  "de",
+			wantErr: "outside",
+		},
+	}
+}
+
+// TestFlipMarksPaired pins the pair oracle: for a flip target the journal
+// must hold the target's mode record and a STRICTLY LATER switch_engine
+// record naming the target's engine; every deviation — a missing record,
+// an inverted order, a foreign engine name, an unknown target — is an
+// error naming what deviated. Both directions are pinned symmetrically.
+func TestFlipMarksPaired(t *testing.T) {
+	for _, tc := range flipMarksPairedCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			err := flipMarksPaired(tc.journal, tc.target)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("target %s: = %v, want nil", tc.target, err)
+			case tc.wantErr != "" && err == nil:
+				t.Errorf("target %s: = nil, want error containing %q", tc.target, tc.wantErr)
+			case tc.wantErr != "" && !strings.Contains(got, tc.wantErr):
+				t.Errorf("target %s: = %q, want error containing %q", tc.target, got, tc.wantErr)
+			}
+		})
+	}
+}
+
+// modeFollowedOnlyCases is the TestModeFollowedOnly corpus (same shape as
+// flipMarksPairedCases).
+func modeFollowedOnlyCases() []flipMarksCase {
+	return []flipMarksCase{
+		{name: "bare correction is a follow", journal: journalModeRU, target: flipTargetRU},
+		{
+			name:    "a flip that predates the correction stays behind it",
+			journal: strings.Join([]string{journalModeEN, journalSwitchEN, journalModeRU}, "\n"),
+			target:  flipTargetRU,
+		},
+		{
+			name:    "own target pair is not a follow",
+			journal: journalModeRU + "\n" + journalSwitchRU,
+			target:  flipTargetRU,
+			wantErr: "must follow, never flip",
+		},
+		{
+			name:    "a WARN attempt after the correction is still a fight",
+			journal: journalModeRU + "\n" + journalSwitchRUWarn,
+			target:  flipTargetRU,
+			wantErr: "must follow, never flip",
+		},
+		{
+			name:    "no correction is nothing to verify",
+			journal: journalModeEN + "\n" + journalSwitchEN,
+			target:  flipTargetRU,
+			wantErr: "no mode record",
+		},
+	}
+}
+
+// TestModeFollowedOnly pins the sync-case complement (05-05): the daemon
+// following an external flip writes the mode correction ALONE — a
+// switch_engine record after the newest mode record would be the daemon
+// flipping the bus in response (the single-writer guard broken live).
+func TestModeFollowedOnly(t *testing.T) {
+	for _, tc := range modeFollowedOnlyCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			err := modeFollowedOnly(tc.journal, tc.target)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("target %s: = %v, want nil", tc.target, err)
+			case tc.wantErr != "" && err == nil:
+				t.Errorf("target %s: = nil, want error containing %q", tc.target, tc.wantErr)
+			case tc.wantErr != "" && !strings.Contains(got, tc.wantErr):
+				t.Errorf("target %s: = %q, want error containing %q", tc.target, got, tc.wantErr)
+			}
+		})
+	}
+}

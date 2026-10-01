@@ -57,14 +57,14 @@ macr:
 var errFakeCtlDown = errors.New("name has no owner")
 
 // selfcheckGreenStub answers the healthy desktop for the audit: the unit
-// active and the single-owner sources set; list-engine falls through to
+// active and the D-54 two-source wrapper set; list-engine falls through to
 // defaultReply's registry hit.
 func selfcheckGreenStub(name string, args []string) ([]byte, error) {
 	if name == binSystemctl && len(args) == 3 && args[1] == "is-active" {
 		return []byte("active"), nil
 	}
 	if name == binGSettings && len(args) == 3 && args[0] == opGet {
-		return []byte(goswitchSources), nil
+		return []byte(wrappedSources), nil
 	}
 
 	return defaultReply(name, args)
@@ -84,6 +84,28 @@ func redUnitStub(name string, args []string) ([]byte, error) {
 func redSourcesStub(name string, args []string) ([]byte, error) {
 	if name == binGSettings && len(args) == 3 && args[0] == opGet {
 		return []byte(ownerSources), nil
+	}
+
+	return selfcheckGreenStub(name, args)
+}
+
+// singleSourceStub answers the single-source desktop (only goswitch-en —
+// the recommended shape of the 2026-09-30 model) over the otherwise-green
+// stand-in.
+func singleSourceStub(name string, args []string) ([]byte, error) {
+	if name == binGSettings && len(args) == 3 && args[0] == opGet {
+		return []byte(goswitchSources), nil
+	}
+
+	return selfcheckGreenStub(name, args)
+}
+
+// redMixedSourceStub answers a hand-edited goswitch-beside-foreign desktop
+// over the otherwise-green stand-in — the foreign-residue form the audit
+// paints red (D-53).
+func redMixedSourceStub(name string, args []string) ([]byte, error) {
+	if name == binGSettings && len(args) == 3 && args[0] == opGet {
+		return []byte(mixedSources), nil
 	}
 
 	return selfcheckGreenStub(name, args)
@@ -109,7 +131,8 @@ func newSelfchecker(
 }
 
 // assertSelfcheckLines pins the full green transcript: the six D-41 verdicts
-// in order, one line each.
+// in order, one line each — the input-source verdict naming the engines
+// found on the wrapped-pair desktop.
 func assertSelfcheckLines(t *testing.T, out string) {
 	t.Helper()
 
@@ -119,7 +142,7 @@ func assertSelfcheckLines(t *testing.T, out string) {
 		"ok unit-active",
 		"ok engine-registered",
 		"ok config (defaults: no config file)",
-		"ok input-source",
+		"ok input-source " + engineENName + ", " + engineRUName,
 	}
 	got := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if !slices.Equal(got, want) {
@@ -382,4 +405,98 @@ func TestSelfcheck_StatusProbeSeam(t *testing.T) {
 			t.Errorf("selfcheck output %q misses the ok version verdict", out)
 		}
 	})
+}
+
+// mixedSources is the hand-edited goswitch-beside-foreign desktop the
+// mixed-verdict test answers.
+const mixedSources = `[('ibus', 'goswitch-en'), ('xkb', 'us')]`
+
+// wrappedSourcesStub answers the D-54 wrapped-pair desktop (both goswitch
+// engines in the sources list) over the otherwise-green stand-in.
+func wrappedSourcesStub(name string, args []string) ([]byte, error) {
+	if name == binGSettings && len(args) == 3 && args[0] == opGet {
+		return []byte(wrappedSources), nil
+	}
+
+	return selfcheckGreenStub(name, args)
+}
+
+// TestSelfcheck_InputSourceTwoEngines pins the green form of the audit
+// (criterion 5): sources carrying BOTH goswitch engines pass the
+// input-source step, and the verdict names the engines it found.
+func TestSelfcheck_InputSourceTwoEngines(t *testing.T) {
+	f := &fakeRunner{stub: wrappedSourcesStub}
+	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err != nil {
+		t.Fatalf("Selfcheck error = %v, want the two-source desktop to pass", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "ok input-source "+engineENName+", "+engineRUName) {
+		t.Errorf("selfcheck output %q misses the named two-engine verdict", out)
+	}
+}
+
+// TestSelfcheck_InputSourceSingleGreen pins the single-source model (owner
+// decision 2026-09-30): a desktop whose sources carry exactly one goswitch
+// engine is GREEN, and the verdict names the engine found — never the
+// other one.
+func TestSelfcheck_InputSourceSingleGreen(t *testing.T) {
+	f := &fakeRunner{stub: singleSourceStub}
+	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err != nil {
+		t.Fatalf("Selfcheck error = %v, want the single-goswitch desktop to pass", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "ok input-source "+engineENName) {
+		t.Errorf("selfcheck output %q misses the named single-engine verdict", out)
+	}
+	if strings.Contains(out, engineRUName) {
+		t.Errorf("verdict for the single-en desktop names %q — it must carry only the engines found", engineRUName)
+	}
+}
+
+// TestSelfcheck_InputSourceForeignRejected pins the foreign desktop as RED
+// under the no-goswitch verdict: no goswitch tuples at all fails with the
+// named expectation and the install hint (the fail-fast shape is
+// unchanged).
+func TestSelfcheck_InputSourceForeignRejected(t *testing.T) {
+	f := &fakeRunner{stub: redSourcesStub}
+	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err == nil {
+		t.Fatal("Selfcheck error = nil, want the foreign desktop to fail the audit")
+	}
+	out := buf.String()
+	runRed(t, i, "FAIL input-source", hintInstall)
+	for _, want := range []string{"no goswitch engine", engineENName + " or " + engineRUName} {
+		if !strings.Contains(out, want) {
+			t.Errorf("verdict %q does not name the no-goswitch expectation (%q missing)", out, want)
+		}
+	}
+}
+
+// TestSelfcheck_InputSourceMixedRejected pins the foreign-residue desktop
+// as RED: a goswitch engine beside a foreign source fails with the D-53
+// rationale (the daemon sees no keys through an xkb source) and the
+// install hint.
+func TestSelfcheck_InputSourceMixedRejected(t *testing.T) {
+	f := &fakeRunner{stub: redMixedSourceStub}
+	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err == nil {
+		t.Fatal("Selfcheck error = nil, want the mixed desktop to fail the audit")
+	}
+	out := buf.String()
+	runRed(t, i, "FAIL input-source", hintInstall)
+	for _, want := range []string{"D-53", "no keys"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("verdict %q does not carry the D-53 rationale (%q missing)", out, want)
+		}
+	}
 }

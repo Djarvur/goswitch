@@ -579,3 +579,135 @@ func TestRenderStatusVersionToken(t *testing.T) {
 		}
 	})
 }
+
+// errHookInjected is the OnConn failure of the degradation corpus.
+var errHookInjected = errors.New("hook exploded")
+
+// waitHookContext reads the hook's serve context from the hand-off channel
+// within the serving deadline and refuses a nil one — the tray supervisor's
+// lifecycle depends on the ctx being real.
+func waitHookContext(t *testing.T, ch <-chan context.Context) context.Context {
+	t.Helper()
+
+	select {
+	case ctx := <-ch:
+		if ctx == nil {
+			t.Fatal("OnConn received a nil context — the supervisor's lifecycle depends on the serve ctx")
+		}
+
+		return ctx
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnConn never reported its serve context")
+
+		return nil
+	}
+}
+
+// TestRun_OnConnHookCalledOnce pins the happy path of the post-export
+// connection hook (quick plan 260930-pf6): Run calls OnConn exactly once
+// after the bus name and the ctl object are live, and serving continues.
+// The hook receives the serve context as its FIRST argument (quick plan
+// 261001-fg3 — the tray supervisor's lifecycle rides it; a nil ctx would
+// break the ctx-done exit). A nil OnConn is the no-hook state the
+// pre-existing corpus already covers.
+func TestRun_OnConnHookCalledOnce(t *testing.T) {
+	startTestBus(t)
+
+	{
+		var mu sync.Mutex
+		var calls int
+		// The hook's serve context rides a channel: fatcontext forbids
+		// storing a context into a captured variable inside a closure, and
+		// the hand-off is race-free by construction.
+		hookCtxs := make(chan context.Context, 1)
+		deps := ctlsvc.Deps{
+			Status: fakeStatus{snap: session.Status{Mode: "en"}},
+			OnConn: func(serveCtx context.Context, _ *dbus.Conn) error {
+				mu.Lock()
+				calls++
+				mu.Unlock()
+				hookCtxs <- serveCtx
+
+				return nil
+			},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		runErr := make(chan error, 1)
+		go func() { runErr <- ctlsvc.Run(ctx, deps) }()
+
+		if err := waitCtlOwner(t, 5*time.Second); err != nil {
+			t.Fatalf("Run never owned the name: %v", err)
+		}
+		mu.Lock()
+		got := calls
+		mu.Unlock()
+		if got != 1 {
+			t.Fatalf("OnConn called %d times, want exactly 1", got)
+		}
+		waitHookContext(t, hookCtxs)
+
+		// Serving continues after the hook: a plain client call answers.
+		conn, err := dbus.ConnectSessionBus()
+		if err != nil {
+			t.Fatalf("client connect: %v", err)
+		}
+		defer func() { _ = conn.Close() }()
+		var reply string
+		if err := conn.Object(ctlsvc.BusName, ctlsvc.ObjectPath).
+			CallWithContext(context.Background(), ctlsvc.BusName+".Status", 0).Store(&reply); err != nil {
+			t.Fatalf("client Status call after OnConn: %v", err)
+		}
+		if !strings.Contains(reply, "mode=en") {
+			t.Errorf("wire Status reply = %q, missing mode=en", reply)
+		}
+
+		cancel()
+		if err := <-runErr; err != nil {
+			t.Errorf("Run returned %v on clean cancel, want nil", err)
+		}
+	}
+}
+
+// TestRun_OnConnHookFailureNeverAbortsServing pins the degradation: an
+// OnConn failure is a WARN — the ctl surface keeps serving (the
+// ctl-failure-never-kills-the-daemon rule).
+func TestRun_OnConnHookFailureNeverAbortsServing(t *testing.T) {
+	startTestBus(t)
+
+	{
+		deps := ctlsvc.Deps{
+			Status: fakeStatus{snap: session.Status{Mode: "ru"}},
+			OnConn: func(_ context.Context, _ *dbus.Conn) error { return errHookInjected },
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		runErr := make(chan error, 1)
+		go func() { runErr <- ctlsvc.Run(ctx, deps) }()
+
+		if err := waitCtlOwner(t, 5*time.Second); err != nil {
+			t.Fatalf("Run never owned the name despite the OnConn failure: %v", err)
+		}
+
+		conn, err := dbus.ConnectSessionBus()
+		if err != nil {
+			t.Fatalf("client connect: %v", err)
+		}
+		defer func() { _ = conn.Close() }()
+		var reply string
+		if err := conn.Object(ctlsvc.BusName, ctlsvc.ObjectPath).
+			CallWithContext(context.Background(), ctlsvc.BusName+".Status", 0).Store(&reply); err != nil {
+			t.Fatalf("ctl serving aborted by the OnConn failure: %v", err)
+		}
+		if !strings.Contains(reply, "mode=ru") {
+			t.Errorf("wire Status reply = %q, missing mode=ru", reply)
+		}
+
+		cancel()
+		if err := <-runErr; err != nil {
+			t.Errorf("Run returned %v on clean cancel, want nil (a hook failure is a WARN, not a verdict)", err)
+		}
+	}
+}

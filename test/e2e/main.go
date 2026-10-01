@@ -106,7 +106,8 @@ func caseListUsage() string {
 		" | word-en-ru | word-after-space | word-ru-en | word-mixed | phrase-en-ru | phrase-mixed" +
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
-		" | macr-per-app | ctl-smoke | install-cycle | perf"
+		" | macr-per-app | ctl-smoke | switch-spike | two-source-flip | external-flip-sync" +
+		" | install-cycle | perf"
 }
 
 // parseFlags fills the stand's CLI surface from os.Args.
@@ -233,34 +234,37 @@ func runCaseWatchdog(
 // built per call (no mutable globals).
 func pickCase(name string) (caseSpec, error) {
 	registry := map[string]caseSpec{
-		"m1-gate":           {fn: runM1Gate},
-		"ibus-restart":      {fn: runIbusRestart},
-		"kill9-survive":     {fn: runKill9Survive},
-		"d01-probe":         {fn: runD01Probe},
-		"chromium-smoke":    {fn: runChromiumSmoke},
-		"gte-smoke":         {fn: runGTESmoke},
-		"gedit-smoke":       {fn: runGeditSmoke},
-		"x11-smoke":         {fn: runChromiumX11Smoke},
-		"word-en-ru":        {fn: runWordENRU},
-		"word-after-space":  {fn: runWordAfterSpace},
-		"word-ru-en":        {fn: runWordRUEN},
-		"word-mixed":        {fn: runWordMixed},
-		"phrase-en-ru":      {fn: runPhraseENRU},
-		"phrase-mixed":      {fn: runPhraseMixed},
-		"ladder-chromium":   {fn: runLadderChromium},
-		"reset-escape":      {fn: runResetEscape},
-		"select-smoke":      {fn: runSelectSmoke},
-		"select-correct":    {fn: runSelectCorrect},
-		"select-clipboard":  {fn: runSelectClipboard},
-		"combo-word-layout": {fn: runComboWordLayout},
-		"layout-single":     {fn: runLayoutSingle},
-		"super-space-alive": {fn: runSuperSpaceAlive},
-		"macr-probe":        {fn: runMacrProbe},
-		"macr-super-letter": {fn: runMacrSuperLetter},
-		"macr-per-app":      {fn: runMacrPerApp},
-		"ctl-smoke":         {fn: runCtlSmoke},
-		"install-cycle":     {fn: runInstallCycle, standalone: true},
-		"perf":              {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
+		"m1-gate":            {fn: runM1Gate},
+		"ibus-restart":       {fn: runIbusRestart},
+		"kill9-survive":      {fn: runKill9Survive},
+		"d01-probe":          {fn: runD01Probe},
+		"chromium-smoke":     {fn: runChromiumSmoke},
+		"gte-smoke":          {fn: runGTESmoke},
+		"gedit-smoke":        {fn: runGeditSmoke},
+		"x11-smoke":          {fn: runChromiumX11Smoke},
+		"word-en-ru":         {fn: runWordENRU},
+		"word-after-space":   {fn: runWordAfterSpace},
+		"word-ru-en":         {fn: runWordRUEN},
+		"word-mixed":         {fn: runWordMixed},
+		"phrase-en-ru":       {fn: runPhraseENRU},
+		"phrase-mixed":       {fn: runPhraseMixed},
+		"ladder-chromium":    {fn: runLadderChromium},
+		"reset-escape":       {fn: runResetEscape},
+		"select-smoke":       {fn: runSelectSmoke},
+		"select-correct":     {fn: runSelectCorrect},
+		"select-clipboard":   {fn: runSelectClipboard},
+		"combo-word-layout":  {fn: runComboWordLayout},
+		"layout-single":      {fn: runLayoutSingle},
+		"super-space-alive":  {fn: runSuperSpaceAlive},
+		"macr-probe":         {fn: runMacrProbe},
+		"macr-super-letter":  {fn: runMacrSuperLetter},
+		"macr-per-app":       {fn: runMacrPerApp},
+		"ctl-smoke":          {fn: runCtlSmoke},
+		"switch-spike":       {fn: runSwitchSpike, standalone: true},
+		"two-source-flip":    {fn: runTwoSourceFlip, standalone: true},
+		"external-flip-sync": {fn: runExternalFlipSync, standalone: true},
+		"install-cycle":      {fn: runInstallCycle, standalone: true},
+		"perf":               {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
 	}
 	spec, ok := registry[name]
 	if !ok {
@@ -269,7 +273,7 @@ func pickCase(name string) (caseSpec, error) {
 			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
 			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
-			" ctl-smoke, install-cycle, perf)", name)
+			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, install-cycle, perf)", name)
 	}
 
 	return spec, nil
@@ -615,6 +619,18 @@ func (s *stand) countSub(sub string) int {
 	}
 
 	return strings.Count(string(data), sub)
+}
+
+// logText returns the whole daemon log as one string — the input of the
+// position-based flip-marks oracles (the countSub sibling that needs
+// offsets, not counts).
+func (s *stand) logText() string {
+	data, err := os.ReadFile(s.logPath)
+	if err != nil {
+		return ""
+	}
+
+	return string(data)
 }
 
 // waitForLog blocks until the daemon log contains sub — a

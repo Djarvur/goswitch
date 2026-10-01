@@ -54,15 +54,53 @@ records your previous input sources — `uninstall` restores them.
 
 ### Input-source handover
 
-`goswitchctl install` also clears GNOME's own layout-switch binding
-(`org.gnome.desktop.input-sources` `switch-input-source`) and remembers the
-previous value verbatim. With goswitch as the only input source, GNOME's
-Alt+Shift / Super+Space no longer switch anything — with a single source
-they only disabled the engine context (a live finding).
-`goswitchctl uninstall` restores the previous binding.
+`goswitchctl install` touches ONLY the input-sources key
+(`org.gnome.desktop.input-sources` `sources`): it wraps your source(s)
+into goswitch engines and remembers the previous value verbatim.
+GNOME's own layout-switch chords (`org.gnome.desktop.wm.keybindings`
+`switch-input-source` / `switch-input-source-backward`) are left
+untouched — their values are still snapshotted verbatim for the
+uninstall restore. Switching is goswitch's own job: a single tap of the
+right Shift, or Super + Space (one of goswitch's gestures — see the
+table under Usage).
 
-Switching is goswitch's own job now — the chords are: a single Shift tap,
-a double Shift, Shift + right Ctrl, and Super + Space.
+### Input sources and the mode indicator
+
+`goswitchctl install` does not hardcode a layout pair: it reads YOUR
+current input sources and wraps at least one `xkb` 'us'/'ru' entry into
+a goswitch engine of the matching layout — a single `('xkb', 'us')`
+source becomes `('ibus', 'goswitch-en')`, a single `('xkb', 'ru')`
+becomes `('ibus', 'goswitch-ru')`, and the classic pair becomes both
+engines. You choose the layouts — the installer only wraps your choice.
+
+ONE goswitch source is the recommended shape: GNOME's native panel
+indicator appears only with two or more input sources, so with one it is
+hidden — by design. The mode indicator is goswitch's own tray icon
+(StatusNotifierItem), which follows the daemon's mode immediately. The
+daemon's flip changes the typing at once; like GNOME's own layout
+switching, a flip resets the correction context — text typed before the
+switch is not corrected by a gesture after it.
+
+The icon is interactive: on GNOME it renders as a menu button, and a
+click opens a menu — «Переключить раскладку» toggles the layout,
+«Статус» shows a notification with the current mode and version,
+«Перечитать конфиг» re-reads the YAML (greyed without `-config`). The
+icon also re-registers itself when the shell's tray watcher appears late
+at boot or silently drops the item — no daemon restart needed.
+
+A foreign source beside goswitch engines cannot come from the installer
+(it is refused) and is flagged red by `goswitchctl selfcheck` — the
+daemon sees no keys through a plain `xkb` source. You stay in charge of
+the source list: if you switch to a foreign source yourself, the daemon
+follows the factual engine and never fights the desktop (no correction,
+no hijack). Switch back to a goswitch source to resume correction and
+hotkey switching.
+
+Restart behavior: a daemon restart keeps everything (it re-activates the
+engine that owns the current source — the `engine reactivated` journal
+line). An ibus-daemon restart returns the session to the shell's own
+current source; a layout reached through a shell gesture survives it,
+and the daemon follows whichever engine the shell brings back.
 
 ## Verify
 
@@ -184,13 +222,15 @@ keycode, modifiers, press/release) is written to the log at DEBUG level.
   (`systemctl --user restart goswitchd`) or an ibus-daemon restart no
   longer silently disables correction. The journal line
   `engine reactivated` confirms it.
-- **The input source switched away and correction stopped, yet the daemon
-  is still alive.** With goswitch as the ONLY input source, the native
-  Super+Space switch can drop the engine context while the daemon keeps
-  running (the name owner stays — e2e super-space-alive); goswitch does
-  not currently detect this live state. Remedy: `ibus engine goswitch-en`
-  (or restart the unit — self-reactivation then re-applies the owned
-  source). Check `journalctl --user -u goswitchd` for the WARN/INFO lines.
+- **A non-goswitch source took over and correction stopped, yet the daemon
+  is still alive.** If you switch to a foreign source (say, a plain `xkb`
+  layout), the daemon follows the factual engine and stays out of the way —
+  it never fights the desktop. `goswitchctl selfcheck` is the audit's
+  answer: it flags a goswitch engine sitting beside a foreign source red
+  (the daemon sees no keys through an xkb source). Remedy: switch back to
+  a goswitch source (`ibus engine goswitch-en`), or restart the unit —
+  self-reactivation then re-applies the owned source. Check
+  `journalctl --user -u goswitchd` for the WARN/INFO lines.
 
 ## Uninstall
 

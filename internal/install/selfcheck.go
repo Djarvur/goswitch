@@ -11,6 +11,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"github.com/Djarvur/goswitch/internal/activate"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
 )
@@ -41,7 +42,8 @@ var (
 		"goswitch-en is not registered with the live ibus-daemon (cache-visible ≠ daemon-visible) — " +
 			"fix: journalctl --user -u goswitchd")
 	errSourceNotOwner = errors.New(
-		"the input sources are not the goswitch single owner — fix: goswitchctl install")
+		"the input sources carry no goswitch engine (goswitch-en or goswitch-ru) — " +
+			"fix: goswitchctl install")
 )
 
 // Selfcheck runs the production D-41 audit — the CLI's thin entry (the
@@ -171,18 +173,42 @@ func (i *Installer) checkConfig(_ context.Context) (string, error) {
 	return "config " + path, nil
 }
 
-// checkInputSource proves the D-40 single-owner takeover holds (D-41
-// step 6): the gsettings sources carry the goswitch engine.
+// checkInputSource proves the sources-list takeover holds (D-41 step 6):
+// the gsettings sources carry AT LEAST ONE goswitch engine and ZERO
+// foreign entries — the single-source model of 2026-09-30 (one source is
+// the recommended shape; the wrapped pair stays green). The sources are
+// parsed with the SAME grammar the installer wraps with
+// (activate.ParseSourceTuples) — one parser on both sides, never substring
+// guessing. A goswitch engine beside a foreign entry is red with the D-53
+// rationale (the daemon sees no keys through an xkb source). The green
+// verdict names the engines found — config literals only, never the raw
+// gsettings line (D-20/D-21).
 func (i *Installer) checkInputSource(ctx context.Context) (string, error) {
 	out, err := i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKey)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", errSourceNotOwner, err)
 	}
-	if !strings.Contains(string(out), "('ibus', '"+engineEN+"')") {
+	tuples, err := activate.ParseSourceTuples(strings.TrimSpace(string(out)))
+	if err != nil {
+		// D-20 allows parse reasons: the verdict names WHY the line is not
+		// a sources list, never the line itself.
+		return "", fmt.Errorf("%w: %w", errSourceNotOwner, err)
+	}
+	owned, foreign := countOwnedForeign(tuples)
+	switch {
+	case owned == 0:
 		return "", errSourceNotOwner
+	case foreign > 0:
+		return "", fmt.Errorf("%w: %s", errMixedSources, foreignResidueHint)
+	}
+	names := make([]string, 0, len(tuples))
+	for _, t := range tuples {
+		if isGoswitchTuple(t) {
+			names = append(names, t.ID)
+		}
 	}
 
-	return "input-source", nil
+	return "input-source " + strings.Join(names, ", "), nil
 }
 
 // probeCtlStatus is the production CtlStatus: one Status call to the

@@ -92,17 +92,79 @@ func NewExecRunner() Runner {
 	}
 }
 
+// SourceTuple is one parsed element of the GNOME input-sources list: the
+// GVariant 2-tuple ('kind', 'id') — e.g. ('xkb', 'us') or
+// ('ibus', 'goswitch-en'). Kind is the source type (xkb, ibus), ID the
+// layout or engine name.
+type SourceTuple struct {
+	Kind string
+	ID   string
+}
+
+// errMalformedSources is the parse-failure sentinel of the canonical
+// sources parser (err113): every refusal names what deviated.
+var errMalformedSources = errors.New("malformed input sources")
+
+// ParseSourceTuples reads one gsettings sources output strictly as a
+// GVariant text array of 2-tuples of single-quoted strings — the canonical
+// parser every consumer (the daemon's ownership verdict, the installer's
+// sources wrap) shares, so the wire shape is parsed in exactly one place.
+// Any deviation — unbalanced brackets, no tuples, an empty list, garbage
+// between tuples — is an error, never a partial parse.
+func ParseSourceTuples(raw string) ([]SourceTuple, error) {
+	s := strings.TrimSpace(raw)
+	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+		return nil, fmt.Errorf("%w: not a bracketed list: %q", errMalformedSources, s)
+	}
+	body := s[1 : len(s)-1]
+	matches := tupleRe.FindAllStringSubmatch(body, -1)
+	if matches == nil {
+		return nil, fmt.Errorf("%w: no source tuples in %q", errMalformedSources, s)
+	}
+	if rest := tupleRe.ReplaceAllString(body, ""); strings.IndexFunc(rest, func(r rune) bool {
+		return r != ',' && !unicode.IsSpace(r)
+	}) >= 0 {
+		return nil, fmt.Errorf("%w: garbage between tuples in %q", errMalformedSources, s)
+	}
+	tuples := make([]SourceTuple, 0, len(matches))
+	for _, m := range matches {
+		tuples = append(tuples, SourceTuple{Kind: m[1], ID: m[2]})
+	}
+
+	return tuples, nil
+}
+
 // IfOwned re-activates the engine that owns the current GNOME input
-// source: `ibus engine <name>` for the goswitch engine at the current
-// index of the sources list. Never returns an error and never panics —
-// every outcome lands in the log (INFO success, DEBUG skip/failure
-// attempts, WARN exhausted retries). A foreign or malformed current source
-// receives no `ibus engine` call at all (T-SY8-01).
-func IfOwned(ctx context.Context, run Runner) {
+// source. The FACTUAL engine leads (05-04, Pitfall 3): when the caller
+// hands a globalEngine reader — the daemon's generation-scoped
+// GetGlobalEngine — a successful read IS the truth. A goswitch name
+// reactivates directly: the gsettings `current` key is dead on GNOME 46
+// (the shell never writes it), and trusting it would flip a ru user back
+// to en on every daemon restart. A foreign factual name skips with DEBUG
+// (the honest exit from under goswitch) WITHOUT consulting the dead key.
+// The reader failing — a cold bus — falls back to the legacy
+// sources+current derivation unchanged. Never returns an error and never
+// panics — every outcome lands in the log (INFO success, DEBUG
+// skip/failure attempts, WARN exhausted retries); a foreign or malformed
+// current source receives no `ibus engine` call at all (T-SY8-01).
+func IfOwned(ctx context.Context, run Runner, globalEngine func(ctx context.Context) (string, bool)) {
 	if err := ctx.Err(); err != nil {
 		slog.Debug("engine reactivation skipped", "reason", "context done", "error", err)
 
 		return
+	}
+	if globalEngine != nil {
+		if name, ok := globalEngine(ctx); ok {
+			if !strings.HasPrefix(name, enginePrefix) {
+				slog.Debug("engine reactivation skipped", "reason", "global engine is foreign", "engine", name)
+
+				return
+			}
+			reactivate(ctx, run, name)
+
+			return
+		}
+		slog.Debug("global engine unreadable", "reason", "cold bus; falling back to the current index")
 	}
 
 	sources, err := readKey(ctx, run, keySources)
@@ -146,29 +208,18 @@ func readKey(ctx context.Context, run Runner, key string) ([]byte, error) {
 	return run(ctx, binGSettings, []string{"get", gsettingsSchema, key})
 }
 
-// parseSources reads the sources output strictly as a GVariant text array
-// of 2-tuples of single-quoted strings, returning the engine/source NAME
-// (the second element) of every tuple. Any deviation — empty output,
-// unbalanced brackets, garbage between tuples — is malformed: nil.
+// parseSources reads the sources output strictly, returning the engine/
+// source NAME (the second element) of every tuple — the thin adapter over
+// the canonical ParseSourceTuples the IfOwned verdict consumes. Any
+// deviation is malformed: nil.
 func parseSources(out []byte) []string {
-	s := strings.TrimSpace(string(out))
-	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+	tuples, err := ParseSourceTuples(string(out))
+	if err != nil {
 		return nil
 	}
-	body := s[1 : len(s)-1]
-	matches := tupleRe.FindAllStringSubmatch(body, -1)
-	if matches == nil {
-		return nil
-	}
-	if rest := tupleRe.ReplaceAllString(body, ""); strings.IndexFunc(rest, func(r rune) bool {
-		return r != ',' && !unicode.IsSpace(r)
-	}) >= 0 {
-		return nil
-	}
-
-	names := make([]string, 0, len(matches))
-	for _, m := range matches {
-		names = append(names, m[2])
+	names := make([]string, 0, len(tuples))
+	for _, t := range tuples {
+		names = append(names, t.ID)
 	}
 
 	return names

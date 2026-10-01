@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Djarvur/goswitch/internal/activate"
 )
 
 // installWait bounds the status-readiness poll of the installed unit
@@ -85,6 +88,9 @@ func runInstallCycle(ctx context.Context, s *stand) error {
 	if out, errOut, err := runCtl(ctx, ctlBin, "install"); err != nil {
 		return fmt.Errorf("install-cycle: install exited non-zero (out %q err %q): %w", out, errOut, err)
 	}
+	if err := installSourcesWrapped(ctx, s); err != nil {
+		return err
+	}
 	if err := installUnitActive(ctx); err != nil {
 		return err
 	}
@@ -112,6 +118,125 @@ func runInstallCycle(ctx context.Context, s *stand) error {
 	}
 
 	return runUninstallAndVerify(ctx, ctlBin, s)
+}
+
+// The D-54 wrap enum the install-cycle oracle restates deliberately (NOT
+// imported from the installer — an oracle sharing the production wrap code
+// could not catch a wrap bug): the xkb layout → goswitch engine mapping
+// and the rendered tuple shapes.
+const (
+	oracleKindXKB       = "xkb"
+	oracleLayoutUS      = "us"
+	oracleLayoutRU      = "ru"
+	oracleEngineTupleEN = "('ibus', 'goswitch-en')"
+	oracleEngineTupleRU = "('ibus', 'goswitch-ru')"
+)
+
+// carriesOracleSource reports whether the raw line carries AT LEAST ONE
+// wrappable xkb us/ru entry — the oracle's own ≥1 check over the canonical
+// parser (the single-source model of 2026-09-30; the mirror of the
+// production carriesWrappableXKB, restated never imported).
+func carriesOracleSource(raw string) bool {
+	tuples, err := activate.ParseSourceTuples(raw)
+	if err != nil {
+		return false
+	}
+	for _, t := range tuples {
+		if t.Kind == oracleKindXKB && (t.ID == oracleLayoutUS || t.ID == oracleLayoutRU) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// readStateSources returns the SAVED original sources from the installer's
+// state file — the true pre-goswitch pair when the case runs over an
+// already-goswitch desktop (the D-54 upgrade form).
+func readStateSources() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
+	path := filepath.Join(home, ".local", "share", "goswitch", "install-state.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	var st struct {
+		Sources string `json:"sources"`
+	}
+	if err := json.Unmarshal(data, &st); err != nil {
+		return "", fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	return st.Sources, nil
+}
+
+// wrapForCheck recomputes the takeover value from a raw sources line —
+// the ≥1 rule restated deliberately (an oracle sharing the production
+// wrap code could not catch a wrap bug): the canonical parser
+// (internal/activate) for the wire shape, the oracle's own closed enum
+// for the mapping, positions preserved, everything else transiting
+// verbatim. At least ONE wrappable us/ru source is required — single 'us'
+// → goswitch-en, single 'ru' → goswitch-ru, the pair → both.
+func wrapForCheck(raw string) (string, error) {
+	tuples, err := activate.ParseSourceTuples(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse %q: %w", raw, err)
+	}
+	hasUS, hasRU := false, false
+	parts := make([]string, 0, len(tuples))
+	for _, t := range tuples {
+		switch {
+		case t.Kind == oracleKindXKB && t.ID == oracleLayoutUS:
+			hasUS = true
+			parts = append(parts, oracleEngineTupleEN)
+		case t.Kind == oracleKindXKB && t.ID == oracleLayoutRU:
+			hasRU = true
+			parts = append(parts, oracleEngineTupleRU)
+		default:
+			parts = append(parts, fmt.Sprintf("('%s', '%s')", t.Kind, t.ID))
+		}
+	}
+	if !hasUS && !hasRU {
+		return "", errors.New("no wrappable xkb us/ru source")
+	}
+
+	return "[" + strings.Join(parts, ", ") + "]", nil
+}
+
+// installSourcesWrapped machine-proves the takeover criterion on the live
+// desktop: right after install the gsettings sources equal the wrapper
+// computed from the desk's OWN wrappable source(s) — the goswitch
+// tuple(s) in the wrapped entries' positions, every other entry transiting
+// verbatim. The wrap input is the case snapshot when it carries at least
+// one wrappable xkb us/ru entry, and the SAVED ORIGINAL from the state
+// file otherwise (the upgrade form, Pitfall 7: an already-goswitch desktop
+// wraps from its saved pre-install list — the snapshot-else-saved
+// resolution also serves single-source snapshots).
+func installSourcesWrapped(ctx context.Context, s *stand) error {
+	wrapInput := s.snap.sources
+	if !carriesOracleSource(wrapInput) {
+		saved, err := readStateSources()
+		if err != nil {
+			return fmt.Errorf("install-cycle: resolve the desk's pre-install sources: %w", err)
+		}
+		wrapInput = saved
+	}
+	wrapped, err := wrapForCheck(wrapInput)
+	if err != nil {
+		return fmt.Errorf("install-cycle: the desk's sources do not wrap: %w", err)
+	}
+	now, err := runCmd(ctx, "gsettings", "get", gsettingsSchema, keySources)
+	if err != nil {
+		return fmt.Errorf("install-cycle: read sources after install: %w", err)
+	}
+	if now != wrapped {
+		return fmt.Errorf("install-cycle: sources after install %q, want the computed wrapper %q", now, wrapped)
+	}
+
+	return nil
 }
 
 // installSelfcheck proves the D-41 audit rides the installed desktop: the
@@ -199,8 +324,8 @@ func installUnitActive(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("install-cycle: unit not active after install (%s): %w", state, err)
 	}
-	if state != "active" {
-		return fmt.Errorf("install-cycle: unit state %q, want active", state)
+	if state != unitActiveState {
+		return fmt.Errorf("install-cycle: unit state %q, want %s", state, unitActiveState)
 	}
 
 	return nil
@@ -229,13 +354,24 @@ func installRegistered(ctx context.Context) error {
 
 // runUninstallAndVerify proves the D-42 rollback on the live desktop: the
 // unit stops, the artifacts disappear, the registry drops goswitch, and
-// the input sources read back equal to the desktop snapshot.
+// the input sources read back equal to the desktop's original list — the
+// case snapshot, or the SAVED ORIGINAL from the state file when the case
+// ran over an already-goswitch desktop (the upgrade form: the honest
+// verbatim restore is the pre-goswitch list — one source or the pair —
+// read BEFORE the uninstall consumes the state file).
 func runUninstallAndVerify(ctx context.Context, ctlBin string, s *stand) error {
+	restoreTarget := s.snap.sources
+	if !carriesOracleSource(restoreTarget) {
+		if saved, err := readStateSources(); err == nil {
+			restoreTarget = saved
+		}
+	}
 	if out, errOut, err := runCtl(ctx, ctlBin, "uninstall"); err != nil {
 		return fmt.Errorf("install-cycle: uninstall exited non-zero (out %q err %q): %w", out, errOut, err)
 	}
 
-	if state, err := runCmd(ctx, "systemctl", "--user", "is-active", "goswitchd"); err == nil && state == "active" {
+	state, err := runCmd(ctx, "systemctl", "--user", "is-active", "goswitchd")
+	if err == nil && state == unitActiveState {
 		return fmt.Errorf("install-cycle: unit still active after uninstall (%s)", state)
 	}
 	xmlPath, unitPath, statePath := installArtifactPaths()
@@ -252,8 +388,8 @@ func runUninstallAndVerify(ctx context.Context, ctlBin string, s *stand) error {
 	if err != nil {
 		return fmt.Errorf("install-cycle: read sources after uninstall: %w", err)
 	}
-	if now != s.snap.sources {
-		return fmt.Errorf("%w: snapshot %q, now %q", errInstallSourcesDrift, s.snap.sources, now)
+	if now != restoreTarget {
+		return fmt.Errorf("%w: original %q, now %q", errInstallSourcesDrift, restoreTarget, now)
 	}
 
 	return nil

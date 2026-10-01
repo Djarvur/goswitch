@@ -15,11 +15,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/godbus/dbus/v5"
+
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/activate"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
 	"github.com/Djarvur/goswitch/internal/hotkey"
+	"github.com/Djarvur/goswitch/internal/indicator"
 	"github.com/Djarvur/goswitch/internal/logging"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -80,6 +83,13 @@ func run(ctx context.Context, debug bool, configPath string) error {
 	return nil
 }
 
+// The org.freedesktop.Notifications surface the status menu item posts
+// through — pure D-Bus on the SAME ctl connection, no subprocess.
+const (
+	notificationName = "org.freedesktop.Notifications"
+	notificationPath = dbus.ObjectPath("/org/freedesktop/Notifications")
+)
+
 // startCtl runs the control service on the session bus — the daemon's
 // SECOND godbus connection (the engine rides the private IBus socket,
 // this one the session bus), started and stopped on the daemon's signal
@@ -92,10 +102,74 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 		reload = watcher // nil without -config: ReloadConfig answers "no config file"
 	}
 	go func() {
-		if err := ctlsvc.Run(ctx, ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}); err != nil {
+		deps := ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}
+		// The tray indicator rides the ctl connection (quick plan
+		// 260930-pf6): one bus name more visible at org.djarvur.goswitch,
+		// attached after the name and the ctl object go live. Attach errors
+		// are WARNed by Run and serving continues — the daemon types on
+		// without its tray icon. The display installs before engine.Run, so
+		// the icon is live from the first generation; SetModeDisplay's
+		// install push covers any ordering skew.
+		//
+		// The interactive surface (quick plan 261001-fg3): the menu's first
+		// item toggles the mode through the actor's public ToggleMode (the
+		// SAME flipTo path as every other gesture), «Статус» posts a
+		// mode+version notification on this connection (counts/states only
+		// — T-03-06-03), «Перечитать конфиг» drives the watcher's Reload and
+		// is served greyed without -config. The supervisor rides the serve
+		// context OnConn receives — the tray dies with the daemon, and the
+		// icon self-heals when the shell's watcher appears late or evicts
+		// the item.
+		deps.OnConn = func(connCtx context.Context, conn *dbus.Conn) error {
+			cb := indicator.Callbacks{
+				Toggle: actor.ToggleMode,
+				Status: func() { notifyStatus(conn, actor) },
+			}
+			if reload != nil {
+				cb.Reload = func() { reloadConfig(reload) }
+			}
+			item := indicator.Attach(conn, ctlsvc.BusName, cb)
+			actor.SetModeDisplay(item) // the install push covers ordering skew
+			go item.Supervise(connCtx, conn)
+
+			return nil
+		}
+		if err := ctlsvc.Run(ctx, deps); err != nil {
 			slog.Error("ctl service stopped", "error", err)
 		}
 	}()
+}
+
+// notifyStatus posts ONE desktop notification with the current mode and the
+// build version from the actor's snapshot — counts/states only, never user
+// text (T-03-06-03 canon). An error is a WARN, never a panic: the
+// notification daemon is a same-session, same-uid surface, and its failure
+// costs nothing but the message (the recover shim around menu dispatch
+// bounds whatever else escapes).
+func notifyStatus(conn *dbus.Conn, actor *session.Actor) {
+	st := actor.StatusSnapshot()
+	body := "Mode: " + st.Mode + "\nVersion: " + st.Version
+	call := conn.Object(notificationName, notificationPath).
+		Call("org.freedesktop.Notifications.Notify", 0,
+			"goswitch", uint32(0), "", "goswitch", body,
+			[]string{}, map[string]dbus.Variant{}, int32(-1))
+	if call.Err != nil {
+		slog.Warn("status notification failed", "component", "tray indicator", "error", call.Err)
+	}
+}
+
+// reloadConfig drives the forced synchronous re-read and logs the outcome —
+// the menu item's mirror of goswitchctl reload: WARN on the rejection (the
+// last-good snapshot keeps serving, D-32), INFO with the applied message on
+// success (the 03-07 log-form canon).
+func reloadConfig(r ctlsvc.Reloader) {
+	msg, err := r.Reload()
+	if err != nil {
+		slog.Warn("config reload rejected", "error", err)
+
+		return
+	}
+	slog.Info("config reloaded", "applied", msg)
 }
 
 // loadConfig resolves the startup configuration: an explicit -config must
@@ -153,23 +227,57 @@ func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 // without -config the built-in default equals hotkey.DefaultWindow
 // (pinned by config.TestDefaults).
 //
-// PostRegister re-activates the owned engine after every (re)registration
-// (SY8): the closure receives the serving generation's context — the
-// daemon's signal lineage — and the activate package is void by contract,
-// degrading every failure to journal lines. A double activation after
-// `goswitchctl install` is harmless: SetGlobalEngine is idempotent.
+// The sync loop of ADR-006 (05-04, criterion 3) wires both directions:
+// OnGlobalEngine feeds every observed engine name (GlobalEngineChanged AND
+// FocusIn) into the actor's SyncEngine — the daemon FOLLOWS the factual
+// engine, never fights it; BindGlobalEngine keeps the generation-scoped
+// GetGlobalEngine reader, and PostRegister hands it to activate.IfOwned so
+// a reactivation after (re)registration prefers the FACTUAL engine over
+// the dead gsettings current key (Pitfall 3). Serve binds the reader
+// BEFORE PostRegister fires, so every generation's reactivation consults
+// its own generation's reader.
 func engineConfig(actor *session.Actor) engine.Config {
 	engines := []engine.EngineDesc{
 		engine.NewEngineDesc("goswitch-en", "goswitch English (US)", "en", "us", "en"),
 		engine.NewEngineDesc("goswitch-ru", "goswitch Русская", "ru", "ru", "ru"),
 	}
 
+	// readGlobalEngine is rebound on every generation before PostRegister;
+	// nil only before the first bind ever — a generation's PostRegister
+	// cannot run ahead of its own bind (the serve order).
+	var readGlobalEngine func(ctx context.Context) (string, bool)
+
 	return engine.Config{
 		Component: engine.NewComponent(engines),
 		Engines:   engines,
 		Handler:   actor, // decides consumption (RU script mode) at the key; tap decisions at window expiry.
+		// The sync-listener input: the engine adapter calls it with the
+		// observed wire name; the actor's SyncEngine corrects only its
+		// internal mode, never the bus (single-writer, T-05-04-01).
+		OnGlobalEngine: actor.SyncEngine,
 		PostRegister: func(ctx context.Context, _ int) {
-			activate.IfOwned(ctx, activate.NewExecRunner())
+			activate.IfOwned(ctx, activate.NewExecRunner(), readGlobalEngine)
+		},
+		// BindSwitcher hands the generation-scoped SetGlobalEngine closure
+		// to the actor (D-52): every flip gesture leaves the daemon through
+		// THIS closure — the engine-truth flip of ADR-006 — rebound on every
+		// reconnecting generation by the engine's serve cycle. The method
+		// value is wiring before engine.Run; the actor's nil-switcher
+		// degradation (one WARN, the chord-parse precedent below) keeps the
+		// daemon starting even if the seam never arrives.
+		BindSwitcher: actor.SetSwitcher,
+		// BindGlobalEngine adapts the engine reader's (string, error) to
+		// IfOwned's (string, bool): an unreadable or empty name is the cold
+		// bus, and IfOwned falls back to the current-index derivation.
+		BindGlobalEngine: func(get func(ctx context.Context) (string, error)) {
+			readGlobalEngine = func(ctx context.Context) (string, bool) {
+				name, err := get(ctx)
+				if err != nil || name == "" {
+					return "", false
+				}
+
+				return name, true
+			}
 		},
 	}
 }
