@@ -48,23 +48,48 @@ type busClosedError struct{}
 
 func (busClosedError) Error() string { return "app identity observer: a11y bus connection closed" }
 
+// RoleCall is the observer's live role seam: one
+// org.a11y.atspi.Accessible.GetRole round trip over the a11y bus per
+// invocation, made at the caller's decision moment (D-53 — the role is a
+// fresh answer, never a cache read). Start installs the real bus closure;
+// tests inject recorders.
+type RoleCall func(ctx context.Context, sender dbus.Sender, path dbus.ObjectPath) (uint32, error)
+
+// Option customizes an Observer at construction time, before the run loop
+// starts — the injection seam of New.
+type Option func(*Observer)
+
+// WithRoleCall installs the live role seam (Start's real GetRole closure or
+// a test's recorder). Without it Role reports the unknown-role error — the
+// zero value stays fail-closed (D-53: every unknown silences the consumer).
+func WithRoleCall(fn RoleCall) Option {
+	return func(o *Observer) { o.roleCall = fn }
+}
+
 // Observer caches the freshest focused application from the a11y bus's
-// focus events. The zero value is inert; New builds a running observer
-// over a signal feed (the daemon's live connection or a test's synthetic
-// events — the shared seam).
+// focus events, together with the (sender, path) address of the focused
+// object — the destination of Role's live role query. The zero value is
+// inert; New builds a running observer over a signal feed (the daemon's
+// live connection or a test's synthetic events — the shared seam).
 type Observer struct {
-	mu      sync.Mutex
-	app     string
-	err     error
-	cleanup func()
+	mu          sync.Mutex
+	app         string
+	focusSender dbus.Sender
+	focusPath   dbus.ObjectPath
+	roleCall    RoleCall
+	err         error
+	cleanup     func()
 }
 
 // New runs the observer over feed until ctx dies or the feed closes; the
 // optional cleanup runs once at the end of the loop (the live connection's
 // Close). Signals are consumed by the observer's own goroutine — callers
-// only ever read FocusedApp.
-func New(ctx context.Context, feed <-chan *dbus.Signal, cleanup func()) *Observer {
+// only ever read FocusedApp and Role.
+func New(ctx context.Context, feed <-chan *dbus.Signal, cleanup func(), opts ...Option) *Observer {
 	obs := &Observer{cleanup: cleanup}
+	for _, opt := range opts {
+		opt(obs)
+	}
 	go obs.run(ctx, feed)
 
 	return obs
@@ -165,6 +190,20 @@ func (o *Observer) FocusedApp() (string, error) {
 	defer o.mu.Unlock()
 
 	return o.app, o.err
+}
+
+// Role queries the AT-SPI role of the object behind the stored focus pair —
+// one live GetRole round trip at the caller's decision moment (D-53: the
+// stored pair is the address of the query, never a cached answer). The role
+// comes back as the uint32 AT-SPI enum; any unknown (no gain seen, no live
+// seam, a failed call) is an error the consumer's policy treats as silence.
+// Role never logs — the decision and any warn-once discipline are the
+// consumer's business.
+//
+// RED stub: the run loop does not store the focus pair yet, so the corpus
+// fails against this zero answer until the storage lands.
+func (o *Observer) Role(ctx context.Context) (uint32, error) {
+	return 0, nil
 }
 
 // run is the observer's event loop: every focus GAIN on a
