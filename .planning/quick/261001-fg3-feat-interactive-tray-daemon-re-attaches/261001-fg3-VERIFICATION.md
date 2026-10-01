@@ -1,7 +1,7 @@
 ---
 phase: 261001-fg3-feat-interactive-tray-daemon-re-attaches
 verified: 2026-10-01T09:42:19Z
-status: human_needed
+status: passed
 score: 6/6 must-haves verified
 covered_files:
   - .planning/quick/261001-fg3-feat-interactive-tray-daemon-re-attaches/261001-fg3-PLAN.md
@@ -190,3 +190,9 @@ Post-fix live evidence (daemon from e8dae38):
 Remaining human check: the owner sees the icon, clicks it — the menu opens,
 «Переключить раскладку» flips the layout/icon, «Статус» posts a notification
 («Перечитать конфиг» is greyed without -config, by design).
+
+## Owner confirmation (2026-10-01)
+
+The owner confirmed visually: the tray icon with its menu works — the menu
+opens, «Переключить раскладку» flips the layout/icon. All human gates of the
+interactive-tray task are closed.
