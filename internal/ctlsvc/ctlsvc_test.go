@@ -585,19 +585,24 @@ var errHookInjected = errors.New("hook exploded")
 
 // TestRun_OnConnHookCalledOnce pins the happy path of the post-export
 // connection hook (quick plan 260930-pf6): Run calls OnConn exactly once
-// after the bus name and the ctl object are live, and serving continues. A
-// nil OnConn is the no-hook state the pre-existing corpus already covers.
+// after the bus name and the ctl object are live, and serving continues.
+// The hook receives the serve context as its FIRST argument (quick plan
+// 261001-fg3 — the tray supervisor's lifecycle rides it; a nil ctx would
+// break the ctx-done exit). A nil OnConn is the no-hook state the
+// pre-existing corpus already covers.
 func TestRun_OnConnHookCalledOnce(t *testing.T) {
 	startTestBus(t)
 
 	{
 		var mu sync.Mutex
 		var calls int
+		var hookCtx context.Context
 		deps := ctlsvc.Deps{
 			Status: fakeStatus{snap: session.Status{Mode: "en"}},
-			OnConn: func(_ *dbus.Conn) error {
+			OnConn: func(ctx context.Context, _ *dbus.Conn) error {
 				mu.Lock()
 				calls++
+				hookCtx = ctx
 				mu.Unlock()
 
 				return nil
@@ -614,9 +619,13 @@ func TestRun_OnConnHookCalledOnce(t *testing.T) {
 		}
 		mu.Lock()
 		got := calls
+		hookCtxGot := hookCtx
 		mu.Unlock()
 		if got != 1 {
 			t.Fatalf("OnConn called %d times, want exactly 1", got)
+		}
+		if hookCtxGot == nil {
+			t.Fatal("OnConn received a nil context — the supervisor's lifecycle depends on the serve ctx")
 		}
 
 		// Serving continues after the hook: a plain client call answers.
@@ -650,7 +659,7 @@ func TestRun_OnConnHookFailureNeverAbortsServing(t *testing.T) {
 	{
 		deps := ctlsvc.Deps{
 			Status: fakeStatus{snap: session.Status{Mode: "ru"}},
-			OnConn: func(_ *dbus.Conn) error { return errHookInjected },
+			OnConn: func(_ context.Context, _ *dbus.Conn) error { return errHookInjected },
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
