@@ -28,13 +28,16 @@ import (
 )
 
 // The a11y bus's D-Bus coordinates: the well-known name and object of the
-// bus service on the SESSION bus, and the event the observer subscribes
-// to on the a11y bus itself.
+// bus service on the SESSION bus, the event the observer subscribes to on
+// the a11y bus itself, and the Accessible role query the Role seam makes.
+// getRoleMethod is pinned as the full wire literal: the answer is the uint32
+// role enum (u), compared by NUMBER only.
 const (
 	a11yBusName   = "org.a11y.Bus"
 	a11yBusPath   = "/org/a11y/bus"
 	eventIface    = "org.a11y.atspi.Event.Object"
 	stateChanged  = "StateChanged"
+	getRoleMethod = "org.a11y.atspi.Accessible.GetRole"
 	signalBufSize = 16
 )
 
@@ -62,16 +65,17 @@ func (roleUnknownError) Error() string {
 	return "app identity observer: focused object role unknown"
 }
 
-// The AT-SPI role enum values the autocorrect policy gates on.
-//
-// RED stub: zero placeholders — the corpus pins the live-verified values in
-// GREEN (gi Atspi 2.52.0, 06-RESEARCH Q4).
+// The AT-SPI role enum values the autocorrect policy gates on (gi Atspi
+// 2.52.0, live-verified on the target GNOME 46 desktop 2026-09-27 —
+// 06-RESEARCH Q4). Roles compare by NUMBER only: role-name strings are
+// localized and diverge between toolkits for the same enum value (61 is
+// "text box" over the wire and "text" in the GI registry).
 const (
-	RolePasswordText uint32 = 0
-	RoleTerminal     uint32 = 0
-	RoleText         uint32 = 0
-	RoleEntry        uint32 = 0
-	RoleDocumentText uint32 = 0
+	RolePasswordText uint32 = 40 // password text — the autocorrect policy never corrects it
+	RoleTerminal     uint32 = 60 // terminal — never corrected
+	RoleText         uint32 = 61 // text box / text — correctable text input
+	RoleEntry        uint32 = 79 // entry — correctable text input
+	RoleDocumentText uint32 = 94 // document text — correctable text input
 )
 
 // RoleCall is the observer's live role seam: one
@@ -205,7 +209,23 @@ func Start(ctx context.Context) (*Observer, error) {
 	feed := make(chan *dbus.Signal, signalBufSize)
 	conn.Signal(feed)
 
-	return New(ctx, feed, func() { _ = conn.Close() }), nil
+	// The live role seam: one GetRole round trip over the observer's own
+	// connection per Role call — the GetAddress precedent's call shape
+	// (CallWithContext().Store()), on the a11y object the focus event named.
+	// The wire layer wraps the transport error (the seam's answer IS Role's
+	// error); a dead object behind the path is an error return — the D-53
+	// policy silences, never panics.
+	return New(ctx, feed, func() { _ = conn.Close() }, WithRoleCall(
+		func(ctx context.Context, sender dbus.Sender, path dbus.ObjectPath) (uint32, error) {
+			var role uint32
+			if err := conn.Object(string(sender), path).
+				CallWithContext(ctx, getRoleMethod, 0).Store(&role); err != nil {
+				return 0, fmt.Errorf("get role: %w", err)
+			}
+
+			return role, nil
+		},
+	)), nil
 }
 
 // FocusedApp returns the cached identity of the focused application (the
@@ -222,9 +242,10 @@ func (o *Observer) FocusedApp() (string, error) {
 // one live GetRole round trip at the caller's decision moment (D-53: the
 // stored pair is the address of the query, never a cached answer). The role
 // comes back as the uint32 AT-SPI enum; any unknown (no gain seen, no live
-// seam, a failed call) is an error the consumer's policy treats as silence.
-// Role never logs — the decision and any warn-once discipline are the
-// consumer's business.
+// seam, a failed call) is an error the consumer's policy treats as silence —
+// the seam's transport failure arrives wrapped by the wire layer, the
+// unknown-role cases here by the sentinel. Role never logs — the decision
+// and any warn-once discipline are the consumer's business.
 func (o *Observer) Role(ctx context.Context) (uint32, error) {
 	o.mu.Lock()
 	sender, path := o.focusSender, o.focusPath

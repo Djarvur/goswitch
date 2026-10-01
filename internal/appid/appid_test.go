@@ -282,6 +282,7 @@ func TestRole_LiveCallShape(t *testing.T) {
 		calls     int
 	)
 	obs := appid.New(ctx, feed, nil, appid.WithRoleCall(
+		//nolint:fatcontext // the seam's ctx param IS the assertion: ctx must reach the wire call (D-53)
 		func(seamCtx context.Context, sender dbus.Sender, path dbus.ObjectPath) (uint32, error) {
 			calls++
 			gotCtx, gotSender, gotPath = seamCtx, sender, path
@@ -366,13 +367,13 @@ func TestRole_ConcurrentWithGain(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			feed <- focusSignal(senderZenity, paths[i%2], 1)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 50; i++ {
+		for range 50 {
 			if _, err := obs.Role(ctx); err != nil {
 				t.Errorf("concurrent Role = %v, want the seam answer", err)
 			}
