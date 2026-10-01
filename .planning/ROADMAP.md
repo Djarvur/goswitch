@@ -255,7 +255,7 @@ Plans:
   4. Двойной Shift остаётся ручным переопределением поверх автокоррекции
   5. e2e-матрица расширена автокоррекционными кейсами (вкл/выкл, роль поля, OOV), ночная двойная зелёная
 
-**Plans:** 2/8 plans executed
+**Plans:** 3/8 plans executed
 
 Plans:
 **Wave 1**
@@ -265,7 +265,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 06-02-PLAN.md — layouts/dictgen: hunspell → golden DictRU/DictEN (sorted slices) + TriRU/TriEN, лицензионные нотисы, dictgen-regen — CORR-08
-- [ ] 06-03-PLAN.md — internal/appid: (sender,path) + Role(ctx) живой GetRole enum + ErrRoleUnknown — MACR-ACL
+- [x] 06-03-PLAN.md — internal/appid: (sender,path) + Role(ctx) живой GetRole enum + ErrRoleUnknown — MACR-ACL
 - [ ] 06-04-PLAN.md — internal/config: секция autocorrect (default off, strict decode, потолки) + docs/CONFIG.md — MACR-ACL
 
 **Wave 3** *(blocked on Wave 2 completion)*
