@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/detect/ -race -count=1 -run 'TestCheck' -v (transcribed to node-test TAP per repo precedent; raw output /tmp/06-05-t1-red-raw.txt)",
+  "exitCode": 1,
+  "targetTest": "TestCheck_DictWrongLayout",
+  "failingTest": "TestCheck_DictWrongLayout",
+  "expected": "Check implements the D-52(a) dictionary path over the RED stub: a token out of the current fixture dictionary whose correct.Convert remap sits in the other one (ghbdtn/en, руддщ/ru) returns {WrongLayout:true, Confident:true, Dir:ENtoRU/RUtoEN, Reason:dict-wrong-layout}; a current-dictionary hit (hello/en, привет/ru) vetoes with Reason:dict-cur-hit; the both-fixtures anagram vetoes with Reason:dict-both-hit; short/empty/nil tokens abstain-short; letterless tokens and unknown modes abstain-no-letters; mixed tokens abstain-convert-fail; confident verdicts carry the correct-package Dir",
+  "actual": "All 8 planned TestCheck_* tests fail on the planned assertions against the RED stub (Check returns the placeholder {false, false, 0, trigram-unsure} for every input): TestCheck_DictWrongLayout (ghbdtn/en got trigram-unsure, want dict-wrong-layout Confident:true Dir:ENtoRU), TestCheck_DictCurHitVetoes, TestCheck_DictBothHitVetoes, TestCheck_AbstainShort (nil token included), TestCheck_AbstainNoLetters, TestCheck_UnknownModeAbstains, TestCheck_AbstainConvertFail, TestCheck_DirMatchesCorrect. Every failure is an assertion mismatch for the planned behavior — no compile, fixture, or discovery error",
+  "output": "not ok 1 - TestCheck_DictWrongLayout\nnot ok 2 - TestCheck_DictCurHitVetoes\nnot ok 3 - TestCheck_DictBothHitVetoes\nnot ok 4 - TestCheck_AbstainShort\nnot ok 5 - TestCheck_AbstainNoLetters\nnot ok 6 - TestCheck_UnknownModeAbstains\nnot ok 7 - TestCheck_AbstainConvertFail\nnot ok 8 - TestCheck_DirMatchesCorrect\n# tests 8\n# pass 0\n# fail 8"
+}
