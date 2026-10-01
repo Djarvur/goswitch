@@ -23,15 +23,25 @@ const (
 	minBackspaceCap = 1
 	maxBackspaceCap = 500
 	maxMACRApps     = 64
+
+	maxAutocorrectApps    = 64
+	minAutocorrectWordLen = 2
+	maxAutocorrectWordLen = 16
 )
 
 // The documented default values (config_schema): the tap window is
 // ADR-002's DefaultWindow in milliseconds, the verify wait the Phase 2
-// surrounding-text timer, the Backspace cap D-27's series bound.
+// surrounding-text timer, the Backspace cap D-27's series bound. The
+// autocorrect thresholds are the detector's start values pending the
+// internal/detect golden corpus (plan 06-05) — change the defaults and
+// detect.Params TOGETHER, never one side.
 const (
-	defaultTapWindowMs  = 300
-	defaultVerifyWaitMs = 100
-	defaultBackspaceCap = 50
+	defaultTapWindowMs   = 300
+	defaultVerifyWaitMs  = 100
+	defaultBackspaceCap  = 50
+	defaultMinWordLen    = 4
+	defaultTrigramMargin = 2.0
+	defaultTrigramFloor  = 1.0
 )
 
 // Validation refusals — package sentinels (the err113 discipline of the
@@ -46,6 +56,10 @@ var (
 	errMACRLetterToken    = errors.New("must be a single lowercase letter a-z")
 	errMACRAppsOverCeil   = errors.New("entries, at most 64 allowed")
 	errMACRAltModifierSet = errors.New("must be ctrl_l, ctrl_r or empty (empty = not introduced)")
+
+	errAutocorrectAppsOverCeil    = errors.New("entries, at most 64 allowed")
+	errAutocorrectMinWordLenRange = errors.New("must be in [2, 16]")
+	errAutocorrectThresholdRange  = errors.New("must be positive, with trigram_margin >= trigram_floor")
 )
 
 // altModifierCandidates is the closed set of alternative MACR modifiers
@@ -118,8 +132,10 @@ type Config struct {
 // them when -config is absent, so they must equal the Phase 2 behavior —
 // the tap window is ADR-002's DefaultWindow (300 ms), the Backspace cap
 // D-27's 50, the clipboard rung off (D-28), MACR off with no
-// alternative modifier (ADR-005 b.3) and the post-correction script flip
-// ON (owner decision 2, 2026-09-27: the mode follows a changed correction).
+// alternative modifier (ADR-005 b.3), the post-correction script flip
+// ON (owner decision 2, 2026-09-27: the mode follows a changed
+// correction) and the autocorrect layer OFF with an empty white list —
+// the zero value is the off state (D-54 default off everywhere).
 func Defaults() Config {
 	return Config{
 		Hotkeys: Hotkeys{
@@ -142,9 +158,16 @@ func Defaults() Config {
 			Apps:        nil,
 			AltModifier: "",
 		},
-		// RED stub (06-04): the zero section — GREEN pins the documented
-		// default-off shape (D-54: enabled false, empty white list, 4/2.0/1.0).
-		Autocorrect: Autocorrect{},
+		// The thresholds are the detector's start values pending the
+		// internal/detect golden corpus (plan 06-05) — change the defaults
+		// and detect.Params TOGETHER, never one side.
+		Autocorrect: Autocorrect{
+			Enabled:       false,
+			Apps:          nil,
+			MinWordLen:    defaultMinWordLen,
+			TrigramMargin: defaultTrigramMargin,
+			TrigramFloor:  defaultTrigramFloor,
+		},
 	}
 }
 
@@ -168,8 +191,11 @@ func (c Config) Validate() error {
 	if err := c.Correction.validate(); err != nil {
 		return err
 	}
+	if err := c.MACR.validate(); err != nil {
+		return err
+	}
 
-	return c.MACR.validate()
+	return c.Autocorrect.validate()
 }
 
 // validate resolves both bindings through the closed hotkey name tables —
@@ -249,6 +275,34 @@ func (m MACR) validate() error {
 	}
 	if !slices.Contains(altModifierCandidates(), m.AltModifier) {
 		return fmt.Errorf("macr.alt_modifier %q: %w", m.AltModifier, errMACRAltModifierSet)
+	}
+
+	return nil
+}
+
+// validate enforces the autocorrect grammar (D-54): the white list is
+// capped unconditionally — a giant list is a DoS vector even while the
+// layer is dormant (T-06-04-01, the maxMACRApps precedent). The threshold
+// ranges bite only on an ACTIVE section — enabled with a non-empty white
+// list, the only shape that can ever fire (T-06-04-03) — so the zero
+// value stays valid and documents without the section (or with the
+// feature switched off) decode off, never defaulted on (default off
+// everywhere, D-54). Every error names its field (D-33).
+func (a Autocorrect) validate() error {
+	if len(a.Apps) > maxAutocorrectApps {
+		return fmt.Errorf("autocorrect.apps has %d %w", len(a.Apps), errAutocorrectAppsOverCeil)
+	}
+	if !a.Enabled || len(a.Apps) == 0 {
+		return nil
+	}
+	if a.MinWordLen < minAutocorrectWordLen || a.MinWordLen > maxAutocorrectWordLen {
+		return fmt.Errorf("autocorrect.min_word_len = %d: %w", a.MinWordLen, errAutocorrectMinWordLenRange)
+	}
+	if a.TrigramFloor <= 0 {
+		return fmt.Errorf("autocorrect.trigram_floor = %v: %w", a.TrigramFloor, errAutocorrectThresholdRange)
+	}
+	if a.TrigramMargin <= 0 || a.TrigramMargin < a.TrigramFloor {
+		return fmt.Errorf("autocorrect.trigram_margin = %v: %w", a.TrigramMargin, errAutocorrectThresholdRange)
 	}
 
 	return nil

@@ -66,6 +66,25 @@ func writeConfig(t *testing.T, corpus string) string {
 	return path
 }
 
+// assertDecodeDefaults fails unless cfg's autocorrect section carries the
+// documented default values — the shared tail of the decode corpus.
+func assertDecodeDefaults(t *testing.T, cfg *config.Config) {
+	t.Helper()
+
+	if cfg.Autocorrect.Enabled {
+		t.Error("autocorrect.enabled = true, want false")
+	}
+	if len(cfg.Autocorrect.Apps) != 0 {
+		t.Errorf("autocorrect.apps = %v, want empty", cfg.Autocorrect.Apps)
+	}
+	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
+		t.Errorf(
+			"autocorrect thresholds = %d/%v/%v, want 4/2.0/1.0",
+			cfg.Autocorrect.MinWordLen, cfg.Autocorrect.TrigramMargin, cfg.Autocorrect.TrigramFloor,
+		)
+	}
+}
+
 // TestLoad_ValidDoc pins the happy path: the full schema document decodes
 // into Config with every field in place (D-31, exact snake_case keys).
 func TestLoad_ValidDoc(t *testing.T) {
@@ -105,18 +124,7 @@ func TestLoad_ValidDoc(t *testing.T) {
 	if len(cfg.MACR.Apps) != 0 {
 		t.Errorf("macr.apps = %v, want empty", cfg.MACR.Apps)
 	}
-	if cfg.Autocorrect.Enabled {
-		t.Error("autocorrect.enabled = true, want false")
-	}
-	if len(cfg.Autocorrect.Apps) != 0 {
-		t.Errorf("autocorrect.apps = %v, want empty", cfg.Autocorrect.Apps)
-	}
-	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
-		t.Errorf(
-			"autocorrect thresholds = %d/%v/%v, want 4/2.0/1.0",
-			cfg.Autocorrect.MinWordLen, cfg.Autocorrect.TrigramMargin, cfg.Autocorrect.TrigramFloor,
-		)
-	}
+	assertDecodeDefaults(t, cfg)
 }
 
 // TestLoad_UnknownKeyRejected pins the strict decoder (D-33): a typo'd

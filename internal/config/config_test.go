@@ -27,17 +27,22 @@ const (
 	fieldAutoCorrectWordLn = "autocorrect.min_word_len"
 	fieldAutoCorrectMargin = "autocorrect.trigram_margin"
 	fieldAutoCorrectFloor  = "autocorrect.trigram_floor"
+
+	// appGedit is the corpus's bridge-namespace white-list example.
+	appGedit = "org.gnome.Gedit"
 )
 
 // validDoc is the complete schema document every Validate case starts from
 // (the plan's config_schema corpus, all sections, all keys).
 func validDoc() config.Config {
 	return config.Config{
-		Hotkeys:     config.Hotkeys{TapKey: defTapKey, WordLayoutCombo: defCombo},
-		Timeouts:    config.Timeouts{TapWindowMs: 300, VerifyWaitMs: 100},
-		Correction:  config.Correction{BackspaceCap: 50, ClipboardRung: false},
-		MACR:        config.MACR{Enabled: false, Letters: "", Apps: nil, AltModifier: ""},
-		Autocorrect: config.Autocorrect{Enabled: false, Apps: nil, MinWordLen: 4, TrigramMargin: 2.0, TrigramFloor: 1.0},
+		Hotkeys:    config.Hotkeys{TapKey: defTapKey, WordLayoutCombo: defCombo},
+		Timeouts:   config.Timeouts{TapWindowMs: 300, VerifyWaitMs: 100},
+		Correction: config.Correction{BackspaceCap: 50, ClipboardRung: false},
+		MACR:       config.MACR{Enabled: false, Letters: "", Apps: nil, AltModifier: ""},
+		Autocorrect: config.Autocorrect{
+			Enabled: false, Apps: nil, MinWordLen: 4, TrigramMargin: 2.0, TrigramFloor: 1.0,
+		},
 	}
 }
 
@@ -50,7 +55,7 @@ func activeAutocorrectDoc() config.Config {
 	cfg := validDoc()
 	cfg.Autocorrect = config.Autocorrect{
 		Enabled:       true,
-		Apps:          []string{"org.gnome.Gedit"},
+		Apps:          []string{appGedit},
 		MinWordLen:    4,
 		TrigramMargin: 2.0,
 		TrigramFloor:  1.0,
@@ -461,22 +466,25 @@ func TestValidate_AutocorrectRanges(t *testing.T) {
 			assertRejected(t, tc.name, cfg, tc.wantField)
 		})
 	}
+}
 
-	t.Run("boundaries accepted", func(t *testing.T) {
-		t.Parallel()
+// TestValidate_AutocorrectRangeBoundaries pins that the ranges are
+// inclusive: min_word_len at both ends (2 and 16) and margin == floor
+// validate on an active section.
+func TestValidate_AutocorrectRangeBoundaries(t *testing.T) {
+	t.Parallel()
 
-		boundary := activeAutocorrectDoc()
-		boundary.Autocorrect.MinWordLen = 2
-		boundary.Autocorrect.TrigramMargin = 1.0
-		boundary.Autocorrect.TrigramFloor = 1.0
-		if err := boundary.Validate(); err != nil {
-			t.Errorf("min_word_len 2 with margin == floor rejected: %v", err)
-		}
-		boundary.Autocorrect.MinWordLen = 16
-		if err := boundary.Validate(); err != nil {
-			t.Errorf("min_word_len 16 rejected: %v", err)
-		}
-	})
+	boundary := activeAutocorrectDoc()
+	boundary.Autocorrect.MinWordLen = 2
+	boundary.Autocorrect.TrigramMargin = 1.0
+	boundary.Autocorrect.TrigramFloor = 1.0
+	if err := boundary.Validate(); err != nil {
+		t.Errorf("min_word_len 2 with margin == floor rejected: %v", err)
+	}
+	boundary.Autocorrect.MinWordLen = 16
+	if err := boundary.Validate(); err != nil {
+		t.Errorf("min_word_len 16 rejected: %v", err)
+	}
 }
 
 // TestValidate_AutocorrectDormantShapesValid pins the D-54 off states at
@@ -507,9 +515,9 @@ func TestValidate_AppsOrderIrrelevant(t *testing.T) {
 	t.Parallel()
 
 	first := activeAutocorrectDoc()
-	first.Autocorrect.Apps = []string{"org.gnome.Gedit", "org.chromium.Chromium", "com.google.Chrome"}
+	first.Autocorrect.Apps = []string{appGedit, "org.chromium.Chromium", "com.google.Chrome"}
 	second := activeAutocorrectDoc()
-	second.Autocorrect.Apps = []string{"com.google.Chrome", "org.gnome.Gedit", "org.chromium.Chromium"}
+	second.Autocorrect.Apps = []string{"com.google.Chrome", appGedit, "org.chromium.Chromium"}
 
 	if err := first.Validate(); err != nil {
 		t.Errorf("first order rejected: %v", err)
