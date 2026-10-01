@@ -18,6 +18,7 @@ import (
 	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/correct"
+	"github.com/Djarvur/goswitch/internal/detect"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/layouts"
 )
@@ -57,6 +58,34 @@ const backSpaceKeycode = 14
 // maximum: every healthy flip completes inside it, and a wedged bus still
 // costs at most the deadline.
 const switchTimeout = 150 * time.Millisecond
+
+// autoRoleTimeout bounds the live GetRole round trip of one autocorrect
+// confirm (plan 06-06, Pitfall 5): the decision runs OUTSIDE the actor
+// mutex with its own deadline, so a stuck a11y object can never stall the
+// keystroke path. The measured unix-socket RTT is sub-millisecond — the
+// deadline is a wedge guard, budgeted at half of SPEC §5's 50 ms reaction
+// ceiling.
+const autoRoleTimeout = 25 * time.Millisecond
+
+// The autocorrect abstention vocabulary (plan 06-06, D-53 fail-closed):
+// every refusal of the boundary/confirm conjunction counts exactly one of
+// these slugs; the arming gate additionally reuses the detector's own
+// closed reasons (internal/detect). Closed and word-free (D-20/D-21,
+// Pitfall 6).
+const (
+	acReasonNoApps          = "no-apps"
+	acReasonNoCaps          = "no-caps"
+	acReasonAppUnknown      = "app-unknown"
+	acReasonAppNotListed    = "app-not-listed"
+	acReasonRoleUnknown     = "role-unknown"
+	acReasonRoleForbidden   = "role-forbidden"
+	acReasonRoleTimeout     = "role-timeout"
+	acReasonRecheckDisabled = "recheck-disabled"
+)
+
+// Task-2 keepalive: the confirm goroutine spends this budget on the live
+// GetRole ctx (the D-53 role contour of plan 06-06 Task 2).
+var _ = autoRoleTimeout
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
 // flip toggles it on every Single decision while the session's XKB group
@@ -146,9 +175,14 @@ type Actor struct {
 	// Autocorrect counters (plan 06-06, D-54): the fired corrections, the
 	// fail-closed abstentions with their reason slugs — counts and closed
 	// slugs only, never the typed or corrected word (D-20/D-21, Pitfall 6).
+	// acGeneration tags armed payloads so a newer boundary supersedes a
+	// mid-flight confirm; acAppWarned keeps the one-WARN discipline per
+	// degradation episode (the appidWarned precedent).
 	acFired      int
 	acAbstained  int
 	acReasons    map[string]int
+	acGeneration uint64
+	acAppWarned  bool
 	appid        AppidSource
 	appidStarted bool
 	appidWarned  bool // one WARN per degradation episode — a broken source must not spam per keystroke
@@ -262,6 +296,19 @@ type correctionRange struct {
 	token   []rune
 	tail    []rune
 	replace func(converted []rune)
+}
+
+// acPayload is one armed boundary decision (plan 06-06): the correction
+// range snapshot (token+tail+replace) taken under the mutex at the
+// boundary, the detector's direction, the typed word the verdict was about
+// and the arming generation. It travels to the confirm goroutine; the word
+// stays in memory only — no log and no status surface ever sees it
+// (D-20/D-21).
+type acPayload struct {
+	rng  correctionRange
+	dir  correct.Dir
+	word []rune
+	gen  uint64
 }
 
 // selectionSpec is the wire geometry of a selection correction (D-30,
@@ -1594,6 +1641,13 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 		// with its word's context. The reset is engine state, never
 		// consumption: the key transits so the client sees its Enter, Tab
 		// or Escape exactly as before.
+		// The reset is ALSO a word boundary (plan 06-06): the autocorrect
+		// decision arms BEFORE the reset reads the finished word, and the
+		// arming never touches the transit or the reset semantics. The
+		// FocusOut lifecycle is NOT a boundary — the word was not finished
+		// by a keystroke (06-RESEARCH Q5) — so autocorrect stays silent
+		// there.
+		a.armAutoCorrect()
 		a.buf.HardReset()
 
 		return false
@@ -1607,24 +1661,187 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 		r := rune(ev.Keyval)
 		if ru, ok := layouts.ENToRU[r]; ok && ru != r && a.eng != nil {
 			a.eng.CommitText(engine.NewIBusText(string(ru)))
-			a.buf.Push(ru) // the committed rune is what the field now holds
+			a.pushAndArm(ru) // the committed rune is what the field now holds
 
 			return true
 		}
 		// Identical map (digits, parentheses…) or unmapped key: transit —
 		// the client inserts the original rune, so that rune is the field
 		// truth the buffer must mirror.
-		a.buf.Push(r)
+		a.pushAndArm(r)
 
 		return false
 	default:
 		// EN mode: Phase 1 semantics — transit, buffer fed as typed.
 		// #nosec G115 -- printableKeyval bounds the keyval below
 		// 0xFE00, so the uint32→rune conversion cannot overflow.
-		a.buf.Push(rune(ev.Keyval))
+		a.pushAndArm(rune(ev.Keyval))
 
 		return false
 	}
+}
+
+// pushAndArm feeds one typed rune to the buffer and arms the autocorrect
+// decision at a word boundary (the three Push sites of feedKey — plan
+// 06-06). The boundary never changes the caller's consume verdict: the
+// rune-feeding semantics of every branch stay byte-identical, and the
+// armed decision executes asynchronously (armAutoCorrect).
+func (a *Actor) pushAndArm(r rune) {
+	if a.buf.PushFeed(r) {
+		a.armAutoCorrect()
+	}
+}
+
+// armAutoCorrect runs the cheap-gate boundary decision and launches the
+// confirm for an armed payload (plan 06-06): the boundary's generation is
+// tagged under the mutex so a newer boundary supersedes a mid-flight
+// confirm, and the confirm goroutine leaves the keystroke path
+// immediately — the armed-payload discipline of the clipboard rung
+// (T-06-06-04/T-06-06-05). The caller holds the mutex.
+func (a *Actor) armAutoCorrect() {
+	payload, armed := a.autoCorrectBoundary()
+	if !armed {
+		return
+	}
+	a.acGeneration++
+	payload.gen = a.acGeneration
+	go a.autoConfirm(payload)
+}
+
+// autoCorrectBoundary decides one word boundary under the CHEAP half of
+// the D-53 conjunction (the caller holds the mutex — feedKey): enabled, a
+// non-empty white list, the surrounding-text capability, the focused app's
+// exact bridge-namespace identity and the detector's CONFIDENT
+// wrong-layout verdict on the finished token. Every refusal counts its
+// reason and refuses the payload; any unknown means SILENCE — the
+// fail-closed direction INVERTED from macrTargetActive's degradation (no
+// rung upward, ADR-007). The expensive half — the live GetRole — never
+// runs here: the armed payload hands the decision outside the mutex (the
+// off-mutex discipline, T-06-06-04). The off state is the zero-behavior
+// invariant: no counter, no record — the boundary is byte-as-today (D-54).
+func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
+	if !a.opts.AutoCorrectEnabled {
+		return acPayload{}, false
+	}
+	if len(a.opts.AutoCorrectApps) == 0 {
+		a.recordACAbstain(acReasonNoApps)
+
+		return acPayload{}, false
+	}
+	if a.caps&correct.CapSurroundingText == 0 {
+		// D-53 condition 3: without the bit the verify rung is not
+		// applicable — the word is never touched.
+		a.recordACAbstain(acReasonNoCaps)
+
+		return acPayload{}, false
+	}
+	app, ok := a.acFocusedApp()
+	if !ok {
+		a.recordACAbstain(acReasonAppUnknown)
+
+		return acPayload{}, false
+	}
+	// The white list is an EXACT bridge-namespace match: no prefix or
+	// suffix merging (org.gnome.ZenityX never matches org.gnome.Zenity).
+	if !slices.Contains(a.opts.AutoCorrectApps, app) {
+		a.recordACAbstain(acReasonAppNotListed)
+
+		return acPayload{}, false
+	}
+	tok := a.buf.Token()
+	v := detect.Check(tok, a.modeSymbol(),
+		detect.Data{RU: layouts.DictRU, EN: layouts.DictEN},
+		detect.Trigrams{RU: layouts.TriRU, EN: layouts.TriEN},
+		detect.Params{
+			MinWordLen:    a.opts.AutoCorrectMinWordLen,
+			TrigramMargin: a.opts.AutoCorrectMargin,
+			TrigramFloor:  a.opts.AutoCorrectFloor,
+		})
+	if !v.WrongLayout || !v.Confident {
+		// D-53 condition 4 (with the detector's own length gate): an unsure
+		// verdict, a dictionary veto or a short token stays untouched — the
+		// detector's closed reason slug is the only trace.
+		a.recordACAbstain(v.Reason)
+
+		return acPayload{}, false
+	}
+
+	return acPayload{
+		rng: correctionRange{
+			token:   tok,
+			tail:    a.buf.Tail(),
+			replace: a.buf.ReplaceToken,
+		},
+		dir:  v.Dir,
+		word: tok,
+	}, true
+}
+
+// acFocusedApp resolves the focused app identity for the boundary gate: a
+// missing source is an UNKNOWN (fail-closed — never the MACR degradation),
+// reported with the one-WARN-per-episode discipline of warnAppid. The
+// caller holds the mutex.
+func (a *Actor) acFocusedApp() (string, bool) {
+	if a.appid == nil {
+		a.warnACApp(nil)
+
+		return "", false
+	}
+	app, err := a.appid.FocusedApp()
+	if err != nil {
+		a.warnACApp(err)
+
+		return "", false
+	}
+	a.acAppWarned = false // a healthy answer closes the episode
+
+	return app, true
+}
+
+// warnACApp records one autocorrect identity-source failure: the WARN
+// fires once per degradation episode (the warnAppid form — per boundary
+// would spam the journal of a broken source). The caller holds the mutex.
+func (a *Actor) warnACApp(err error) {
+	if a.acAppWarned {
+		return
+	}
+	a.acAppWarned = true
+	if err == nil {
+		slog.Warn("autocorrect app identity unavailable")
+
+		return
+	}
+	slog.Warn("autocorrect app identity unavailable", "error", err)
+}
+
+// recordACAbstain counts one fail-closed abstention (the skipCorrection
+// form): the counter, the closed-slug reason and the INFO record — the
+// word never appears on any level (D-20/D-21, Pitfall 6). The caller holds
+// the mutex.
+func (a *Actor) recordACAbstain(reason string) {
+	a.acAbstained++
+	if a.acReasons == nil {
+		a.acReasons = make(map[string]int)
+	}
+	a.acReasons[reason]++
+	slog.Info("autocorrect skipped", "reason", reason)
+}
+
+// autoConfirm executes one armed autocorrect payload — the Task-1
+// scaffold: the armed range launches THE one correction pipeline
+// (startRangeCorrection — no second replacement mechanism, Pitfall 7) from
+// the confirm goroutine, off the keystroke path. A newer boundary
+// supersedes a mid-flight confirm by generation: the stale one drops. The
+// D-53 role contour (the live GetRole gate spending autoRoleTimeout, the
+// fail-closed verdicts, the fired counter) arrives with Task 2.
+func (a *Actor) autoConfirm(payload acPayload) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if payload.gen != a.acGeneration {
+		return // a newer boundary owns the decision now
+	}
+	a.startRangeCorrection(payload.rng)
 }
 
 // modeSwitchChord is the mode-switch chord branch of feedKey (owner

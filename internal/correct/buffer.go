@@ -43,15 +43,16 @@ func (b *Buffer) PushFeed(r rune) bool {
 	if tokenCapable(r) {
 		b.runes = append(b.runes, r)
 
-		return false // RED stub: the boundary flag is not computed yet (plan 06-06 GREEN)
+		return false
 	}
-	if cur := len(b.runes) - b.curStart; cur > 0 {
-		b.lastStart, b.lastLen = b.curStart, cur
+	finished := len(b.runes)-b.curStart > 0
+	if finished {
+		b.lastStart, b.lastLen = b.curStart, len(b.runes)-b.curStart
 	}
 	b.runes = append(b.runes, r)
 	b.curStart = len(b.runes)
 
-	return false // RED stub
+	return finished
 }
 
 // Push feeds one typed rune: a token-capable rune (letter-capable key or a
