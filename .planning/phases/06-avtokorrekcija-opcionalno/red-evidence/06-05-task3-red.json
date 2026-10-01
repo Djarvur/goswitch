@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/detect/ -race -count=1 -run 'TestCorpus' -v (transcribed to node-test TAP per repo precedent; raw output /tmp/06-05-t3-red-raw.txt)",
+  "exitCode": 1,
+  "targetTest": "TestCorpus_YoWords",
+  "failingTest": "TestCorpus_YoWords",
+  "expected": "The mandatory golden corpus on the real baked data (Discretion D-52, criterion 1): yo-spellings resolve to the folded е-entries as cur-hits, the >=400-strong legit corpus answers the cur-hit veto with zero wrong-layout, the >=40-strong wrong-layout corpus of both directions and three registers is confidently detected, OOV names are never confident, mixed tokens abstain, the reason vocabulary stays closed",
+  "actual": "The corpus as first written fails naturally on the real data — three cases the plan itself lists as examples turn out to sit BELOW the plan-pinned MinWordLen 4 gate: Check(ещё, ru) = abstain-short (want cur-hit), Check(АЗС, ru) = abstain-short (want cur-hit), Check(to`, en) = abstain-short (want confident dict-wrong-layout; to` is the RUtoEN remap of ещё). The detector's abstain-short verdict is the PINNED behavior (len(tok) < MinWordLen abstains, default 4 — mutually pinned with config 06-04 and deliberately above xneur's 2); the corpus classes were mis-chosen, not the detector. The other four corpus classes (wrong-layout 150+ cases incl. three registers and Vfrcbv, legit 440+, OOV 35, mixed, closed-vocabulary/privacy) are green on the first run",
+  "output": "not ok 1 - TestCorpus_WrongLayoutBothDirections\nnot ok 2 - TestCorpus_LegitWordsZeroFalsePositives\nnot ok 3 - TestCorpus_YoWords\nnot ok 4 - TestCorpus_YoWords/ещё\nnot ok 5 - TestCorpus_YoWords/latin_ещё\nnot ok 6 - TestCorpus_LegitWordsZeroFalsePositives/caps_entry\nok 7 - TestCorpus_OOVNames\nok 8 - TestCorpus_MixedTokens\nok 9 - TestCorpus_ReasonVocabularyClosed\n# tests 9\n# pass 6\n# fail 3"
+}
