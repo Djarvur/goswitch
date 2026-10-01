@@ -4691,6 +4691,26 @@ func TestActor_BackspaceNoBoundary(t *testing.T) {
 	}
 }
 
+// TestActor_FocusOutNoBoundary pins the research-Q5 scope: FocusOut ends
+// the phrase (CORR-09) but is NOT a word boundary — the word was not
+// finished by a keystroke, so the autocorrect layer stays silent there.
+func TestActor_FocusOutNoBoundary(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("requires after FocusOut = %d, want 0 — a focus loss never arms the decision", got)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 0 || got.Abstained != 0 {
+		t.Errorf("counters after FocusOut = %+v, want zero", got)
+	}
+}
+
 // TestActor_ManualOverrideAfterAutocorrect pins criterion 4: the manual
 // path rides above the autocorrect layer and never consults its detector —
 // after the silent ghbdtn→привет correction a Double Shift converts привет
