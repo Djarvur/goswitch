@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/detect/ -race -count=1 -run 'TestTrigram' -v (transcribed to node-test TAP per repo precedent; raw output /tmp/06-05-t2-red-raw.txt)",
+  "exitCode": 1,
+  "targetTest": "TestTrigram_WrongLayout",
+  "failingTest": "TestTrigram_WrongLayout",
+  "expected": "Check's D-52(b) fallback scores both synthetic tables (scoreLang: 3-rune windows, sum of log10 probabilities, neutralPenalty for unseen windows, normalized by window count) and answers a confident trigram-wrong-layout when the other-language profile of the remap beats the current-language profile by more than TrigramMargin AND stays above TrigramFloor; length normalization keeps the doubled word's verdict; a current-dictionary hit is decided by the dict path alone and never reaches the scoring",
+  "actual": "Against the task-1-prescribed tree (the fallback branch reports the undecided verdict only — no scoring functions exist yet) the two confident-verdict tests fail on their planned assertions: TestTrigram_WrongLayout both subtests (Check(abvgd,en)=trigram-unsure, want Confident:true Dir:ENtoRU trigram-wrong-layout; Check(фивпв,ru) same for RUtoEN) and TestTrigram_NormalizedByLength (doubled word unsure, want confident). The four unsure-pins pass green-by-design (the unsure-only tree already answers unsure for below-margin, below-floor, all-unknown-trigrams and the dict-hit-skips-scoring pin) — the same green-by-design corpus shape the plan sanctions, with the target behavior red on assertions",
+  "output": "not ok 1 - TestTrigram_WrongLayout\nnot ok 2 - TestTrigram_WrongLayout/garbage_latin,_strong_ru_remap\nnot ok 3 - TestTrigram_WrongLayout/garbage_cyrillic,_strong_en_remap\nok 4 - TestTrigram_UnsureBelowMargin\nok 5 - TestTrigram_UnsureBelowFloor\nok 6 - TestTrigram_NeutralTrigramsUnknown\nnot ok 7 - TestTrigram_NormalizedByLength\nok 8 - TestTrigram_DictHitSkipsScoring\n# tests 8\n# pass 5\n# fail 3"
+}

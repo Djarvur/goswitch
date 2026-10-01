@@ -232,3 +232,158 @@ func TestCheck_DirMatchesCorrect(t *testing.T) {
 		t.Errorf("Check(руддщ, ru).Dir = %v, want %v", got.Dir, correct.RUtoEN)
 	}
 }
+
+// The synthetic trigram tables of the fallback corpus: built around the
+// "abvgd"↔"фимпв" remap pair — the latin side scores garbage (no table
+// entries), the cyrillic side scores a strong uniform profile. Independent
+// of the baked layouts data by design (D-07: the behavior corpus pins the
+// scoring arithmetic, not the live tables).
+var (
+	//nolint:gochecknoglobals // the shared fallback corpus tables
+	triStrongRU = map[string]float64{
+		"фим": -1.0,
+		"имп": -1.0,
+		"мпв": -1.0,
+		// the junction windows of the doubled word "фимпввфимпв" — the
+		// length-normalization pin doubles through the same letter, and the
+		// doubled profile must stay as strong as the single one
+		"пвв": -1.0,
+		"ввф": -1.0,
+		"вфи": -1.0,
+	}
+	//nolint:gochecknoglobals // the mirror-side table of the ru-mode case
+	triStrongEN = map[string]float64{
+		"abd": -1.0,
+		"bdg": -1.0,
+		"dgd": -1.0,
+	}
+)
+
+// trigramParams returns thresholds on the log10 scale that let the strong
+// synthetic profile through: margin 1.0, floor -3.0.
+func trigramParams() detect.Params {
+	return detect.Params{MinWordLen: 4, TrigramMargin: 1.0, TrigramFloor: -3.0}
+}
+
+// TestTrigram_WrongLayout pins D-52(б): a token both dictionaries miss
+// whose other-language remap profile beats the current-language profile by
+// more than the margin and stays above the floor is a confident
+// wrong-layout — in both directions.
+func TestTrigram_WrongLayout(t *testing.T) {
+	t.Parallel()
+
+	tri := detect.Trigrams{RU: triStrongRU, EN: triStrongEN}
+	cases := []struct {
+		name string
+		tok  string
+		mode string
+		dir  correct.Dir
+	}{
+		{name: "garbage latin, strong ru remap", tok: "abvgd", mode: testModeEN, dir: correct.ENtoRU},
+		{name: "garbage cyrillic, strong en remap", tok: "фивпв", mode: testModeRU, dir: correct.RUtoEN},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := detect.Check([]rune(tc.tok), tc.mode, fixtures, tri, trigramParams())
+			want := detect.Verdict{
+				WrongLayout: true,
+				Confident:   true,
+				Dir:         tc.dir,
+				Reason:      detect.ReasonTrigramWrongLayout,
+			}
+			if got != want {
+				t.Errorf("Check(%q, %q) = %+v, want %+v", tc.tok, tc.mode, got, want)
+			}
+		})
+	}
+}
+
+// TestTrigram_UnsureBelowMargin pins the relative gate: when the other
+// language wins by less than the margin the fallback stays unsure.
+func TestTrigram_UnsureBelowMargin(t *testing.T) {
+	t.Parallel()
+
+	tri := detect.Trigrams{RU: triStrongRU, EN: triStrongEN}
+	p := detect.Params{MinWordLen: 4, TrigramMargin: 5.5, TrigramFloor: -3.0}
+
+	got := detect.Check([]rune("abvgd"), testModeEN, fixtures, tri, p)
+	want := detect.Verdict{Reason: detect.ReasonTrigramUnsure}
+	if got != want {
+		t.Errorf("Check(abvgd, en) = %+v, want %+v", got, want)
+	}
+}
+
+// TestTrigram_UnsureBelowFloor pins the absolute gate: a plausibility
+// below the floor is insufficient even at a large margin win — the
+// fallback never bets on a word it cannot vouch for.
+func TestTrigram_UnsureBelowFloor(t *testing.T) {
+	t.Parallel()
+
+	tri := detect.Trigrams{RU: triStrongRU, EN: triStrongEN}
+	p := detect.Params{MinWordLen: 4, TrigramMargin: 1.0, TrigramFloor: 0.0}
+
+	got := detect.Check([]rune("abvgd"), testModeEN, fixtures, tri, p)
+	want := detect.Verdict{Reason: detect.ReasonTrigramUnsure}
+	if got != want {
+		t.Errorf("Check(abvgd, en) = %+v, want %+v", got, want)
+	}
+}
+
+// TestTrigram_NeutralTrigramsUnknown pins the unseen-window penalty: a
+// word whose trigrams are absent from BOTH tables scores the neutral
+// penalty on both sides (the -6.0 log10 floor pinned by the neutralPenalty
+// comment), the race is a draw, and a draw is never confident.
+func TestTrigram_NeutralTrigramsUnknown(t *testing.T) {
+	t.Parallel()
+
+	tri := detect.Trigrams{RU: map[string]float64{}, EN: map[string]float64{}}
+	p := trigramParams()
+
+	got := detect.Check([]rune("zzzzz"), testModeEN, fixtures, tri, p)
+	want := detect.Verdict{Reason: detect.ReasonTrigramUnsure}
+	if got != want {
+		t.Errorf("Check(zzzzz, en) = %+v, want %+v", got, want)
+	}
+}
+
+// TestTrigram_NormalizedByLength pins the length normalization: doubling
+// the word through its last letter (the same trigram classes, twice as
+// many windows plus junctions) never changes the verdict.
+func TestTrigram_NormalizedByLength(t *testing.T) {
+	t.Parallel()
+
+	tri := detect.Trigrams{RU: triStrongRU, EN: triStrongEN}
+
+	got := detect.Check([]rune("abvgddabvgd"), testModeEN, fixtures, tri, trigramParams())
+	want := detect.Verdict{
+		WrongLayout: true,
+		Confident:   true,
+		Dir:         correct.ENtoRU,
+		Reason:      detect.ReasonTrigramWrongLayout,
+	}
+	if got != want {
+		t.Errorf("Check(abvgddabvgd, en) = %+v, want %+v", got, want)
+	}
+}
+
+// TestTrigram_DictHitSkipsScoring pins the fallback's reach: a
+// current-dictionary hit is decided by the dict path ALONE — the tables
+// here would flip the verdict if the scoring were ever consulted, and the
+// expected answer is still the veto.
+func TestTrigram_DictHitSkipsScoring(t *testing.T) {
+	t.Parallel()
+
+	// hello → руддщ: a profile that would scream ru if the scoring ran.
+	tri := detect.Trigrams{
+		RU: map[string]float64{"руд": -1.0, "удд": -1.0, "ддщ": -1.0},
+		EN: map[string]float64{},
+	}
+
+	got := detect.Check([]rune("hello"), testModeEN, fixtures, tri, trigramParams())
+	want := detect.Verdict{Reason: detect.ReasonDictCurHit}
+	if got != want {
+		t.Errorf("Check(hello, en) = %+v, want %+v", got, want)
+	}
+}
