@@ -45,6 +45,36 @@ func TestMenuProperties(t *testing.T) {
 	}
 }
 
+// menuKidWant is one layout node's expected identity: the id, the exact
+// label and the enabled flag.
+type menuKidWant struct {
+	id      int32
+	label   string
+	enabled bool
+}
+
+// checkMenuKid asserts one layout node against its expected identity triple
+// and the flat no-kids shape.
+func checkMenuKid(t *testing.T, node menuLayout, want menuKidWant) {
+	t.Helper()
+
+	if node.ID != want.id {
+		t.Errorf("node id = %d, want %d (the toggle must be FIRST)", node.ID, want.id)
+	}
+	if node.Props[menuPropLabel].Value() != want.label {
+		t.Errorf("node label = %v, want %q", node.Props[menuPropLabel].Value(), want.label)
+	}
+	if node.Props[menuPropType].Value() != menuTypeStandard {
+		t.Errorf("node type = %v, want %q", node.Props[menuPropType].Value(), menuTypeStandard)
+	}
+	if node.Props[menuPropEnabled].Value() != want.enabled {
+		t.Errorf("node enabled = %v, want %t", node.Props[menuPropEnabled].Value(), want.enabled)
+	}
+	if len(node.Kids) != 0 {
+		t.Errorf("node carries %d kids, want none — the menu is flat", len(node.Kids))
+	}
+}
+
 // TestMenuLayout pins the static layout: parentId 0 serves the root with
 // the three kids in order — «Переключить раскладку» FIRST (on GNOME's
 // ubuntu-appindicators ANY click opens the menu, so the menu IS the
@@ -54,7 +84,7 @@ func TestMenuProperties(t *testing.T) {
 func TestMenuLayout(t *testing.T) {
 	m := &Menu{} // zero callbacks: the reload item must come out disabled
 
-	if got := dbus.Signature(menuLayout{}); got != dbus.Signature("(ia{sv}av)") {
+	if got := dbus.SignatureOf(menuLayout{}); got != dbus.ParseSignatureMust("(ia{sv}av)") {
 		t.Fatalf("menuLayout wire signature = %s, want (ia{sv}av)", got)
 	}
 
@@ -65,14 +95,10 @@ func TestMenuLayout(t *testing.T) {
 	if rev != menuRevision {
 		t.Errorf("layout revision = %d, want the static %d", rev, menuRevision)
 	}
-	if root.Id != menuIDRoot || len(root.Kids) != 3 {
-		t.Fatalf("root layout = (id %d, %d kids), want id 0 with exactly 3 kids", root.Id, len(root.Kids))
+	if root.ID != menuIDRoot || len(root.Kids) != 3 {
+		t.Fatalf("root layout = (id %d, %d kids), want id 0 with exactly 3 kids", root.ID, len(root.Kids))
 	}
-	wantKids := []struct {
-		id      int32
-		label   string
-		enabled bool
-	}{
+	wantKids := []menuKidWant{
 		{menuIDToggle, labelToggle, true},
 		{menuIDStatus, labelStatus, true},
 		{menuIDReload, labelReload, false},
@@ -82,21 +108,7 @@ func TestMenuLayout(t *testing.T) {
 		if !ok {
 			t.Fatalf("kid %d does not wrap a menuLayout: %T", i, root.Kids[i].Value())
 		}
-		if kid.Id != want.id {
-			t.Errorf("kid %d id = %d, want %d (the toggle must be FIRST)", i, kid.Id, want.id)
-		}
-		if kid.Props[menuPropLabel].Value() != want.label {
-			t.Errorf("kid %d label = %v, want %q", i, kid.Props[menuPropLabel].Value(), want.label)
-		}
-		if kid.Props[menuPropType].Value() != menuTypeStandard {
-			t.Errorf("kid %d type = %v, want %q", i, kid.Props[menuPropType].Value(), menuTypeStandard)
-		}
-		if kid.Props[menuPropEnabled].Value() != want.enabled {
-			t.Errorf("kid %d enabled = %v, want %t", i, kid.Props[menuPropEnabled].Value(), want.enabled)
-		}
-		if len(kid.Kids) != 0 {
-			t.Errorf("kid %d carries %d kids, want none — the menu is flat", i, len(kid.Kids))
-		}
+		checkMenuKid(t, kid, want)
 	}
 
 	// The depth argument is ignored: the menu is flat and full.
@@ -110,10 +122,7 @@ func TestMenuLayout(t *testing.T) {
 	if derr != nil {
 		t.Fatalf("GetLayout(1) error = %v, want nil", derr)
 	}
-	if one.Id != menuIDToggle || one.Props[menuPropLabel].Value() != labelToggle || len(one.Kids) != 0 {
-		t.Errorf("GetLayout(1) = (id %d, label %v, %d kids), want the toggle item alone",
-			one.Id, one.Props[menuPropLabel].Value(), len(one.Kids))
-	}
+	checkMenuKid(t, one, wantKids[0])
 }
 
 // TestMenuGetGroupProperties pins the (ia{sv}) batch read: the requested
@@ -122,7 +131,7 @@ func TestMenuLayout(t *testing.T) {
 func TestMenuGetGroupProperties(t *testing.T) {
 	m := &Menu{} // zero callbacks
 
-	if got := dbus.Signature(menuItemProps{}); got != dbus.Signature("(ia{sv})") {
+	if got := dbus.SignatureOf(menuItemProps{}); got != dbus.ParseSignatureMust("(ia{sv})") {
 		t.Fatalf("menuItemProps wire signature = %s, want (ia{sv})", got)
 	}
 
@@ -133,12 +142,13 @@ func TestMenuGetGroupProperties(t *testing.T) {
 	if len(props) != 2 {
 		t.Fatalf("GetGroupProperties returned %d entries, want exactly 2 (the unknown id skipped)", len(props))
 	}
-	if props[0].Id != menuIDToggle || props[0].Props[menuPropLabel].Value() != labelToggle {
-		t.Errorf("entry 0 = (id %d, label %v), want the toggle item", props[0].Id, props[0].Props[menuPropLabel].Value())
+	if props[0].ID != menuIDToggle || props[0].Props[menuPropLabel].Value() != labelToggle {
+		t.Errorf("entry 0 = (id %d, label %v), want the toggle item",
+			props[0].ID, props[0].Props[menuPropLabel].Value())
 	}
-	if props[1].Id != menuIDReload || props[1].Props[menuPropEnabled].Value() != false {
+	if props[1].ID != menuIDReload || props[1].Props[menuPropEnabled].Value() != false {
 		t.Errorf("entry 1 = (id %d, enabled %v), want the reload item disabled without callbacks",
-			props[1].Id, props[1].Props[menuPropEnabled].Value())
+			props[1].ID, props[1].Props[menuPropEnabled].Value())
 	}
 }
 
@@ -240,7 +250,8 @@ func TestItemActivateInvokesToggle(t *testing.T) {
 // lifetime (the emitWarned discipline pattern).
 func TestItemActivateNilToggleWarnsOnce(t *testing.T) {
 	buf := captureLogs(t)
-	item, _, _, _ := attachOK()
+	w, em, exp := &fakeWatcher{owner: true}, &fakeEmitter{}, &fakeExporter{}
+	item := attach(w, em, exp, testService, Callbacks{})
 
 	if derr := item.Activate(0, 0); derr != nil {
 		t.Fatalf("nil-toggle Activate error = %v, want nil", derr)

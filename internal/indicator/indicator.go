@@ -352,7 +352,7 @@ func (it *Item) Set(iface, property string, _ dbus.Variant) *dbus.Error {
 // the menu's first item drives. A nil toggle is a one-WARN no-op (the
 // emitWarned discipline pattern); the recover shim contains anything a
 // toggle panics with (T-FG3-01).
-func (it *Item) Activate(_ int32, _ int32) (err *dbus.Error) {
+func (it *Item) Activate(_, _ int32) (err *dbus.Error) {
 	defer recoverMenuCall("Activate", &err)
 
 	it.mu.Lock()

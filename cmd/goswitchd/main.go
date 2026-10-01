@@ -106,8 +106,10 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 		deps.OnConn = func(conn *dbus.Conn) error {
 			// Attach always succeeds: every degradation (no watcher on the
 			// bus, a failed register or export) is a one-WARN inert display
-			// inside the item.
-			actor.SetModeDisplay(indicator.Attach(conn, ctlsvc.BusName))
+			// inside the item. The zero-value Callbacks keeps this task's
+			// call site behaviorally inert — the real wiring lands with the
+			// daemon task (quick plan 261001-fg3).
+			actor.SetModeDisplay(indicator.Attach(conn, ctlsvc.BusName, indicator.Callbacks{}))
 
 			return nil
 		}

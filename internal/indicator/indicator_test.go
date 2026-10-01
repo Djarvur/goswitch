@@ -221,7 +221,7 @@ func TestAttachWatcherAbsentIsInert(t *testing.T) {
 	buf := captureLogs(t)
 	w, em, exp := &fakeWatcher{}, &fakeEmitter{}, &fakeExporter{}
 
-	item := attach(w, em, exp, testService)
+	item := attach(w, em, exp, testService, Callbacks{})
 
 	if item == nil {
 		t.Fatal("attach returned nil — Attach must succeed even on degradation")
@@ -256,7 +256,7 @@ func TestAttachProbeFailureIsInert(t *testing.T) {
 	buf := captureLogs(t)
 	w, em, exp := &fakeWatcher{probeErr: errWatchInjected}, &fakeEmitter{}, &fakeExporter{}
 
-	item := attach(w, em, exp, testService)
+	item := attach(w, em, exp, testService, Callbacks{})
 
 	if item == nil {
 		t.Fatal("attach returned nil — Attach must succeed even on degradation")
@@ -357,7 +357,7 @@ func TestAttachModeChangedEmitsAndServesPins(t *testing.T) {
 func TestAttachEmitFailureSelfDisables(t *testing.T) {
 	buf := captureLogs(t)
 	w, em, exp := &fakeWatcher{owner: true}, &fakeEmitter{err: errEmitInjected}, &fakeExporter{}
-	item := attach(w, em, exp, testService)
+	item := attach(w, em, exp, testService, Callbacks{})
 
 	item.ModeChanged(symbolRU) // the emit fails
 	item.ModeChanged(symbolEN)

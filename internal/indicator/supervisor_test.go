@@ -108,13 +108,17 @@ func TestSupervisorEvictionHealsOnTick(t *testing.T) {
 		t.Errorf("registrations = %q, want the attach-time one plus the re-attach", got)
 	}
 	wantExports := []exportCall{
+		{path: menuPath, iface: menuIface},
+		{path: menuPath, iface: propertiesIface},
 		{path: itemPath, iface: sniIface},
 		{path: itemPath, iface: propertiesIface},
+		{path: menuPath, iface: menuIface},
+		{path: menuPath, iface: propertiesIface},
 		{path: itemPath, iface: sniIface},
 		{path: itemPath, iface: propertiesIface},
 	}
 	if got := exp.exportCalls(); !equalExports(got, wantExports) {
-		t.Errorf("exports = %v, want the item double-exported twice (attach + re-attach)", got)
+		t.Errorf("exports = %v, want the full sequence (menu then item) for attach + re-attach", got)
 	}
 	if calls := em.emitCalls(); len(calls) != 1 || calls[0].signal != signalNewIcon {
 		t.Errorf("revival emits = %v, want exactly one NewIcon", calls)
