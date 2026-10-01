@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/appid/ -race -count=1 -v (transcribed to node-test TAP per repo precedent; raw output /tmp/06-03-t2-red-raw.txt)",
+  "exitCode": 1,
+  "targetTest": "TestRole_EnumConstants",
+  "failingTest": "TestRole_EnumConstants",
+  "expected": "The AT-SPI role enum constants carry the live-verified values (gi Atspi 2.52.0, 2026-09-27, 06-RESEARCH Q4): RolePasswordText=40, RoleTerminal=60, RoleText=61, RoleEntry=79, RoleDocumentText=94 — the D-53 policy compares by NUMBER only",
+  "actual": "TestRole_EnumConstants fails on the planned assertions against the RED stub (zero placeholders): e.g. RoleDocumentText = 0, want 94 (all five constants wrong). The other four new Role tests pass green-by-design (the call shape, sentinel routing, nil-seam refusal and race-safety landed with Task 1 GREEN — the continuity-pin precedent); 9 of 10 top-level tests green",
+  "output": "ok 1 - TestAppid_FocusedAppByFakeBus\nok 2 - TestObserver_StoresFocusPair\nok 3 - TestObserver_LossKeepsPair\nok 4 - TestObserver_FreshObserverUnknown\nnot ok 5 - TestRole_EnumConstants\nok 6 - TestRole_EmptyPathUnknown\nok 7 - TestRole_LiveCallShape\nok 8 - TestRole_NilSeamUnknown\nok 9 - TestRole_ConcurrentWithGain\nok 10 - TestAppid_StartBusUnavailable\n# tests 10\n# pass 9\n# fail 1"
+}

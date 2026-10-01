@@ -62,6 +62,18 @@ func (roleUnknownError) Error() string {
 	return "app identity observer: focused object role unknown"
 }
 
+// The AT-SPI role enum values the autocorrect policy gates on.
+//
+// RED stub: zero placeholders — the corpus pins the live-verified values in
+// GREEN (gi Atspi 2.52.0, 06-RESEARCH Q4).
+const (
+	RolePasswordText uint32 = 0
+	RoleTerminal     uint32 = 0
+	RoleText         uint32 = 0
+	RoleEntry        uint32 = 0
+	RoleDocumentText uint32 = 0
+)
+
 // RoleCall is the observer's live role seam: one
 // org.a11y.atspi.Accessible.GetRole round trip over the a11y bus per
 // invocation, made at the caller's decision moment (D-53 — the role is a
