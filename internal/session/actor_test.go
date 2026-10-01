@@ -4519,3 +4519,192 @@ func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
 		t.Errorf("drift op order = %q, want exactly %q — the display fires last on sync too", ops, want)
 	}
 }
+
+// The autocorrect corpus of plan 06-06 (D-53/D-54): the word boundary of
+// feedKey, the cheap-gate arming and the fail-closed silence. The listed
+// app is a bridge-namespace literal distinct from the MACR corpus names.
+
+// acListedApp is the autocorrect white-list entry of the corpus.
+const acListedApp = "org.gnome.gedit"
+
+// The detector thresholds of the corpus — the config 06-04 defaults (the
+// detect.DefaultParams mirror: change the places together).
+const (
+	acMinWordLen    = 4
+	acTrigramMargin = 2.0
+	acTrigramFloor  = 1.0
+)
+
+// acPollBudget bounds every eventually poll of the async confirm — orders
+// of magnitude above the goroutine's real latency, far below any test
+// timeout.
+const acPollBudget = 2 * time.Second
+
+// acOptions is the enabled autocorrect Options of the corpus.
+func acOptions() session.Options {
+	return session.Options{
+		AutoCorrectEnabled:    true,
+		AutoCorrectApps:       []string{acListedApp},
+		AutoCorrectMinWordLen: acMinWordLen,
+		AutoCorrectMargin:     acTrigramMargin,
+		AutoCorrectFloor:      acTrigramFloor,
+	}
+}
+
+// eventually polls cond until it holds or the budget lapses — the poll-
+// until idiom of the appid corpus, never a fixed sleep: the autocorrect
+// confirm runs on its own goroutine, so its visible effects land
+// asynchronously.
+func eventually(t *testing.T, cond func() bool, msg string) {
+	t.Helper()
+	for deadline := time.Now().Add(acPollBudget); time.Now().Before(deadline); {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal(msg)
+}
+
+// spaceKey is the boundary carrier of the corpus (the plan's
+// geometrically-deterministic fires vehicle; the reset keys pin the
+// arming-before-reset instead).
+func spaceKey() engine.EngineEvent {
+	return engine.EngineEvent{Keyval: uint32(' ')}
+}
+
+// fireAutocorrect drives one full autocorrect round: type the token, land
+// the separator boundary, settle the armed pipeline's pre-correction
+// verify with the freshest push, then settle the verify-after round — the
+// same dance the Double corpus performs, driven asynchronously (the
+// confirm goroutine).
+func fireAutocorrect(t *testing.T, a *session.Actor, sink *fakeSink, token, converted string) {
+	t.Helper()
+	typeWord(a, token)
+	if a.HandleKey(spaceKey()) {
+		t.Fatal("the boundary separator was consumed — the decision never changes consumption at the boundary")
+	}
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the pipeline never armed after the boundary (no RequireSurroundingText)")
+	tokenEnd := uint32(len([]rune(token)) + 1)
+	a.HandleSurroundingText(token+" ", tokenEnd, tokenEnd)
+	eventually(t, func() bool { return sink.requireCount() >= 2 },
+		"the verify-after round never armed (the correction never executed)")
+	convEnd := uint32(len([]rune(converted)) + 1)
+	a.HandleSurroundingText(converted+" ", convEnd, convEnd)
+}
+
+// TestActor_AutocorrectDisabledSilent pins the D-54 off invariant: with the
+// zero Options (the default configuration) a word boundary is a NO-OP —
+// the same keystrokes leave the same emitter trace as before the feature
+// existed and no counter moves.
+func TestActor_AutocorrectDisabledSilent(t *testing.T) {
+	a, sink := wiredActor()
+	typeWord(a, wordEN)
+	if a.HandleKey(spaceKey()) {
+		t.Fatal("the separator was consumed with autocorrect off")
+	}
+	if ops := sink.opLog(); len(ops) != 0 {
+		t.Errorf("emitter ops with autocorrect off = %v, want none — the off state is byte-as-today", ops)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 0 || got.Abstained != 0 || len(got.Reasons) != 0 {
+		t.Errorf("counters with autocorrect off = %+v, want all zero — the off state counts nothing (D-54)", got)
+	}
+}
+
+// TestActor_AutocorrectBoundaryArms pins the armed decision: with the
+// cheap gates green (enabled, the listed focused app, the
+// surrounding-text cap, a confident detector verdict) the separator
+// boundary launches THE one correction pipeline — the key transits, the
+// level-1 ladder deletes exactly token+tail and commits the conversion
+// plus the tail.
+func TestActor_AutocorrectBoundaryArms(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	deletes := sink.deleteCalls()
+	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
+		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the range is token+tail", deletes)
+	}
+	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
+		t.Fatalf("commits = %q, want [%q] — the conversion plus the tail", commits, wordRU+" ")
+	}
+	if got := a.AutoCorrectCounters(); got.Abstained != 0 {
+		t.Errorf("abstained after a fired boundary = %d, want 0", got.Abstained)
+	}
+}
+
+// TestActor_ResetKeyBoundary pins the reset side of the boundary (CORR-09
+// preserved): the decision arms BEFORE the hard reset reads the finished
+// word, Enter transits exactly as before, and the buffer is genuinely
+// empty after the reset — a Double finds no word and refuses once with
+// the empty-buffer reason.
+func TestActor_ResetKeyBoundary(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	if a.HandleKey(engine.EngineEvent{Keyval: engine.KeyReturn}) {
+		t.Fatal("Enter was consumed — the reset is engine state, never consumption")
+	}
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the boundary did not arm before the reset")
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := strings.Count(buf.String(), `"reason":"empty-buffer"`); got != 1 {
+		t.Errorf("empty-buffer refusals after the Double = %d, want exactly 1 — CORR-09 cleared the buffer", got)
+	}
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Errorf("correction ops after the Double = %d, want 0 — the reset emptied the buffer", got)
+	}
+}
+
+// TestActor_BackspaceNoBoundary pins that a pop never arms the decision:
+// the Backspace press (and the letters after it) produce no boundary, no
+// arming and no counters.
+func TestActor_BackspaceNoBoundary(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeyBackSpace})
+	a.HandleKey(engine.EngineEvent{Keyval: uint32('x')})
+
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("requires after the pop = %d, want 0 — a pop never arms the decision", got)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 0 || got.Abstained != 0 {
+		t.Errorf("counters after the pop = %+v, want zero — the pop is not a boundary", got)
+	}
+}
+
+// TestActor_ManualOverrideAfterAutocorrect pins criterion 4: the manual
+// path rides above the autocorrect layer and never consults its detector —
+// after the silent ghbdtn→привет correction a Double Shift converts привет
+// back to ghbdtn (a dictionary-valid word the autocorrect layer itself
+// would veto).
+func TestActor_ManualOverrideAfterAutocorrect(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	commits := sink.commitTexts()
+	if len(commits) != 2 || commits[1] != wordEN+" " {
+		t.Fatalf("commits = %q, want [%q %q] — the manual round converted привет back", commits, wordRU+" ", wordEN+" ")
+	}
+}

@@ -140,9 +140,15 @@ type Actor struct {
 	// 03-06 (INST-02): completed corrections (the D-24 success-without-change
 	// included) and refusals with their D-20 reason breakdown. Counts only,
 	// never content.
-	corrDone     int
-	corrSkipped  int
-	skipReasons  map[string]int
+	corrDone    int
+	corrSkipped int
+	skipReasons map[string]int
+	// Autocorrect counters (plan 06-06, D-54): the fired corrections, the
+	// fail-closed abstentions with their reason slugs — counts and closed
+	// slugs only, never the typed or corrected word (D-20/D-21, Pitfall 6).
+	acFired      int
+	acAbstained  int
+	acReasons    map[string]int
 	appid        AppidSource
 	appidStarted bool
 	appidWarned  bool // one WARN per degradation episode — a broken source must not spam per keystroke
@@ -193,6 +199,16 @@ type Options struct {
 	MACRLetters         map[rune]bool
 	MACRApps            []string
 	MACRAltModifier     string
+	// The autocorrect layer (plan 06-06, D-53/D-54): OFF at the zero value —
+	// the unit corpus and the no-SetOptions path — exactly like MACR above.
+	// The white list matches the focused app's bridge-namespace EXACTLY (no
+	// prefix merging); the thresholds mirror detect.Params and the config
+	// 06-04 defaults (4/2.0/1.0 — change the places together).
+	AutoCorrectEnabled    bool
+	AutoCorrectApps       []string
+	AutoCorrectMinWordLen int
+	AutoCorrectMargin     float64
+	AutoCorrectFloor      float64
 }
 
 // MACRStats are the Super→Ctrl layer's counters (ADR-005 b.2) — the status
@@ -200,6 +216,16 @@ type Options struct {
 type MACRStats struct {
 	SuperIntercepted int
 	ConsumedUpstream int
+}
+
+// AutoCorrectStats are the autocorrect layer's counters (plan 06-06, D-54)
+// — the goswitchctl status surface; the field names are the contract.
+// Reasons maps each fail-closed abstention slug to its count; the slugs
+// come from a closed vocabulary and never carry the word (D-20/D-21).
+type AutoCorrectStats struct {
+	Fired     int
+	Abstained int
+	Reasons   map[string]int
 }
 
 // defaultComboBinding is the built-in word-layout combo (D-36/SPEC §4.1
@@ -387,6 +413,17 @@ func (a *Actor) MACRCounters() MACRStats {
 	defer a.mu.Unlock()
 
 	return MACRStats{SuperIntercepted: a.macrIntercepted, ConsumedUpstream: a.macrConsumed}
+}
+
+// AutoCorrectCounters snapshots the autocorrect layer's counters (plan
+// 06-06, D-54 — the MACRCounters form): fired decisions, fail-closed
+// abstentions and their closed-slug reasons. Counts and slugs only — the
+// word itself never leaves the actor (D-20/D-21, Pitfall 6).
+func (a *Actor) AutoCorrectCounters() AutoCorrectStats {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return AutoCorrectStats{Fired: a.acFired, Abstained: a.acAbstained, Reasons: maps.Clone(a.acReasons)}
 }
 
 // Status is the daemon state snapshot for the control surface (INST-02):

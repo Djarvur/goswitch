@@ -291,3 +291,59 @@ func TestBuffer_ReplaceTokenToggle(t *testing.T) {
 		t.Errorf("Convert(corrected token) = (%q, %v), want (ghbdtn, true)", string(back), ok)
 	}
 }
+
+// TestBuffer_PushFeed pins the word-boundary report of plan 06-06: a
+// token-capable rune never reports a boundary, a separator reports true
+// exactly when the finished token was non-empty (an empty token — leading
+// or repeated separator — reports false), and the flags stay honest after
+// a ReplaceToken recompute. The buffer state itself is the Push state —
+// the flag is the only contract.
+func TestBuffer_PushFeed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("letters report no boundary, the separator reports one", func(t *testing.T) {
+		t.Parallel()
+		b := correct.NewBuffer()
+		for _, r := range wordEN {
+			if b.PushFeed(r) {
+				t.Fatalf("PushFeed(%q) reported a boundary mid-word", r)
+			}
+		}
+		if !b.PushFeed(' ') {
+			t.Errorf("PushFeed(' ') after %q = false, want true — the separator finished a non-empty token", wordEN)
+		}
+		if got, want := string(b.Token()), wordEN; got != want {
+			t.Errorf("Token() after the boundary = %q, want %q", got, want)
+		}
+		if got, want := string(b.Tail()), " "; got != want {
+			t.Errorf("Tail() after the boundary = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("empty token and repeated separator report no boundary", func(t *testing.T) {
+		t.Parallel()
+		b := correct.NewBuffer()
+		if b.PushFeed(' ') {
+			t.Error("PushFeed(' ') on an empty buffer reported a boundary, want false (empty token)")
+		}
+		if b.PushFeed(' ') {
+			t.Error("repeated PushFeed(' ') reported a boundary, want false (still an empty token)")
+		}
+	})
+
+	t.Run("flags stay honest after ReplaceToken recompute", func(t *testing.T) {
+		t.Parallel()
+		b := correct.NewBuffer()
+		push(b, wordEN)
+		b.ReplaceToken([]rune(wordRU))
+		if !b.PushFeed(' ') {
+			t.Errorf("PushFeed(' ') after ReplaceToken = false, want true — recompute keeps the finished token")
+		}
+		if got, want := string(b.Token()), wordRU; got != want {
+			t.Errorf("Token() = %q, want %q", got, want)
+		}
+		if got, want := string(b.Tail()), " "; got != want {
+			t.Errorf("Tail() = %q, want %q", got, want)
+		}
+	})
+}
