@@ -48,6 +48,20 @@ type busClosedError struct{}
 
 func (busClosedError) Error() string { return "app identity observer: a11y bus connection closed" }
 
+// ErrRoleUnknown reports that the observer cannot name the role of the
+// focused object — no focus gain seen yet, no live role seam (the zero
+// value / tests without Start), or the bus call failed. The D-53 policy
+// treats every unknown as silence.
+var ErrRoleUnknown = roleUnknownError{}
+
+// roleUnknownError is the sentinel's concrete type (errors.Is-friendly
+// without a mutable global error value) — the ErrBusClosed discipline.
+type roleUnknownError struct{}
+
+func (roleUnknownError) Error() string {
+	return "app identity observer: focused object role unknown"
+}
+
 // RoleCall is the observer's live role seam: one
 // org.a11y.atspi.Accessible.GetRole round trip over the a11y bus per
 // invocation, made at the caller's decision moment (D-53 — the role is a
@@ -199,15 +213,23 @@ func (o *Observer) FocusedApp() (string, error) {
 // seam, a failed call) is an error the consumer's policy treats as silence.
 // Role never logs — the decision and any warn-once discipline are the
 // consumer's business.
-//
-// RED stub: the run loop does not store the focus pair yet, so the corpus
-// fails against this zero answer until the storage lands.
 func (o *Observer) Role(ctx context.Context) (uint32, error) {
-	return 0, nil
+	o.mu.Lock()
+	sender, path := o.focusSender, o.focusPath
+	o.mu.Unlock()
+
+	if path == "" || o.roleCall == nil {
+		return 0, fmt.Errorf("role: %w", ErrRoleUnknown)
+	}
+
+	return o.roleCall(ctx, sender, path)
 }
 
-// run is the observer's event loop: every focus GAIN on a
-// bridge-namespaced path refreshes the identity cache; a closed feed or a
+// run is the observer's event loop: every focus GAIN on a bridge-namespaced
+// path refreshes the identity cache and stores the (sender, path) address of
+// the focused object in one critical section; losses and non-bridge paths
+// keep both (the cache-keep semantics mirror FocusedApp — an event without a
+// bridge identity carries nothing to refresh with). A closed feed or a
 // cancelled context retires the observer with ErrBusClosed and runs the
 // cleanup exactly once (the conn.go:132-145 loop idiom).
 func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
@@ -231,6 +253,8 @@ func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
 			if name, gained := focusGain(sig); gained {
 				o.mu.Lock()
 				o.app = name
+				o.focusSender = dbus.Sender(sig.Sender)
+				o.focusPath = sig.Path
 				o.mu.Unlock()
 			}
 		}

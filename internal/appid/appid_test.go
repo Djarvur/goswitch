@@ -89,7 +89,7 @@ func TestAppid_FocusedAppByFakeBus(t *testing.T) {
 		}
 		feed <- focusSignal(senderEditor, editorPath, 0) // loss
 		feed <- focusSignal(senderEditor, "/root", 1)    // not bridge-namespaced
-		time.Sleep(50 * time.Millisecond)                              // let the loop see both
+		time.Sleep(50 * time.Millisecond)                // let the loop see both
 		if got, _ := obs.FocusedApp(); got != "org.gnome.gnome-text-editor" {
 			t.Errorf("identity after loss/non-bridge events = %q, want the cached one", got)
 		}
