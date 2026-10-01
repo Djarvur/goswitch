@@ -4422,6 +4422,61 @@ func TestActor_FlipInvokesDisplayLast(t *testing.T) {
 	}
 }
 
+// TestActor_ToggleModeFlips pins the public toggle gesture (quick plan
+// 261001-fg3 — the tray menu's first item and the item's SNI Activate land
+// here): ToggleMode drives the SAME flipTo execution path as every other
+// gesture — two toggles yield the byte-stable mode records to=ru then to=en,
+// switch targets exactly goswitch-ru then goswitch-en, panel symbols ru then
+// en, and the ops strictly symbol:ru → display:ru → symbol:en → display:en
+// (the observer LAST — the D-36 order intact).
+func TestActor_ToggleModeFlips(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	var opMu sync.Mutex
+	var ops []string
+	sink.modeHook = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "symbol:"+symbol)
+		opMu.Unlock()
+	}
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) {
+		opMu.Lock()
+		ops = append(ops, "display:"+symbol)
+		opMu.Unlock()
+	}
+	a.SetSwitcher(probe.switcher)
+	a.SetModeDisplay(disp)
+	opMu.Lock()
+	ops = ops[:0] // the install push is pinned elsewhere; only the toggle order matters here
+	opMu.Unlock()
+
+	a.ToggleMode() // EN → RU
+	a.ToggleMode() // RU → EN
+
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU, engine.NameEN}) {
+		t.Errorf("switch targets = %q, want exactly [%s %s] — the target mode's engine per toggle",
+			got, engine.NameRU, engine.NameEN)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) || !strings.Contains(logged, `"msg":"mode","to":"en"`) {
+		t.Errorf("byte-stable mode records missing; log:\n%s", logged)
+	}
+	if strings.Index(logged, `"to":"ru"`) > strings.Index(logged, `"to":"en"`) {
+		t.Errorf("mode records out of order (ru must precede en); log:\n%s", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru en] — one emit per toggle", got)
+	}
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{"symbol:ru", "display:ru", "symbol:en", "display:en"}
+	if !slices.Equal(ops, want) {
+		t.Errorf("toggle op order = %q, want exactly %q — the display fires last", ops, want)
+	}
+}
+
 // TestActor_SyncDriftInvokesDisplay mirrors the order pin for syncMode: a
 // drift correction reaches the display too — the icon follows the FACTUAL
 // engine, not only the daemon's own flips.
