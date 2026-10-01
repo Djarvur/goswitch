@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Система автокоррекции
 status: executing
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-10-01T22:40:43.900Z"
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-10-01T23:36:03.965Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 06 execution started
-state_head: 88259084fac4cdb6f4fa970e4fd8cd3a571a2f2e
+state_head: e564443d31d1c4bd4f9bff74b37ebc0be19b578a
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 41
-  completed_plans: 37
+  completed_plans: 39
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 06 (Система автокоррекции) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 06 execution started
 
@@ -102,6 +102,7 @@ Progress: [████████░░] 75%
 | Phase 06 P03 | 23 min | 2 tasks | 4 files |
 | Phase 06 P04 | 10 min | 2 tasks | 5 files |
 | Phase 06 P05 | 42 min | 3 tasks | 6 files |
+| Phase 06 P06 | 38 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -220,6 +221,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Гибридный детектор D-52: словарный путь с двухпробным lookup (точное написание + нормализованный запрос lower+ё→е — регистр- и ё-варианты набираемого находят свои словарные статьи) и триграммный fallback scoreLang (log10-окна по 3 руны, neutralPenalty -6.0, нормировка длиной); пороги подтверждены корпусом на дефолтах 4/2.0/1.0
 - [Phase 06]: Порог floor 1.0 лежит ВЫШЕ log10-шкалы таблиц 06-02 (все вероятности ≤ 0): fallback при дефолтах честно отвечает trigram-unsure — санкционированный планом консервативный старт (research A4); корпус это подтвердил, config 06-04 не менялся (пара мест согласована)
 - [Phase 06]: OOV-класс Pitfall 2 определён как двусторонний словарный miss: план-примеры Vfrcbv (ремап максим — словарная статья) и vjcrdf (ремап москва — НЕ статья) лежат по разные стороны словарной границы; Vfrcbv перенесён в wrong-layout-корпус (уверенная коррекция = работа фичи), OOV-набор (34 кейса) требует unsure
+- [Phase 06]: [06-06] Off-состояние автокоррекции = ноль счётчиков и ноль записей (behavior-блок старше shorthand'а действия): feedKey-гейт enabled стоит до всякого счёта — байт-как-сегодня (D-54)
+- [Phase 06]: [06-06] Живой GetRole — вне a.mu под autoRoleTimeout 25 мс (armed-payload handoff, generation отменяет устаревший confirm, re-check enabled на re-entry); fired только через существующий startRangeCorrection (греп-пин CommitText-сайтов)
+- [Phase 06]: [06-06] Длина слова гейтится самим detect.Check (Params.MinWordLen из Options) — один источник слага abstain-short; white-list — точное равенство bridge-namespace (расширение не матчит, пин матрицей)
 
 ### Pending Todos
 
@@ -252,6 +256,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-01T22:40:35.902Z
-Stopped at: Completed 06-05-PLAN.md
+Last session: 2026-10-01T23:35:06.862Z
+Stopped at: Completed 06-06-PLAN.md
 Resume file: None

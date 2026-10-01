@@ -255,7 +255,7 @@ Plans:
   4. Двойной Shift остаётся ручным переопределением поверх автокоррекции
   5. e2e-матрица расширена автокоррекционными кейсами (вкл/выкл, роль поля, OOV), ночная двойная зелёная
 
-**Plans:** 4/8 plans executed
+**Plans:** 6/8 plans executed
 
 Plans:
 **Wave 1**
@@ -270,11 +270,11 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06-05-PLAN.md — internal/detect: словарный путь D-52(а) + триграммный fallback D-52(б) + обязательный golden-корпус (0 ложных) — CORR-04/05/06
+- [x] 06-05-PLAN.md — internal/detect: словарный путь D-52(а) + триграммный fallback D-52(б) + обязательный golden-корпус (0 ложных) — CORR-04/05/06
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 06-06-PLAN.md — Актор: граница слова (Buffer.PushFeed), конъюнкция D-53 fail-closed, счётчики/Status, renderStatus-токены — CORR-01/07/09, MACR-ACL
+- [x] 06-06-PLAN.md — Актор: граница слова (Buffer.PushFeed), конъюнкция D-53 fail-closed, счётчики/Status, renderStatus-токены — CORR-01/07/09, MACR-ACL
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
