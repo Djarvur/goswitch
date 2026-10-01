@@ -71,11 +71,13 @@ type Deps struct {
 	Correct Corrector
 	// OnConn is the optional post-export hook on the live session-bus
 	// connection (quick plan 260930-pf6): the tray indicator attaches here —
-	// one connection, one bus name, one object path more. Run calls it
-	// exactly once after the name and the ctl object are live; an error is a
-	// WARN and serving CONTINUES — a broken indicator never takes the
-	// control surface down.
-	OnConn func(conn *dbus.Conn) error
+	// one connection, one bus name, one object path more. The FIRST argument
+	// is the serve context Run itself holds (quick plan 261001-fg3): the
+	// tray supervisor's goroutine dies with it. Run calls the hook exactly
+	// once after the name and the ctl object are live; an error is a WARN
+	// and serving CONTINUES — a broken indicator never takes the control
+	// surface down.
+	OnConn func(ctx context.Context, conn *dbus.Conn) error
 }
 
 // Svc is the object exported at ObjectPath on BusName; godbus dispatches
@@ -214,7 +216,7 @@ func Run(ctx context.Context, deps Deps) error {
 	slog.Info("ctl service listening", "name", BusName)
 
 	if deps.OnConn != nil {
-		if err := deps.OnConn(conn); err != nil {
+		if err := deps.OnConn(ctx, conn); err != nil {
 			slog.Warn("post-export connection hook failed", "error", err)
 		}
 	}

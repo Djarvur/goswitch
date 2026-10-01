@@ -583,6 +583,26 @@ func TestRenderStatusVersionToken(t *testing.T) {
 // errHookInjected is the OnConn failure of the degradation corpus.
 var errHookInjected = errors.New("hook exploded")
 
+// waitHookContext reads the hook's serve context from the hand-off channel
+// within the serving deadline and refuses a nil one — the tray supervisor's
+// lifecycle depends on the ctx being real.
+func waitHookContext(t *testing.T, ch <-chan context.Context) context.Context {
+	t.Helper()
+
+	select {
+	case ctx := <-ch:
+		if ctx == nil {
+			t.Fatal("OnConn received a nil context — the supervisor's lifecycle depends on the serve ctx")
+		}
+
+		return ctx
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnConn never reported its serve context")
+
+		return nil
+	}
+}
+
 // TestRun_OnConnHookCalledOnce pins the happy path of the post-export
 // connection hook (quick plan 260930-pf6): Run calls OnConn exactly once
 // after the bus name and the ctl object are live, and serving continues.
@@ -596,14 +616,17 @@ func TestRun_OnConnHookCalledOnce(t *testing.T) {
 	{
 		var mu sync.Mutex
 		var calls int
-		var hookCtx context.Context
+		// The hook's serve context rides a channel: fatcontext forbids
+		// storing a context into a captured variable inside a closure, and
+		// the hand-off is race-free by construction.
+		hookCtxs := make(chan context.Context, 1)
 		deps := ctlsvc.Deps{
 			Status: fakeStatus{snap: session.Status{Mode: "en"}},
-			OnConn: func(ctx context.Context, _ *dbus.Conn) error {
+			OnConn: func(serveCtx context.Context, _ *dbus.Conn) error {
 				mu.Lock()
 				calls++
-				hookCtx = ctx
 				mu.Unlock()
+				hookCtxs <- serveCtx
 
 				return nil
 			},
@@ -619,14 +642,11 @@ func TestRun_OnConnHookCalledOnce(t *testing.T) {
 		}
 		mu.Lock()
 		got := calls
-		hookCtxGot := hookCtx
 		mu.Unlock()
 		if got != 1 {
 			t.Fatalf("OnConn called %d times, want exactly 1", got)
 		}
-		if hookCtxGot == nil {
-			t.Fatal("OnConn received a nil context — the supervisor's lifecycle depends on the serve ctx")
-		}
+		waitHookContext(t, hookCtxs)
 
 		// Serving continues after the hook: a plain client call answers.
 		conn, err := dbus.ConnectSessionBus()

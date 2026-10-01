@@ -81,6 +81,13 @@ daemon's flip changes the typing at once; like GNOME's own layout
 switching, a flip resets the correction context — text typed before the
 switch is not corrected by a gesture after it.
 
+The icon is interactive: on GNOME it renders as a menu button, and a
+click opens a menu — «Переключить раскладку» toggles the layout,
+«Статус» shows a notification with the current mode and version,
+«Перечитать конфиг» re-reads the YAML (greyed without `-config`). The
+icon also re-registers itself when the shell's tray watcher appears late
+at boot or silently drops the item — no daemon restart needed.
+
 A foreign source beside goswitch engines cannot come from the installer
 (it is refused) and is flagged red by `goswitchctl selfcheck` — the
 daemon sees no keys through a plain `xkb` source. You stay in charge of

@@ -83,6 +83,13 @@ func run(ctx context.Context, debug bool, configPath string) error {
 	return nil
 }
 
+// The org.freedesktop.Notifications surface the status menu item posts
+// through — pure D-Bus on the SAME ctl connection, no subprocess.
+const (
+	notificationName = "org.freedesktop.Notifications"
+	notificationPath = dbus.ObjectPath("/org/freedesktop/Notifications")
+)
+
 // startCtl runs the control service on the session bus — the daemon's
 // SECOND godbus connection (the engine rides the private IBus socket,
 // this one the session bus), started and stopped on the daemon's signal
@@ -103,13 +110,27 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 		// without its tray icon. The display installs before engine.Run, so
 		// the icon is live from the first generation; SetModeDisplay's
 		// install push covers any ordering skew.
-		deps.OnConn = func(conn *dbus.Conn) error {
-			// Attach always succeeds: every degradation (no watcher on the
-			// bus, a failed register or export) is a one-WARN inert display
-			// inside the item. The zero-value Callbacks keeps this task's
-			// call site behaviorally inert — the real wiring lands with the
-			// daemon task (quick plan 261001-fg3).
-			actor.SetModeDisplay(indicator.Attach(conn, ctlsvc.BusName, indicator.Callbacks{}))
+		//
+		// The interactive surface (quick plan 261001-fg3): the menu's first
+		// item toggles the mode through the actor's public ToggleMode (the
+		// SAME flipTo path as every other gesture), «Статус» posts a
+		// mode+version notification on this connection (counts/states only
+		// — T-03-06-03), «Перечитать конфиг» drives the watcher's Reload and
+		// is served greyed without -config. The supervisor rides the serve
+		// context OnConn receives — the tray dies with the daemon, and the
+		// icon self-heals when the shell's watcher appears late or evicts
+		// the item.
+		deps.OnConn = func(connCtx context.Context, conn *dbus.Conn) error {
+			cb := indicator.Callbacks{
+				Toggle: actor.ToggleMode,
+				Status: func() { notifyStatus(conn, actor) },
+			}
+			if reload != nil {
+				cb.Reload = func() { reloadConfig(reload) }
+			}
+			item := indicator.Attach(conn, ctlsvc.BusName, cb)
+			actor.SetModeDisplay(item) // the install push covers ordering skew
+			go item.Supervise(connCtx, conn)
 
 			return nil
 		}
@@ -117,6 +138,38 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			slog.Error("ctl service stopped", "error", err)
 		}
 	}()
+}
+
+// notifyStatus posts ONE desktop notification with the current mode and the
+// build version from the actor's snapshot — counts/states only, never user
+// text (T-03-06-03 canon). An error is a WARN, never a panic: the
+// notification daemon is a same-session, same-uid surface, and its failure
+// costs nothing but the message (the recover shim around menu dispatch
+// bounds whatever else escapes).
+func notifyStatus(conn *dbus.Conn, actor *session.Actor) {
+	st := actor.StatusSnapshot()
+	body := "Mode: " + st.Mode + "\nVersion: " + st.Version
+	call := conn.Object(notificationName, notificationPath).
+		Call("org.freedesktop.Notifications.Notify", 0,
+			"goswitch", uint32(0), "", "goswitch", body,
+			[]string{}, map[string]dbus.Variant{}, int32(-1))
+	if call.Err != nil {
+		slog.Warn("status notification failed", "component", "tray indicator", "error", call.Err)
+	}
+}
+
+// reloadConfig drives the forced synchronous re-read and logs the outcome —
+// the menu item's mirror of goswitchctl reload: WARN on the rejection (the
+// last-good snapshot keeps serving, D-32), INFO with the applied message on
+// success (the 03-07 log-form canon).
+func reloadConfig(r ctlsvc.Reloader) {
+	msg, err := r.Reload()
+	if err != nil {
+		slog.Warn("config reload rejected", "error", err)
+
+		return
+	}
+	slog.Info("config reloaded", "applied", msg)
 }
 
 // loadConfig resolves the startup configuration: an explicit -config must
