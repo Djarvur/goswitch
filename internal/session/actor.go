@@ -716,6 +716,20 @@ func (a *Actor) VerifyExpiry() {
 	a.settleCombo() // the round closed by timeout — the combo's flip still fires
 }
 
+// ToggleMode flips the script mode through the SAME flipTo execution path
+// as every other gesture (quick plan 261001-fg3) — the public entry the
+// tray's interactive surface lands in: the menu's first item and the item's
+// SNI Activate. The target is oppositeMode(a.mode), so flipTo's same-target
+// guard is unreachable by construction; everything else — the byte-stable
+// mode record, the switcher leg, the panel symbol, the display observer
+// last (D-36) — comes from flipTo untouched.
+func (a *Actor) ToggleMode() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.flipTo(oppositeMode(a.mode))
+}
+
 // effectiveCombo resolves the combo binding in force: the configured
 // binding, or the built-in default when none was fed (the zero Binding of
 // the no-config path). The caller holds the mutex.

@@ -4333,6 +4333,16 @@ func TestActor_SyncEngineNeverSwitches(t *testing.T) {
 	}
 }
 
+// The op-log labels of the display-order corpus: the sink's modeHook records
+// the panel-symbol emit, fakeDisplay the display call — the D-36 order reads
+// through these exact strings.
+const (
+	opSymbolRU  = "symbol:ru"
+	opDisplayRU = "display:ru"
+	opSymbolEN  = "symbol:en"
+	opDisplayEN = "display:en"
+)
+
 // fakeDisplay is the actor's ModeDisplay double (quick plan 260930-pf6):
 // every ModeChanged recorded under a mutex, with an optional hook the order
 // pins interleave against the sink's modeHook.
@@ -4416,7 +4426,7 @@ func TestActor_FlipInvokesDisplayLast(t *testing.T) {
 
 	opMu.Lock()
 	defer opMu.Unlock()
-	want := []string{"symbol:ru", "display:ru"}
+	want := []string{opSymbolRU, opDisplayRU}
 	if !slices.Equal(ops, want) {
 		t.Errorf("flip op order = %q, want exactly %q — the display fires last", ops, want)
 	}
@@ -4471,7 +4481,7 @@ func TestActor_ToggleModeFlips(t *testing.T) {
 	}
 	opMu.Lock()
 	defer opMu.Unlock()
-	want := []string{"symbol:ru", "display:ru", "symbol:en", "display:en"}
+	want := []string{opSymbolRU, opDisplayRU, opSymbolEN, opDisplayEN}
 	if !slices.Equal(ops, want) {
 		t.Errorf("toggle op order = %q, want exactly %q — the display fires last", ops, want)
 	}
@@ -4504,7 +4514,7 @@ func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
 
 	opMu.Lock()
 	defer opMu.Unlock()
-	want := []string{"symbol:ru", "display:ru"}
+	want := []string{opSymbolRU, opDisplayRU}
 	if !slices.Equal(ops, want) {
 		t.Errorf("drift op order = %q, want exactly %q — the display fires last on sync too", ops, want)
 	}
