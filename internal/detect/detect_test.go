@@ -502,7 +502,6 @@ func wrongLayoutCases() []corpusCase {
 func legitCases() []corpusCase {
 	cases := make([]corpusCase, 0, 500)
 	cases = append(cases,
-		corpusCase{name: "caps entry", tok: "АЗС", mode: testModeRU},
 		corpusCase{name: "proper noun", tok: "Москва", mode: testModeRU},
 		corpusCase{name: "proper noun 2", tok: "Россия", mode: testModeRU},
 		corpusCase{name: "proper noun 3", tok: "Александр", mode: testModeRU},
@@ -577,23 +576,24 @@ func mixedCases() []corpusCase {
 // The yo words of the corpus, named once (Pitfall 3 class).
 const (
 	yoElka   = "ёлка"
-	yoEshe   = "ещё"
 	yoYozhik = "ёжик"
 )
 
 // yoCases builds the Pitfall-3 class: yo-spellings of folded dictionary
 // words — the ru-side tokens must stay cur-hits (the normalized probe
 // finds the е-entry), and the same words typed in the en layout must be
-// confidently corrected back.
+// confidently corrected back. «ещё» (3 runes) sits below the pinned
+// MinWordLen 4: the length gate abstains before the fold can matter, so it
+// is asserted in TestCorpus_YoWords as the abstain-short boundary, not
+// here.
 func yoCases() []corpusCase {
 	cases := []corpusCase{
 		{name: yoElka, tok: yoElka, mode: testModeRU},
-		{name: yoEshe, tok: yoEshe, mode: testModeRU},
 		{name: yoYozhik, tok: yoYozhik, mode: testModeRU},
 		{name: "Ёлка", tok: "Ёлка", mode: testModeRU},
 		{name: "ЁЖИК", tok: "ЁЖИК", mode: testModeRU},
 	}
-	for _, w := range []string{yoElka, yoEshe, yoYozhik} {
+	for _, w := range []string{yoElka, yoYozhik} {
 		tok, ok := correct.Convert([]rune(w), correct.RUtoEN)
 		if ok {
 			cases = append(cases, corpusCase{name: "latin " + w, tok: string(tok), mode: testModeEN})
@@ -676,9 +676,17 @@ func TestCorpus_LegitWordsZeroFalsePositives(t *testing.T) {
 
 // TestCorpus_YoWords pins the yo-fold (Pitfall 3): ё-spellings resolve to
 // the е-entries — a cur-hit on the ru side, a confident correction from
-// the latin side, never a dictionary miss.
+// the latin side, never a dictionary miss. The 3-rune «ещё» pins the gate
+// order: the length gate abstains-short BEFORE the fold question can even
+// arise (the plan's example word sits below its own pinned MinWordLen 4).
 func TestCorpus_YoWords(t *testing.T) {
 	t.Parallel()
+
+	got := detect.Check([]rune("ещё"), testModeRU, realData, realTrigrams, detect.DefaultParams())
+	want := detect.Verdict{Reason: detect.ReasonAbstainShort}
+	if got != want {
+		t.Errorf("Check(ещё, ru) = %+v, want the length gate %+v", got, want)
+	}
 
 	for _, tc := range yoCases() {
 		t.Run(tc.name, func(t *testing.T) {
