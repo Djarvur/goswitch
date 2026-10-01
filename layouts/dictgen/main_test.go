@@ -67,6 +67,7 @@ func TestParseDIC(t *testing.T) {
 		t.Parallel()
 
 		// Every anomaly is a loud error, never a silent skip (T-06-02-04).
+		// A nil want pins "any non-nil error" — the os-level open failure.
 		cases := []struct {
 			name  string
 			path  string // fixed testdata path; empty writes the content below
@@ -89,7 +90,15 @@ func TestParseDIC(t *testing.T) {
 						t.Fatalf("write fixture: %v", err)
 					}
 				}
-				if _, err := parseDIC(path); !errors.Is(err, tc.want) {
+				_, err := parseDIC(path)
+				if tc.want == nil {
+					if err == nil {
+						t.Errorf("parseDIC(%s) returned nil error, want an open failure", path)
+					}
+
+					return
+				}
+				if !errors.Is(err, tc.want) {
 					t.Errorf("parseDIC(%s) error = %v, want %v", path, err, tc.want)
 				}
 			})
@@ -246,9 +255,12 @@ func TestEmitRefusals(t *testing.T) {
 }
 
 // TestGenerateLive pins the full dev-machine run against the installed
-// hunspell dictionaries: the parsed counts land inside the measured envelopes
-// (146 261 ru / 78 951 en, ± drift). CI machines without hunspell skip it —
-// the golden contract (CORR-08) never requires the live input.
+// hunspell dictionaries: the parsed counts land inside the measured envelopes.
+// Measured on hunspell-ru 1:24.2.1-1 / hunspell-en-us 1:2020.12.07-2:
+// 146 269 ru entries − 8 short forms = 146 261 unique, ё→е folding merges
+// 7347 е/ё lemma pairs → 138 914 (the research Q3 figure of 146 261 predates
+// the folding decision); en: 79 013 → 78 951. CI machines without hunspell
+// skip the test — the golden contract (CORR-08) never requires the live input.
 func TestGenerateLive(t *testing.T) {
 	t.Parallel()
 
@@ -263,8 +275,8 @@ func TestGenerateLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseDIC(%s): %v", dictRUPath, err)
 	}
-	if len(ru) < 145000 || len(ru) > 148000 {
-		t.Errorf("len(DictRU) = %d, want within [145000, 148000]", len(ru))
+	if len(ru) < 137000 || len(ru) > 140500 {
+		t.Errorf("len(DictRU) = %d, want within [137000, 140500]", len(ru))
 	}
 	if !slices.IsSorted(ru) {
 		t.Error("live ru dictionary is not sorted")
