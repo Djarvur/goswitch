@@ -148,3 +148,9 @@ None - no external service configuration required.
 ---
 *Phase: 06-avtokorrekcija-opcionalno*
 *Completed: 2026-10-01*
+
+## Self-Check: PASSED
+
+- Файлы: docs/SPEC.md, docs/adr/ADR-007-autocorrect-hybrid-detector-and-role-policy.md, 06-01-SUMMARY.md — существуют
+- Коммиты: 0d3ed3d (Task 1), 06ae0e9 (Task 2), 5603d0e (SUMMARY) — присутствуют в git log
+- Все 5 verify-гейтов плана зелёные: SPEC-DELTA-OK, AUDIT-TRAIL-OK, SCOPE-FROZEN, ADR-SKELETON-OK, ADR-CONTENT-OK; в дифе плана ноль .go-файлов (D-55)

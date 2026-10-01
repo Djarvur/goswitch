@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Система автокоррекции
 status: executing
-stopped_at: Completed 05-05-PLAN.md (all 5 phase plans executed)
-last_updated: "2026-10-01T20:03:12.962Z"
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-10-01T20:16:06.016Z"
 last_activity: 2026-10-01
-last_activity_desc: Phase 05 execution started
-state_head: 2ac2d93926df89ffa286d104a775a48940c2a252
+last_activity_desc: Phase 06 execution started
+state_head: 5603d0e2c16ab0ff6c98f87c973e7dab4b8ff207
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 41
-  completed_plans: 33
+  completed_plans: 34
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 05 — Интеграция с GNOME: индикация и двухисточниковое переключение
+**Current focus:** Phase 06 — Система автокоррекции
 
 ## Current Position
 
-Phase: 06 (Система автокоррекции) — READY TO EXECUTE
-Plan: 5 of 5
+Phase: 06 (Система автокоррекции) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-10-01 — Completed quick task 261001-fg3: interactive tray — self-healing supervisor live, DBusMenu toggle-first (com.canonical.dbusmenu fix e8dae38), Activate; owner visual check pending
+Last activity: 2026-10-01 — Phase 06 execution started
 
 Progress: [████████░░] 75%
 
@@ -97,6 +97,7 @@ Progress: [████████░░] 75%
 | Phase 05 P03 | 47 min | 2 tasks | 10 files |
 | Phase 05 P04 | 46 min | 2 tasks | 13 files |
 | Phase 05 P05 | 59 min | 2 tasks | 12 files |
+| Phase 06 P01 | 6 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -202,6 +203,8 @@ Recent decisions affecting current work:
 - [Phase 05]: [05-04] Echo suppression per spike P4 = the same-mode branch of SyncEngine (the initiator's own GlobalEngineChanged confirms without a record); correction writes the byte-stable mode record then a 'mode corrected' WARN and NEVER touches the switcher — flip loop impossible by construction (single-writer)
 - [Phase 05]: [05-04] activate.IfOwned prefers the FACTUAL engine (generation-scoped GetGlobalEngine reader, bound before PostRegister) over the dead gsettings current key; a foreign factual name skips without consulting the key; cold bus falls back to the current-index derivation — Pitfall 3 (restart flips ru→en) closed at unit level, live proof in 05-05
 - [Phase 05]: Two-source live proofs (05-05): bus flip = mode+switch_engine pair (WARN form — the 40 ms deadline fires before the ~42 ms live completion, readback arbitrates); external flips followed without counter-flips; restart returns the FACTUAL engine (shell resets to its own source — daemon-flipped ru is restart-lost by mechanism, shell gestures survive); XKB does NOT follow flips (P3 answered, safety-net permanent); matrix v3 two-source: 30/32 ×2 — word-mixed/phrase-mixed frozen rows vs the designed flip-resets-context semantics (owner verdict at verify gate, WINDOWS #12); ADR-006 Accepted, README documents the model
+- [Phase 06]: D-55 соблюдён: spec-delta §2/§10/§11 выполнен до кода детектора (ноль .go в дифе 06-01) — Спека правится до кода; аудит-трейл §11 сохранён — старый вердикт виден рядом с новым решением
+- [Phase 06]: ADR-007 Proposed — контракт фазы (гибридный детектор, живой GetRole, fail-closed, лицензии доноров); Accepted — план 06-08 — Кодовые планы 06-02..06-07 ссылаются на kill-таблицу и лицензионную позицию как на непреложный контракт
 
 ### Pending Todos
 
@@ -234,6 +237,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-30T00:27:41.220Z
-Stopped at: Completed 05-05-PLAN.md (all 5 phase plans executed)
+Last session: 2026-10-01T20:15:36.425Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None
