@@ -32,10 +32,10 @@ const (
 	propertiesIface = "org.freedesktop.DBus.Properties"
 	signalNewIcon   = "NewIcon"
 	// menuPath and menuIface locate the DBusMenu object — exported at /Menu
-	// under org.canonical.dbusmenu once the menu exports succeed; the value
+	// under com.canonical.dbusmenu once the menu exports succeed; the value
 	// the Menu property serves before that is the sentinel below.
 	menuPath  = dbus.ObjectPath("/Menu")
-	menuIface = "org.canonical.dbusmenu"
+	menuIface = "com.canonical.dbusmenu"
 )
 
 // The served SNI v0 property surface: icon-only (no Menu, no ToolTip —

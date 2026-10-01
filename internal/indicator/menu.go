@@ -18,7 +18,7 @@ const (
 	menuTypeStandard = "standard"
 	menuStatusNormal = "normal"
 
-	// menuVersion is the org.canonical.dbusmenu protocol version — 3, the
+	// menuVersion is the com.canonical.dbusmenu protocol version — 3, the
 	// shape the toolkit's appindicator bridge implements.
 	menuVersion = uint32(3)
 
@@ -54,7 +54,7 @@ type menuItemProps struct {
 	Props map[string]dbus.Variant
 }
 
-// Menu is the org.canonical.dbusmenu object at /Menu — the tray's
+// Menu is the com.canonical.dbusmenu object at /Menu — the tray's
 // interactive surface (quick plan 261001-fg3): on GNOME's
 // ubuntu-appindicators ANY click opens the menu, so the menu IS the
 // interaction surface and the toggle is its FIRST item. The layout is
@@ -98,7 +98,7 @@ func (m *Menu) Set(iface, property string, _ dbus.Variant) *dbus.Error {
 	return dbus.NewError(errNameReadOnly, []any{property + " on " + iface + " is read-only"})
 }
 
-// GetLayout implements org.canonical.dbusmenu.GetLayout: the static
+// GetLayout implements com.canonical.dbusmenu.GetLayout: the static
 // three-item tree. parentID 0 serves the root with the three kids (the
 // toggle FIRST — the interaction surface); any other parent id serves that
 // item with no kids; the depth argument is ignored — the menu is flat and
@@ -121,7 +121,7 @@ func (m *Menu) GetLayout(parentID, _ int32, _ []string) (uint32, menuLayout, *db
 	return menuRevision, layout, nil
 }
 
-// GetGroupProperties implements org.canonical.dbusmenu.GetGroupProperties:
+// GetGroupProperties implements com.canonical.dbusmenu.GetGroupProperties:
 // the (id, props) pairs for the requested known ids in request order —
 // unknown ids are skipped.
 func (m *Menu) GetGroupProperties(ids []int32, _ []string) ([]menuItemProps, *dbus.Error) {
@@ -135,13 +135,13 @@ func (m *Menu) GetGroupProperties(ids []int32, _ []string) ([]menuItemProps, *db
 	return out, nil
 }
 
-// AboutToShow implements org.canonical.dbusmenu.AboutToShow: always false —
+// AboutToShow implements com.canonical.dbusmenu.AboutToShow: always false —
 // the menu is static, nothing is ever pending.
 func (m *Menu) AboutToShow(_ int32) (bool, *dbus.Error) {
 	return false, nil
 }
 
-// Event implements org.canonical.dbusmenu.Event: the click dispatch. Only
+// Event implements com.canonical.dbusmenu.Event: the click dispatch. Only
 // the "clicked" event carries an action: 1 toggles the mode (through the
 // SAME Callbacks.Toggle the item's Activate drives), 2 posts the status
 // notification, 3 reloads the config — each a silent no-op without its

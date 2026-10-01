@@ -8,7 +8,7 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// TestMenuProperties pins the org.canonical.dbusmenu v3 property surface:
+// TestMenuProperties pins the com.canonical.dbusmenu v3 property surface:
 // Version 3, Status "normal" (IconThemePath skipped per the minimal brief),
 // the read-only refusal of Set, and the standard unknown-property and
 // unknown-interface error names.
@@ -261,5 +261,26 @@ func TestItemActivateNilToggleWarnsOnce(t *testing.T) {
 	}
 	if got := strings.Count(buf.String(), `"level":"WARN"`); got != 1 {
 		t.Errorf("nil-toggle Activate warned %d times, want exactly one; log:\n%s", got, buf.String())
+	}
+}
+
+// TestMenuWireNamesPinned pins the DBusMenu wire constants against the REAL
+// protocol literals — the 261001-fg3 lesson: a self-consistent corpus cannot
+// catch a wrong interface NAME (the fakes compare the same constant), only a
+// literal pin can. The DBusMenu protocol lives at com.canonical.dbusmenu
+// (the org. prefix variant does not exist on any stack we target), and the
+// SNI surface stays org.kde.*.
+func TestMenuWireNamesPinned(t *testing.T) {
+	if menuIface != "com.canonical.dbusmenu" {
+		t.Errorf("menuIface = %q, want the real protocol name com.canonical.dbusmenu", menuIface)
+	}
+	if watcherName != "org.kde.StatusNotifierWatcher" {
+		t.Errorf("watcherName = %q, want org.kde.StatusNotifierWatcher", watcherName)
+	}
+	if sniIface != "org.kde.StatusNotifierItem" {
+		t.Errorf("sniIface = %q, want org.kde.StatusNotifierItem", sniIface)
+	}
+	if string(itemPath) != "/StatusNotifierItem" || string(menuPath) != "/Menu" {
+		t.Errorf("item/menu paths = %q/%q, want /StatusNotifierItem and /Menu", itemPath, menuPath)
 	}
 }
