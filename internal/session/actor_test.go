@@ -4640,6 +4640,67 @@ func TestActor_AutocorrectBoundaryArms(t *testing.T) {
 	}
 }
 
+// TestActor_AutocorrectEarlyVerifyAnswerWaits pins the 06-07 live finding
+// (06-RESEARCH/live GTK4 fixture): the boundary fires ON the separator
+// keypress, and the pre-correction verify's RequireSurroundingText is
+// served by the client BEFORE the separator key reaches it — by wire
+// ordering the first verify answer is necessarily the PRE-boundary state
+// (token without the tail). That answer is an early report, not a
+// mismatch: the round must stay open within its budget and settle on the
+// post-boundary push (the client applying the separator). The old shape —
+// mismatch on the first answer — killed every fired correction on such
+// clients with verify-mismatch before the real state ever arrived.
+func TestActor_AutocorrectEarlyVerifyAnswerWaits(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	if a.HandleKey(spaceKey()) {
+		t.Fatal("the boundary separator was consumed — the decision never changes consumption at the boundary")
+	}
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the pipeline never armed after the boundary (no RequireSurroundingText)")
+	opsAfterArm := len(sink.opLog())
+
+	// The live first answer: the client's pre-boundary state — the
+	// separator has not been applied client-side yet.
+	preEnd := uint32(len([]rune(wordEN)))
+	a.HandleSurroundingText(wordEN, preEnd, preEnd)
+
+	if got := len(sink.opLog()); got != opsAfterArm {
+		t.Fatalf("emitter ops after the pre-boundary answer = %v, want none new — the early answer must not resolve the round", sink.opLog())
+	}
+	if got := strings.Count(buf.String(), `"reason":"verify-mismatch"`); got != 0 {
+		t.Fatalf("verify-mismatch records after the pre-boundary answer = %d, want 0 — the early answer is not a mismatch", got)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Fatalf("counters after the pre-boundary answer = %+v, want fired=1 abstained=0 — the round stays open", got)
+	}
+
+	// The post-boundary push (the client applied the separator) settles
+	// the round through the normal pipeline.
+	tokenEnd := uint32(len([]rune(wordEN)) + 1)
+	a.HandleSurroundingText(wordEN+" ", tokenEnd, tokenEnd)
+
+	deletes := sink.deleteCalls()
+	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
+		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the range is token+tail", deletes)
+	}
+	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
+		t.Fatalf("commits = %q, want [%q] — the conversion plus the tail", commits, wordRU+" ")
+	}
+
+	// The verify-after round settles exactly as in the fireAutocorrect
+	// dance.
+	eventually(t, func() bool { return sink.requireCount() >= 2 },
+		"the verify-after round never armed (the correction never executed)")
+	convEnd := uint32(len([]rune(wordRU)) + 1)
+	a.HandleSurroundingText(wordRU+" ", convEnd, convEnd)
+}
+
 // TestActor_ResetKeyBoundary pins the reset side of the boundary (CORR-09
 // preserved): the decision arms BEFORE the hard reset reads the finished
 // word, Enter transits exactly as before, and the buffer is genuinely
