@@ -23,7 +23,9 @@ awaiting: user response
 ### 1. WINDOWS #13 — двойной зелёный matrix-v4 (свежая сессия) + вердикт по drift-строкам
 expected: `mise run e2e-matrix-v4` ×2 зелёные на свежей сессии, ИЛИ владелец принимает drift-строки
   с задокументированной оговоркой (drift не регрессия фазы — доказано контрольным экспериментом)
-result: [pending]
+result: issue
+reported: "Владелец предложил замерить сеттл-интервал после флипа. Замеры (пробы v1/v2 + журнал демона): границы времени нет; потеря = нажатие внутри окна переключения, которое путь демона растягивает сам — фабрика движка ждёт блокировку, удерживаемую flipTo, дедлайн 150мс рвёт узел, переключение доезжает с опозданием (WARN switch_engine context deadline exceeded на каждом флипе; engine created на +1мс после аборта). Прямой SetGlobalEngine 24/24 чисто, флип демона 5/5 съедает следующую букву."
+severity: major
 
 ### 2. ADR-007 Proposed → Accepted
 expected: Владелец переводит Status в Accepted на основании таблицы Acceptance Evidence (6 строк)
@@ -53,9 +55,18 @@ result: [pending]
 
 total: 5
 passed: 0
-issues: 0
-pending: 5
+issues: 1
+pending: 4
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+- gap_id: G-6-1
+  truth: "После флипа раскладки первая же буква доезжает до поля (матричные flip-строки зелёные в любой сессии)"
+  status: failed
+  reason: "Фабрика движка блокируется мьютексом flipTo: SetGlobalEngine рвётся по дедлайну 150мс, переключение растягивается, нажатие в окне переключения глотается (журнал 00:05:04-00:05:17, пробы /tmp/gsy-settle.sh и /tmp/gsy-settle2.sh)"
+  severity: major
+  test: 1
+  artifacts: []
+  missing: []
