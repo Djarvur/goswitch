@@ -5176,6 +5176,62 @@ func TestAutoCorrect_ReEntryRechecks(t *testing.T) {
 	}
 }
 
+// The review-fix corpus of 06-REVIEW (CR-01/CR-02/WR-01): the async confirm
+// must never execute against state that moved on inside the role-RTT
+// window. Every test drives the interleaving deterministically — arm the
+// payload, block the live role call on the double's release channel, mutate
+// the interleaved state, then let the confirm conclude — no sleeps: the
+// gating is the double's own channels (the awaitRoleStart precedent).
+
+// TestAutoConfirm_RevalidatesArmedPayload pins the CR-01 fix: a
+// token-capable keystroke inside the role-RTT window moves the buffer off
+// the armed payload while the cached surrounding push still ends with the
+// armed token+tail (the keystroke's own client push is in flight) — the
+// cached-push fast path would fire the delete+commit against the stale
+// geometry and corrupt the field and the mirror. The confirm must
+// re-validate the armed payload against the live buffer under the mutex and
+// refuse fail-closed: silence + the payload-stale counter, the word never
+// logged (D-20/D-21).
+func TestAutoConfirm_RevalidatesArmedPayload(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	awaitRoleStart(t, role)
+
+	// The client's post-separator push lands while the role round trip is
+	// in flight: the cache ends with the armed token+tail — the exact
+	// freshness the cached fast path trusts.
+	tokenEnd := uint32(len([]rune(wordEN)) + 1)
+	a.HandleSurroundingText(wordEN+" ", tokenEnd, tokenEnd)
+
+	// The interleaved keystroke: the daemon has processed it, the client's
+	// own push for it is still in flight — the buffer has moved on, the
+	// cache has not.
+	a.HandleKey(engine.EngineEvent{Keyval: uint32('x')})
+	close(role.release)
+
+	eventually(t, func() bool {
+		c := a.AutoCorrectCounters()
+
+		return c.Abstained >= 1 || c.Fired >= 1
+	}, "the confirm never concluded")
+	if c := a.AutoCorrectCounters(); c.Fired != 0 {
+		t.Fatalf("fired = %d — the moved-on buffer must never fire the armed payload (CR-01)", c.Fired)
+	}
+	assertSilence(t, a, sink, "payload-stale")
+	logged := buf.String()
+	for _, word := range []string{wordEN, wordRU} {
+		if strings.Contains(logged, word) {
+			t.Errorf("the log leaked %q (D-20/D-21); log:\n%s", word, logged)
+		}
+	}
+}
+
 // TestAutoCorrect_CountersAndReasons pins the counter surface over a mixed
 // scenario: fired and every abstention class accumulate in
 // AutoCorrectCounters — counts and closed slugs only, no word in the log.
