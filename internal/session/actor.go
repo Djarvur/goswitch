@@ -2004,35 +2004,11 @@ func (a *Actor) autoConfirm(payload acPayload) {
 	a.acRoleWarned = false // a healthy answer closes the episode
 	switch role {
 	case acRoleText, acRoleEntry, acRoleDocumentText:
-		// CR-01: the buffer must still be what the arming event left — any
-		// mutation since (an interleaved keystroke, a Backspace, a second
-		// reset, a focus loss) means the armed range no longer describes
-		// the field, and executing it would delete the wrong runes and
-		// corrupt the mirror (T-06-06-06 extended past the generation
-		// guard). Fail-closed: silence + the skip counter.
-		if !slices.Equal(a.buf.Token(), payload.expectToken) ||
-			!slices.Equal(a.buf.Tail(), payload.expectTail) {
-			a.recordACAbstain(acReasonPayloadStale)
-
-			return
-		}
-		// WR-01: the white-list verdict was taken at arm time — re-check
-		// the focused app under the mutex so the conjunction is evaluated
-		// for ONE object at ONE instant: a focus switch inside the
-		// role-RTT window re-points the live role query at another app's
-		// object, and the armed app's verdict must not ride on it (D-53).
-		// The same bridge-namespace equality as the arming gate; a lost
-		// identity source is the unknown (fail-closed), a different app is
-		// the changed one — both silent, both counted.
-		app, ok := a.acFocusedApp()
-		if !ok {
-			a.recordACAbstain(acReasonAppUnknown)
-
-			return
-		}
-		if app != payload.app {
-			a.recordACAbstain(acReasonAppChanged)
-
+		// CR-01/WR-01: the fired threshold re-checks the armed payload's
+		// preconditions under the mutex — the window between the boundary
+		// and this verdict must not move the field or the focus out from
+		// under the payload.
+		if !a.acConfirmRefusals(payload) {
 			return
 		}
 		a.acFired++
@@ -2041,6 +2017,43 @@ func (a *Actor) autoConfirm(payload acPayload) {
 	default:
 		a.recordACAbstain(acReasonRoleForbidden)
 	}
+}
+
+// acConfirmRefusals re-checks the armed payload's preconditions under the
+// mutex at the confirm's fired threshold. CR-01: the buffer must still be
+// what the arming event left — any mutation since (an interleaved
+// keystroke, a Backspace, a second reset, a focus loss) means the armed
+// range no longer describes the field, and executing it would delete the
+// wrong runes and corrupt the mirror (T-06-06-06 extended past the
+// generation guard). WR-01: the white-list verdict was taken at arm time —
+// the focused app is re-checked so the conjunction is evaluated for ONE
+// object at ONE instant: a focus switch inside the role-RTT window
+// re-points the live role query at another app's object, and the armed
+// app's verdict must not ride on it (D-53). The identity comparison is the
+// same bridge-namespace equality as the arming gate; a lost identity
+// source is the unknown (fail-closed), a different app is the changed one.
+// Every refusal counts its closed slug and reports false; the caller holds
+// the mutex.
+func (a *Actor) acConfirmRefusals(payload acPayload) bool {
+	if !slices.Equal(a.buf.Token(), payload.expectToken) ||
+		!slices.Equal(a.buf.Tail(), payload.expectTail) {
+		a.recordACAbstain(acReasonPayloadStale)
+
+		return false
+	}
+	app, ok := a.acFocusedApp()
+	if !ok {
+		a.recordACAbstain(acReasonAppUnknown)
+
+		return false
+	}
+	if app != payload.app {
+		a.recordACAbstain(acReasonAppChanged)
+
+		return false
+	}
+
+	return true
 }
 
 // warnACRole records one live role-source failure: the WARN fires once per

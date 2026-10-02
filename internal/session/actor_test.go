@@ -5278,7 +5278,8 @@ func TestAutoConfirm_ResetBoundaryAlwaysVerifies(t *testing.T) {
 	a.HandleSurroundingText("", 0, 0)
 
 	if got := strings.Count(buf.String(), `"reason":"verify-mismatch"`); got != 1 {
-		t.Errorf("verify-mismatch records after the post-reset answer = %d, want exactly 1; log:\n%s", got, buf.String())
+		t.Errorf("verify-mismatch records after the post-reset answer = %d, want exactly 1; log:\n%s",
+			got, buf.String())
 	}
 	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
 		t.Errorf("correction ops after the post-reset answer = %d, want 0 — the stale word stays untouched", got)
