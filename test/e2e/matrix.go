@@ -1086,7 +1086,7 @@ func establishCaseConfig(ctx context.Context, s *stand, c matrixCase, lines []st
 	if err := s.restartDaemonWithArgs("-config", path); err != nil {
 		return err
 	}
-	for _, mark := range []string{`"msg":"config loaded"`, componentRegisteredMark, ctlListeningMark} {
+	for _, mark := range []string{configLoadedMark, componentRegisteredMark, ctlListeningMark} {
 		if err := s.waitForLog(ctx, mark, registrationWait); err != nil {
 			return fmt.Errorf("reload step config daemon (%s): %w", mark, err)
 		}

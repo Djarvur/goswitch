@@ -77,21 +77,24 @@ type desktopSnapshot struct {
 // stand owns the per-run environment: the daemon subprocess, its log file,
 // the stand's input surface and the captured desktop state.
 type stand struct {
-	cfg         config
-	daemonBin   string
-	tmpDir      string
-	logPath     string
-	logFile     *os.File
-	daemon      *exec.Cmd
-	standalone  bool // no stand daemon: the case owns the bus (install-cycle)
-	zenity      *exec.Cmd
-	zenityOut   *bytes.Buffer
-	chromium    *exec.Cmd
-	chromiumX11 *exec.Cmd // the x11/XWayland window-mode instance (04-05)
-	gte         *exec.Cmd
-	gedit       *exec.Cmd // the GTK3-generation editor instance (04-05)
-	snap        desktopSnapshot
-	caseCfgPath string // the matrix case's -config doc ("" until a reload step establishes it)
+	cfg          config
+	daemonBin    string
+	tmpDir       string
+	logPath      string
+	logFile      *os.File
+	daemon       *exec.Cmd
+	standalone   bool // no stand daemon: the case owns the bus (install-cycle)
+	zenity       *exec.Cmd
+	zenityOut    *bytes.Buffer
+	chromium     *exec.Cmd
+	chromiumX11  *exec.Cmd // the x11/XWayland window-mode instance (04-05)
+	gte          *exec.Cmd
+	gedit        *exec.Cmd // the GTK3-generation editor instance (04-05)
+	pwFixture    *exec.Cmd // the GTK4 password-entry fixture (06-07)
+	pwFixtureOut *bytes.Buffer
+	wezterm      *exec.Cmd // the spawned terminal of the terminal-silent negative (06-07)
+	snap         desktopSnapshot
+	caseCfgPath  string // the matrix case's -config doc ("" until a reload step establishes it)
 }
 
 func main() {
@@ -107,6 +110,7 @@ func caseListUsage() string {
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
 		" | macr-per-app | ctl-smoke | switch-spike | two-source-flip | external-flip-sync" +
+		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
 		" | install-cycle | perf"
 }
 
@@ -234,37 +238,40 @@ func runCaseWatchdog(
 // built per call (no mutable globals).
 func pickCase(name string) (caseSpec, error) {
 	registry := map[string]caseSpec{
-		"m1-gate":            {fn: runM1Gate},
-		"ibus-restart":       {fn: runIbusRestart},
-		"kill9-survive":      {fn: runKill9Survive},
-		"d01-probe":          {fn: runD01Probe},
-		"chromium-smoke":     {fn: runChromiumSmoke},
-		"gte-smoke":          {fn: runGTESmoke},
-		"gedit-smoke":        {fn: runGeditSmoke},
-		"x11-smoke":          {fn: runChromiumX11Smoke},
-		"word-en-ru":         {fn: runWordENRU},
-		"word-after-space":   {fn: runWordAfterSpace},
-		"word-ru-en":         {fn: runWordRUEN},
-		"word-mixed":         {fn: runWordMixed},
-		"phrase-en-ru":       {fn: runPhraseENRU},
-		"phrase-mixed":       {fn: runPhraseMixed},
-		"ladder-chromium":    {fn: runLadderChromium},
-		"reset-escape":       {fn: runResetEscape},
-		"select-smoke":       {fn: runSelectSmoke},
-		"select-correct":     {fn: runSelectCorrect},
-		"select-clipboard":   {fn: runSelectClipboard},
-		"combo-word-layout":  {fn: runComboWordLayout},
-		"layout-single":      {fn: runLayoutSingle},
-		"super-space-alive":  {fn: runSuperSpaceAlive},
-		"macr-probe":         {fn: runMacrProbe},
-		"macr-super-letter":  {fn: runMacrSuperLetter},
-		"macr-per-app":       {fn: runMacrPerApp},
-		"ctl-smoke":          {fn: runCtlSmoke},
-		"switch-spike":       {fn: runSwitchSpike, standalone: true},
-		"two-source-flip":    {fn: runTwoSourceFlip, standalone: true},
-		"external-flip-sync": {fn: runExternalFlipSync, standalone: true},
-		"install-cycle":      {fn: runInstallCycle, standalone: true},
-		"perf":               {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
+		"m1-gate":                     {fn: runM1Gate},
+		"ibus-restart":                {fn: runIbusRestart},
+		"kill9-survive":               {fn: runKill9Survive},
+		"d01-probe":                   {fn: runD01Probe},
+		"chromium-smoke":              {fn: runChromiumSmoke},
+		"gte-smoke":                   {fn: runGTESmoke},
+		"gedit-smoke":                 {fn: runGeditSmoke},
+		"x11-smoke":                   {fn: runChromiumX11Smoke},
+		"word-en-ru":                  {fn: runWordENRU},
+		"word-after-space":            {fn: runWordAfterSpace},
+		"word-ru-en":                  {fn: runWordRUEN},
+		"word-mixed":                  {fn: runWordMixed},
+		"phrase-en-ru":                {fn: runPhraseENRU},
+		"phrase-mixed":                {fn: runPhraseMixed},
+		"ladder-chromium":             {fn: runLadderChromium},
+		"reset-escape":                {fn: runResetEscape},
+		"select-smoke":                {fn: runSelectSmoke},
+		"select-correct":              {fn: runSelectCorrect},
+		"select-clipboard":            {fn: runSelectClipboard},
+		"combo-word-layout":           {fn: runComboWordLayout},
+		"layout-single":               {fn: runLayoutSingle},
+		"super-space-alive":           {fn: runSuperSpaceAlive},
+		"macr-probe":                  {fn: runMacrProbe},
+		"macr-super-letter":           {fn: runMacrSuperLetter},
+		"macr-per-app":                {fn: runMacrPerApp},
+		"ctl-smoke":                   {fn: runCtlSmoke},
+		"switch-spike":                {fn: runSwitchSpike, standalone: true},
+		"two-source-flip":             {fn: runTwoSourceFlip, standalone: true},
+		"external-flip-sync":          {fn: runExternalFlipSync, standalone: true},
+		"autocorrect-fires":           {fn: runAutocorrectFires},
+		"autocorrect-password-silent": {fn: runAutocorrectPasswordSilent},
+		"autocorrect-terminal-silent": {fn: runAutocorrectTerminalSilent},
+		"install-cycle":               {fn: runInstallCycle, standalone: true},
+		"perf":                        {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
 	}
 	spec, ok := registry[name]
 	if !ok {
@@ -273,7 +280,9 @@ func pickCase(name string) (caseSpec, error) {
 			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
 			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
-			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, install-cycle, perf)", name)
+			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync,"+
+			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
+			" install-cycle, perf)", name)
 	}
 
 	return spec, nil
@@ -462,6 +471,8 @@ func (s *stand) teardown() {
 	s.reapZenity()
 	s.closeChromium()
 	s.closeGTE()
+	s.reapPasswordFixture()
+	s.closeWezterm()
 	_ = s.logFile.Close()
 	if s.cfg.logPath == "" {
 		_ = os.Remove(s.logPath)

@@ -166,6 +166,20 @@ run = "go run ./test/e2e -case install-cycle"
 description = "e2e: 04-04 INST-03 — dedicated perf run: 40 homogeneous combo hot-case repeats (correct+flip chord), resident AT-SPI event witness, p50/p95/p99 + VmRSS/VmHWM report, budget gate exit≠0, perf-report.txt (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case perf"
 
+# Live autocorrect cases (06-07): they spawn stand-owned surfaces and type
+# on the owner's desktop — deliberately NOT part of `mise run ci`.
+[tasks.e2e-autocorrect-fires]
+description = "e2e: 06-07 autocorrect fires — ghbdtn␠ corrected WITHOUT a hotkey in the GTK4 fixture text field; fired counter + AT-SPI readback + PLAIN stdout oracle + manual-double CORR-01 regression (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case autocorrect-fires"
+
+[tasks.e2e-autocorrect-password-silent]
+description = "e2e: 06-07 autocorrect password-silent — the enabled layer stays silent on the fixture's GtkPasswordEntry (AT-SPI PASSWORD_TEXT): witness role+chars unchanged, FINAL stdout oracle, fired=0, one role-forbidden abstention (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case autocorrect-password-silent"
+
+[tasks.e2e-autocorrect-terminal-silent]
+description = "e2e: 06-07 autocorrect terminal-silent — wezterm (off the a11y bus) never fires: counters oracle fired=0 + zero correction records + app-not-listed abstention (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case autocorrect-terminal-silent"
+
 # Dictionary regeneration (06-02): a dev-only task — it reads the system
 # hunspell dictionaries, which exist on the dev machine only. CI never runs
 # it: CI гоняет только golden-тесты по закоммиченным данным (CORR-08).
