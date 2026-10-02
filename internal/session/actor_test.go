@@ -5285,6 +5285,41 @@ func TestAutoConfirm_ResetBoundaryAlwaysVerifies(t *testing.T) {
 	}
 }
 
+// TestAutoConfirm_RechecksFocusedApp pins the WR-01 fix: the D-53
+// conjunction must be evaluated for ONE object at ONE instant — the
+// white-list app identity checked at arm time is re-checked under the mutex
+// at confirm time. A focus switch inside the role-RTT window re-points the
+// live role query at a different app's object: without the re-check the
+// confirm pairs the armed app's white-list verdict with the new app's role
+// and fires. The mismatch refuses fail-closed: silence + the app-changed
+// counter, zero field edits.
+func TestAutoConfirm_RechecksFocusedApp(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	awaitRoleStart(t, role)
+
+	// The focus moves to an unlisted app inside the window: the live role
+	// call now answers for the NEW object (allowed — a text field of the
+	// other app). The armed app's white-list verdict must not ride on it.
+	a.UseAppid(fakeAppid{app: macrZenityApp})
+	close(role.release)
+
+	eventually(t, func() bool {
+		c := a.AutoCorrectCounters()
+
+		return c.Abstained >= 1 || c.Fired >= 1
+	}, "the confirm never concluded")
+	if c := a.AutoCorrectCounters(); c.Fired != 0 {
+		t.Fatalf("fired = %d — the white-list verdict must be re-checked at confirm (WR-01)", c.Fired)
+	}
+	assertSilence(t, a, sink, "app-changed")
+}
+
 // TestAutoCorrect_CountersAndReasons pins the counter surface over a mixed
 // scenario: fired and every abstention class accumulate in
 // AutoCorrectCounters — counts and closed slugs only, no word in the log.
