@@ -309,6 +309,14 @@ type correctionRange struct {
 	token   []rune
 	tail    []rune
 	replace func(converted []rune)
+	// acBoundary marks a range armed by the autocorrect word boundary
+	// (plan 06-07 live finding): the separator is being typed in the same
+	// event that fires the layer, so the client answers the pre-correction
+	// verify's RequireSurroundingText BEFORE the tail reaches it — the
+	// first answer is the pre-boundary state, an early report and not a
+	// mismatch. The manual paths leave it false: their verify semantics
+	// stay byte-as-today.
+	acBoundary bool
 }
 
 // acPayload is one armed boundary decision (plan 06-06): the correction
@@ -1052,14 +1060,19 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 	slog.Debug("surrounding push", "text", text,
 		"cursor", cursorPos, "anchor", anchorPos)
 	if a.pending != nil {
-		if !a.pendingVerdict() {
+		switch {
+		case a.pendingVerdict():
+			a.executeCorrection()
+		case a.pendingEarlyAnswer():
+			// The pre-boundary early answer of an autocorrect round: the
+			// client has not applied the separator yet — the round stays
+			// open within its budget for the post-boundary push (06-07
+			// live finding; VerifyExpiry keeps the fail-closed bound).
+		default:
 			a.resolvePending()
 			a.skipCorrection("verify-mismatch")
 			a.settleCombo() // the word half settled by refusal — the D-36 flip still fires
-
-			return nil, false
 		}
-		a.executeCorrection()
 
 		return nil, false
 	}
@@ -1081,6 +1094,22 @@ func (a *Actor) pendingVerdict() bool {
 	}
 
 	return correct.VerifyRangeAt(a.sel.full, a.pending.sel.start, a.pending.match)
+}
+
+// pendingEarlyAnswer reports whether the fresh push is an armed
+// autocorrect round's PRE-boundary state — the honest client state the
+// verify's RequireSurroundingText answer arrives in (plan 06-07 live
+// finding): the Require is served before the separator key reaches the
+// client, so the first answer holds the word but not yet its tail —
+// whatever the cache's own freshness was at arm time. The round stays
+// open within its budget; the in-flight separator's post-boundary push
+// settles it, and VerifyExpiry keeps the fail-closed bound. A foreign
+// answer (neither the match nor the token-only pre-state) still concludes
+// the mismatch. The caller holds the mutex and pending != nil.
+func (a *Actor) pendingEarlyAnswer() bool {
+	return a.pending.sel == nil && a.pending.rng.acBoundary &&
+		correct.MatchesSuffix(a.surr, a.pending.rng.token) &&
+		!correct.MatchesSuffix(a.surr, a.pending.match)
 }
 
 // afterVerdict checks the verify-after expectation against the fresh push:
@@ -1827,9 +1856,10 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 
 	return acPayload{
 		rng: correctionRange{
-			token:   tok,
-			tail:    a.buf.Tail(),
-			replace: a.buf.ReplaceToken,
+			token:      tok,
+			tail:       a.buf.Tail(),
+			replace:    a.buf.ReplaceToken,
+			acBoundary: true,
 		},
 		dir:  v.Dir,
 		word: tok,

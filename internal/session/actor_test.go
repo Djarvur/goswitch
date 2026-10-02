@@ -4671,10 +4671,12 @@ func TestActor_AutocorrectEarlyVerifyAnswerWaits(t *testing.T) {
 	a.HandleSurroundingText(wordEN, preEnd, preEnd)
 
 	if got := len(sink.opLog()); got != opsAfterArm {
-		t.Fatalf("emitter ops after the pre-boundary answer = %v, want none new — the early answer must not resolve the round", sink.opLog())
+		t.Fatalf("emitter ops after the pre-boundary answer = %v, want none new —"+
+			" the early answer must not resolve the round", sink.opLog())
 	}
 	if got := strings.Count(buf.String(), `"reason":"verify-mismatch"`); got != 0 {
-		t.Fatalf("verify-mismatch records after the pre-boundary answer = %d, want 0 — the early answer is not a mismatch", got)
+		t.Fatalf("verify-mismatch records after the pre-boundary answer = %d, want 0 —"+
+			" the early answer is not a mismatch", got)
 	}
 	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
 		t.Fatalf("counters after the pre-boundary answer = %+v, want fired=1 abstained=0 — the round stays open", got)
@@ -4699,6 +4701,37 @@ func TestActor_AutocorrectEarlyVerifyAnswerWaits(t *testing.T) {
 		"the verify-after round never armed (the correction never executed)")
 	convEnd := uint32(len([]rune(wordRU)) + 1)
 	a.HandleSurroundingText(wordRU+" ", convEnd, convEnd)
+}
+
+// TestActor_AutocorrectForeignVerifyAnswerMismatch pins the tolerance's
+// guard: the early-answer wait covers ONLY the token-only pre-boundary
+// state (the separator in flight) — a foreign push inside the verify
+// budget still concludes verify-mismatch with zero emitter ops, the
+// fail-closed direction untouched (D-53).
+func TestActor_AutocorrectForeignVerifyAnswerMismatch(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	if a.HandleKey(spaceKey()) {
+		t.Fatal("the boundary separator was consumed — the decision never changes consumption at the boundary")
+	}
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the pipeline never armed after the boundary (no RequireSurroundingText)")
+
+	// A foreign answer: neither the token-only pre-state nor the settled
+	// token+tail — the field moved on to something else entirely.
+	a.HandleSurroundingText("xx", 2, 2)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-mismatch"`); got != 1 {
+		t.Fatalf("verify-mismatch records after the foreign answer = %d, want exactly 1", got)
+	}
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Fatalf("correction ops after the foreign answer = %d, want 0 — the round concluded by refusal", got)
+	}
 }
 
 // TestActor_ResetKeyBoundary pins the reset side of the boundary (CORR-09
