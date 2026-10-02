@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Система автокоррекции
 status: executing
-stopped_at: Completed 06-06-PLAN.md
-last_updated: "2026-10-01T23:36:03.965Z"
+stopped_at: Completed 06-07-PLAN.md
+last_updated: "2026-10-02T18:02:26.473Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 06 execution started
-state_head: e564443d31d1c4bd4f9bff74b37ebc0be19b578a
+state_head: 49e4ceda63c5b82d6f80f5ad984307c7b6c04382
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 41
-  completed_plans: 39
+  completed_plans: 40
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 06 (Система автокоррекции) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 06 execution started
 
@@ -103,6 +103,7 @@ Progress: [████████░░] 75%
 | Phase 06 P04 | 10 min | 2 tasks | 5 files |
 | Phase 06 P05 | 42 min | 3 tasks | 6 files |
 | Phase 06 P06 | 38 min | 3 tasks | 9 files |
+| Phase 06 P07 | 19h span (3 continuations) | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -224,6 +225,12 @@ Recent decisions affecting current work:
 - [Phase 06]: [06-06] Off-состояние автокоррекции = ноль счётчиков и ноль записей (behavior-блок старше shorthand'а действия): feedKey-гейт enabled стоит до всякого счёта — байт-как-сегодня (D-54)
 - [Phase 06]: [06-06] Живой GetRole — вне a.mu под autoRoleTimeout 25 мс (armed-payload handoff, generation отменяет устаревший confirm, re-check enabled на re-entry); fired только через существующий startRangeCorrection (греп-пин CommitText-сайтов)
 - [Phase 06]: [06-06] Длина слова гейтится самим detect.Check (Params.MinWordLen из Options) — один источник слага abstain-short; white-list — точное равенство bridge-namespace (расширение не матчит, пин матрицей)
+- [Phase 06]: [06-07] A2 pinned live (google-chrome 153 Wayland): chromium exposes <input type=password> as AT-SPI PASSWORD_TEXT (40), one Tab from the autofocus lands on it — the negative-chromium row is legally expressible; the GTK4 fixture stays the silent-case carrier
+- [Phase 06]: [06-07] Identity-bearing surface maps only after the first keystroke starts the lazy observer (live finding: applySnapshot/ensureAppid ride the per-KEY-EVENT snapshot read, enabled=false until the first keystroke) — acStartObserverRound, the macr-per-app surface-C lesson
+- [Phase 06]: [06-07] Product fix found live: an acBoundary-armed verify round treats the pre-boundary answer (token without tail) as the in-flight-separator early answer and stays open within the existing verify budget — RequireSurroundingText is served before the separator lands, so every fired correction died on such clients before the fix (zenity won by timing only); manual paths byte-as-today (55dd248 RED + cbfa46c GREEN)
+- [Phase 06]: [06-07] Terminal-silent oracle re-pinned to the safety property (fired=0 + zero correction records + active-layer status): wezterm registers an IBus input context (caps 0x9, no surrounding-text bit) and its typing races IME arming — zero-records was a bet on one arm of that race (1dc76af); two consecutive greens post-pin
+- [Phase 06]: [06-07] matrix-v4 password row honestly excluded (no password surface step in the matrix driver) — the GTK4 fixture case carries the role negative standalone; sanctioned by the plan action without validator weakening
+- [Phase 06]: [06-07] Session-drift deferral: full matrix-v4 green deferred to 06-08's formal fresh-session D-48 double-run — first-key-after-flip loss reproduced BYTE-IDENTICALLY on the pre-phase-6 tree d96dcb2 (/tmp/matrix-v3-oldtree.log), phase-6 diff exonerated, environmental not a product regression (checkpoint accept & defer 2026-10-02, WINDOWS #13)
 
 ### Pending Todos
 
@@ -256,6 +263,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-01T23:35:06.862Z
-Stopped at: Completed 06-06-PLAN.md
+Last session: 2026-10-02T18:02:26.378Z
+Stopped at: Completed 06-07-PLAN.md
 Resume file: None

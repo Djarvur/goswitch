@@ -255,7 +255,7 @@ Plans:
   4. Двойной Shift остаётся ручным переопределением поверх автокоррекции
   5. e2e-матрица расширена автокоррекционными кейсами (вкл/выкл, роль поля, OOV), ночная двойная зелёная
 
-**Plans:** 6/8 plans executed
+**Plans:** 7/8 plans executed
 
 Plans:
 **Wave 1**
@@ -278,7 +278,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 06-07-PLAN.md — e2e: fires / password-silent (GTK4-фикстура) / terminal-silent + матрица v4 (superset v3) + ночной конвейер на v4 — CORR-01, MACR-ACL
+- [x] 06-07-PLAN.md — e2e: fires / password-silent (GTK4-фикстура) / terminal-silent + матрица v4 (superset v3) + ночной конвейер на v4 — CORR-01, MACR-ACL
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
