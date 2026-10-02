@@ -2181,7 +2181,10 @@ func (a *Actor) startPhraseCorrection() {
 // cursor 1..6 during typing), exactly how the owner's prototype works.
 // The freshest spontaneous push is therefore checked first (a push after
 // the last keystroke is the freshest state the client can report); only on
-// a miss does the Require round-trip run inside the verify budget.
+// a miss does the Require round-trip run inside the verify budget. A
+// boundary-armed payload skips the cached shortcut entirely (CR-02): its
+// arming keystroke is an in-flight field mutation, so the cache is stale by
+// construction and the round trip is mandatory.
 func (a *Actor) startRangeCorrection(rng correctionRange) {
 	armed := time.Now()
 	if len(rng.token) == 0 {
@@ -2230,13 +2233,23 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 		match:     concatRunes(rng.token, rng.tail),
 		armed:     armed,
 	}
-	if correct.MatchesSuffix(a.surr, a.pending.match) {
-		a.executeCorrection() // cached push is the freshest report
+	// CR-02: a boundary-armed payload NEVER trusts the cached push — the
+	// arming keystroke (Enter/Tab/Escape) is itself an in-flight
+	// field-mutating or focus-moving key, so the cache is the PRE-reset
+	// state by construction, and a delete+commit on it can land in a
+	// moved-on or entirely different input context. Always require the
+	// fresh answer: the pre-boundary early-answer machinery (cbfa46c)
+	// waits out the in-flight separator, and a post-reset answer names the
+	// field as the reset key left it — a mismatch refuses fail-closed
+	// (ADR-004). For the space boundary the round is one extra
+	// sub-millisecond trip; for the reset boundaries it is the only guard.
+	if rng.acBoundary || !correct.MatchesSuffix(a.surr, a.pending.match) {
+		a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
+		a.eng.RequireSurroundingText()
 
 		return
 	}
-	a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
-	a.eng.RequireSurroundingText()
+	a.executeCorrection() // cached push is the freshest report
 }
 
 // executeCorrection runs the level-1 ladder plan of the settled pending fix
