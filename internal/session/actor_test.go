@@ -5232,6 +5232,59 @@ func TestAutoConfirm_RevalidatesArmedPayload(t *testing.T) {
 	}
 }
 
+// TestAutoConfirm_ResetBoundaryAlwaysVerifies pins the CR-02 fix: a
+// reset-boundary payload (Enter/Tab/Escape) must NEVER take the cached-push
+// fast path — the arming keystroke is itself an in-flight field-mutating or
+// focus-moving key, so the cached push is the PRE-reset state by
+// construction and a delete+commit on it can land in a moved-on or entirely
+// different input context. The payload always runs the pre-correction
+// verify round, whose answer names the field as the reset key left it: a
+// stale answer refuses fail-closed (verify-mismatch), never a
+// wrong-context write (ADR-004).
+func TestAutoConfirm_ResetBoundaryAlwaysVerifies(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	// The client's last spontaneous push before the reset key: the cache
+	// ends with the armed word — the pre-reset state the cached fast path
+	// must not trust for a boundary-armed payload.
+	end := uint32(len([]rune(wordEN)))
+	a.HandleSurroundingText(wordEN, end, end)
+
+	if a.HandleKey(engine.EngineEvent{Keyval: engine.KeyEscape}) {
+		t.Fatal("the reset key was consumed — the reset is engine state, never consumption")
+	}
+	awaitRoleStart(t, role)
+	close(role.release)
+
+	// The conclusion must be the verify round's Require — never the cached
+	// delete+commit.
+	eventually(t, func() bool {
+		return sink.requireCount() >= 1 || len(sink.deleteCalls())+len(sink.commitTexts()) > 0
+	}, "the reset-boundary payload never concluded")
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Fatalf("correction ops without a verify round = %d — "+
+			"the cached push must never shortcut a reset boundary (CR-02)", got)
+	}
+
+	// The verify answer names the field AFTER the reset key's own effect —
+	// the single-line entry consumed/submitted: the armed word is gone.
+	// The round refuses fail-closed with zero field edits.
+	a.HandleSurroundingText("", 0, 0)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-mismatch"`); got != 1 {
+		t.Errorf("verify-mismatch records after the post-reset answer = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Errorf("correction ops after the post-reset answer = %d, want 0 — the stale word stays untouched", got)
+	}
+}
+
 // TestAutoCorrect_CountersAndReasons pins the counter surface over a mixed
 // scenario: fired and every abstention class accumulate in
 // AutoCorrectCounters — counts and closed slugs only, no word in the log.
