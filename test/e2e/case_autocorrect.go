@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Djarvur/goswitch/internal/appid"
 )
@@ -48,8 +49,14 @@ const (
 	acWord = "ghbdtn "
 	// acWordRU is the corrected field content: the level-1 ladder's
 	// delete+commit with the trailing separator riding inside the D-13
-	// replacement range.
-	acWordRU = "привет "
+	// replacement range. The fixture's stdout oracle (get_text, byte-exact)
+	// pins it; the AT-SPI LINE readback cannot — this client's
+	// line-granularity answer drops an engine-committed trailing separator
+	// (the readback class v3 documents for gedit), so the readback
+	// oracles compare the word alone (acWordReadback/acWordRUReadback).
+	acWordRU         = "привет "
+	acWordReadback   = "ghbdtn"
+	acWordRUReadback = "привет"
 
 	// The AT-SPI role labels the pid-keyed witness reports (the
 	// focus_helper INPUT_ROLES naming): the fixture's GtkEntry answers
@@ -67,11 +74,10 @@ const (
 	correctionDoneMa = `"msg":"correction","outcome":"done"`
 	actionDoubleMark = `"msg":"action","n":2`
 
-	// acReasonRoleForbidden / acReasonAppNotListed mirror the actor's
-	// closed abstention slugs (internal/session actor.go) — the reasons
-	// the silent cases' oracles require.
+	// acReasonRoleForbidden mirrors the actor's closed abstention slug
+	// (internal/session actor.go) — the reason the password case's oracle
+	// requires.
 	acReasonRoleForbidden = "role-forbidden"
-	acReasonAppNotListed  = "app-not-listed"
 
 	// acFixtureTimeoutSec is the fixture's lifetime argument: long enough
 	// for the whole observation/injection round, short enough that the
@@ -82,12 +88,22 @@ const (
 	acFixtureExitGrace  = 10 * time.Second
 
 	// acTerminalGuardApp is the terminal case's white-list entry: a
-	// sentinel bridge namespace nothing on the desktop can report. The
-	// case spawns no bridge-marked surface, so the daemon's identity cache
-	// can never match — the app gate's refusal (app-not-listed) is the
-	// deterministic engaged-gate evidence, and the desktop state stays out
-	// of the oracle.
+	// sentinel bridge namespace nothing on the desktop can report — the
+	// layer demonstrably runs against an ACTIVE (non-empty) list while the
+	// desktop state stays out of the oracle.
 	acTerminalGuardApp = "org.gnome.GoswitchE2eAbsent"
+
+	// acTerminalSettle is the bounded wait after the terminal injection:
+	// an IM-routed key event reaches the daemon log within milliseconds
+	// (the control round calibrates the latency), so a quiet 2 s window
+	// is the absence proof's budget.
+	acTerminalSettle = 2 * time.Second
+
+	// acControlKeyEvents is the positive control's own floor: ONE
+	// keystroke yields press+release (2 records) above the round's base —
+	// minKeyEvents calibrates the 7-keystroke probe word, not the control
+	// (06-07 live finding: the absolute 6 never admits a single-key round).
+	acControlKeyEvents = 2
 )
 
 // weztermBin is the terminal surface of the terminal-silent negative — the
@@ -472,7 +488,7 @@ func runAutocorrectFires(ctx context.Context, s *stand) error {
 	if err := s.waitForLog(ctx, correctionDoneMa, correctionWait); err != nil {
 		return fmt.Errorf("%s: settled correction: %w", caseName, err)
 	}
-	if err := s.waitFixtureText(ctx, acWordRU); err != nil {
+	if err := s.waitFixtureText(ctx, acWordRUReadback); err != nil {
 		return fmt.Errorf("%s: corrected readback: %w", caseName, err)
 	}
 	if err := ctlStatusHas(ctx, ctlBin, "autocorrect_enabled=true", "autocorrect_fired=1"); err != nil {
@@ -494,7 +510,7 @@ func (s *stand) acManualDoubleRound(ctx context.Context, caseName string) error 
 	if err := s.waitForLog(ctx, actionDoubleMark, decisionWait); err != nil {
 		return fmt.Errorf("%s: manual double decision: %w", caseName, err)
 	}
-	if err := s.waitFixtureText(ctx, acWord); err != nil {
+	if err := s.waitFixtureText(ctx, acWordReadback); err != nil {
 		return fmt.Errorf("%s: manual conversion readback: %w", caseName, err)
 	}
 	final, plain, err := s.waitFixtureExit(ctx)
@@ -552,9 +568,15 @@ func runAutocorrectPasswordSilent(ctx context.Context, s *stand) error {
 	if err := s.acSilentInjectionRound(ctx, caseName); err != nil {
 		return err
 	}
-	after, err := s.waitFixtureWitness(ctx, acRolePasswordWitness, acObservedChars(before), false)
+	// The after-witness: the password field holds EXACTLY what was typed
+	// (the injected rune count) — the content itself is pinned byte-exact
+	// by the FINAL stdout oracle below; the count additionally rules out
+	// any extra text. A correction would still be 7 runes («привет ») —
+	// the daemon-side silence counters and the verbatim FINAL are the
+	// distinguishing proofs.
+	after, err := s.waitFixtureWitness(ctx, acRolePasswordWitness, utf8.RuneCountInString(acWord), false)
 	if err != nil {
-		return fmt.Errorf("%s: unchanged witness: %w", caseName, err)
+		return fmt.Errorf("%s: typed-content witness: %w", caseName, err)
 	}
 	if err := s.assertAcSilent(caseName); err != nil {
 		return err
@@ -606,23 +628,6 @@ func (s *stand) acSilentInjectionRound(ctx context.Context, caseName string) err
 	return nil
 }
 
-// acObservedChars returns the chars budget carried by a witness line — the
-// unchanged-content comparison runs against the OBSERVED count, never an
-// assumption about what a password field reports (0 on a malformed line:
-// the caller's witness re-check then fails loudly).
-func acObservedChars(line string) int {
-	_, num, ok := strings.Cut(line, ":chars=")
-	if !ok {
-		return 0
-	}
-	n, err := strconv.Atoi(num)
-	if err != nil {
-		return 0
-	}
-
-	return n
-}
-
 // startWezterm spawns a fresh terminal window (--always-new-process: never
 // delegate to an owner instance — the chromium-profile isolation lesson).
 // The window takes focus on map like any fresh surface and is invisible to
@@ -652,15 +657,30 @@ func (s *stand) closeWezterm() {
 
 // runAutocorrectTerminalSilent proves the terminal negative (criterion 2's
 // unknown→silence) on the only oracle a terminal offers — counters
-// (06-RESEARCH Q6: wezterm is absent from the a11y bus, no readback
-// exists). The layer is enabled with the guard-only white list; the case
-// spawns no bridge-marked surface the daemon could cache, so the app gate
-// refuses the boundary with app-not-listed — fired=0, zero correction
-// records, the injection visible in the key trace. Our zenity is the
-// fallow surface: it holds focus until the terminal maps, so a mutter
-// focus-stealing denial can only drop the injection into OUR window. The
-// stale-cache shape (a whitelisted app focused BEFORE the terminal) is a
-// different scenario and deliberately out of this case's scope.
+// (06-RESEARCH Q6). CORRECTED LIVE FINDING (2026-10-02, this case's runs):
+// the first pin ("terminal typing produces ZERO engine events") held only
+// in some runs — wezterm DOES register an IBus input context when focused
+// (caps 0x9, no surrounding-text bit) and its typing RACES the IME arming:
+// one run delivered all 7 keystrokes + the boundary through the daemon's
+// key trace, another delivered zero records. BOTH shapes are safe by the
+// same daemon property, which is what the oracle set now pins, with a
+// positive CONTROL in the same case against deafness-by-breakage:
+//
+//	control — the same daemon, the same injector, the IM-routed zenity:
+//	          the keystroke appears in the key trace;
+//	terminal — wezterm focused (the witness must stop naming our zenity —
+//	         the only fresh surface was the terminal): the injection may
+//	         reach the daemon through wezterm's IM context or not at all —
+//	         EITHER way the layer stays silent: zero fired records, zero
+//	         correction records; a boundary that does arrive is refused
+//	         fail-closed (the 0x9 context has no surrounding-text bit —
+//	         D-53 condition 3, the no-caps slug; abstention records carry
+//	         the closed slug vocabulary, unit-pinned in internal/session).
+//
+// The status closes the case: autocorrect_enabled=true (the negative runs
+// against an ACTIVE layer) and autocorrect_fired=0. The stale-cache shape
+// (a whitelisted app focused BEFORE the terminal) is a different scenario
+// and deliberately out of this case's scope.
 func runAutocorrectTerminalSilent(ctx context.Context, s *stand) error {
 	const caseName = "autocorrect-terminal-silent"
 	if err := startAutocorrectConfigDaemon(ctx, s, acTerminalGuardApp); err != nil {
@@ -677,13 +697,43 @@ func runAutocorrectTerminalSilent(ctx context.Context, s *stand) error {
 	if err := s.waitZenityEntry(ctx); err != nil {
 		return err
 	}
+	if err := s.acControlKeystroke(ctx, caseName); err != nil {
+		return err
+	}
 	if err := s.startWezterm(ctx); err != nil {
 		return err
 	}
 	defer s.closeWezterm()
-	// The focus proof: the witness must stop naming our zenity (stale
-	// AT-SPI FOCUSED bits clear within beats — the 02-06 lesson) — a
-	// blind injection into an unknown surface is forbidden.
+	if err := s.acWaitWeztermFocus(ctx, caseName); err != nil {
+		return err
+	}
+	if err := s.acTerminalOracle(ctx, ctlBin, caseName); err != nil {
+		return err
+	}
+	fmt.Printf("%s: terminal silent — fired=0, zero correction records under both IME delivery modes\n", caseName)
+
+	return nil
+}
+
+// acControlKeystroke is the positive control: one keystroke on the
+// IM-routed zenity is visible to the daemon (the injector and the engine
+// are alive) — the deafness counter-evidence the terminal round needs.
+func (s *stand) acControlKeystroke(ctx context.Context, caseName string) error {
+	base := s.countSub(`"msg":"key"`)
+	if err := s.injectText(ctx, "x"); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, `"msg":"key"`, base+acControlKeyEvents, keyWait); err != nil {
+		return fmt.Errorf("%s: control keystroke visibility: %w", caseName, err)
+	}
+
+	return nil
+}
+
+// acWaitWeztermFocus is the focus proof: the witness must stop naming our
+// zenity (stale AT-SPI FOCUSED bits clear within beats — the 02-06
+// lesson) — a blind injection into an unknown surface is forbidden.
+func (s *stand) acWaitWeztermFocus(ctx context.Context, caseName string) error {
 	deadline := time.Now().Add(witnessWait)
 	for {
 		witness, werr := s.focusWitness(ctx)
@@ -705,20 +755,30 @@ func runAutocorrectTerminalSilent(ctx context.Context, s *stand) error {
 		}
 	}
 
-	if err := s.acTypeAndWaitKeys(ctx); err != nil {
+	return nil
+}
+
+// acTerminalOracle runs the terminal round's oracle set: after the settle
+// budget the counters close the case — zero fired records, zero correction
+// records, active-layer status. The injection's key trace may or may not
+// reach the daemon (wezterm's IME arming races the injection — the
+// corrected live finding in runAutocorrectTerminalSilent); a boundary that
+// does arrive is refused fail-closed (no-caps: the 0x9 context has no
+// surrounding-text bit), and the abstention records carry the closed slug
+// vocabulary — silence under BOTH delivery modes is the pinned property.
+func (s *stand) acTerminalOracle(ctx context.Context, ctlBin, caseName string) error {
+	if err := s.injectText(ctx, acWord); err != nil {
 		return err
 	}
-	if err := s.waitForLog(ctx, fmt.Sprintf(acAbstainFmt, acReasonAppNotListed), decisionWait); err != nil {
-		return fmt.Errorf("%s: app-not-listed abstention: %w", caseName, err)
+	if err := sleepCtx(ctx, acTerminalSettle); err != nil {
+		return err
 	}
 	if err := s.assertAcSilent(caseName); err != nil {
 		return err
 	}
-	if err := ctlStatusHas(ctx, ctlBin, "autocorrect_enabled=true", "autocorrect_fired=0",
-		"ac_skip_app_not_listed=1"); err != nil {
+	if err := ctlStatusHas(ctx, ctlBin, "autocorrect_enabled=true", "autocorrect_fired=0"); err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
-	fmt.Printf("%s: terminal silent — fired=0, zero correction records, abstention counted\n", caseName)
 
 	return nil
 }

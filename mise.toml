@@ -106,6 +106,10 @@ run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v2.yaml"
 description = "e2e: 04-06 YAML case matrix v3 — superset v2 (gedit + chromium-x11, D-48 double-run base), per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v3.yaml"
 
+[tasks.e2e-matrix-v4]
+description = "e2e: 06-07 YAML case matrix v4 — superset v3 byte-verbatim (CASES-FROZEN) + autocorrect rows (fires/off/oov), nightly default, per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v4.yaml"
+
 [tasks.e2e-select-smoke]
 description = "e2e: 03-03 selection spike — anchor push + actual replacement rung pinned per surface (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case select-smoke"
@@ -177,7 +181,7 @@ description = "e2e: 06-07 autocorrect password-silent — the enabled layer stay
 run = "go run ./test/e2e -case autocorrect-password-silent"
 
 [tasks.e2e-autocorrect-terminal-silent]
-description = "e2e: 06-07 autocorrect terminal-silent — wezterm (off the a11y bus) never fires: counters oracle fired=0 + zero correction records + app-not-listed abstention (live GNOME session; NOT in ci)"
+description = "e2e: 06-07 autocorrect terminal-silent — wezterm (off the a11y bus) never fires: fired=0 + zero correction records under BOTH IME delivery modes (wezterm's IME arming races the injection — corrected live pin), active-layer status, zenity positive control (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case autocorrect-terminal-silent"
 
 # Dictionary regeneration (06-02): a dev-only task — it reads the system
