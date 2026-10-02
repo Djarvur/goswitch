@@ -93,6 +93,7 @@ const (
 	acReasonRoleForbidden   = "role-forbidden"
 	acReasonRoleTimeout     = "role-timeout"
 	acReasonRecheckDisabled = "recheck-disabled"
+	acReasonPayloadStale    = "payload-stale"
 )
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
@@ -322,14 +323,21 @@ type correctionRange struct {
 // acPayload is one armed boundary decision (plan 06-06): the correction
 // range snapshot (token+tail+replace) taken under the mutex at the
 // boundary, the detector's direction, the typed word the verdict was about
-// and the arming generation. It travels to the confirm goroutine; the word
-// stays in memory only — no log and no status surface ever sees it
-// (D-20/D-21).
+// and the arming generation. expectToken/expectTail snapshot the buffer as
+// the arming event LEAVES it (the reset branch of feedKey hard-resets
+// between the capture and the launch — CR-01): the confirm's under-the-
+// mutex revalidation compares the live buffer against them, so the
+// boundary's own mutation is accepted and every later one (an interleaved
+// keystroke, a Backspace, a focus loss) refuses the payload fail-closed.
+// It travels to the confirm goroutine; the word stays in memory only — no
+// log and no status surface ever sees it (D-20/D-21).
 type acPayload struct {
-	rng  correctionRange
-	dir  correct.Dir
-	word []rune
-	gen  uint64
+	rng         correctionRange
+	dir         correct.Dir
+	word        []rune
+	gen         uint64
+	expectToken []rune
+	expectTail  []rune
 }
 
 // selectionSpec is the wire geometry of a selection correction (D-30,
@@ -1730,13 +1738,17 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 		// consumption: the key transits so the client sees its Enter, Tab
 		// or Escape exactly as before.
 		// The reset is ALSO a word boundary (plan 06-06): the autocorrect
-		// decision arms BEFORE the reset reads the finished word, and the
-		// arming never touches the transit or the reset semantics. The
-		// FocusOut lifecycle is NOT a boundary — the word was not finished
-		// by a keystroke (06-RESEARCH Q5) — so autocorrect stays silent
-		// there.
-		a.armAutoCorrect()
+		// decision is captured BEFORE the reset reads the finished word and
+		// launched AFTER the hard reset — the payload's staleness
+		// expectation is therefore the emptied buffer (CR-01), so the
+		// confirm accepts the boundary's own reset and refuses anything
+		// typed since. The arming never touches the transit or the reset
+		// semantics. The FocusOut lifecycle is NOT a boundary — the word
+		// was not finished by a keystroke (06-RESEARCH Q5) — so autocorrect
+		// stays silent there.
+		payload, armed := a.autoCorrectBoundary()
 		a.buf.HardReset()
+		a.armAutoCorrect(payload, armed)
 
 		return false
 	case !printableKeyval(ev.Keyval) || ev.Mods&comboMask != 0:
@@ -1776,21 +1788,27 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 // armed decision executes asynchronously (armAutoCorrect).
 func (a *Actor) pushAndArm(r rune) {
 	if a.buf.PushFeed(r) {
-		a.armAutoCorrect()
+		payload, armed := a.autoCorrectBoundary()
+		a.armAutoCorrect(payload, armed)
 	}
 }
 
-// armAutoCorrect runs the cheap-gate boundary decision and launches the
-// confirm for an armed payload (plan 06-06): the boundary's generation is
-// tagged under the mutex so a newer boundary supersedes a mid-flight
-// confirm, and the confirm goroutine leaves the keystroke path
-// immediately — the armed-payload discipline of the clipboard rung
-// (T-06-06-04/T-06-06-05). The caller holds the mutex.
-func (a *Actor) armAutoCorrect() {
-	payload, armed := a.autoCorrectBoundary()
+// armAutoCorrect launches the confirm for an already-captured boundary
+// decision (plan 06-06): the generation is tagged under the mutex so a
+// newer boundary supersedes a mid-flight confirm, and the confirm goroutine
+// leaves the keystroke path immediately — the armed-payload discipline of
+// the clipboard rung (T-06-06-04/T-06-06-05). The staleness expectation is
+// snapshotted HERE, after the boundary's own mutation completed (the reset
+// branch of feedKey hard-resets between the capture and this launch —
+// CR-01): the confirm revalidates the live buffer against it, so the
+// boundary's own effect passes and every later buffer change refuses the
+// payload fail-closed. The caller holds the mutex.
+func (a *Actor) armAutoCorrect(payload acPayload, armed bool) {
 	if !armed {
 		return
 	}
+	payload.expectToken = a.buf.Token()
+	payload.expectTail = a.buf.Tail()
 	a.acGeneration++
 	payload.gen = a.acGeneration
 	go a.autoConfirm(payload)
@@ -1923,7 +1941,10 @@ func (a *Actor) recordACAbstain(reason string) {
 // back under the mutex. The re-entry re-checks enabled (a reload may have
 // switched the layer off between the boundary and this confirm — the
 // stale-payload guard, T-06-06-06) and the generation (a newer boundary
-// owns the decision). Any unknown means SILENCE with its counted slug —
+// owns the decision); the fired branch additionally revalidates the armed
+// payload against the live buffer (CR-01 — the generation advances only at
+// boundaries, so a non-boundary mutation inside the role-RTT window must
+// be caught by content). Any unknown means SILENCE with its counted slug —
 // the fail-closed direction INVERTED from macrTargetActive's degradation
 // (no rung upward, ADR-007): a role error or the deadline is
 // role-unknown/role-timeout with one WARN per episode, a non-text role
@@ -1974,6 +1995,18 @@ func (a *Actor) autoConfirm(payload acPayload) {
 	a.acRoleWarned = false // a healthy answer closes the episode
 	switch role {
 	case acRoleText, acRoleEntry, acRoleDocumentText:
+		// CR-01: the buffer must still be what the arming event left — any
+		// mutation since (an interleaved keystroke, a Backspace, a second
+		// reset, a focus loss) means the armed range no longer describes
+		// the field, and executing it would delete the wrong runes and
+		// corrupt the mirror (T-06-06-06 extended past the generation
+		// guard). Fail-closed: silence + the skip counter.
+		if !slices.Equal(a.buf.Token(), payload.expectToken) ||
+			!slices.Equal(a.buf.Tail(), payload.expectTail) {
+			a.recordACAbstain(acReasonPayloadStale)
+
+			return
+		}
 		a.acFired++
 		slog.Info("autocorrect", "reason", "fired")
 		a.startRangeCorrection(payload.rng)
