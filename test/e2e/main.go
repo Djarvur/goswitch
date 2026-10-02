@@ -111,7 +111,7 @@ func caseListUsage() string {
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
 		" | macr-per-app | ctl-smoke | switch-spike | two-source-flip | external-flip-sync" +
 		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
-		" | install-cycle | perf"
+		" | install-cycle | perf | perf-autocorrect"
 }
 
 // parseFlags fills the stand's CLI surface from os.Args.
@@ -272,6 +272,7 @@ func pickCase(name string) (caseSpec, error) {
 		"autocorrect-terminal-silent": {fn: runAutocorrectTerminalSilent},
 		"install-cycle":               {fn: runInstallCycle, standalone: true},
 		"perf":                        {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
+		"perf-autocorrect":            {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
 	}
 	spec, ok := registry[name]
 	if !ok {
@@ -282,7 +283,7 @@ func pickCase(name string) (caseSpec, error) {
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
 			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync,"+
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
-			" install-cycle, perf)", name)
+			" install-cycle, perf, perf-autocorrect)", name)
 	}
 
 	return spec, nil
@@ -405,10 +406,17 @@ func (s *stand) startDaemonArgs(args ...string) error {
 // startDaemonPlain spawns the daemon WITHOUT -debug — the production form
 // the perf run measures (T-04-04-03: the -debug trace would be neither
 // honest nor private; the acceptance numbers come from the prod shape).
+func (s *stand) startDaemonPlain() error {
+	return s.startDaemonPlainArgs()
+}
+
+// startDaemonPlainArgs spawns the daemon with extra arguments and NO
+// -debug — the perf-autocorrect form (plan 06-08): a config attached, the
+// prod shape kept (T-04-04-03).
 //
 //nolint:noctx // the daemon must outlive the run context: teardown SIGTERMs
-func (s *stand) startDaemonPlain() error {
-	cmd := exec.Command(s.daemonBin)
+func (s *stand) startDaemonPlainArgs(args ...string) error {
+	cmd := exec.Command(s.daemonBin, args...)
 	cmd.Stdout = s.logFile
 	cmd.Stderr = s.logFile
 	if err := cmd.Start(); err != nil {

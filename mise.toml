@@ -170,6 +170,13 @@ run = "go run ./test/e2e -case install-cycle"
 description = "e2e: 04-04 INST-03 — dedicated perf run: 40 homogeneous combo hot-case repeats (correct+flip chord), resident AT-SPI event witness, p50/p95/p99 + VmRSS/VmHWM report, budget gate exit≠0, perf-report.txt (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case perf"
 
+# The 06-08 Pitfall-5 gate: the SAME hot case with the autocorrect layer ON
+# for the perf surface's observed identity — the p95 delta vs a same-session
+# `mise run e2e-perf` baseline is the ADR-007 evidence, never a fake pair.
+[tasks.e2e-perf-autocorrect]
+description = "e2e: 06-08 Pitfall-5 perf gate — the same 40-repeat combo hot case as e2e-perf with the autocorrect layer enabled for the perf surface's observed identity (-config, no -debug): honest p50/p95/p99 pair for the ADR-007 p95-delta vs the same-session e2e-perf baseline; a completed measurement exits 0 — the absolute budget verdict rides the report (04-07-sanctioned outcome) (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case perf-autocorrect"
+
 # Live autocorrect cases (06-07): they spawn stand-owned surfaces and type
 # on the owner's desktop — deliberately NOT part of `mise run ci`.
 [tasks.e2e-autocorrect-fires]
