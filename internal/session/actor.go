@@ -94,6 +94,7 @@ const (
 	acReasonRoleTimeout     = "role-timeout"
 	acReasonRecheckDisabled = "recheck-disabled"
 	acReasonPayloadStale    = "payload-stale"
+	acReasonAppChanged      = "app-changed"
 )
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
@@ -323,7 +324,10 @@ type correctionRange struct {
 // acPayload is one armed boundary decision (plan 06-06): the correction
 // range snapshot (token+tail+replace) taken under the mutex at the
 // boundary, the detector's direction, the typed word the verdict was about
-// and the arming generation. expectToken/expectTail snapshot the buffer as
+// and the arming generation. app is the bridge-namespace identity the
+// white-list verdict was taken for (WR-01 — the confirm re-checks the live
+// identity against it, so the conjunction is evaluated for one object at
+// one instant). expectToken/expectTail snapshot the buffer as
 // the arming event LEAVES it (the reset branch of feedKey hard-resets
 // between the capture and the launch — CR-01): the confirm's under-the-
 // mutex revalidation compares the live buffer against them, so the
@@ -336,6 +340,7 @@ type acPayload struct {
 	dir         correct.Dir
 	word        []rune
 	gen         uint64
+	app         string
 	expectToken []rune
 	expectTail  []rune
 }
@@ -1881,6 +1886,7 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 		},
 		dir:  v.Dir,
 		word: tok,
+		app:  app,
 	}, true
 }
 
@@ -1944,7 +1950,10 @@ func (a *Actor) recordACAbstain(reason string) {
 // owns the decision); the fired branch additionally revalidates the armed
 // payload against the live buffer (CR-01 — the generation advances only at
 // boundaries, so a non-boundary mutation inside the role-RTT window must
-// be caught by content). Any unknown means SILENCE with its counted slug —
+// be caught by content) and re-checks the focused app identity the
+// white-list verdict was taken for (WR-01 — a focus switch inside the
+// window must not pair one app's verdict with another app's role). Any
+// unknown means SILENCE with its counted slug —
 // the fail-closed direction INVERTED from macrTargetActive's degradation
 // (no rung upward, ADR-007): a role error or the deadline is
 // role-unknown/role-timeout with one WARN per episode, a non-text role
@@ -2004,6 +2013,25 @@ func (a *Actor) autoConfirm(payload acPayload) {
 		if !slices.Equal(a.buf.Token(), payload.expectToken) ||
 			!slices.Equal(a.buf.Tail(), payload.expectTail) {
 			a.recordACAbstain(acReasonPayloadStale)
+
+			return
+		}
+		// WR-01: the white-list verdict was taken at arm time — re-check
+		// the focused app under the mutex so the conjunction is evaluated
+		// for ONE object at ONE instant: a focus switch inside the
+		// role-RTT window re-points the live role query at another app's
+		// object, and the armed app's verdict must not ride on it (D-53).
+		// The same bridge-namespace equality as the arming gate; a lost
+		// identity source is the unknown (fail-closed), a different app is
+		// the changed one — both silent, both counted.
+		app, ok := a.acFocusedApp()
+		if !ok {
+			a.recordACAbstain(acReasonAppUnknown)
+
+			return
+		}
+		if app != payload.app {
+			a.recordACAbstain(acReasonAppChanged)
 
 			return
 		}
