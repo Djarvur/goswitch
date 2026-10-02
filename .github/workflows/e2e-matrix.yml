@@ -1,10 +1,10 @@
 # e2e-matrix — живая YAML-матрица на столе владельца (D-19, TEST-04).
 #
-# По умолчанию прогоняет матрицу v3 (04-05: superset v2 — gedit +
-# chromium-x11); path-инпут сохраняет регрессии (явное указание файла
-# v1/v2 запускает mise-задачу v1/v2). Задачи прогона — те же, что и
-# локальный цикл (D-09 — CI вызывает ровно те же задачи, что и владелец;
-# прецедент pr-sanity.yml). Отчёт дублируется в e2e-report.txt и
+# По умолчанию прогоняет матрицу v4 (06-07: superset замороженной v3 —
+# блок autocorrect-кейсов); path-инпут сохраняет регрессии (явное указание
+# файла v1/v2/v3 запускает mise-задачу v1/v2/v3). Задачи прогона — те же,
+# что и локальный цикл (D-09 — CI вызывает ровно те же задачи, что и
+# владелец; прецедент pr-sanity.yml). Отчёт дублируется в e2e-report.txt и
 # выгружается артефактом при любом исходе (if: always()).
 #
 # ДВОЙНОЙ ПРОГОН — гейт D-48 (план 04-06): «Матрица зелёная дважды
@@ -42,8 +42,8 @@ on:
   workflow_dispatch:
     inputs:
       matrix:
-        description: "matrix file to run (v3 default; v1/v2 keep the regression paths)"
-        default: test/e2e/cases/matrix-v3.yaml
+        description: "matrix file to run (v4 default; v1/v2/v3 keep the regression paths)"
+        default: test/e2e/cases/matrix-v4.yaml
         type: string
       fresh_session:
         description: "D-48 gate: set true only after owner relogin"
@@ -74,7 +74,7 @@ jobs:
   e2e:
     name: matrix (live GNOME session)
     runs-on: [self-hosted, gnome]
-    # Watchdog кейса — 180 с; ДВА прогона 31 кейса v3 + сборка демона
+    # Watchdog кейса — 180 с; ДВА прогона 35 кейсов v4 + сборка демона
     # укладываются с запасом. Потолок защищает стол от зависшего прогона.
     timeout-minutes: 60
     steps:
@@ -84,10 +84,10 @@ jobs:
       # решается ДО fresh-session-префлайта и установки инструментов —
       # /usr/bin/python3 + python3-gi машинные, ставить mise ради
       # вердикта о занятости не нужно. Один и тот же AT-SPI-примитив
-      # (focused-app, фреймы-до-спуска) отвечает за 31 кейс матрицы и за
+      # (focused-app, фреймы-до-спуска) отвечает за 35 кейсов матрицы и за
       # быстрый вердикт: сфокусированный фрейм = реальное окно держит
       # стол. Исполняется для ВСЕХ триггеров (без if:): занятый стол
-      # роняет диспатч БЫСТРО и внятно вместо 31 непонятного
+      # роняет диспатч БЫСТРО и внятно вместо 35 непонятных
       # witness-падения; для schedule — мягкий режим (warning + пропуск
       # прогонов, нейтральный ночной исход), диспатч сохраняет жёсткий
       # гейт. Триггер через env GITHUB_EVENT_NAME — канон WR-04, без
@@ -183,8 +183,8 @@ jobs:
           fi
 
       # Локальный и CI-прогон — одна и та же задача (D-09). Path-инпут
-      # выбирает задачу: v1-файл — v1-регрессия, v2 — v2, иначе v3
-      # (дефолт). Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
+      # выбирает задачу: v1-файл — v1-регрессия, v2 — v2, v3 — v3, иначе
+      # v4 (дефолт). Код выхода ≠ 0 при любом FAIL — job краснеет (TEST-04).
       # Инпут идёт через env, не через интерполяцию в shell — каноническая
       # защита от expression-injection (WR-04): раннер живёт в графической
       # сессии владельца, и `$(…)` в диспатч-инпуте не должен исполняться.
@@ -194,7 +194,7 @@ jobs:
       # мягкий режим не ловит: при пройденных префлайтах любой красный
       # прогон краснит job при любом триггере (ночной красный =
       # регрессионный сигнал, не шум).
-      - name: matrix v3 run #1 (${{ inputs.matrix }})
+      - name: matrix run #1 (${{ inputs.matrix }})
         if: env.D48_SKIP != '1'
         env:
           MATRIX: ${{ inputs.matrix }}
@@ -203,15 +203,17 @@ jobs:
             mise run e2e-matrix
           elif [ "$MATRIX" = "test/e2e/cases/matrix-v2.yaml" ]; then
             mise run e2e-matrix-v2
-          else
+          elif [ "$MATRIX" = "test/e2e/cases/matrix-v3.yaml" ]; then
             mise run e2e-matrix-v3
+          else
+            mise run e2e-matrix-v4
           fi
 
       # ПРОГОН №2 СРАЗУ после №1 (D-48): между прогонами НЕТ шагов
       # очистки/пересоздания/сброса окружения — проверяется, что первый
       # прогон не портит состояние для второго (T-04-06-02); вмешательство
       # между прогонами = подмена проверки D-48.
-      - name: matrix v3 run #2 (${{ inputs.matrix }})
+      - name: matrix run #2 (${{ inputs.matrix }})
         if: env.D48_SKIP != '1'
         env:
           MATRIX: ${{ inputs.matrix }}
@@ -220,8 +222,10 @@ jobs:
             mise run e2e-matrix
           elif [ "$MATRIX" = "test/e2e/cases/matrix-v2.yaml" ]; then
             mise run e2e-matrix-v2
-          else
+          elif [ "$MATRIX" = "test/e2e/cases/matrix-v3.yaml" ]; then
             mise run e2e-matrix-v3
+          else
+            mise run e2e-matrix-v4
           fi
 
       # Отчёт — даже с упавшего прогона: FAIL-строки и есть диагностика.
