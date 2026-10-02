@@ -255,7 +255,7 @@ Plans:
   4. Двойной Shift остаётся ручным переопределением поверх автокоррекции
   5. e2e-матрица расширена автокоррекционными кейсами (вкл/выкл, роль поля, OOV), ночная двойная зелёная
 
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans executed
 
 Plans:
 **Wave 1**
@@ -282,4 +282,4 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06-08-PLAN.md — Приёмка: perf p95-гейт (Pitfall 5), двойной регресс v4, README, ADR-007 Accepted — CORR-01..09 (регресс)
+- [x] 06-08-PLAN.md — Приёмка: perf p95-гейт (Pitfall 5), двойной регресс v4, README, ADR-007 Accepted — CORR-01..09 (регресс)
