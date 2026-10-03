@@ -4265,7 +4265,8 @@ func TestActor_ReentrantAttachDuringFlip(t *testing.T) {
 			" without spending the deadline", elapsed)
 	}
 	if strings.Contains(buf.String(), `"msg":"engine switch failed"`) {
-		t.Errorf("the flip WARNed — the SetGlobalEngine round trip did not complete inside the deadline; log:\n%s", buf.String())
+		t.Errorf("the flip WARNed — the SetGlobalEngine round trip did not complete inside the"+
+			" deadline; log:\n%s", buf.String())
 	}
 	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
 		t.Errorf("panel symbols = %q, want exactly [ru] — flipTo must run past the re-entrant attach", got)
