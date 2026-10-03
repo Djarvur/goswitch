@@ -255,7 +255,7 @@ Plans:
   4. Двойной Shift остаётся ручным переопределением поверх автокоррекции
   5. e2e-матрица расширена автокоррекционными кейсами (вкл/выкл, роль поля, OOV), ночная двойная зелёная
 
-**Plans:** 8/8 plans executed
+**Plans:** 10 plans (8 executed + 2 gap closure G-6-1)
 
 Plans:
 **Wave 1**
@@ -283,3 +283,8 @@ Plans:
 **Wave 6** *(blocked on Wave 5 completion)*
 
 - [x] 06-08-PLAN.md — Приёмка: perf p95-гейт (Pitfall 5), двойной регресс v4, README, ADR-007 Accepted — CORR-01..09 (регресс)
+
+**Wave 7** *(gap closure G-6-1, blocked on Wave 6)*
+
+- [ ] 06-09-PLAN.md — G-6-1: самоблокировка фабрики на флипе — lock-free AttachEngine + reattach-свидетели фаб-шины + правка ADR-006 — SWCH-01/SWCH-02 (gap G-6-1)
+- [ ] 06-10-PLAN.md — G-6-1: живое доказательство «первая буква после флипа доезжает» — e2e flip-keystroke + журнальный аудит — SWCH-01/SWCH-02 (gap G-6-1)
