@@ -110,6 +110,7 @@ func caseListUsage() string {
 		" | ladder-chromium | reset-escape | select-smoke | select-correct | select-clipboard" +
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
 		" | macr-per-app | ctl-smoke | switch-spike | two-source-flip | external-flip-sync" +
+		" | flip-keystroke" +
 		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
 		" | install-cycle | perf | perf-autocorrect"
 }
@@ -267,6 +268,7 @@ func pickCase(name string) (caseSpec, error) {
 		"switch-spike":                {fn: runSwitchSpike, standalone: true},
 		"two-source-flip":             {fn: runTwoSourceFlip, standalone: true},
 		"external-flip-sync":          {fn: runExternalFlipSync, standalone: true},
+		"flip-keystroke":              {fn: runFlipKeystroke, standalone: true},
 		"autocorrect-fires":           {fn: runAutocorrectFires},
 		"autocorrect-password-silent": {fn: runAutocorrectPasswordSilent},
 		"autocorrect-terminal-silent": {fn: runAutocorrectTerminalSilent},
@@ -281,7 +283,7 @@ func pickCase(name string) (caseSpec, error) {
 			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
 			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
-			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync,"+
+			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, flip-keystroke,"+
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}

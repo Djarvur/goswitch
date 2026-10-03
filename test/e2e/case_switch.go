@@ -1233,3 +1233,237 @@ func (s *stand) requireGoswitchDesktop(ctx context.Context) error {
 
 	return fmt.Errorf("goswitch-desktop check: sources %q carry no goswitch engine — install first", out)
 }
+
+// The flip-keystroke round timing (plan 06-10): the case's essence is the
+// letter with NO pause between the mode record and the keystroke — flipTo
+// writes the record BEFORE the switcher call, so the letter lands inside
+// the switching window, the exact window the pre-fix factory self-block
+// stretched into a key swallower (G-6-1). The only pauses ride AFTER the
+// letter: the tap FSM's 300 ms window must expire before the next round's
+// tap (a tap inside the window is a double-tap correction gesture, not a
+// flip) and the AT-SPI bridge needs a beat before the tail readback — the
+// probe's 0.35 s + 0.2 s form.
+const (
+	flipKeystrokeReps = 3 // rounds per direction: 6 daemon flips per run, 12 per double green
+	flipKeyFsmWait    = 350 * time.Millisecond
+	flipKeySettle     = 200 * time.Millisecond
+)
+
+// flipKeystrokeKey is the injected physical key of every round — the
+// probe's 'd': EN mode transits it, RU mode commits its ЙЦУКЕН twin.
+const flipKeystrokeKey = "d"
+
+// expectedFlipLetter returns the field-tail letter the immediate keystroke
+// must leave for a flip toward target — the probe's per-direction
+// expectations raised to the pinned oracle: EN mode transits the key, RU
+// mode commits the same key position's Cyrillic rune.
+func expectedFlipLetter(target string) (string, error) {
+	switch target {
+	case flipTargetEN:
+		return flipKeystrokeKey, nil
+	case flipTargetRU:
+		return "в", nil
+	}
+
+	return "", fmt.Errorf("flip target %q outside {%s, %s}", target, flipTargetEN, flipTargetRU)
+}
+
+// switchEngineWarnLine reports whether one journal line is the WARN form of
+// the switch_engine record — the deadline-abort shape: the INFO success
+// line shares the msg/engine shape and never carries the err member (the
+// record form is pinned by the conn_switcher corpus).
+func switchEngineWarnLine(line string) bool {
+	return strings.Contains(line, `"msg":"switch_engine"`) && strings.Contains(line, `"err"`)
+}
+
+// switchEngineWarnCount counts the journal's WARN-form switch_engine
+// records so a round can gate on NEW aborts since its own baseline — the
+// round-scoped counting that keeps an environmental WARN outside the
+// rounds from gating the case (T-06-10-02).
+func (s *stand) switchEngineWarnCount() int {
+	n := 0
+	for _, line := range s.logLines() {
+		if switchEngineWarnLine(line) {
+			n++
+		}
+	}
+
+	return n
+}
+
+// runFlipKeystroke proves the closed gap G-6-1 LIVE on the wire: after a
+// daemon flip (a single Shift_R tap) the FIRST letter injected with no
+// pause reaches the field — in both directions, deterministically. The
+// mechanics are the owner's /tmp/gsy-settle2.sh probe (5/5 losses pre-fix)
+// raised to a stand case: flip through the daemon → wait for the mode
+// record (the e2e oracle, Pitfall 5) → inject 'd' IMMEDIATELY → read the
+// field tail. The setup follows runTwoSourceFlip's reversible window but
+// never rewrites the sources list: the flip is a SetGlobalEngine and works
+// with any registered engine (ADR-006 Amendment 2026-09-30) — the probe
+// ran on the owner's own single-source desk.
+func runFlipKeystroke(ctx context.Context, s *stand) error {
+	unit := unitState(ctx)
+	fmt.Printf("flip-keystroke: unit goswitchd state %q\n", unit)
+
+	if unit == unitActiveState {
+		if _, err := runCmd(ctx, "systemctl", "--user", "stop", "goswitchd"); err != nil {
+			return fmt.Errorf("flip-keystroke: stop unit daemon: %w", err)
+		}
+	}
+	defer func() { s.restoreSpikeWindow(ctx, unit) }()
+
+	if err := waitNameFree(ctx); err != nil {
+		return err
+	}
+	if err := s.startDaemonRegistered(ctx); err != nil {
+		return err
+	}
+
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return errors.New("flip-keystroke needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+
+	// The rounds need a goswitch engine GLOBAL: the unit stop leaves the
+	// global engine unset (ibus-daemon unsets it when an engine connection
+	// closes), and taps route nowhere until one is activated — the probe's
+	// own precondition ("поле в фокусе, движок: …"; the owner's session
+	// always carried one). The activation is the external SetGlobalEngine
+	// of the word cases, and the sync correction it provokes doubles as
+	// the journal's first mode record.
+	if err := s.activateGoswitch(ctx); err != nil {
+		return fmt.Errorf("flip-keystroke engine activation: %w", err)
+	}
+	// The mode pin stays journal-gated (spikePinMode discipline): the
+	// activation's own correction record usually settles it with zero taps.
+	if err := s.spikePinMode(ctx, flipTargetEN); err != nil {
+		return fmt.Errorf("flip-keystroke en pin: %w", err)
+	}
+
+	for rep := range flipKeystrokeReps {
+		// The ru→en direction rides the pair's second flip: after the
+		// en→ru round the journal-pinned mode is RU, so the next tap
+		// returns EN (the pin is read from the journal, never assumed).
+		if err := s.flipKeystrokeRound(ctx, flipTargetRU); err != nil {
+			return fmt.Errorf("flip-keystroke rep %d en→ru: %w", rep+1, err)
+		}
+		if err := s.flipKeystrokeRound(ctx, flipTargetEN); err != nil {
+			return fmt.Errorf("flip-keystroke rep %d ru→en: %w", rep+1, err)
+		}
+		// The busFlipRound form: after every pair the `ibus engine`
+		// readback confirms the FACTUAL engine moved with the last flip.
+		readback, err := runCmd(ctx, "ibus", "engine")
+		if err != nil {
+			return fmt.Errorf("flip-keystroke rep %d engine readback: %w", rep+1, err)
+		}
+		want, err := flipEngineName(flipTargetEN)
+		if err != nil {
+			return err
+		}
+		if readback != want {
+			return fmt.Errorf("flip-keystroke rep %d: `ibus engine` readback %q after the pair, want %q",
+				rep+1, readback, want)
+		}
+		fmt.Printf("flip-keystroke: rep %d — both letters landed, factual engine %q\n", rep+1, readback)
+	}
+
+	return nil
+}
+
+// flipKeystrokeRound drives ONE daemon flip plus the immediate letter and
+// gates the round's full observable form: the NEW mode record (the e2e
+// oracle the keystroke waits on — Pitfall 5), the letter injected with NO
+// pause after that record, the field tail settling to the direction's
+// letter, the flipMarksPaired order over the whole journal, and ZERO new
+// deadline-abort switch_engine WARN records since the round's baseline —
+// a WARN here means the factory self-block is back (or the bus wedged;
+// the case fails with the journal excerpt and the stand's restart
+// discipline applies).
+func (s *stand) flipKeystrokeRound(ctx context.Context, target string) error {
+	last, err := s.lastModeMark()
+	if err != nil {
+		return err
+	}
+	if last == target {
+		return fmt.Errorf("flip-keystroke %s: the journal's newest mode record is already %q —"+
+			" the tap would not flip", target, target)
+	}
+	modeMark, err := flipModeMark(target)
+	if err != nil {
+		return err
+	}
+	letter, err := expectedFlipLetter(target)
+	if err != nil {
+		return err
+	}
+	modeBase := s.countSub(modeMark)
+	warnBase := s.switchEngineWarnCount()
+
+	// The daemon flip: a single Shift_R tap (SWCH-01's physical gesture).
+	if err := s.injectKeys(ctx, "Shift_R"); err != nil {
+		return err
+	}
+	// The mode record is the keystroke's starting gun: flipTo writes it
+	// BEFORE the switcher call, so from here the letter races the
+	// switching window on purpose.
+	if err := s.waitForNew(ctx, modeMark, modeBase+1, decisionWait); err != nil {
+		return fmt.Errorf("mode record: %w", err)
+	}
+	// THE letter — injected with NO pause (T-06-10-01): any settle here
+	// would weaken the oracle into every existing flip case's shape.
+	if err := s.injectKeys(ctx, flipKeystrokeKey); err != nil {
+		return err
+	}
+	// The only pauses ride after the letter (see the timing constants).
+	if err := sleepCtx(ctx, flipKeyFsmWait); err != nil {
+		return err
+	}
+	if err := sleepCtx(ctx, flipKeySettle); err != nil {
+		return err
+	}
+	if err := s.waitZenityTail(ctx, letter); err != nil {
+		return fmt.Errorf("flip-keystroke %s: immediate letter lost: %w", target, err)
+	}
+	fmt.Printf("flip-keystroke: %s — immediate %q at the field tail\n", target, letter)
+	if err := flipMarksPaired(s.logText(), target); err != nil {
+		return err
+	}
+	if warns := s.switchEngineWarnCount(); warns != warnBase {
+		return fmt.Errorf("flip-keystroke %s: %d new deadline-abort switch_engine WARN record(s) in the round"+
+			" (base %d, now %d) — the factory self-block is back or the bus wedged",
+			target, warns-warnBase, warnBase, warns)
+	}
+
+	return nil
+}
+
+// waitZenityTail polls the content-exact readback until the focused entry's
+// text ends with want — the tail oracle over the accumulating field (each
+// round appends its letter and the previous round's letter is always the
+// other one, so a stale tail can never satisfy the poll). The AT-SPI bridge
+// can lag the delivery by a beat; the poll rides the lag out instead of a
+// one-shot read (the waitZenityText discipline).
+func (s *stand) waitZenityTail(ctx context.Context, want string) error {
+	deadline := time.Now().Add(witnessWait)
+	var last string
+	for {
+		out, err := s.readFocusedTextRaw(ctx)
+		if err != nil {
+			return err
+		}
+		last = out
+		if strings.HasSuffix(out, want) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("field tail never became %q (readback %q)", want, last)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return err
+		}
+	}
+}

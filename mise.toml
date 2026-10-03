@@ -142,6 +142,10 @@ run = "go run ./test/e2e -case two-source-flip"
 description = "e2e: 05-05 criterion 3 — external flip sync: `ibus engine` CLI moves the factual engine, the daemon follows with a mode correction and never writes switch_engine (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case external-flip-sync"
 
+[tasks.e2e-flip-keystroke]
+description = "e2e: 06-10 G-6-1 live proof — after a daemon flip the FIRST letter injected with no pause lands in the field (en→ru 'в', ru→en 'd'), both directions ×3, paired journal order D-36 + zero deadline-abort WARNs in the rounds (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case flip-keystroke"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"
