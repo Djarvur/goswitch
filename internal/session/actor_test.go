@@ -3968,6 +3968,12 @@ const flipBudget = 150 * time.Millisecond
 // every flip). The seam-entry budget must sit strictly above it.
 const liveSwitchRTTMax = 45 * time.Millisecond
 
+// attachBudget bounds the independent AttachEngine witness of G-6-1: the
+// factory path is an atomic store and must return in microseconds — a
+// quarter second sits orders of magnitude above any scheduling delay and
+// far below the flip deadline it must never consume.
+const attachBudget = 250 * time.Millisecond
+
 // switchProbe is the switcher-seam double: it records every call's target
 // and context deadline — the flip path's observable — with the hook form of
 // fakeSink's modeHook (the corpus interleaves the call with the journal and
@@ -4220,6 +4226,97 @@ func TestActor_NilSwitcherInternalFlip(t *testing.T) {
 	}
 	if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32('g')}); consume {
 		t.Error("EN-mode press consumed without a switcher — the internal mode must still govern typing")
+	}
+}
+
+// TestActor_ReentrantAttachDuringFlip pins the live G-6-1 form: ibus-daemon
+// answers a flip's SetGlobalEngine by synchronously calling CreateEngine on
+// the daemon's factory, and the factory calls handler.AttachEngine — the
+// seam closure here plays that whole chain. The flip must complete WITHOUT
+// consuming its switchTimeout deadline; while AttachEngine still waited on
+// the actor mutex, the re-entrant call deadlocked the flip goroutine and
+// the deadline burned to the WARN ("engine created" landed ~1 ms after the
+// abort on every flip of the diagnosing journal).
+func TestActor_ReentrantAttachDuringFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetSwitcher(func(_ context.Context, _ string) error {
+		// The live re-entrant chain — SetGlobalEngine → CreateEngine →
+		// AttachEngine — runs while the flip's await holds the actor mutex.
+		a.AttachEngine(sink)
+
+		return nil
+	})
+
+	tapShift(a) // one clean tap: the Single decision fires at window expiry
+	start := time.Now()
+	flipDone := make(chan struct{})
+	go func() {
+		defer close(flipDone)
+		a.ExpiryAt(expiryAfterWindow) // EN → RU
+	}()
+	select {
+	case <-flipDone:
+	case <-time.After(flipBudget + 5*time.Second):
+		t.Fatal("the flip never completed — the re-entrant AttachEngine deadlocked on the actor mutex (G-6-1)")
+	}
+	if elapsed := time.Since(start); elapsed >= flipBudget {
+		t.Errorf("the flip consumed %v — at the switchTimeout deadline; the factory path must complete"+
+			" without spending the deadline", elapsed)
+	}
+	if strings.Contains(buf.String(), `"msg":"engine switch failed"`) {
+		t.Errorf("the flip WARNed — the SetGlobalEngine round trip did not complete inside the deadline; log:\n%s", buf.String())
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] — flipTo must run past the re-entrant attach", got)
+	}
+}
+
+// TestActor_AttachEngineWhileFlipInFlight pins the independent-call form of
+// G-6-1: while the flip's SetGlobalEngine await is blocked mid-round-trip
+// (holding the actor mutex), an AttachEngine from a foreign goroutine — the
+// factory's dispatch goroutine in the live daemon — must still return; the
+// factory path never waits on the actor mutex.
+func TestActor_AttachEngineWhileFlipInFlight(t *testing.T) {
+	a, _ := wiredActor()
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	a.SetSwitcher(func(_ context.Context, _ string) error {
+		entered <- struct{}{}
+		<-release // the await stuck mid-round-trip — the slow-ibus-daemon shape
+
+		return nil
+	})
+
+	tapShift(a)
+	flipDone := make(chan struct{})
+	go func() {
+		defer close(flipDone)
+		a.ExpiryAt(expiryAfterWindow) // EN → RU — the await holds the actor mutex
+	}()
+	select {
+	case <-entered:
+	case <-time.After(flipBudget + 5*time.Second):
+		t.Fatal("the flip never reached the switcher seam — the seam is not wired into the flip path")
+	}
+
+	liveSink := &fakeSink{}
+	attachDone := make(chan struct{})
+	go func() {
+		defer close(attachDone)
+		a.AttachEngine(liveSink) // the factory's re-entrant path, off the actor mutex
+	}()
+	select {
+	case <-attachDone:
+	case <-time.After(attachBudget):
+		t.Fatalf("AttachEngine blocked past %v while the flip's SetGlobalEngine await is still in"+
+			" flight — it waits on the actor mutex (G-6-1)", attachBudget)
+	}
+	close(release) // the seam is released only AFTER the attach assertion
+	select {
+	case <-flipDone:
+	case <-time.After(flipBudget + 5*time.Second):
+		t.Fatal("the flip never concluded after the seam's release")
 	}
 }
 
