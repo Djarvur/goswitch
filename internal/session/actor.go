@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -57,7 +58,11 @@ const backSpaceKeycode = 14
 // proofs and the 2026-09-30 journal — the old 40 ms deadline fired before
 // completion on every healthy flip), so 150 ms sits above the measured
 // maximum: every healthy flip completes inside it, and a wedged bus still
-// costs at most the deadline.
+// costs at most the deadline. G-6-1: the deadline stays that wedge guard —
+// it is deliberately NOT the fix for the factory self-deadlock; the
+// re-entrant CreateEngine path was freed separately, by taking AttachEngine
+// off the actor mutex (the lock-free emitter slot below), never by trimming
+// or moving this deadline.
 const switchTimeout = 150 * time.Millisecond
 
 // autoRoleTimeout bounds the live GetRole round trip of one autocorrect
@@ -110,6 +115,13 @@ const (
 	modeRU
 )
 
+// emitterSlot wraps the actor's emitter sink for the atomic pointer: Go
+// atomics store pointers, not interface values, so the engine.Emitter rides
+// in a one-field wrapper (G-6-1).
+type emitterSlot struct {
+	eng engine.Emitter
+}
+
 // Actor implements engine.EventHandler for the daemon: every key and
 // lifecycle event is serialized through one mutex into the pure hotkey FSM,
 // printable presses feed the typed-phrase buffer (CORR-09 resets on
@@ -130,16 +142,23 @@ const (
 // mutex is the actor's single entry point: without it the FSM state would
 // race between concurrent ProcessKeyEvent calls.
 type Actor struct {
-	mu           sync.Mutex
-	rungMu       sync.Mutex // serializes the clipboard rung (WR-01: the rung runs off the actor mutex)
-	fsm          *hotkey.FSM
-	window       time.Duration
-	verifyWait   time.Duration // the ADR-004 budget in force (CR-02: fed by timeouts.verify_wait_ms)
-	start        time.Time
-	timer        *time.Timer
-	buf          *correct.Buffer
-	caps         uint32
-	eng          engine.Emitter
+	mu         sync.Mutex
+	rungMu     sync.Mutex // serializes the clipboard rung (WR-01: the rung runs off the actor mutex)
+	fsm        *hotkey.FSM
+	window     time.Duration
+	verifyWait time.Duration // the ADR-004 budget in force (CR-02: fed by timeouts.verify_wait_ms)
+	start      time.Time
+	timer      *time.Timer
+	buf        *correct.Buffer
+	caps       uint32
+	// engSlot is the emitter sink of the engine minted for the input
+	// context — an ATOMIC slot, deliberately outside the actor mutex: the
+	// engine factory calls AttachEngine re-entrantly DURING a flip (ibus
+	// answers SetGlobalEngine by calling CreateEngine), and that call must
+	// never wait for a.mu (G-6-1). Reads go through the emitter() snapshot
+	// accessor; nil before the first mint, exactly like the plain field it
+	// replaced.
+	engSlot      atomic.Pointer[emitterSlot]
 	surr         []rune // cached text-before-cursor from the latest client push
 	sel          selectionState
 	pending      *pendingFix
@@ -696,13 +715,13 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		}
 	case engine.LifecycleFocusIn, engine.LifecycleEnable, engine.LifecycleDisable:
 		slog.Debug("lifecycle", "kind", kind.String())
-		if kind == engine.LifecycleFocusIn && a.eng != nil {
-			// The panel indicator self-heals on every focus gain (owner
-			// decision 1, quick plan 260927-way): engine objects are minted
-			// per input context, so a freshly minted context re-asserts the
-			// CURRENT mode symbol — it must not resurrect the factory's
-			// initial EN registration while the actor sits in another mode.
-			a.eng.UpdateModeSymbol(a.modeSymbol())
+		// The panel indicator self-heals on every focus gain (owner
+		// decision 1, quick plan 260927-way): engine objects are minted
+		// per input context, so a freshly minted context re-asserts the
+		// CURRENT mode symbol — it must not resurrect the factory's
+		// initial EN registration while the actor sits in another mode.
+		if eng := a.emitter(); kind == engine.LifecycleFocusIn && eng != nil {
+			eng.UpdateModeSymbol(a.modeSymbol())
 		}
 	}
 }
@@ -739,11 +758,16 @@ func (a *Actor) HandleCapabilities(caps uint32) {
 
 // AttachEngine implements engine.EventHandler: the emitter sink of the
 // engine minted for the input context.
+//
+// G-6-1 contract: the engine factory calls this method from a RE-ENTRANT
+// CreateEngine DURING a flip (ibus-daemon answers the flip's SetGlobalEngine
+// by synchronously minting the target engine, and the flip's await holds
+// a.mu) — the method must answer without ever waiting on the actor mutex.
+// The swap is one atomic store; there are no read-modify-write races
+// (out-of-order stores between concurrent CreateEngine calls keep the
+// pre-fix equivalent ordering, and the corpus runs under -race).
 func (a *Actor) AttachEngine(eng engine.Emitter) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	a.eng = eng
+	a.engSlot.Store(&emitterSlot{eng: eng})
 }
 
 // SetSwitcher installs the generation-scoped SetGlobalEngine seam (D-52) —
@@ -880,6 +904,21 @@ func (a *Actor) ToggleMode() {
 	defer a.mu.Unlock()
 
 	a.flipTo(oppositeMode(a.mode))
+}
+
+// emitter returns the attached emitter sink — the snapshot accessor of the
+// atomic slot. Nil before the first mint, exactly like the plain a.eng
+// field it replaced; every former a.eng read takes a local snapshot through
+// it at the same computation point (the snapshots are atomic, so the
+// mutex-holding discipline around them is unchanged).
+//
+//nolint:ireturn // the slot stores the emitter seam; the accessor hands the interface back (G-6-1)
+func (a *Actor) emitter() engine.Emitter {
+	if slot := a.engSlot.Load(); slot != nil {
+		return slot.eng
+	}
+
+	return nil
 }
 
 // effectiveCombo resolves the combo binding in force: the configured
@@ -1148,6 +1187,7 @@ func (a *Actor) afterVerdict(expected []rune, start uint32, atRange bool) bool {
 // and whether the mismatch verdict ARMED the rung.
 func (a *Actor) settleAfter() ([]rune, bool) {
 	round := a.after
+	eng := a.emitter() // one atomic snapshot for both emitter reads
 	if a.afterVerdict(round.expected, round.start, round.atRange) {
 		a.clearAfter()
 		slog.Debug("correction verify", "outcome", "match")
@@ -1158,14 +1198,14 @@ func (a *Actor) settleAfter() ([]rune, bool) {
 		round.mismatches = 1
 		a.rearmAfter(round)
 		slog.Debug("correction verify", "outcome", "stale-retry")
-		a.eng.RequireSurroundingText()
+		eng.RequireSurroundingText()
 
 		return nil, false
 	}
 	a.clearAfter()
 	slog.Info("correction verify", "outcome", "mismatch")
 
-	return round.paste, a.opts.ClipboardRung && a.clip != nil && a.eng != nil
+	return round.paste, a.opts.ClipboardRung && a.clip != nil && eng != nil
 }
 
 // rearmAfter re-arms the round's deadline for the debounce retry (the
@@ -1213,7 +1253,7 @@ func (a *Actor) armAfterVerify(converted, tail []rune) {
 	}
 	epoch := a.verifyEpoch
 	a.after.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
-	a.eng.RequireSurroundingText()
+	a.emitter().RequireSurroundingText()
 }
 
 // armAfterVerifyRange starts the range-anchored verify-after round of a
@@ -1233,7 +1273,7 @@ func (a *Actor) armAfterVerifyRange(converted []rune, start uint32) {
 	}
 	epoch := a.verifyEpoch
 	a.after.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
-	a.eng.RequireSurroundingText()
+	a.emitter().RequireSurroundingText()
 }
 
 // clearAfter retires the verify-after round together with its deadline
@@ -1277,12 +1317,14 @@ const (
 // busy reason — never blocks, never interleaves a second wl-copy/wl-paste
 // pair into the first round-trip.
 func (a *Actor) runClipboardRung(paste []rune) {
-	// The rung's own snapshots, read under a brief lock (the verdict armed
-	// it under the same guard one call earlier; a mid-window engine swap
-	// only retargets the burst to the live sink).
+	// The rung's own snapshots: clip under a brief lock (the verdict armed
+	// it under the same guard one call earlier), eng from the atomic slot
+	// without any lock (G-6-1); a mid-window engine swap only retargets the
+	// burst to the live sink.
 	a.mu.Lock()
-	eng, clip := a.eng, a.clip
+	clip := a.clip
 	a.mu.Unlock()
+	eng := a.emitter()
 	if eng == nil || clip == nil {
 		return
 	}
@@ -1365,7 +1407,7 @@ func (a *Actor) macrIntercept(ev engine.EngineEvent) bool {
 	if isLetterKeyval(ev.Keyval) {
 		a.macrSawLetter = true
 	}
-	if !a.opts.MACREnabled || !a.macrTargetActive() || a.eng == nil {
+	if !a.opts.MACREnabled || !a.macrTargetActive() || a.emitter() == nil {
 		return false
 	}
 	// #nosec G115 -- isLetterKeyval bounds the keyval to 'a'..'z', so the
@@ -1396,10 +1438,10 @@ func (a *Actor) macrKeyRelease(ev engine.EngineEvent) {
 		return
 	}
 	a.macrSuperHeld = false
-	if a.macrPendingKeyval != 0 && a.eng != nil {
+	if eng := a.emitter(); a.macrPendingKeyval != 0 && eng != nil {
 		pending := a.macrPendingKeyval
 		a.macrPendingKeyval = 0
-		forwardCtrlLetter(a.eng, pending, a.opts.MACRAltModifier)
+		forwardCtrlLetter(eng, pending, a.opts.MACRAltModifier)
 
 		return
 	}
@@ -1590,6 +1632,13 @@ func (a *Actor) backspaceCap() int {
 // new mode (criterion 3); a nil seam degrades to the internal flip with
 // exactly one WARN per episode. The caller holds the mutex.
 //
+// G-6-1: the factory path (CreateEngine → AttachEngine) is freed from a.mu
+// by contract — AttachEngine stores the emitter slot atomically, so ibus's
+// re-entrant CreateEngine during THIS await no longer self-deadlocks on the
+// actor mutex. The await itself stays under the mutex: the "sync, not the
+// async WR-01-handoff" pin stands — the D-36 record order and the final
+// correctness of rapid flips hold by the synchronous serialization.
+//
 // A flipTo to the CURRENT mode is a no-op: the SET-semantics site
 // (settleCorrectionFlip) names its target from the corrected text's script,
 // and a same-script correction flip changes nothing.
@@ -1611,8 +1660,8 @@ func (a *Actor) flipTo(target scriptMode) {
 		slog.Warn("switcher unavailable", "engine", engineNameOf(target))
 	}
 
-	if a.eng != nil {
-		a.eng.UpdateModeSymbol(a.modeSymbol())
+	if eng := a.emitter(); eng != nil {
+		eng.UpdateModeSymbol(a.modeSymbol())
 	}
 
 	// The display observer fires LAST — after the panel symbol, the D-36
@@ -1657,8 +1706,8 @@ func (a *Actor) syncMode(target scriptMode, name string) {
 	a.mode = target
 	slog.Info("mode", "to", a.modeSymbol())
 	slog.Warn("mode corrected", "engine", name)
-	if a.eng != nil {
-		a.eng.UpdateModeSymbol(a.modeSymbol())
+	if eng := a.emitter(); eng != nil {
+		eng.UpdateModeSymbol(a.modeSymbol())
 	}
 	// The display observer fires last, mirroring flipTo (quick 260930-pf6):
 	// the icon follows the FACTUAL engine, not only the daemon's own flips.
@@ -1764,8 +1813,9 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 		// #nosec G115 -- printableKeyval bounds the keyval below
 		// 0xFE00, so the uint32→rune conversion cannot overflow.
 		r := rune(ev.Keyval)
-		if ru, ok := layouts.ENToRU[r]; ok && ru != r && a.eng != nil {
-			a.eng.CommitText(engine.NewIBusText(string(ru)))
+		eng := a.emitter()
+		if ru, ok := layouts.ENToRU[r]; ok && ru != r && eng != nil {
+			eng.CommitText(engine.NewIBusText(string(ru)))
 			a.pushAndArm(ru) // the committed rune is what the field now holds
 
 			return true
@@ -2152,6 +2202,7 @@ func (a *Actor) activeSelection() (selectionSpec, []rune, bool) {
 // caller holds the mutex.
 func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 	armed := time.Now()
+	eng := a.emitter() // one atomic snapshot for both emitter reads
 	converted, changed, ok := correct.ConvertRuns(runes)
 	if !ok {
 		a.skipCorrection(refusalReason(runes))
@@ -2169,7 +2220,7 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 
 		return
 	}
-	if a.eng == nil {
+	if eng == nil {
 		a.skipCorrection("no-engine")
 		a.settleCombo()
 
@@ -2193,7 +2244,7 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 		return
 	}
 	a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
-	a.eng.RequireSurroundingText()
+	eng.RequireSurroundingText()
 }
 
 // startPhraseCorrection launches the PHRASE correction of the Triple
@@ -2228,6 +2279,7 @@ func (a *Actor) startPhraseCorrection() {
 // construction and the round trip is mandatory.
 func (a *Actor) startRangeCorrection(rng correctionRange) {
 	armed := time.Now()
+	eng := a.emitter() // one atomic snapshot for both emitter reads
 	if len(rng.token) == 0 {
 		a.skipCorrection("empty-buffer")
 		a.settleCombo() // no word — the flip is the combo's primary intent
@@ -2251,7 +2303,7 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 
 		return
 	}
-	if a.eng == nil {
+	if eng == nil {
 		a.skipCorrection("no-engine")
 		a.settleCombo()
 
@@ -2286,7 +2338,7 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	// sub-millisecond trip; for the reset boundaries it is the only guard.
 	if rng.acBoundary || !correct.MatchesSuffix(a.surr, a.pending.match) {
 		a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
-		a.eng.RequireSurroundingText()
+		eng.RequireSurroundingText()
 
 		return
 	}
@@ -2313,9 +2365,10 @@ func (a *Actor) executeCorrection() {
 
 		return
 	}
+	eng := a.emitter() // one atomic snapshot for the whole ladder emission
 	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, a.backspaceCap())
-	a.eng.DeleteSurroundingText(plan.Offset, plan.NChars)
-	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
+	eng.DeleteSurroundingText(plan.Offset, plan.NChars)
+	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
 	a.logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
 	a.settleCorrectionFlip(p.converted) // owner rule 2026-09-28: the mode follows the converted script
@@ -2346,7 +2399,7 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 		"cursor", sel.cursor, "anchor", a.sel.anchor,
 		"start", sel.start, "end", sel.end,
 		"field_len", len(a.sel.full))
-	a.eng.CommitText(engine.NewIBusText(string(p.converted)))
+	a.emitter().CommitText(engine.NewIBusText(string(p.converted)))
 	a.buf.HardReset() // the buffer can no longer mirror the replaced field
 	a.logCorrectionDone(correct.Level1, p.rng.token, p.converted, time.Since(p.armed))
 	a.settleCorrectionFlip(p.converted) // owner rule 2026-09-28: the mode follows the converted script
@@ -2361,6 +2414,7 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 // The burst→commit order is the wire contract (research A4: the daemon
 // preserves it for every client). The caller holds the mutex.
 func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time) {
+	eng := a.emitter() // one atomic snapshot for the whole burst
 	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps, a.backspaceCap())
 	if plan.Level == correct.LevelNone {
 		// D-27: the Backspace series would exceed the cap and this client
@@ -2371,9 +2425,9 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		return
 	}
 	for range plan.Backspaces {
-		a.eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
+		eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
 	}
-	a.eng.CommitText(engine.NewIBusText(string(plan.Commit)))
+	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
 	a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
