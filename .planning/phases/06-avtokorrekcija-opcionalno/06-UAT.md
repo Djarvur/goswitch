@@ -64,9 +64,7 @@ blocked: 0
 
 - gap_id: G-6-1
   truth: "После флипа раскладки первая же буква доезжает до поля (матричные flip-строки зелёные в любой сессии)"
-  status: failed
-  reason: "Фабрика движка блокируется мьютексом flipTo: SetGlobalEngine рвётся по дедлайну 150мс, переключение растягивается, нажатие в окне переключения глотается (журнал 00:05:04-00:05:17, пробы /tmp/gsy-settle.sh и /tmp/gsy-settle2.sh)"
-  severity: major
-  test: 1
-  artifacts: []
-  missing: []
+  status: resolved
+  resolved_by: 06-09-PLAN.md + 06-10-PLAN.md
+  resolved_at: 2026-10-03
+  resolution: "lock-free фабрика (atomic emitterSlot), ADR-006 amendment; живое доказательство 24/24 немедленных букв (было 5/5 потерь), RTT 6.5-9.2мс, 8/8 флипов INFO-форма, two-source-flip регрессия зелёная (06-09/06-10 SUMMARYs)
