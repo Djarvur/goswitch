@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Система автокоррекции
 status: verifying
-stopped_at: Completed 06-08-PLAN.md
-last_updated: "2026-10-02T19:02:10.894Z"
+stopped_at: Completed 06-09-PLAN.md (gap closure G-6-1); next 06-10 live wired proof
+last_updated: "2026-10-03T19:39:12.839Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 06 execution started
-state_head: 2ee273c9712263397f30f7ac9c2a312dd422a319
+state_head: 04f5dee7a0a9eeab6c2bcc9dd0f02631fe6b24c1
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 41
-  completed_plans: 41
+  total_plans: 43
+  completed_plans: 42
 ---
 
 # Project State
@@ -105,6 +105,7 @@ Progress: [████████░░] 75%
 | Phase 06 P06 | 38 min | 3 tasks | 9 files |
 | Phase 06 P07 | 19h span (3 continuations) | 3 tasks | 15 files |
 | Phase 06 P08 | 41min | 2 tasks | 7 files |
+| Phase 06 P09 | 25 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -232,6 +233,7 @@ Recent decisions affecting current work:
 - [Phase 06]: [06-07] Terminal-silent oracle re-pinned to the safety property (fired=0 + zero correction records + active-layer status): wezterm registers an IBus input context (caps 0x9, no surrounding-text bit) and its typing races IME arming — zero-records was a bet on one arm of that race (1dc76af); two consecutive greens post-pin
 - [Phase 06]: [06-07] matrix-v4 password row honestly excluded (no password surface step in the matrix driver) — the GTK4 fixture case carries the role negative standalone; sanctioned by the plan action without validator weakening
 - [Phase 06]: [06-07] Session-drift deferral: full matrix-v4 green deferred to 06-08's formal fresh-session D-48 double-run — first-key-after-flip loss reproduced BYTE-IDENTICALLY on the pre-phase-6 tree d96dcb2 (/tmp/matrix-v3-oldtree.log), phase-6 diff exonerated, environmental not a product regression (checkpoint accept & defer 2026-10-02, WINDOWS #13)
+- [Phase 06]: G-6-1 closed by mechanism (b): lock-free AttachEngine (atomic emitter slot) — the deadline-under-mutex pin (05-03) kept and re-confirmed — The factory path must answer CreateEngine during a flip; freeing AttachEngine from a.mu removes the self-deadlock without touching the flip's D-36 record order or the wedge-guard deadline
 
 ### Pending Todos
 
@@ -264,6 +266,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-02T19:02:10.730Z
-Stopped at: Completed 06-08-PLAN.md
+Last session: 2026-10-03T19:39:12.714Z
+Stopped at: Completed 06-09-PLAN.md (gap closure G-6-1); next 06-10 live wired proof
 Resume file: None

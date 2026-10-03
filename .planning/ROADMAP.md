@@ -255,7 +255,7 @@ Plans:
   4. Двойной Shift остаётся ручным переопределением поверх автокоррекции
   5. e2e-матрица расширена автокоррекционными кейсами (вкл/выкл, роль поля, OOV), ночная двойная зелёная
 
-**Plans:** 10 plans (8 executed + 2 gap closure G-6-1)
+**Plans:** 9/10 plans executed (8 executed + 2 gap closure G-6-1)
 
 Plans:
 **Wave 1**
@@ -286,7 +286,7 @@ Plans:
 
 **Wave 7** *(gap closure G-6-1, blocked on Wave 6)*
 
-- [ ] 06-09-PLAN.md — G-6-1: самоблокировка фабрики на флипе — lock-free AttachEngine + reattach-свидетели фаб-шины + правка ADR-006 — SWCH-01/SWCH-02 (gap G-6-1)
+- [x] 06-09-PLAN.md — G-6-1: самоблокировка фабрики на флипе — lock-free AttachEngine + reattach-свидетели фаб-шины + правка ADR-006 — SWCH-01/SWCH-02 (gap G-6-1)
 
 **Wave 8** *(blocked on Wave 7 completion — 06-10 depends_on 06-09)*
 
