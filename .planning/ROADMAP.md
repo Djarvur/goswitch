@@ -287,4 +287,7 @@ Plans:
 **Wave 7** *(gap closure G-6-1, blocked on Wave 6)*
 
 - [ ] 06-09-PLAN.md — G-6-1: самоблокировка фабрики на флипе — lock-free AttachEngine + reattach-свидетели фаб-шины + правка ADR-006 — SWCH-01/SWCH-02 (gap G-6-1)
-- [ ] 06-10-PLAN.md — G-6-1: живое доказательство «первая буква после флипа доезжает» — e2e flip-keystroke + журнальный аудит — SWCH-01/SWCH-02 (gap G-6-1)
+
+**Wave 8** *(blocked on Wave 7 completion — 06-10 depends_on 06-09)*
+
+- [ ] 06-10-PLAN.md — G-6-1: живое доказательство «первая буква после флипа доезжает» — e2e flip-keystroke + журнальный аудит — SWCH-01/SWCH-02 (gap G-6-1; живой оракул гоняется только против исправленного актора 06-09)
