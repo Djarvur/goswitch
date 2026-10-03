@@ -4,11 +4,11 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Система автокоррекции
 status: verifying
-stopped_at: Completed 06-09-PLAN.md (gap closure G-6-1); next 06-10 live wired proof
-last_updated: "2026-10-03T19:39:12.839Z"
+stopped_at: Completed 06-10-PLAN.md (G-6-1 live wired proof)
+last_updated: "2026-10-03T19:58:09.624Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 06 execution started
-state_head: 04f5dee7a0a9eeab6c2bcc9dd0f02631fe6b24c1
+state_head: 9f78017c29b85b8a8672b07991f1d8a3d1b4fbb4
 progress:
   total_phases: 6
   completed_phases: 0
@@ -106,6 +106,7 @@ Progress: [████████░░] 75%
 | Phase 06 P07 | 19h span (3 continuations) | 3 tasks | 15 files |
 | Phase 06 P08 | 41min | 2 tasks | 7 files |
 | Phase 06 P09 | 25 min | 2 tasks | 5 files |
+| Phase 06 P10 | 16min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -234,6 +235,8 @@ Recent decisions affecting current work:
 - [Phase 06]: [06-07] matrix-v4 password row honestly excluded (no password surface step in the matrix driver) — the GTK4 fixture case carries the role negative standalone; sanctioned by the plan action without validator weakening
 - [Phase 06]: [06-07] Session-drift deferral: full matrix-v4 green deferred to 06-08's formal fresh-session D-48 double-run — first-key-after-flip loss reproduced BYTE-IDENTICALLY on the pre-phase-6 tree d96dcb2 (/tmp/matrix-v3-oldtree.log), phase-6 diff exonerated, environmental not a product regression (checkpoint accept & defer 2026-10-02, WINDOWS #13)
 - [Phase 06]: G-6-1 closed by mechanism (b): lock-free AttachEngine (atomic emitter slot) — the deadline-under-mutex pin (05-03) kept and re-confirmed — The factory path must answer CreateEngine during a flip; freeing AttachEngine from a.mu removes the self-deadlock without touching the flip's D-36 record order or the wedge-guard deadline
+- [Phase 06]: G-6-1 live proof landed: e2e case flip-keystroke injects 'd' with NO pause after the daemon flip's mode record — 24/24 letters delivered across 4 consecutive runs (pre-fix probe lost 5/5) — The probe's mechanics raised to a stand oracle; the injection stays immediate, direction expectations pinned (en→ru 'в', ru→en 'd')
+- [Phase 06]: Journal audit post-fix: every switch_engine record INFO-form, zero deadline-abort WARNs in a full run, RTT mode→switch_engine 6.5–9.2 ms (median 8.32, n=8) vs the pre-fix WARN-on-every-flip picture — The 150 ms wedge-guard deadline is silent on a healthy flip — the engine factory answers during the await (06-09 lock-free AttachEngine)
 
 ### Pending Todos
 
@@ -266,6 +269,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-03T19:39:12.714Z
-Stopped at: Completed 06-09-PLAN.md (gap closure G-6-1); next 06-10 live wired proof
+Last session: 2026-10-03T19:57:32.314Z
+Stopped at: Completed 06-10-PLAN.md (G-6-1 live wired proof)
 Resume file: None
