@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Djarvur/goswitch/internal/appid"
 )
 
 // INST-03 acceptance budgets (plan 04-04): the latency and memory budgets
@@ -58,6 +61,42 @@ const (
 	perfP95 = 0.95
 	perfP99 = 0.99
 )
+
+// errPerfBudget is the sentinel the budget gate wraps: the perf-autocorrect
+// variant distinguishes "measured, over the pre-sanctioned absolute budget"
+// (a recorded report outcome, exit 0 — owner decision (в) 2026-09-16, the
+// injector-dominated window) from a run failure (exit != 0).
+var errPerfBudget = errors.New("perf budget")
+
+// perfAutocorrectConfigTmpl is the perf variant's complete config document
+// (the 03-02 no-overlay rule): a byte-mirror of the daemon's built-in
+// defaults — the baseline run's shape, flip_after_correction stays ON —
+// with exactly ONE intended diff: the autocorrect layer ON for the perf
+// surface's OBSERVED bridge identity (the comparison honesty: same
+// gesture, same daemon, the feature state is the only variable; the
+// thresholds are the 06-05 corpus defaults).
+const perfAutocorrectConfigTmpl = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true # the baseline daemon's default — the autocorrect section is the only diff
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: true
+  apps: ["%s"]
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
 
 // percentile sorts a copy of the sample and indexes it — the research
 // formula s[int(float64(len(s)-1)*p)] (04-RESEARCH Don't Hand-Roll: no
@@ -111,13 +150,15 @@ func readProcStatus(pid int) (hwm, rss int64, err error) {
 }
 
 // budgetGate turns the INST-03 budgets into the acceptance gate: any side
-// at or over its boundary fails the run (exit != 0).
+// at or over its boundary fails the run (exit != 0). The error wraps the
+// errPerfBudget sentinel so the autocorrect variant can record the budget
+// outcome without turning it into a failed run.
 func budgetGate(p95 time.Duration, vmHWMKB int64) error {
 	if p95 >= perfLatencyBudget {
-		return fmt.Errorf("budget violated: p95 %v >= %v", p95, perfLatencyBudget)
+		return fmt.Errorf("%w: p95 %v >= %v", errPerfBudget, p95, perfLatencyBudget)
 	}
 	if vmHWMKB >= perfMemoryBudgetKB {
-		return fmt.Errorf("budget violated: vm_hwm %d kB >= %d kB", vmHWMKB, perfMemoryBudgetKB)
+		return fmt.Errorf("%w: vm_hwm %d kB >= %d kB", errPerfBudget, vmHWMKB, perfMemoryBudgetKB)
 	}
 
 	return nil
@@ -266,6 +307,99 @@ func runPerf(ctx context.Context, s *stand) error {
 	if err := s.waitForNew(ctx, componentRegisteredMark, regBase+1, registrationWait); err != nil {
 		return fmt.Errorf("perf prod-form daemon registration: %w", err)
 	}
+
+	return perfMeasure(ctx, s, perfDaemonFormBaseline)
+}
+
+// perfDaemonFormBaseline/perfDaemonFormAutocorrect are the report's daemon
+// lines: the reader of perf-report.txt must know exactly what was under
+// measurement (the variant honesty of plan 06-08).
+const (
+	perfDaemonFormBaseline = "production form (no -config, no -debug; built-in defaults)"
+	perfDaemonFormAutocor  = "production form + -config: autocorrect enabled for %q (no -debug;" +
+		" thresholds 4/2.0/1.0, flip_after_correction as defaults)"
+)
+
+// runPerfAutocorrect is the Pitfall-5 measurement (plan 06-08): the SAME
+// homogeneous hot case, window, witness and N as runPerf with the daemon
+// spawned on a -config document whose ONLY diff from the built-in defaults
+// is the autocorrect layer ON for the perf surface's observed identity —
+// the honest enabled-feature comparison (same gesture, same load, feature
+// armed; the chord itself is no word boundary, so the layer stays in its
+// armed-transit state and the delta shows what the enabled layer costs the
+// hot path). The p95 delta vs the SAME-SESSION baseline (`mise run
+// e2e-perf`) is computed from the two reports and adjudicated in ADR-007.
+//
+// Exit semantics (plan 06-08 Task 1): a COMPLETED measurement is the
+// success shape — the absolute budget verdict rides the report (the
+// 04-07-sanctioned honest budget-fail outcome, WINDOWS #5); the acceptance
+// gate is the p95 DELTA, recorded in ADR-007 with an honest verdict either
+// way — never an automatic non-zero exit.
+func runPerfAutocorrect(ctx context.Context, s *stand) error {
+	app, err := observePerfSurfaceIdentity(ctx, s)
+	if err != nil {
+		return err
+	}
+	regBase := s.countSub(componentRegisteredMark)
+	s.stopDaemon()
+	cfgPath := filepath.Join(s.tmpDir, "perf-autocorrect.yaml")
+	doc := fmt.Sprintf(perfAutocorrectConfigTmpl, app)
+	if err := os.WriteFile(cfgPath, []byte(doc), configFilePerm); err != nil {
+		return fmt.Errorf("perf-autocorrect: write temp config: %w", err)
+	}
+	if err := s.startDaemonPlainArgs("-config", cfgPath); err != nil {
+		return err
+	}
+	if err := s.waitForNew(ctx, componentRegisteredMark, regBase+1, registrationWait); err != nil {
+		return fmt.Errorf("perf autocorrect-form daemon registration: %w", err)
+	}
+	verdict := perfMeasure(ctx, s, fmt.Sprintf(perfDaemonFormAutocor, app))
+	if verdict != nil && !errors.Is(verdict, errPerfBudget) {
+		return verdict
+	}
+
+	return nil
+}
+
+// observePerfSurfaceIdentity observes the perf surface's bridge-namespace
+// identity LIVE (the 06-07 discipline: identity is observed, never
+// assumed): a case-side a11y observer started BEFORE the probe surface
+// maps, one probe zenity entry whose map focus gain feeds the observer,
+// the polled identity — then the probe closes, so the measurement loop
+// starts from the same no-surface state as the baseline run.
+func observePerfSurfaceIdentity(ctx context.Context, s *stand) (string, error) {
+	obs, err := appid.Start(ctx)
+	if err != nil {
+		return "", fmt.Errorf("perf-autocorrect: start case observer: %w", err)
+	}
+	kind, err := s.openEntrySurface(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = s.closeEntrySurface(ctx, kind) }()
+	if kind != surfaceZenity {
+		return "", errors.New("perf-autocorrect needs the zenity entry surface (locked-session fallback engaged?)")
+	}
+	app, err := waitFocusedApp(ctx, obs)
+	if err != nil {
+		return "", fmt.Errorf("perf-autocorrect: observe surface identity: %w", err)
+	}
+	if app == "" {
+		return "", errors.New("perf-autocorrect: no bridge identity observed for the perf surface")
+	}
+	fmt.Printf("perf-autocorrect: observed surface identity %q\n", app)
+
+	return app, nil
+}
+
+// perfMeasure is the shared measurement core of both daemon forms:
+// activation, the VmRSS checkpoint, combo canonicalization, the resident
+// witness and N homogeneous repeats — byte-identical for baseline and
+// autocorrect (the comparison honesty); only the report's daemon line
+// differs. Returns the budget verdict (nil under budget); the report is
+// written before the verdict is returned, so a budget-fail still leaves
+// the artifact on disk.
+func perfMeasure(ctx context.Context, s *stand, daemonForm string) error {
 	if err := s.activateGoswitchFresh(ctx); err != nil {
 		return fmt.Errorf("perf activation: %w", err)
 	}
@@ -300,7 +434,7 @@ func runPerf(ctx context.Context, s *stand) error {
 	p95 := percentile(samples, perfP95)
 	p99 := percentile(samples, perfP99)
 	verdict := budgetGate(p95, hwm)
-	if err := writePerfReport(combo, samples, p50, p95, p99, rssStart, rssEnd, hwm, verdict); err != nil {
+	if err := writePerfReport(combo, samples, p50, p95, p99, rssStart, rssEnd, hwm, daemonForm, verdict); err != nil {
 		return err
 	}
 
@@ -385,7 +519,7 @@ func perfRepeat(ctx context.Context, s *stand, combo string, w *perfWitness) (ti
 // CONTENT is never printed (T-04-04-01): numbers, units and verdicts only.
 func writePerfReport(
 	combo string, samples []time.Duration, p50, p95, p99 time.Duration,
-	rssStart, rssEnd, hwm int64, verdict error,
+	rssStart, rssEnd, hwm int64, daemonForm string, verdict error,
 ) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "perf report — %s\n", time.Now().UTC().Format(time.RFC3339))
@@ -402,7 +536,7 @@ func writePerfReport(
 	fmt.Fprintf(&b, "  case: %d repeats of one homogeneous hot case — combo %s:"+
 		" word correction + layout flip in one chord (D-43)\n", len(samples), combo)
 	b.WriteString("  surface: zenity entry, fresh per repeat (the closing Enter is the ADR-004 buffer reset)\n")
-	b.WriteString("  daemon: production form (no -config, no -debug; built-in defaults)\n")
+	fmt.Fprintf(&b, "  daemon: %s\n", daemonForm)
 	fmt.Fprintf(&b, "samples: %d\n", len(samples))
 	fmt.Fprintf(&b, "p50: %.1f ms\n", float64(p50)/float64(time.Millisecond))
 	fmt.Fprintf(&b, "p95: %.1f ms\n", float64(p95)/float64(time.Millisecond))

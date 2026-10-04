@@ -32,20 +32,34 @@ type Buffer struct {
 // NewBuffer returns an empty Buffer.
 func NewBuffer() *Buffer { return &Buffer{} }
 
+// PushFeed feeds one typed rune and reports the word boundary (plan 06-06):
+// a token-capable rune (letter-capable key or a digit) extends the current
+// token and reports false; any other rune finishes the current token and
+// lands in the buffer as a boundary, reporting true exactly when the
+// finished token was non-empty (checked BEFORE the mutation). The buffer
+// semantics are the Push semantics — the flag is the only addition; it is
+// the signal the actor's autocorrect hook arms on.
+func (b *Buffer) PushFeed(r rune) bool {
+	if tokenCapable(r) {
+		b.runes = append(b.runes, r)
+
+		return false
+	}
+	finished := len(b.runes)-b.curStart > 0
+	if finished {
+		b.lastStart, b.lastLen = b.curStart, len(b.runes)-b.curStart
+	}
+	b.runes = append(b.runes, r)
+	b.curStart = len(b.runes)
+
+	return finished
+}
+
 // Push feeds one typed rune: a token-capable rune (letter-capable key or a
 // digit) extends the current token, any other rune finishes the current
 // token and lands in the buffer as a boundary.
 func (b *Buffer) Push(r rune) {
-	if tokenCapable(r) {
-		b.runes = append(b.runes, r)
-
-		return
-	}
-	if cur := len(b.runes) - b.curStart; cur > 0 {
-		b.lastStart, b.lastLen = b.curStart, cur
-	}
-	b.runes = append(b.runes, r)
-	b.curStart = len(b.runes)
+	_ = b.PushFeed(r)
 }
 
 // Backspace pops the last rune — honestly, whatever it was: the token under

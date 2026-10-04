@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 05
-current_phase_name: "Интеграция с GNOME: индикация и двухисточниковое переключение"
-status: verifying
-stopped_at: Completed 05-05-PLAN.md (all 5 phase plans executed)
-last_updated: "2026-09-30T00:27:56.954Z"
-last_activity: 2026-09-29
-last_activity_desc: Phase 05 execution started
-state_head: c55f255b5c3ecc19c134cbef04b5974d832cc81c
+current_phase: 4
+current_phase_name: Поставка и приёмка
+status: planning
+stopped_at: Phase 6 complete, ready to plan Phase 4
+last_updated: "2026-10-04T16:48:39.770Z"
+last_activity: 2026-10-04
+last_activity_desc: Phase 6 complete, transitioned to Phase 4
+state_head: 6f767fd96cbd13b4aeb84aa0778db47a64f84a42
 progress:
   total_phases: 6
-  completed_phases: 0
-  total_plans: 33
-  completed_plans: 33
+  completed_phases: 1
+  total_plans: 43
+  completed_plans: 43
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 05 — Интеграция с GNOME: индикация и двухисточниковое переключение
+**Current focus:** Phase 06 — Система автокоррекции
 
 ## Current Position
 
-Phase: 05 (Интеграция с GNOME: индикация и двухисточниковое переключение) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-10-01 — Completed quick task 261001-fg3: interactive tray — self-healing supervisor live, DBusMenu toggle-first (com.canonical.dbusmenu fix e8dae38), Activate; owner visual check pending
+Phase: 4 — Поставка и приёмка
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-04 — Phase 6 complete, transitioned to Phase 4
 
 Progress: [████████░░] 75%
 
@@ -38,7 +38,7 @@ Progress: [████████░░] 75%
 
 **Velocity:**
 
-- Total plans completed: 19
+- Total plans completed: 29
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -53,6 +53,7 @@ Progress: [████████░░] 75%
 | 1 | 5 | - | - |
 | 2 | 7 | - | - |
 | 3 | 7 | - | - |
+| 6 | 10 | - | - |
 
 **Recent Trend:**
 
@@ -97,6 +98,16 @@ Progress: [████████░░] 75%
 | Phase 05 P03 | 47 min | 2 tasks | 10 files |
 | Phase 05 P04 | 46 min | 2 tasks | 13 files |
 | Phase 05 P05 | 59 min | 2 tasks | 12 files |
+| Phase 06 P01 | 6 min | 2 tasks | 2 files |
+| Phase 06 P02 | 38 min | 2 tasks | 11 files |
+| Phase 06 P03 | 23 min | 2 tasks | 4 files |
+| Phase 06 P04 | 10 min | 2 tasks | 5 files |
+| Phase 06 P05 | 42 min | 3 tasks | 6 files |
+| Phase 06 P06 | 38 min | 3 tasks | 9 files |
+| Phase 06 P07 | 19h span (3 continuations) | 3 tasks | 15 files |
+| Phase 06 P08 | 41min | 2 tasks | 7 files |
+| Phase 06 P09 | 25 min | 2 tasks | 5 files |
+| Phase 06 P10 | 16min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -202,6 +213,31 @@ Recent decisions affecting current work:
 - [Phase 05]: [05-04] Echo suppression per spike P4 = the same-mode branch of SyncEngine (the initiator's own GlobalEngineChanged confirms without a record); correction writes the byte-stable mode record then a 'mode corrected' WARN and NEVER touches the switcher — flip loop impossible by construction (single-writer)
 - [Phase 05]: [05-04] activate.IfOwned prefers the FACTUAL engine (generation-scoped GetGlobalEngine reader, bound before PostRegister) over the dead gsettings current key; a foreign factual name skips without consulting the key; cold bus falls back to the current-index derivation — Pitfall 3 (restart flips ru→en) closed at unit level, live proof in 05-05
 - [Phase 05]: Two-source live proofs (05-05): bus flip = mode+switch_engine pair (WARN form — the 40 ms deadline fires before the ~42 ms live completion, readback arbitrates); external flips followed without counter-flips; restart returns the FACTUAL engine (shell resets to its own source — daemon-flipped ru is restart-lost by mechanism, shell gestures survive); XKB does NOT follow flips (P3 answered, safety-net permanent); matrix v3 two-source: 30/32 ×2 — word-mixed/phrase-mixed frozen rows vs the designed flip-resets-context semantics (owner verdict at verify gate, WINDOWS #12); ADR-006 Accepted, README documents the model
+- [Phase 06]: D-55 соблюдён: spec-delta §2/§10/§11 выполнен до кода детектора (ноль .go в дифе 06-01) — Спека правится до кода; аудит-трейл §11 сохранён — старый вердикт виден рядом с новым решением
+- [Phase 06]: ADR-007 Proposed — контракт фазы (гибридный детектор, живой GetRole, fail-closed, лицензии доноров); Accepted — план 06-08 — Кодовые планы 06-02..06-07 ссылаются на kill-таблицу и лицензионную позицию как на непреложный контракт
+- [Phase 06]: Запечены ПОЛНЫЕ hunspell-словари как отсортированные []string-литералы в rodata: DictRU 138 914 (после ё→е-фолдинга; 146 261 из research Q3 — до фолдинга, фолдинг сливает 7347 е/ё-пар), DictEN 78 951; никаких рантайм-map — Конверт счётчика DictRU скорректирован по оговорке плана (уточнить по факту): границы [137000, 140500] с полной декомпозицией в комментариях тестов
+- [Phase 06]: Триграммные таблицы TriRU/TriEN — ровно 4096 записей/язык (log10-вероятности, top-count + алфавитный tie-break), trigrams.go 244 КБ; потолок пинится в dict_test.go независимо от генератора
+- [Phase 06]: CI-независимость от hunspell доказана живьём через bwrap (пустой /usr/share/hunspell → тесты зелёные, TestGenerateLive SKIP) — золотой контракт CORR-08
+- [Phase 06]: appid Role(ctx): seam type dbus.Sender with conversion at the signal/call boundaries (godbus delivers Signal.Sender as a plain string); the live call is the arbiter of unknown — o.err not checked — Type documents the wire role; D-53 makes the live call the source of truth; an untested o.err branch was not added
+- [Phase 06]: err113 forced the ErrRoleUnknown sentinel into final form at Task 1 GREEN — Task 2 RED pins the enum, the other Role tests land green-by-design (continuity-pin precedent) — Dynamic errors are banned in internal code; a throwaway placeholder would be a lint violation
+- [Phase 06]: [06-04] Autocorrect threshold ranges gate on an ACTIVE section (enabled + non-empty apps): the plan-pinned behaviors (zero section valid, enabled+empty-list valid) make unconditional range checks contradictory; the white-list ceiling stays unconditional (DoS), thresholds are checked only where they can bite, and an ACTIVE section with omitted thresholds refuses loudly (complete-document contract 03-02)
+- [Phase 06]: [06-04] Threshold validation errors name their own field (trigram_floor <= 0 names autocorrect.trigram_floor, not the plan action's combined margin-only form) — the must_haves truth 'every error names its field' wins over the action's shorthand
+- [Phase 06]: [06-04] RED-stub pattern reused (06-03 continuity-pin precedent): the RED commit carries the schema shape only (struct + Config field + zero Defaults entry), GREEN sets the documented defaults/ceiling/validation; D-32/D-33 propagation tests land green-by-design — the sections' strict decode and last-good reload need zero new code in load.go/watch.go
+- [Phase 06]: Гибридный детектор D-52: словарный путь с двухпробным lookup (точное написание + нормализованный запрос lower+ё→е — регистр- и ё-варианты набираемого находят свои словарные статьи) и триграммный fallback scoreLang (log10-окна по 3 руны, neutralPenalty -6.0, нормировка длиной); пороги подтверждены корпусом на дефолтах 4/2.0/1.0
+- [Phase 06]: Порог floor 1.0 лежит ВЫШЕ log10-шкалы таблиц 06-02 (все вероятности ≤ 0): fallback при дефолтах честно отвечает trigram-unsure — санкционированный планом консервативный старт (research A4); корпус это подтвердил, config 06-04 не менялся (пара мест согласована)
+- [Phase 06]: OOV-класс Pitfall 2 определён как двусторонний словарный miss: план-примеры Vfrcbv (ремап максим — словарная статья) и vjcrdf (ремап москва — НЕ статья) лежат по разные стороны словарной границы; Vfrcbv перенесён в wrong-layout-корпус (уверенная коррекция = работа фичи), OOV-набор (34 кейса) требует unsure
+- [Phase 06]: [06-06] Off-состояние автокоррекции = ноль счётчиков и ноль записей (behavior-блок старше shorthand'а действия): feedKey-гейт enabled стоит до всякого счёта — байт-как-сегодня (D-54)
+- [Phase 06]: [06-06] Живой GetRole — вне a.mu под autoRoleTimeout 25 мс (armed-payload handoff, generation отменяет устаревший confirm, re-check enabled на re-entry); fired только через существующий startRangeCorrection (греп-пин CommitText-сайтов)
+- [Phase 06]: [06-06] Длина слова гейтится самим detect.Check (Params.MinWordLen из Options) — один источник слага abstain-short; white-list — точное равенство bridge-namespace (расширение не матчит, пин матрицей)
+- [Phase 06]: [06-07] A2 pinned live (google-chrome 153 Wayland): chromium exposes <input type=password> as AT-SPI PASSWORD_TEXT (40), one Tab from the autofocus lands on it — the negative-chromium row is legally expressible; the GTK4 fixture stays the silent-case carrier
+- [Phase 06]: [06-07] Identity-bearing surface maps only after the first keystroke starts the lazy observer (live finding: applySnapshot/ensureAppid ride the per-KEY-EVENT snapshot read, enabled=false until the first keystroke) — acStartObserverRound, the macr-per-app surface-C lesson
+- [Phase 06]: [06-07] Product fix found live: an acBoundary-armed verify round treats the pre-boundary answer (token without tail) as the in-flight-separator early answer and stays open within the existing verify budget — RequireSurroundingText is served before the separator lands, so every fired correction died on such clients before the fix (zenity won by timing only); manual paths byte-as-today (55dd248 RED + cbfa46c GREEN)
+- [Phase 06]: [06-07] Terminal-silent oracle re-pinned to the safety property (fired=0 + zero correction records + active-layer status): wezterm registers an IBus input context (caps 0x9, no surrounding-text bit) and its typing races IME arming — zero-records was a bet on one arm of that race (1dc76af); two consecutive greens post-pin
+- [Phase 06]: [06-07] matrix-v4 password row honestly excluded (no password surface step in the matrix driver) — the GTK4 fixture case carries the role negative standalone; sanctioned by the plan action without validator weakening
+- [Phase 06]: [06-07] Session-drift deferral: full matrix-v4 green deferred to 06-08's formal fresh-session D-48 double-run — first-key-after-flip loss reproduced BYTE-IDENTICALLY on the pre-phase-6 tree d96dcb2 (/tmp/matrix-v3-oldtree.log), phase-6 diff exonerated, environmental not a product regression (checkpoint accept & defer 2026-10-02, WINDOWS #13)
+- [Phase 06]: G-6-1 closed by mechanism (b): lock-free AttachEngine (atomic emitter slot) — the deadline-under-mutex pin (05-03) kept and re-confirmed — The factory path must answer CreateEngine during a flip; freeing AttachEngine from a.mu removes the self-deadlock without touching the flip's D-36 record order or the wedge-guard deadline
+- [Phase 06]: G-6-1 live proof landed: e2e case flip-keystroke injects 'd' with NO pause after the daemon flip's mode record — 24/24 letters delivered across 4 consecutive runs (pre-fix probe lost 5/5) — The probe's mechanics raised to a stand oracle; the injection stays immediate, direction expectations pinned (en→ru 'в', ru→en 'd')
+- [Phase 06]: Journal audit post-fix: every switch_engine record INFO-form, zero deadline-abort WARNs in a full run, RTT mode→switch_engine 6.5–9.2 ms (median 8.32, n=8) vs the pre-fix WARN-on-every-flip picture — The 150 ms wedge-guard deadline is silent on a healthy flip — the engine factory answers during the await (06-09 lock-free AttachEngine)
 
 ### Pending Todos
 
@@ -234,6 +270,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-30T00:27:41.220Z
-Stopped at: Completed 05-05-PLAN.md (all 5 phase plans executed)
+Last session: 2026-10-03T19:57:32.314Z
+Stopped at: Phase 6 complete, ready to plan Phase 4
 Resume file: None

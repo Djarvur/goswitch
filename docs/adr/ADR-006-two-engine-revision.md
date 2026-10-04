@@ -11,6 +11,10 @@ external-flip-sync, ibus-restart и полная матрица v3 зелёны�
 Amended 2026-09-30 — single-source model per owner decision (see the
 amendment section below).
 
+Amended 2026-10-02 — G-6-1: the factory's self-deadlock on a flip is
+eliminated by the lock-free AttachEngine; the deadline-under-mutex pin
+stands (see the amendment section below).
+
 ## Context
 
 ADR-001 зафиксировал Option B: внутренний флип EN/RU внутри демона при
@@ -219,3 +223,53 @@ IBus, а не списком sources, и `SetGlobalEngine` работает с �
 
 **SPEC.md здесь НЕ правится** — изменение спецификации идёт через
 spec-delta-процесс владельца в проходе v1.1.
+
+## Amendment 2026-10-02 — G-6-1: самоблокировка фабрики на флипе
+
+Журнально доказанная самоблокировка фабричного пути устранена изменением
+МЕХАНИЗМА РЕАЛИЗАЦИИ флипа, не его контракта. Пин плана 05-03
+«deadline-under-mutex» СТОИТ и подтверждается, не заменяется.
+
+**Диагноз (журнал 00:05:04–00:05:17, пробы /tmp/gsy-settle*.sh).** На каждом
+флипе демона `flipTo` держит мьютекс актора во время ауэйта
+`SetGlobalEngine`, а ibus-daemon отвечает на флип тем, что синхронно минтит
+целевой движок — вызывает `CreateEngine` на фабрике демона; фабрика
+(`engine/factory.go`) вызывает `handler.AttachEngine`, который ждал тот же
+мьютекс актора. Узел рвался по дедлайну 150 мс (WARN `switch_engine context
+deadline exceeded` на каждом флипе; «engine created» записывается на ~+1 мс
+ПОСЛЕ аборта — движок создавался, но ответ на флип уже не уходил),
+переключение растягивалось, нажатие в окне переключения глоталось: флип
+через демона 5/5 терял следующую букву, прямой внешний `SetGlobalEngine`
+24/24 чисто.
+
+**Свойство.** Фабрика обязана отвечать на `CreateEngine`, пока флип в
+полёте, — без самодедлока.
+
+**Решение.** `AttachEngine` актора освобождён от мьютекса: слот эмиттера —
+атомарный (`atomic.Pointer[emitterSlot]`, чистые Store/Load без
+read-modify-write), все чтения эмиттера — через снапшот-доступник
+`emitter()` в тех же точках вычисления; nil-семантика до первого минта
+сохранена. Ауэт `SetGlobalEngine` ОСТАЁТСЯ под мьютексом актора с дедлайном
+150 мс как клин-гард заклинившей шины.
+
+**Что НЕ меняется.** Пин 05-03 «дедлайн-под-мьютексом против async
+WR-01-handoff» стоит: порядок записей per D-36 (mode → switch_engine →
+UpdateModeSymbol → display), синхронная сериализация быстрых флипов
+(финальное состояние шины = финальный режим) и WARN-не-фатально — без
+изменений; горутина-насос/очередь флипов (механизм (a)) сознательно НЕ
+вводятся. D-52 (флип = SetGlobalEngine engine-truth) неизменно;
+автокоррекционный контур (GetRole вне мьютекса с дедлайном 25 мс, один
+конвейер коррекции, счётчики D-54) не тронут. Внепорядковые stores между
+параллельными CreateEngine допустимы — эквивалент до-фиксного упорядочивания.
+
+**Доказательства.** Герметичный корпус 06-09: ревходящие тесты актора
+(TestActor_ReentrantAttachDuringFlip — замыкание шва само вызывает
+AttachEngine во время флипа, флип завершается без расхода дедлайна;
+TestActor_AttachEngineWhileFlipInFlight — независимый AttachEngine
+возвращается, пока ауэт шва заблокирован) + reattach-свидетели фаб-шины
+(TestFactoryReentrantCreateEngineAnswersDuringAwait — мгновенный хендлер
+отвечает внутри ауэйта; TestFactoryReentrantCreateEngineBlockingHandlerIsOnlyGate
+— блокирующий хендлер сжигает дедлайн: ворота фабричного пути только в
+handler.AttachEngine). Полный набор green -race, `mise run ci` зелёный.
+Живое проводное доказательство — план 06-10 (immediate-keystroke кейс):
+после флипа первая же буква доезжает до поля.

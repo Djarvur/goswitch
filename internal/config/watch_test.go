@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -209,6 +211,94 @@ func TestWatch_InvalidRewriteKeepsLastGood(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), `"msg":"config reload rejected"`) {
 		t.Errorf("log %q misses the WARN record config reload rejected", buf.String())
+	}
+}
+
+// autocorrectDocYAML renders the complete document with the given
+// autocorrect trigram margin — the broken-autocorrect-block corpus's
+// template (the chordDocYAML idiom: full document, one value under test).
+func autocorrectDocYAML(margin string) string {
+	return `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+  mode_switch_chord: super+space
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: true
+  apps: ["` + appGedit + `"]
+  min_word_len: 4
+  trigram_margin: ` + margin + `
+  trigram_floor: 1.0
+`
+}
+
+// TestWatch_BrokenAutocorrectBlockKeepsLastGood pins the D-32/D-33
+// propagation to the new section WITHOUT any watcher code: a broken edit
+// of the autocorrect block (margin below the floor) invalidates the WHOLE
+// document — the reload is rejected, the last-good snapshot keeps serving,
+// the WARN "config reload rejected" lands — and the repaired document
+// applies without a restart. The REAL parser runs (config.Load), so the
+// property under test is the schema's, not a scripted loader's.
+func TestWatch_BrokenAutocorrectBlockKeepsLastGood(t *testing.T) {
+	buf := captureLogs(t)
+
+	path := filepath.Join(t.TempDir(), "goswitch.yaml")
+	if err := os.WriteFile(path, []byte(autocorrectDocYAML("2.0")), 0o600); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+
+	fx := newFakeSource()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	w, err := config.NewWatcher(ctx, path,
+		config.WithSource(func() (config.EventSource, error) { return fx, nil }),
+		config.WithLoader(config.Load),
+		config.WithDebounce(10*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+	if got := w.Snapshot().Autocorrect.TrigramMargin; got != 2.0 {
+		t.Fatalf("initial snapshot trigram_margin = %v, want 2.0", got)
+	}
+
+	// The broken edit: margin below the floor invalidates the whole file.
+	if err := os.WriteFile(path, []byte(autocorrectDocYAML("0.5")), 0o600); err != nil {
+		t.Fatalf("write broken config: %v", err)
+	}
+	fx.send(path, fsnotify.Write)
+	if !waitUntil(func() bool { return w.LastError() != nil }) {
+		t.Fatal("LastError never set after a broken autocorrect edit")
+	}
+	if got := w.Snapshot().Autocorrect.TrigramMargin; got != 2.0 {
+		t.Errorf("snapshot trigram_margin = %v after the rejection, want the last-good 2.0", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"config reload rejected"`) {
+		t.Errorf("log %q misses the WARN record config reload rejected", buf.String())
+	}
+
+	// The repair applies without a restart.
+	if err := os.WriteFile(path, []byte(autocorrectDocYAML("2.5")), 0o600); err != nil {
+		t.Fatalf("write repaired config: %v", err)
+	}
+	fx.send(path, fsnotify.Write)
+	if !waitUntil(func() bool { return w.Snapshot().Autocorrect.TrigramMargin == 2.5 }) {
+		t.Fatalf("snapshot trigram_margin = %v after the repair, want 2.5", w.Snapshot().Autocorrect.TrigramMargin)
+	}
+	if err := w.LastError(); err != nil {
+		t.Errorf("LastError = %v after the repaired reload, want nil", err)
 	}
 }
 

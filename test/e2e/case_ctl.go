@@ -67,6 +67,10 @@ macr:
 // control service — the gate before the first goswitchctl call.
 const ctlListeningMark = `"msg":"ctl service listening"`
 
+// configLoadedMark is the daemon's -config parse record — the first rung of
+// every spawn ladder's readiness marks.
+const configLoadedMark = `"msg":"config loaded"`
+
 // errCtlZenityNeeded is the surface precondition (err113: static).
 var errCtlZenityNeeded = errors.New("ctl-smoke needs the zenity entry surface (locked-session fallback engaged?)")
 
@@ -124,7 +128,7 @@ func runCtlSmoke(ctx context.Context, s *stand) error {
 		return err
 	}
 	for _, mark := range []string{
-		`"msg":"config loaded"`,
+		configLoadedMark,
 		componentRegisteredMark,
 		ctlListeningMark,
 	} {

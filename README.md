@@ -142,6 +142,66 @@ goswitchctl correct   # force a word correction right now
 goswitchctl reload    # re-read the config file immediately
 ```
 
+## Autocorrect (v1.1, optional — default off)
+
+goswitch can also fix a wrong-layout word **silently, without any hotkey**:
+type `ghbdtn` and then Space (or Enter, or a punctuation key) — by the time
+you move on, the word has become `привет`. The feature ships **default
+off** and never fires until you explicitly enable it.
+
+### Enabling
+
+Add an `autocorrect` section to your config file (the complete key
+reference is [docs/CONFIG.md](docs/CONFIG.md); how to attach a config file
+is described under Configuration below):
+
+```yaml
+autocorrect:
+  enabled: true
+  apps: ["org.gnome.Zenity"] # exact application names, one per trusted app
+```
+
+The `apps` list is a **white list of exact application names** (the app's
+AT-SPI bridge namespace). An application that is not in the list is **never
+corrected** — there is no global "on". A config edit applies without a
+restart (hot reload), and `goswitchctl status` shows the layer's state:
+`autocorrect_enabled`, `autocorrect_fired`, `autocorrect_abstained` and
+per-reason skip counters.
+
+### When it fires — and when it stays silent
+
+Every condition must hold, and anything unconfirmed means silence:
+the application is in your white list; the focused widget's live AT-SPI
+role is a text input (a password field, a terminal or a canvas is never
+touched); the application exposes the surrounding text the layer needs to
+verify the replacement; the detector is confident the word is a
+wrong-layout dictionary word (a trigram fallback judges unusual words —
+and declines unless the evidence is strong); and the word is at least 4
+characters long.
+
+### Privacy
+
+The corrected word itself is **never** written to the logs or to the
+status output — the autocorrect layer's own records carry counters and
+decision reasons only, at every log level. (The separate `-debug` key
+tracer described under Privacy below traces every keystroke of the whole
+session — that is the pre-existing debug mode, not part of this feature.)
+
+### Known limitation: GTK3 password fields
+
+The role gate cannot recognize password fields of the GTK3 generation
+(for example `zenity --password`): they report the same AT-SPI role as an
+ordinary text box — indistinguishable. Your protection here is the white
+list itself, so **do not add applications you do not fully trust** — and
+never add password prompts or terminals.
+
+### Manual gestures remain the override
+
+Every existing gesture works exactly as before, on top of silently
+corrected text: if a silent correction guessed wrong, the double tap (and
+the phrase and selection gestures) still converts the word back or fixes
+it differently.
+
 ## Configuration
 
 Out of the box the daemon runs on **built-in defaults** — the installer

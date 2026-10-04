@@ -106,6 +106,10 @@ run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v2.yaml"
 description = "e2e: 04-06 YAML case matrix v3 — superset v2 (gedit + chromium-x11, D-48 double-run base), per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v3.yaml"
 
+[tasks.e2e-matrix-v4]
+description = "e2e: 06-07 YAML case matrix v4 — superset v3 byte-verbatim (CASES-FROZEN) + autocorrect rows (fires/off/oov), nightly default, per-case fresh daemon, PASS/FAIL report, e2e-report.txt (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -matrix test/e2e/cases/matrix-v4.yaml"
+
 [tasks.e2e-select-smoke]
 description = "e2e: 03-03 selection spike — anchor push + actual replacement rung pinned per surface (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case select-smoke"
@@ -138,6 +142,10 @@ run = "go run ./test/e2e -case two-source-flip"
 description = "e2e: 05-05 criterion 3 — external flip sync: `ibus engine` CLI moves the factual engine, the daemon follows with a mode correction and never writes switch_engine (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case external-flip-sync"
 
+[tasks.e2e-flip-keystroke]
+description = "e2e: 06-10 G-6-1 live proof — after a daemon flip the FIRST letter injected with no pause lands in the field (en→ru 'в', ru→en 'd'), both directions ×3, paired journal order D-36 + zero deadline-abort WARNs in the rounds (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case flip-keystroke"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"
@@ -165,3 +173,31 @@ run = "go run ./test/e2e -case install-cycle"
 [tasks.e2e-perf]
 description = "e2e: 04-04 INST-03 — dedicated perf run: 40 homogeneous combo hot-case repeats (correct+flip chord), resident AT-SPI event witness, p50/p95/p99 + VmRSS/VmHWM report, budget gate exit≠0, perf-report.txt (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case perf"
+
+# The 06-08 Pitfall-5 gate: the SAME hot case with the autocorrect layer ON
+# for the perf surface's observed identity — the p95 delta vs a same-session
+# `mise run e2e-perf` baseline is the ADR-007 evidence, never a fake pair.
+[tasks.e2e-perf-autocorrect]
+description = "e2e: 06-08 Pitfall-5 perf gate — the same 40-repeat combo hot case as e2e-perf with the autocorrect layer enabled for the perf surface's observed identity (-config, no -debug): honest p50/p95/p99 pair for the ADR-007 p95-delta vs the same-session e2e-perf baseline; a completed measurement exits 0 — the absolute budget verdict rides the report (04-07-sanctioned outcome) (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case perf-autocorrect"
+
+# Live autocorrect cases (06-07): they spawn stand-owned surfaces and type
+# on the owner's desktop — deliberately NOT part of `mise run ci`.
+[tasks.e2e-autocorrect-fires]
+description = "e2e: 06-07 autocorrect fires — ghbdtn␠ corrected WITHOUT a hotkey in the GTK4 fixture text field; fired counter + AT-SPI readback + PLAIN stdout oracle + manual-double CORR-01 regression (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case autocorrect-fires"
+
+[tasks.e2e-autocorrect-password-silent]
+description = "e2e: 06-07 autocorrect password-silent — the enabled layer stays silent on the fixture's GtkPasswordEntry (AT-SPI PASSWORD_TEXT): witness role+chars unchanged, FINAL stdout oracle, fired=0, one role-forbidden abstention (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case autocorrect-password-silent"
+
+[tasks.e2e-autocorrect-terminal-silent]
+description = "e2e: 06-07 autocorrect terminal-silent — wezterm (off the a11y bus) never fires: fired=0 + zero correction records under BOTH IME delivery modes (wezterm's IME arming races the injection — corrected live pin), active-layer status, zenity positive control (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case autocorrect-terminal-silent"
+
+# Dictionary regeneration (06-02): a dev-only task — it reads the system
+# hunspell dictionaries, which exist on the dev machine only. CI never runs
+# it: CI гоняет только golden-тесты по закоммиченным данным (CORR-08).
+[tasks.dictgen-regen]
+description = "regen: dictgen — пересобрать golden-словари/триграммы из системных hunspell (dev-only; CI гоняет только goldens)"
+run = "go generate ./layouts"

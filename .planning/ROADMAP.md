@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Фразы, выделение, переключение и конфигурация** - Полный набор жестов коррекции, переключение раскладки, YAML-конфиг с hot reload и goswitchctl; e2e-матрица v2 зелёная (M3) (completed 2026-09-15)
 - [ ] **Phase 4: Поставка и приёмка** - Установка без root, производительность (<50 мс / <50 МБ), полная матрица дважды зелёная, ручная приёмка владельца (M4)
 - [ ] **Phase 5: Интеграция с GNOME: индикация и двухисточниковое переключение** - Два goswitch-источника в GNOME с нативным индикатором en/ru, переключение через SetGlobalEngine, раскладки оборачиваются из выбора пользователя; ревизия ADR-001
-- [ ] **Phase 6: Система автокоррекции** - Default-off автокоррекция: гибридный детектор неверной раскладки (словарь + триграммы), политика app×role (unknown → молчание), spec-delta §10/§11 (решение D-51)
+- [x] **Phase 6: Система автокоррекции** - Default-off автокоррекция: гибридный детектор неверной раскладки (словарь + триграммы), политика app×role (unknown → молчание), spec-delta §10/§11 (решение D-51) (completed 2026-10-04)
 
 ## Phase Details
 
@@ -255,8 +255,39 @@ Plans:
   4. Двойной Shift остаётся ручным переопределением поверх автокоррекции
   5. e2e-матрица расширена автокоррекционными кейсами (вкл/выкл, роль поля, OOV), ночная двойная зелёная
 
-**Plans:** 0 plans
+**Plans:** 10/10 plans complete
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 6 to break down)
+- [x] 06-01-PLAN.md — Spec-delta §2/§10/§11 + ADR-007 скелет (D-55: спека ДО кода; D-51 v1.1.0) — SPEC §10/§11, MACR-ACL
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 06-02-PLAN.md — layouts/dictgen: hunspell → golden DictRU/DictEN (sorted slices) + TriRU/TriEN, лицензионные нотисы, dictgen-regen — CORR-08
+- [x] 06-03-PLAN.md — internal/appid: (sender,path) + Role(ctx) живой GetRole enum + ErrRoleUnknown — MACR-ACL
+- [x] 06-04-PLAN.md — internal/config: секция autocorrect (default off, strict decode, потолки) + docs/CONFIG.md — MACR-ACL
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 06-05-PLAN.md — internal/detect: словарный путь D-52(а) + триграммный fallback D-52(б) + обязательный golden-корпус (0 ложных) — CORR-04/05/06
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 06-06-PLAN.md — Актор: граница слова (Buffer.PushFeed), конъюнкция D-53 fail-closed, счётчики/Status, renderStatus-токены — CORR-01/07/09, MACR-ACL
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 06-07-PLAN.md — e2e: fires / password-silent (GTK4-фикстура) / terminal-silent + матрица v4 (superset v3) + ночной конвейер на v4 — CORR-01, MACR-ACL
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 06-08-PLAN.md — Приёмка: perf p95-гейт (Pitfall 5), двойной регресс v4, README, ADR-007 Accepted — CORR-01..09 (регресс)
+
+**Wave 7** *(gap closure G-6-1, blocked on Wave 6)*
+
+- [x] 06-09-PLAN.md — G-6-1: самоблокировка фабрики на флипе — lock-free AttachEngine + reattach-свидетели фаб-шины + правка ADR-006 — SWCH-01/SWCH-02 (gap G-6-1)
+
+**Wave 8** *(blocked on Wave 7 completion — 06-10 depends_on 06-09)*
+
+- [x] 06-10-PLAN.md — G-6-1: живое доказательство «первая буква после флипа доезжает» — e2e flip-keystroke + журнальный аудит — SWCH-01/SWCH-02 (gap G-6-1; живой оракул гоняется только против исправленного актора 06-09) — выполнен 2026-10-04 (SUMMARY d988560)

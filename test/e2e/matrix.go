@@ -158,6 +158,7 @@ const (
 	matrixKindSelect = "select"
 	matrixKindCombo  = "combo"
 	matrixKindReload = "reload"
+	matrixKindFresh  = "fresh"
 )
 
 // matrixStepKind names the one set field of a step — the dispatch's single
@@ -178,6 +179,8 @@ func matrixStepKind(st matrixStep) string {
 		return matrixKindCombo
 	case st.Reload != nil:
 		return matrixKindReload
+	case st.Fresh != "":
+		return matrixKindFresh
 	}
 
 	return "empty"
@@ -248,7 +251,7 @@ func reloadGateMark(expect string) string {
 	return `"msg":"config reloaded"`
 }
 
-// matrixStep is one step of a case: exactly one of the seven fields is set
+// matrixStep is one step of a case: exactly one of the eight fields is set
 // (validated), the step kind it names decides the runner's action.
 type matrixStep struct {
 	Type   string        `yaml:"type"`
@@ -258,6 +261,7 @@ type matrixStep struct {
 	Select string        `yaml:"select"`
 	Combo  string        `yaml:"combo"`
 	Reload *matrixReload `yaml:"reload"`
+	Fresh  string        `yaml:"fresh"`
 }
 
 // matrixReload is the reload step's payload (plan 03-07): a config
@@ -277,16 +281,69 @@ type matrixReload struct {
 // daemon log must hold the mode record strictly AFTER the correction done
 // record — the live form of the D-36 order extension (the YAML schema
 // cannot express record ordering, so the pin rides the case level and the
-// driver checks it).
+// driver checks it). ConfigBase (06-07) selects a non-default base -config
+// document for the case daemon, pre-established BEFORE the surface opens —
+// the autocorrect rows ride it (the layer's section rides the document,
+// never a reload fragment: fragment keys append top-level and the strict
+// decoder would reject the shape).
 type matrixCase struct {
 	Name          string       `yaml:"name"`
 	Surface       string       `yaml:"surface"`
 	Mode          string       `yaml:"mode"`
+	ConfigBase    string       `yaml:"config_base"`
 	Steps         []matrixStep `yaml:"steps"`
 	ExpectText    string       `yaml:"expect_text"`
 	ExpectLevel   uint8        `yaml:"expect_level"`
 	ExpectSelStep string       `yaml:"expect_sel_step"`
 	ExpectFlip    bool         `yaml:"expect_flip_after_done"`
+}
+
+// matrixConfigBaseAutocorrect names the autocorrect base document: the
+// ctl-smoke document shape with the layer ON and org.gnome.Zenity (the
+// matrix zenity surface's bridge identity) as the single white-list entry.
+const matrixConfigBaseAutocorrect = "autocorrect"
+
+// matrixConfigBases is the closed vocabulary of config_base.
+func matrixConfigBases() []string {
+	return []string{matrixConfigBaseAutocorrect}
+}
+
+// matrixACConfigYAML is the autocorrect base document (complete, the 03-02
+// no-overlay rule): the ctl-smoke shape plus the enabled layer, the zenity
+// white-list entry and the 06-05 corpus thresholds. flip_after_correction
+// pinned false — the rows' oracles count corrections, not mode records.
+func matrixACConfigYAML(windowMs int) string {
+	return fmt.Sprintf(`hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: %d
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: false # the rows' oracles count corrections, not mode records
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: true
+  apps: ["org.gnome.Zenity"]
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`, windowMs)
+}
+
+// matrixCaseBaseConfig returns the case's base -config document.
+func matrixCaseBaseConfig(base string) string {
+	if base == matrixConfigBaseAutocorrect {
+		return matrixACConfigYAML(matrixCaseConfigWindow)
+	}
+
+	return ctlConfigYAML(matrixCaseConfigWindow)
 }
 
 // matrixSelSteps is the closed vocabulary of expect_sel_step — the actual
@@ -340,6 +397,12 @@ func (c matrixCase) validate() error {
 	if !slices.Contains(modes, c.Mode) {
 		return fmt.Errorf("mode %q must be one of %s", c.Mode, strings.Join(modes, "|"))
 	}
+	if c.ConfigBase != "" {
+		bases := matrixConfigBases()
+		if !slices.Contains(bases, c.ConfigBase) {
+			return fmt.Errorf("config_base %q must be one of %s", c.ConfigBase, strings.Join(bases, "|"))
+		}
+	}
 	if len(c.Steps) == 0 {
 		return errors.New("at least one step is required")
 	}
@@ -366,7 +429,7 @@ func (c matrixCase) validate() error {
 // with the field list) and delegates each kind's vocabulary check.
 func (s matrixStep) validate() error {
 	set := 0
-	for _, v := range []string{s.Type, s.Key, s.Tap, s.Focus, s.Select, s.Combo} {
+	for _, v := range []string{s.Type, s.Key, s.Tap, s.Focus, s.Select, s.Combo, s.Fresh} {
 		if v != "" {
 			set++
 		}
@@ -375,7 +438,7 @@ func (s matrixStep) validate() error {
 		set++
 	}
 	if set != 1 {
-		return fmt.Errorf("exactly one of type|key|tap|focus|select|combo|reload is required, got %d", set)
+		return fmt.Errorf("exactly one of type|key|tap|focus|select|combo|reload|fresh is required, got %d", set)
 	}
 
 	return s.validateKind()
@@ -406,6 +469,11 @@ func (s matrixStep) validateKind() error {
 		if s.Reload.Expect != matrixReloadApplied && s.Reload.Expect != matrixReloadRejected {
 			return fmt.Errorf("reload expect %q must be %s|%s",
 				s.Reload.Expect, matrixReloadApplied, matrixReloadRejected)
+		}
+	case s.Fresh != "":
+		surfaces := matrixSurfaces()
+		if !slices.Contains(surfaces, s.Fresh) {
+			return fmt.Errorf("fresh %q must be one of %s", s.Fresh, strings.Join(surfaces, "|"))
 		}
 	}
 
@@ -534,13 +602,14 @@ func runMatrixFile(ctx context.Context, cfg config, path string) int {
 	var report matrixReport
 	defer writeMatrixReport(path, &report)
 
-	for _, c := range cases {
+	for i := range cases {
+		c := &cases[i] // indexed: the case struct outgrew the range-copy ceiling (06-07)
 		if cerr := ctx.Err(); cerr != nil {
 			report.add(c.Name, fmt.Errorf("run aborted: %w", cerr))
 
 			break
 		}
-		err := runMatrixCaseIsolated(ctx, cfg, c)
+		err := runMatrixCaseIsolated(ctx, cfg, *c)
 		report.add(c.Name, err)
 		if err != nil {
 			fmt.Printf("FAIL %s: %v\n", c.Name, err)
@@ -798,6 +867,16 @@ func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error 
 // context at all, live finding 02-06), every step in file order, then the
 // expectation checks.
 func runMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
+	// A config_base case establishes its -config daemon BEFORE the surface
+	// opens: the daemon's lazy per-app observer starts at its first key
+	// event (06-07 live finding), and the surface's fresh map-focus gain is
+	// what feeds it — a surface mapped before that start would never be
+	// identified (the macr-per-app surface-C lesson).
+	if c.ConfigBase != "" {
+		if err := establishCaseConfigBase(ctx, s, c); err != nil {
+			return err
+		}
+	}
 	if err := s.activateGoswitch(ctx); err != nil {
 		return err
 	}
@@ -837,6 +916,8 @@ func stepSummary(st matrixStep) string {
 		return "combo " + st.Combo
 	case st.Reload != nil:
 		return fmt.Sprintf("reload %s %v", st.Reload.Expect, st.Reload.Lines)
+	case st.Fresh != "":
+		return "fresh " + st.Fresh
 	}
 
 	return "empty"
@@ -905,6 +986,8 @@ func runMatrixStep(ctx context.Context, s *stand, c matrixCase, st matrixStep) e
 		return comboMatrixStep(ctx, s, st)
 	case matrixKindReload:
 		return reloadMatrixStep(ctx, s, c, st)
+	case matrixKindFresh:
+		return freshMatrixSurface(ctx, s, st.Fresh)
 	}
 
 	return errors.New("empty step") // unreachable: validation rejects it
@@ -1075,10 +1158,35 @@ func reloadMatrixStep(ctx context.Context, s *stand, c matrixCase, st matrixStep
 // engine connection mid-case, and typing before the IM renegotiation
 // completes races it (the 03-04 live lesson).
 func establishCaseConfig(ctx context.Context, s *stand, c matrixCase, lines []string) error {
-	doc, err := applyReloadLines(ctlConfigYAML(matrixCaseConfigWindow), lines)
+	doc, err := applyReloadLines(matrixCaseBaseConfig(c.ConfigBase), lines)
 	if err != nil {
 		return err
 	}
+	if err := restartOnCaseConfig(ctx, s, doc); err != nil {
+		return err
+	}
+	if err := s.activateGoswitch(ctx); err != nil {
+		return err
+	}
+
+	return waitMatrixFocusApp(ctx, s, c)
+}
+
+// establishCaseConfigBase pre-establishes the -config daemon of a
+// config_base case BEFORE its surface opens (the observer-start ordering
+// of runMatrixCase): the same readiness ladder as the reload step's
+// establishment, without the surface focus settle (no surface exists yet).
+func establishCaseConfigBase(ctx context.Context, s *stand, c matrixCase) error {
+	if err := restartOnCaseConfig(ctx, s, matrixCaseBaseConfig(c.ConfigBase)); err != nil {
+		return err
+	}
+
+	return s.activateGoswitch(ctx)
+}
+
+// restartOnCaseConfig writes the complete document as the case's temp
+// config, restarts the daemon on it and waits out the readiness marks.
+func restartOnCaseConfig(ctx context.Context, s *stand, doc string) error {
 	path := filepath.Join(s.tmpDir, matrixCaseConfigName)
 	if err := os.WriteFile(path, []byte(doc), configFilePerm); err != nil {
 		return fmt.Errorf("reload step: write case config: %w", err)
@@ -1086,17 +1194,14 @@ func establishCaseConfig(ctx context.Context, s *stand, c matrixCase, lines []st
 	if err := s.restartDaemonWithArgs("-config", path); err != nil {
 		return err
 	}
-	for _, mark := range []string{`"msg":"config loaded"`, componentRegisteredMark, ctlListeningMark} {
+	for _, mark := range []string{configLoadedMark, componentRegisteredMark, ctlListeningMark} {
 		if err := s.waitForLog(ctx, mark, registrationWait); err != nil {
 			return fmt.Errorf("reload step config daemon (%s): %w", mark, err)
 		}
 	}
 	s.caseCfgPath = path
-	if err := s.activateGoswitch(ctx); err != nil {
-		return err
-	}
 
-	return waitMatrixFocusApp(ctx, s, c)
+	return nil
 }
 
 // rewriteCaseConfig applies a fragment to the already-established case
@@ -1352,6 +1457,35 @@ func matrixSurfacePID(s *stand, name string) int {
 	}
 
 	return 0
+}
+
+// closeMatrixSurface reaps the stand's spawned instance of a surface (the
+// fresh-step's stale instance; a no-op when none is open).
+func closeMatrixSurface(s *stand, name string) {
+	switch name {
+	case matrixSurfaceZenity:
+		s.reapZenity()
+	case surfaceChromiumName:
+		s.closeChromium()
+	case surfaceChromiumX11Name:
+		s.closeChromiumX11()
+	case matrixSurfaceGTE:
+		s.closeGTE()
+	case matrixSurfaceGedit:
+		s.closeGedit()
+	}
+}
+
+// freshMatrixSurface replaces the case's open surface instance with a FRESH
+// one — the fresh map-focus gain is the event the daemon's lazy per-app
+// observer learns from (06-07: the observer starts at the first key event,
+// which post-dates the primary surface's map; the autocorrect rows bridge
+// the two with this step). The stale instance is reaped first — the fresh
+// field starts empty, and the probe typing rides the steps after it.
+func freshMatrixSurface(ctx context.Context, s *stand, name string) error {
+	closeMatrixSurface(s, name)
+
+	return openMatrixSurface(ctx, s, name)
 }
 
 // waitMatrixInputPid polls until the pid's input surface holds focus with

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 4
+open_count: 5
 waived_count: 3
 fixed_count: 5
-total_count: 12
-last_updated: 2026-09-30T00:22:44.944Z
+total_count: 13
+last_updated: 2026-10-02T18:01:54.918Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,7 @@ last_updated: 2026-09-30T00:22:44.944Z
 | 10 | 05 | unmet-truth | docs/adr/ADR-006-two-engine-revision.md |  | plan 05-01: P3 XKB-truth unresolved — spike entry surface focus-refused both runs (witness gnome-shell:WINDOW:chars=-1); re-opens at 05-05 live proofs (ADR-006 unresolved row) | fixed |  | 2026-09-29T21:28:22.157Z | 2026-09-30T00:22:44.944Z |
 | 11 | 05 | unmet-truth | docs/adr/ADR-006-two-engine-revision.md |  | plan 05-01: indicator verdict unknown (owner 'не разглядел') — routes to UAT/verify-work; criterion-2 semantics fixed by spec-delta regardless | open |  | 2026-09-29T21:28:22.438Z |  |
 | 12 | 05 | unmet-truth | test/e2e/cases/matrix-v3.yaml |  | plan 05-05: word-mixed + phrase-mixed rows expect a correction ACROSS a flip boundary — under ADR-006 the two-source flip churns FocusOut/FocusIn and the designed context reset (05-CONTEXT: «переключение раскладки сбрасывает контекст») drops the pre-flip buffer; the daemon then corrects only the post-flip word (word-mixed: buffer привет → wholesale ru→en → gfbghbdtn; phrase-mixed → ghbdtn ghbdtn). Rows frozen (v3, CASES-FROZEN); the owner owns the verdict at the phase verify gate: either the rows re-shape to the reset semantics (new plan) or the reset semantics get revisited (architectural) | open |  | 2026-09-30T00:21:32.095Z |  |
+| 13 | 06 | unrun-verify | test/e2e/cases/matrix-v4.yaml |  | plan 06-07: full mise run e2e-matrix-v4 green NOT achieved on this session — first-key-after-mode-flip session drift (each row typing right after a SetGlobalEngine flip loses exactly one leading char/mode record); control experiment: pre-phase-6 tree d96dcb2 fails BYTE-IDENTICALLY (/tmp/matrix-v3-oldtree.log, worktree /tmp/goswitch-0505) — environmental, phase-6 diff exonerated; autocorrect rows (fires/off/oov) green x2 and all three live cases green; formal fresh-session D-48 double-run rides plan 06-08 (checkpoint accept & defer 2026-10-02). **06-08 verdict (2026-10-02): drift CONFIRMED REAL and STICKY** — the formal back-to-back double-run on the relogged-in session (ages 2h03m/2h08m) went 23/35 and 24/35 with the SAME row set (9 drift rows byte-similar to 06-07, +1 ibus-activation transient in run 1); autocorrect rows and word/phrase manual-contract carriers green x2 in the same runs (3rd independent exoneration of the phase diff); NEW diagnostic: the drift SURVIVES `ibus restart` (24/35, identical set — /tmp/06-08-matrix-post-ibus-restart.log) — not the documented-cure class, lives in the login state; the formal <=30-min fresh_session=true gate (docs/ci-runner.md) remains the owner's machine-checked instrument at verify-work; ADR-007 Acceptance Evidence row 5 carries the full record | open |  | 2026-10-02T18:01:54.918Z |  |
 
 ````json
 [
@@ -172,6 +173,18 @@ last_updated: 2026-09-30T00:22:44.944Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-30T00:21:32.095Z",
+    "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "test/e2e/cases/matrix-v4.yaml",
+    "line": null,
+    "description": "plan 06-07: full mise run e2e-matrix-v4 green NOT achieved on this session — first-key-after-mode-flip session drift (each row typing right after a SetGlobalEngine flip loses exactly one leading char/mode record); control experiment: pre-phase-6 tree d96dcb2 fails BYTE-IDENTICALLY (/tmp/matrix-v3-oldtree.log, worktree /tmp/goswitch-0505) — environmental, phase-6 diff exonerated; autocorrect rows (fires/off/oov) green x2 and all three live cases green; formal fresh-session D-48 double-run rides plan 06-08 (checkpoint accept & defer 2026-10-02). 06-08 verdict (2026-10-02): drift CONFIRMED REAL and STICKY — the formal back-to-back double-run on the relogged-in session (ages 2h03m/2h08m) went 23/35 and 24/35 with the SAME row set (9 drift rows byte-similar to 06-07, +1 ibus-activation transient in run 1); autocorrect rows and word/phrase manual-contract carriers green x2 in the same runs (3rd independent exoneration of the phase diff); NEW diagnostic: the drift SURVIVES 'ibus restart' (24/35, identical set — /tmp/06-08-matrix-post-ibus-restart.log) — not the documented-cure class, lives in the login state; the formal <=30-min fresh_session=true gate (docs/ci-runner.md) remains the owner's machine-checked instrument at verify-work; ADR-007 Acceptance Evidence row 5 carries the full record",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T18:01:54.918Z",
     "resolved_at": null
   }
 ]

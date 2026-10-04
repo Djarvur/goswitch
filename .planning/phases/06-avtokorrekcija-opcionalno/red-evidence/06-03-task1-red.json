@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/appid/ -race -count=1 -v (transcribed to node-test TAP per repo precedent; raw output /tmp/06-03-t1-red-raw.txt)",
+  "exitCode": 1,
+  "targetTest": "TestObserver_StoresFocusPair",
+  "failingTest": "TestObserver_StoresFocusPair",
+  "expected": "A focus GAIN on a bridge-namespaced signal stores (focusSender, focusPath) beside the app name under the same mutex — the injected Role seam sees exactly the gain's pair (\":1.90\", \"/org/gnome/Zenity/a11y/6c20c914_1a35\"); a loss and a non-bridge gain keep the pair; Role on a fresh observer errors instead of (0, nil) and never consults the seam",
+  "actual": "All three target tests fail on the planned assertions against the RED stub (Role returns (0, nil), the run loop stores no pair): seam saw (\"\", \"\") called=false; seam path after loss/non-bridge = \"\"; fresh-observer Role = (0, nil). The 2 pre-existing tests stay green (5 top-level tests total, 3 fail)",
+  "output": "ok 1 - TestAppid_FocusedAppByFakeBus\nnot ok 2 - TestObserver_StoresFocusPair\nnot ok 3 - TestObserver_LossKeepsPair\nnot ok 4 - TestObserver_FreshObserverUnknown\nok 5 - TestAppid_StartBusUnavailable\n# tests 5\n# pass 2\n# fail 3"
+}

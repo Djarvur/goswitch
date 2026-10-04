@@ -26,6 +26,32 @@ macr:
   letters: ""
   apps: []
   alt_modifier: ""
+autocorrect:
+  enabled: false
+  apps: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// docNoAutocorrectYAML is the complete PRE-phase document — the schema
+// before plan 06-04 added the autocorrect section — every shipped user
+// document's shape.
+const docNoAutocorrectYAML = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
 `
 
 // writeConfig writes the corpus to a temp file and returns its path.
@@ -38,6 +64,25 @@ func writeConfig(t *testing.T, corpus string) string {
 	}
 
 	return path
+}
+
+// assertDecodeDefaults fails unless cfg's autocorrect section carries the
+// documented default values — the shared tail of the decode corpus.
+func assertDecodeDefaults(t *testing.T, cfg *config.Config) {
+	t.Helper()
+
+	if cfg.Autocorrect.Enabled {
+		t.Error("autocorrect.enabled = true, want false")
+	}
+	if len(cfg.Autocorrect.Apps) != 0 {
+		t.Errorf("autocorrect.apps = %v, want empty", cfg.Autocorrect.Apps)
+	}
+	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
+		t.Errorf(
+			"autocorrect thresholds = %d/%v/%v, want 4/2.0/1.0",
+			cfg.Autocorrect.MinWordLen, cfg.Autocorrect.TrigramMargin, cfg.Autocorrect.TrigramFloor,
+		)
+	}
 }
 
 // TestLoad_ValidDoc pins the happy path: the full schema document decodes
@@ -79,6 +124,7 @@ func TestLoad_ValidDoc(t *testing.T) {
 	if len(cfg.MACR.Apps) != 0 {
 		t.Errorf("macr.apps = %v, want empty", cfg.MACR.Apps)
 	}
+	assertDecodeDefaults(t, cfg)
 }
 
 // TestLoad_UnknownKeyRejected pins the strict decoder (D-33): a typo'd
@@ -157,6 +203,84 @@ func TestLoad_RangeViolationRejected(t *testing.T) {
 	corpus := strings.Replace(fullDocYAML, "tap_window_ms: 300", "tap_window_ms: 100000000", 1)
 	if _, err := config.Load(writeConfig(t, corpus)); err == nil {
 		t.Fatal("giant tap_window_ms accepted at load, want range rejection")
+	}
+}
+
+// TestLoad_DocumentWithoutSectionDecodesOff pins the D-54 decode contract
+// (plan prohibition 1): a document without the autocorrect section decodes
+// into the ZERO value — disabled, empty white list, no defaults overlay in
+// Load — and the whole file stays valid. Defaults() is the no-flag path
+// only (the 03-02 complete-document precedent).
+func TestLoad_DocumentWithoutSectionDecodesOff(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, docNoAutocorrectYAML))
+	if err != nil {
+		t.Fatalf("Load(pre-phase document): %v", err)
+	}
+	got := cfg.Autocorrect
+	if got.Enabled || got.Apps != nil || got.MinWordLen != 0 || got.TrigramMargin != 0 || got.TrigramFloor != 0 {
+		t.Errorf(
+			"autocorrect = %+v, want the zero value (no defaults overlay in Load; absent section = off, D-54)",
+			got,
+		)
+	}
+}
+
+// TestLoad_StrictDecodeRejectsTypo pins D-33 propagation to the new
+// section (T-06-04-02): a typo'd key inside the autocorrect section
+// invalidates the WHOLE document — an `enbled` typo can never silently
+// half-apply the section or quietly disable it.
+func TestLoad_StrictDecodeRejectsTypo(t *testing.T) {
+	t.Parallel()
+
+	corpus := strings.Replace(fullDocYAML, "autocorrect:\n  enabled: false", "autocorrect:\n  enbled: true", 1)
+	_, err := config.Load(writeConfig(t, corpus))
+	if err == nil {
+		t.Fatal("typo'd autocorrect key accepted, want a whole-document rejection (D-33)")
+	}
+	if !strings.Contains(err.Error(), "enbled") {
+		t.Errorf("error %q does not name the unknown field enbled", err)
+	}
+}
+
+// TestLoad_EmptyAppsEnabledIsValid pins the D-54 kill-switch semantics
+// (T-06-04-03): `enabled: true` with an empty white list is a VALID
+// document — the empty list silences the feature everywhere (the consumer
+// conjunction of plan 06-06 requires a non-empty list), so no combination
+// of absent or empty values can widen the policy.
+func TestLoad_EmptyAppsEnabledIsValid(t *testing.T) {
+	t.Parallel()
+
+	corpus := strings.Replace(fullDocYAML, "autocorrect:\n  enabled: false", "autocorrect:\n  enabled: true", 1)
+	cfg, err := config.Load(writeConfig(t, corpus))
+	if err != nil {
+		t.Fatalf("Load(enabled, empty list): %v", err)
+	}
+	if !cfg.Autocorrect.Enabled {
+		t.Error("autocorrect.enabled = false, want true (the document's value)")
+	}
+	if len(cfg.Autocorrect.Apps) != 0 {
+		t.Errorf("autocorrect.apps = %v, want empty — the feature fires nowhere", cfg.Autocorrect.Apps)
+	}
+}
+
+// TestLoad_AutocorrectRangeViolationRejected pins that Load runs the
+// autocorrect validation: an ACTIVE section (enabled, non-empty white
+// list) with an out-of-range threshold is rejected at load time, not at
+// the first keystroke.
+func TestLoad_AutocorrectRangeViolationRejected(t *testing.T) {
+	t.Parallel()
+
+	active := strings.Replace(
+		fullDocYAML,
+		"autocorrect:\n  enabled: false\n  apps: []",
+		"autocorrect:\n  enabled: true\n  apps: [\"org.gnome.Gedit\"]",
+		1,
+	)
+	broken := strings.Replace(active, "min_word_len: 4", "min_word_len: 1", 1)
+	if _, err := config.Load(writeConfig(t, broken)); err == nil {
+		t.Fatal("active section with min_word_len 1 accepted at load, want range rejection")
 	}
 }
 

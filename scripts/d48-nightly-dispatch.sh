@@ -30,4 +30,4 @@ fi
 # --repo обязателен: юнит стартует с произвольным cwd, а gh не резолвит
 # репозиторий из $HOME.
 exec gh workflow run e2e-matrix.yml --repo Djarvur/goswitch --ref "$ref" \
-  -f matrix=test/e2e/cases/matrix-v3.yaml -f fresh_session=true
+  -f matrix=test/e2e/cases/matrix-v4.yaml -f fresh_session=true

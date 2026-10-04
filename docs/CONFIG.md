@@ -11,14 +11,19 @@ the behavior is identical to a default-valued file.
 
 ## Schema
 
-The file has exactly four sections — `hotkeys`, `timeouts`, `correction`,
-`macr`. Every key of every section is listed here; the document must be
-complete (missing keys are validation errors, not silently defaulted) and
-**strict**: a typo'd key invalidates the whole file (D-33), so a setting can
-never appear applied while it actually is not. Documents written before
-`correction.flip_after_correction` existed must add the key: a missing key
-decodes as `false` (off, not the built-in default) instead of refusing to
-start — the completeness discipline is on the document's author.
+The file has exactly five sections — `hotkeys`, `timeouts`, `correction`,
+`macr`, `autocorrect`. Every key of every section is listed here; the
+document must be complete (missing keys are validation errors, not silently
+defaulted) and **strict**: a typo'd key invalidates the whole file (D-33),
+so a setting can never appear applied while it actually is not. Documents
+written before `correction.flip_after_correction` existed must add the key:
+a missing key decodes as `false` (off, not the built-in default) instead of
+refusing to start — the completeness discipline is on the document's author.
+The `autocorrect` section follows the same completeness rule with the
+opposite outcome guarded: absent keys decode into the zero values, and the
+zero value is the **off** state (D-54) — only `autocorrect.enabled: true`
+together with a non-empty `apps` list can ever fire a correction, so a
+missing or empty value can never silently activate the feature.
 
 | Key | Type | Default | Range / vocabulary | Meaning |
 |-----|------|---------|--------------------|---------|
@@ -34,6 +39,11 @@ start — the completeness discipline is on the document's author.
 | `macr.letters` | string | `""` | comma-separated single letters `a`–`z` | the remapped letter set; required (non-empty) when `macr.enabled` is true |
 | `macr.apps` | list | `[]` | at most 64 entries | per-app allow list (ADR-005); empty list = the rule set applies everywhere |
 | `macr.alt_modifier` | string | `""` | `""` \| `ctrl_l` \| `ctrl_r` | alternative modifier for apps that reject Ctrl+letter; empty = do not introduce one (ADR-005 b.3) |
+| `autocorrect.enabled` | bool | `false` | — | global switch of the automatic wrong-layout correction (D-54); OFF by default — the feature never activates on its own |
+| `autocorrect.apps` | list | `[]` | at most 64 entries, bridge-namespace names (`org.gnome.Gedit` form) | per-app white list — exact string match, order carries no meaning; an empty list means the correction fires nowhere, even with `enabled: true` |
+| `autocorrect.min_word_len` | int | `4` | [2, 16] | minimum word length the detector considers; shorter words are never touched |
+| `autocorrect.trigram_margin` | float | `2.0` | > 0, ≥ `trigram_floor` | required trigram-score margin of the other layout over the current one; checked while the layer can fire (enabled with a non-empty white list) |
+| `autocorrect.trigram_floor` | float | `1.0` | > 0 | absolute floor of the other layout's trigram score (the confidence fallback's plausibility demand) |
 
 ### Binding names
 
@@ -76,6 +86,12 @@ macr:
   letters: ""
   apps: []
   alt_modifier: ""
+autocorrect:
+  enabled: false
+  apps: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
 ```
 
 An activated MACR layer over Chromium only, with the alternative modifier:
@@ -97,6 +113,34 @@ macr:
   letters: "c,v,t"
   apps: ["google-chrome"]
   alt_modifier: "ctrl_r"
+```
+
+An enabled autocorrect layer over two applications, with the documented
+start thresholds (plan 06-05's detector corpus re-pins the values):
+
+```yaml
+hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+  mode_switch_chord: super+space
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: true
+  apps: ["org.gnome.Gedit", "org.chromium.Chromium"]
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
 ```
 
 ## Hot reload (D-32)
@@ -143,3 +187,9 @@ to the Caramba settings that serve the same purpose:
 The config's contents never enter the logs. The daemon logs the config
 **path**, the applied tap window and validity status — nothing else (the
 `macr.apps` names and letters stay out of every log level).
+
+Autocorrect is stricter still: the typed word and the corrected word never
+(никогда) enter ANY log level or the `goswitchctl status` — the autocorrect
+surface reports counters and reason slugs only (D-54, stricter than
+D-20/D-21: an autocorrection fires without a user command, so the word may
+be a password).

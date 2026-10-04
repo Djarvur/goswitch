@@ -502,6 +502,99 @@ func assertStepKindSummary(t *testing.T) {
 	}
 }
 
+// TestMatrixDecode_ConfigBaseAndFresh pins the 06-07 schema extension: the
+// config_base vocabulary (the autocorrect base document selector) and the
+// fresh step kind decode and validate.
+func TestMatrixDecode_ConfigBaseAndFresh(t *testing.T) {
+	t.Parallel()
+
+	t.Run("autocorrect base decodes", func(t *testing.T) {
+		t.Parallel()
+
+		const corpus = `name: ac-shape
+surface: zenity
+mode: en
+config_base: autocorrect
+steps:
+  - {type: "x "}
+  - {fresh: zenity}
+  - {type: "ghbdtn "}
+expect_text: "привет "
+`
+		cases, err := loadMatrixCases([]byte(corpus))
+		if err != nil {
+			t.Fatalf("loadMatrixCases: %v", err)
+		}
+		if cases[0].ConfigBase != matrixConfigBaseAutocorrect {
+			t.Errorf("ConfigBase = %q, want %q", cases[0].ConfigBase, matrixConfigBaseAutocorrect)
+		}
+		if cases[0].Steps[1].Fresh != matrixSurfaceZenity {
+			t.Errorf("Steps[1].Fresh = %q, want %q", cases[0].Steps[1].Fresh, matrixSurfaceZenity)
+		}
+	})
+
+	t.Run("fresh step decodes alone", func(t *testing.T) {
+		t.Parallel()
+
+		const corpus = `{name: v, surface: zenity, mode: en, steps: [{fresh: zenity}], expect_text: x}`
+		if _, err := loadMatrixCases([]byte(corpus)); err != nil {
+			t.Fatalf("fresh step rejected: %v", err)
+		}
+	})
+}
+
+// TestMatrixDecode_ConfigBaseAndFreshRejections pins the strict-vocabulary
+// rule of the 06-07 schema extension: an unknown config_base, an unknown
+// fresh surface and a multi-field step fail loudly at decode.
+func TestMatrixDecode_ConfigBaseAndFreshRejections(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		corpus string
+	}{
+		{
+			name:   "unknown config base",
+			corpus: `{name: v, surface: zenity, mode: en, config_base: yaml, steps: [{type: x}], expect_text: x}`,
+		},
+		{
+			name:   "fresh unknown surface",
+			corpus: `{name: v, surface: zenity, mode: en, steps: [{fresh: terminal}], expect_text: x}`,
+		},
+		{
+			name:   "fresh and type in one step",
+			corpus: `{name: v, surface: zenity, mode: en, steps: [{fresh: zenity, type: x}], expect_text: x}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := loadMatrixCases([]byte(tc.corpus)); err == nil {
+				t.Fatalf("decode of %q succeeded, want an error", tc.name)
+			}
+		})
+	}
+}
+
+// TestMatrixCaseBaseConfig pins the base-document selection: the autocorrect
+// base is the COMPLETE document with the layer ON (the white-list entry the
+// zenity rows need, the 06-05 thresholds), the default base stays the
+// ctl-smoke shape — and neither carries the defaults overlay (03-02).
+func TestMatrixCaseBaseConfig(t *testing.T) {
+	t.Parallel()
+
+	ac := matrixCaseBaseConfig(matrixConfigBaseAutocorrect)
+	if !strings.Contains(ac, "autocorrect:") ||
+		!strings.Contains(ac, `apps: ["org.gnome.Zenity"]`) ||
+		!strings.Contains(ac, "enabled: true") {
+		t.Errorf("autocorrect base document %q lacks the enabled layer or the zenity white-list entry", ac)
+	}
+	def := matrixCaseBaseConfig("")
+	if strings.Contains(def, "autocorrect:") {
+		t.Errorf("default base document %q carries an autocorrect section", def)
+	}
+}
+
 // TestMatrixReport_ExitCode pins the TEST-04 exit contract without a live
 // desktop: a report with at least one FAIL computes exit code 1, an
 // all-PASS report computes 0.

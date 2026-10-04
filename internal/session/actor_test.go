@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/config"
+	"github.com/Djarvur/goswitch/internal/ctlsvc"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -3966,6 +3968,12 @@ const flipBudget = 150 * time.Millisecond
 // every flip). The seam-entry budget must sit strictly above it.
 const liveSwitchRTTMax = 45 * time.Millisecond
 
+// attachBudget bounds the independent AttachEngine witness of G-6-1: the
+// factory path is an atomic store and must return in microseconds — a
+// quarter second sits orders of magnitude above any scheduling delay and
+// far below the flip deadline it must never consume.
+const attachBudget = 250 * time.Millisecond
+
 // switchProbe is the switcher-seam double: it records every call's target
 // and context deadline — the flip path's observable — with the hook form of
 // fakeSink's modeHook (the corpus interleaves the call with the journal and
@@ -4218,6 +4226,98 @@ func TestActor_NilSwitcherInternalFlip(t *testing.T) {
 	}
 	if consume := a.HandleKey(engine.EngineEvent{Keyval: uint32('g')}); consume {
 		t.Error("EN-mode press consumed without a switcher — the internal mode must still govern typing")
+	}
+}
+
+// TestActor_ReentrantAttachDuringFlip pins the live G-6-1 form: ibus-daemon
+// answers a flip's SetGlobalEngine by synchronously calling CreateEngine on
+// the daemon's factory, and the factory calls handler.AttachEngine — the
+// seam closure here plays that whole chain. The flip must complete WITHOUT
+// consuming its switchTimeout deadline; while AttachEngine still waited on
+// the actor mutex, the re-entrant call deadlocked the flip goroutine and
+// the deadline burned to the WARN ("engine created" landed ~1 ms after the
+// abort on every flip of the diagnosing journal).
+func TestActor_ReentrantAttachDuringFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetSwitcher(func(_ context.Context, _ string) error {
+		// The live re-entrant chain — SetGlobalEngine → CreateEngine →
+		// AttachEngine — runs while the flip's await holds the actor mutex.
+		a.AttachEngine(sink)
+
+		return nil
+	})
+
+	tapShift(a) // one clean tap: the Single decision fires at window expiry
+	start := time.Now()
+	flipDone := make(chan struct{})
+	go func() {
+		defer close(flipDone)
+		a.ExpiryAt(expiryAfterWindow) // EN → RU
+	}()
+	select {
+	case <-flipDone:
+	case <-time.After(flipBudget + 5*time.Second):
+		t.Fatal("the flip never completed — the re-entrant AttachEngine deadlocked on the actor mutex (G-6-1)")
+	}
+	if elapsed := time.Since(start); elapsed >= flipBudget {
+		t.Errorf("the flip consumed %v — at the switchTimeout deadline; the factory path must complete"+
+			" without spending the deadline", elapsed)
+	}
+	if strings.Contains(buf.String(), `"msg":"engine switch failed"`) {
+		t.Errorf("the flip WARNed — the SetGlobalEngine round trip did not complete inside the"+
+			" deadline; log:\n%s", buf.String())
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] — flipTo must run past the re-entrant attach", got)
+	}
+}
+
+// TestActor_AttachEngineWhileFlipInFlight pins the independent-call form of
+// G-6-1: while the flip's SetGlobalEngine await is blocked mid-round-trip
+// (holding the actor mutex), an AttachEngine from a foreign goroutine — the
+// factory's dispatch goroutine in the live daemon — must still return; the
+// factory path never waits on the actor mutex.
+func TestActor_AttachEngineWhileFlipInFlight(t *testing.T) {
+	a, _ := wiredActor()
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	a.SetSwitcher(func(_ context.Context, _ string) error {
+		entered <- struct{}{}
+		<-release // the await stuck mid-round-trip — the slow-ibus-daemon shape
+
+		return nil
+	})
+
+	tapShift(a)
+	flipDone := make(chan struct{})
+	go func() {
+		defer close(flipDone)
+		a.ExpiryAt(expiryAfterWindow) // EN → RU — the await holds the actor mutex
+	}()
+	select {
+	case <-entered:
+	case <-time.After(flipBudget + 5*time.Second):
+		t.Fatal("the flip never reached the switcher seam — the seam is not wired into the flip path")
+	}
+
+	liveSink := &fakeSink{}
+	attachDone := make(chan struct{})
+	go func() {
+		defer close(attachDone)
+		a.AttachEngine(liveSink) // the factory's re-entrant path, off the actor mutex
+	}()
+	select {
+	case <-attachDone:
+	case <-time.After(attachBudget):
+		t.Fatalf("AttachEngine blocked past %v while the flip's SetGlobalEngine await is still in"+
+			" flight — it waits on the actor mutex (G-6-1)", attachBudget)
+	}
+	close(release) // the seam is released only AFTER the attach assertion
+	select {
+	case <-flipDone:
+	case <-time.After(flipBudget + 5*time.Second):
+		t.Fatal("the flip never concluded after the seam's release")
 	}
 }
 
@@ -4517,5 +4617,971 @@ func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
 	want := []string{opSymbolRU, opDisplayRU}
 	if !slices.Equal(ops, want) {
 		t.Errorf("drift op order = %q, want exactly %q — the display fires last on sync too", ops, want)
+	}
+}
+
+// The autocorrect corpus of plan 06-06 (D-53/D-54): the word boundary of
+// feedKey, the cheap-gate arming and the fail-closed silence. The listed
+// app is a bridge-namespace literal distinct from the MACR corpus names.
+
+// acListedApp is the autocorrect white-list entry of the corpus.
+const acListedApp = "org.gnome.gedit"
+
+// The detector thresholds of the corpus — the config 06-04 defaults (the
+// detect.DefaultParams mirror: change the places together).
+const (
+	acMinWordLen    = 4
+	acTrigramMargin = 2.0
+	acTrigramFloor  = 1.0
+)
+
+// acPollBudget bounds every eventually poll of the async confirm — orders
+// of magnitude above the goroutine's real latency, far below any test
+// timeout.
+const acPollBudget = 2 * time.Second
+
+// acOptions is the enabled autocorrect Options of the corpus.
+func acOptions() session.Options {
+	return session.Options{
+		AutoCorrectEnabled:    true,
+		AutoCorrectApps:       []string{acListedApp},
+		AutoCorrectMinWordLen: acMinWordLen,
+		AutoCorrectMargin:     acTrigramMargin,
+		AutoCorrectFloor:      acTrigramFloor,
+	}
+}
+
+// eventually polls cond until it holds or the budget lapses — the poll-
+// until idiom of the appid corpus, never a fixed sleep: the autocorrect
+// confirm runs on its own goroutine, so its visible effects land
+// asynchronously.
+func eventually(t *testing.T, cond func() bool, msg string) {
+	t.Helper()
+	for deadline := time.Now().Add(acPollBudget); time.Now().Before(deadline); {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal(msg)
+}
+
+// spaceKey is the boundary carrier of the corpus (the plan's
+// geometrically-deterministic fires vehicle; the reset keys pin the
+// arming-before-reset instead).
+func spaceKey() engine.EngineEvent {
+	return engine.EngineEvent{Keyval: uint32(' ')}
+}
+
+// fireAutocorrect drives one full autocorrect round: install the
+// allowed-role double, type the token, land the separator boundary, settle
+// the armed pipeline's pre-correction verify with the freshest push, then
+// settle the verify-after round — the same dance the Double corpus
+// performs, driven asynchronously (the confirm goroutine).
+func fireAutocorrect(t *testing.T, a *session.Actor, sink *fakeSink, token, converted string) {
+	t.Helper()
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	typeWord(a, token)
+	if a.HandleKey(spaceKey()) {
+		t.Fatal("the boundary separator was consumed — the decision never changes consumption at the boundary")
+	}
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the pipeline never armed after the boundary (no RequireSurroundingText)")
+	tokenEnd := uint32(len([]rune(token)) + 1)
+	a.HandleSurroundingText(token+" ", tokenEnd, tokenEnd)
+	eventually(t, func() bool { return sink.requireCount() >= 2 },
+		"the verify-after round never armed (the correction never executed)")
+	convEnd := uint32(len([]rune(converted)) + 1)
+	a.HandleSurroundingText(converted+" ", convEnd, convEnd)
+}
+
+// TestActor_AutocorrectDisabledSilent pins the D-54 off invariant: with the
+// zero Options (the default configuration) a word boundary is a NO-OP —
+// the same keystrokes leave the same emitter trace as before the feature
+// existed and no counter moves.
+func TestActor_AutocorrectDisabledSilent(t *testing.T) {
+	a, sink := wiredActor()
+	typeWord(a, wordEN)
+	if a.HandleKey(spaceKey()) {
+		t.Fatal("the separator was consumed with autocorrect off")
+	}
+	if ops := sink.opLog(); len(ops) != 0 {
+		t.Errorf("emitter ops with autocorrect off = %v, want none — the off state is byte-as-today", ops)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 0 || got.Abstained != 0 || len(got.Reasons) != 0 {
+		t.Errorf("counters with autocorrect off = %+v, want all zero — the off state counts nothing (D-54)", got)
+	}
+}
+
+// TestActor_AutocorrectBoundaryArms pins the armed decision: with the
+// cheap gates green (enabled, the listed focused app, the
+// surrounding-text cap, a confident detector verdict) the separator
+// boundary launches THE one correction pipeline — the key transits, the
+// level-1 ladder deletes exactly token+tail and commits the conversion
+// plus the tail.
+func TestActor_AutocorrectBoundaryArms(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	deletes := sink.deleteCalls()
+	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
+		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the range is token+tail", deletes)
+	}
+	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
+		t.Fatalf("commits = %q, want [%q] — the conversion plus the tail", commits, wordRU+" ")
+	}
+	if got := a.AutoCorrectCounters(); got.Abstained != 0 {
+		t.Errorf("abstained after a fired boundary = %d, want 0", got.Abstained)
+	}
+}
+
+// TestActor_AutocorrectEarlyVerifyAnswerWaits pins the 06-07 live finding
+// (06-RESEARCH/live GTK4 fixture): the boundary fires ON the separator
+// keypress, and the pre-correction verify's RequireSurroundingText is
+// served by the client BEFORE the separator key reaches it — by wire
+// ordering the first verify answer is necessarily the PRE-boundary state
+// (token without the tail). That answer is an early report, not a
+// mismatch: the round must stay open within its budget and settle on the
+// post-boundary push (the client applying the separator). The old shape —
+// mismatch on the first answer — killed every fired correction on such
+// clients with verify-mismatch before the real state ever arrived.
+func TestActor_AutocorrectEarlyVerifyAnswerWaits(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	if a.HandleKey(spaceKey()) {
+		t.Fatal("the boundary separator was consumed — the decision never changes consumption at the boundary")
+	}
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the pipeline never armed after the boundary (no RequireSurroundingText)")
+	opsAfterArm := len(sink.opLog())
+
+	// The live first answer: the client's pre-boundary state — the
+	// separator has not been applied client-side yet.
+	preEnd := uint32(len([]rune(wordEN)))
+	a.HandleSurroundingText(wordEN, preEnd, preEnd)
+
+	if got := len(sink.opLog()); got != opsAfterArm {
+		t.Fatalf("emitter ops after the pre-boundary answer = %v, want none new —"+
+			" the early answer must not resolve the round", sink.opLog())
+	}
+	if got := strings.Count(buf.String(), `"reason":"verify-mismatch"`); got != 0 {
+		t.Fatalf("verify-mismatch records after the pre-boundary answer = %d, want 0 —"+
+			" the early answer is not a mismatch", got)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Fatalf("counters after the pre-boundary answer = %+v, want fired=1 abstained=0 — the round stays open", got)
+	}
+
+	// The post-boundary push (the client applied the separator) settles
+	// the round through the normal pipeline.
+	tokenEnd := uint32(len([]rune(wordEN)) + 1)
+	a.HandleSurroundingText(wordEN+" ", tokenEnd, tokenEnd)
+
+	deletes := sink.deleteCalls()
+	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
+		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the range is token+tail", deletes)
+	}
+	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
+		t.Fatalf("commits = %q, want [%q] — the conversion plus the tail", commits, wordRU+" ")
+	}
+
+	// The verify-after round settles exactly as in the fireAutocorrect
+	// dance.
+	eventually(t, func() bool { return sink.requireCount() >= 2 },
+		"the verify-after round never armed (the correction never executed)")
+	convEnd := uint32(len([]rune(wordRU)) + 1)
+	a.HandleSurroundingText(wordRU+" ", convEnd, convEnd)
+}
+
+// TestActor_AutocorrectForeignVerifyAnswerMismatch pins the tolerance's
+// guard: the early-answer wait covers ONLY the token-only pre-boundary
+// state (the separator in flight) — a foreign push inside the verify
+// budget still concludes verify-mismatch with zero emitter ops, the
+// fail-closed direction untouched (D-53).
+func TestActor_AutocorrectForeignVerifyAnswerMismatch(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	if a.HandleKey(spaceKey()) {
+		t.Fatal("the boundary separator was consumed — the decision never changes consumption at the boundary")
+	}
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the pipeline never armed after the boundary (no RequireSurroundingText)")
+
+	// A foreign answer: neither the token-only pre-state nor the settled
+	// token+tail — the field moved on to something else entirely.
+	a.HandleSurroundingText("xx", 2, 2)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-mismatch"`); got != 1 {
+		t.Fatalf("verify-mismatch records after the foreign answer = %d, want exactly 1", got)
+	}
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Fatalf("correction ops after the foreign answer = %d, want 0 — the round concluded by refusal", got)
+	}
+}
+
+// TestActor_ResetKeyBoundary pins the reset side of the boundary (CORR-09
+// preserved): the decision arms BEFORE the hard reset reads the finished
+// word, Enter transits exactly as before, and the buffer is genuinely
+// empty after the reset — a Double finds no word and refuses once with
+// the empty-buffer reason.
+func TestActor_ResetKeyBoundary(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed}) // the armed decision fires through the pipeline
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	if a.HandleKey(engine.EngineEvent{Keyval: engine.KeyReturn}) {
+		t.Fatal("Enter was consumed — the reset is engine state, never consumption")
+	}
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the boundary did not arm before the reset")
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := strings.Count(buf.String(), `"reason":"empty-buffer"`); got != 1 {
+		t.Errorf("empty-buffer refusals after the Double = %d, want exactly 1 — CORR-09 cleared the buffer", got)
+	}
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Errorf("correction ops after the Double = %d, want 0 — the reset emptied the buffer", got)
+	}
+}
+
+// TestActor_BackspaceNoBoundary pins that a pop never arms the decision:
+// the Backspace press (and the letters after it) produce no boundary, no
+// arming and no counters.
+func TestActor_BackspaceNoBoundary(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	a.HandleKey(engine.EngineEvent{Keyval: engine.KeyBackSpace})
+	a.HandleKey(engine.EngineEvent{Keyval: uint32('x')})
+
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("requires after the pop = %d, want 0 — a pop never arms the decision", got)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 0 || got.Abstained != 0 {
+		t.Errorf("counters after the pop = %+v, want zero — the pop is not a boundary", got)
+	}
+}
+
+// TestActor_FocusOutNoBoundary pins the research-Q5 scope: FocusOut ends
+// the phrase (CORR-09) but is NOT a word boundary — the word was not
+// finished by a keystroke, so the autocorrect layer stays silent there.
+func TestActor_FocusOutNoBoundary(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("requires after FocusOut = %d, want 0 — a focus loss never arms the decision", got)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 0 || got.Abstained != 0 {
+		t.Errorf("counters after FocusOut = %+v, want zero", got)
+	}
+}
+
+// TestActor_ManualOverrideAfterAutocorrect pins criterion 4: the manual
+// path rides above the autocorrect layer and never consults its detector —
+// after the silent ghbdtn→привет correction a Double Shift converts привет
+// back to ghbdtn (a dictionary-valid word the autocorrect layer itself
+// would veto).
+func TestActor_ManualOverrideAfterAutocorrect(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	commits := sink.commitTexts()
+	if len(commits) != 2 || commits[1] != wordEN+" " {
+		t.Fatalf("commits = %q, want [%q %q] — the manual round converted привет back", commits, wordRU+" ", wordEN+" ")
+	}
+}
+
+// The role-contour corpus of plan 06-06 Task 2 (D-53): the live GetRole
+// gate runs OFF the actor mutex under a hard deadline, the fail-closed
+// silence counts every cell, and the fired decision re-enters THE one
+// pipeline.
+
+// The role enum of the corpus (the live-verified AT-SPI values —
+// 06-RESEARCH Q4; internal/appid pins the same numbers).
+const (
+	acRoleAllowed           uint32 = 61 // text box
+	acRoleForbiddenEntry    uint32 = 40 // password text
+	acRoleForbiddenTerminal uint32 = 60 // terminal
+)
+
+// acReasonFired is the fired record's reason literal (the INFO log class
+// of the fired decision); acReasonRoleForbidden is the shared matrix slug.
+const (
+	acReasonFired         = "fired"
+	acReasonRoleForbidden = "role-forbidden"
+)
+
+// boundaryWord types one wrong-layout token and lands its separator — the
+// raw boundary of the counter/warn corpora (no verify dance: the cells
+// abstain, or the caller polls the specific counter).
+func boundaryWord(t *testing.T, a *session.Actor, token string) {
+	t.Helper()
+	typeWord(a, token)
+	if a.HandleKey(spaceKey()) {
+		t.Fatalf("the boundary separator was consumed for %q", token)
+	}
+}
+
+// awaitRoleStart waits until the double's live call begins, bounded by the
+// poll budget — a RED-safe form of <-started (the contour's absence is a
+// test failure, never a hang).
+func awaitRoleStart(t *testing.T, role *fakeRole) {
+	t.Helper()
+	select {
+	case <-role.started:
+	case <-time.After(acPollBudget):
+		t.Fatal("the role source was never consulted — the D-53 contour is absent")
+	}
+}
+
+// fakeRole is the role-source test double (the fakeAppid form): a fixed
+// answer or a fixed failure, with optional call gating — started closes on
+// entry (proof the live call began), release blocks the return until
+// closed (the deadline and mutex-freedom cells). The double honors the
+// caller's ctx exactly like the godbus CallWithContext round trip.
+type fakeRole struct {
+	role    uint32
+	err     error
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+
+	mu    sync.Mutex
+	calls int
+}
+
+// Role answers the double's programmed verdict.
+func (f *fakeRole) Role(ctx context.Context) (uint32, error) {
+	f.mu.Lock()
+	f.calls++
+	role, err := f.role, f.err
+	started, release := f.started, f.release
+	f.mu.Unlock()
+	if started != nil {
+		f.once.Do(func() { close(started) })
+	}
+	if release != nil {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+
+	return role, err
+}
+
+// set re-programs the double between boundaries (the episode-swap corpus).
+func (f *fakeRole) set(role uint32, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.role, f.err = role, err
+}
+
+// assertSilence checks the shared silence invariants of one matrix cell:
+// nothing fired, no correction op touched the field, exactly one
+// abstention with the cell's reason slug.
+func assertSilence(t *testing.T, a *session.Actor, sink *fakeSink, reason string) {
+	t.Helper()
+	counters := a.AutoCorrectCounters()
+	if counters.Fired != 0 {
+		t.Errorf("fired = %d, want 0 — the cell must stay silent", counters.Fired)
+	}
+	if counters.Abstained != 1 {
+		t.Errorf("abstained = %d, want 1", counters.Abstained)
+	}
+	if counters.Reasons[reason] != 1 {
+		t.Errorf("reasons = %v, want [%q:1]", counters.Reasons, reason)
+	}
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()) + len(sink.forwardCalls()); got != 0 {
+		t.Errorf("correction ops fired in a silence cell (%d) — the typed word must stay in the field", got)
+	}
+}
+
+// TestAutoCorrect_FiresThroughPipeline pins the resolve path: with every
+// gate green and the live role in the allowed set, the fired decision
+// re-enters THE one correction pipeline (the level-1 ladder — no own
+// delete/commit replay), counts Fired, and records the fired INFO class
+// WITHOUT the word (D-20/D-21).
+func TestAutoCorrect_FiresThroughPipeline(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	deletes := sink.deleteCalls()
+	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
+		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the ladder level 1 ran", deletes)
+	}
+	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
+		t.Fatalf("commits = %q, want [%q]", commits, wordRU+" ")
+	}
+	if forwards := sink.forwardCalls(); len(forwards) != 0 {
+		t.Errorf("forwards = %d, want 0 — the fired decision adds no key replay of its own", len(forwards))
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Errorf("counters = %+v, want {Fired:1 Abstained:0}", got)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"autocorrect"`) || !strings.Contains(logged, `"reason":"`+acReasonFired+`"`) {
+		t.Errorf("the fired INFO record is missing; log:\n%s", logged)
+	}
+	for _, word := range []string{wordEN, wordRU} {
+		if strings.Contains(logged, word) {
+			t.Errorf("the log leaked %q (D-20/D-21); log:\n%s", word, logged)
+		}
+	}
+}
+
+// silenceMatrixCells is the plan-06-06 silence matrix (D-53): every
+// unknown cell of the conjunction with its expected reason slug. The role
+// cells conclude on their own goroutine (async); the cheap-gate cells
+// abstain synchronously.
+func silenceMatrixCells() []struct {
+	name   string
+	token  string
+	caps   uint32
+	appid  func(a *session.Actor)
+	role   *fakeRole
+	reason string
+	async  bool
+} {
+	return []struct {
+		name   string
+		token  string
+		caps   uint32
+		appid  func(a *session.Actor)
+		role   *fakeRole
+		reason string
+		async  bool
+	}{
+		{
+			name: "role 40 password text is forbidden", token: wordEN,
+			role: &fakeRole{role: acRoleForbiddenEntry}, reason: acReasonRoleForbidden, async: true,
+		},
+		{
+			name: "role 60 terminal is forbidden", token: wordEN,
+			role: &fakeRole{role: acRoleForbiddenTerminal}, reason: acReasonRoleForbidden, async: true,
+		},
+		{
+			name: "role error is unknown", token: wordEN,
+			role: &fakeRole{err: errAppidBusDead}, reason: "role-unknown", async: true,
+		},
+		{
+			name: "role deadline times out", token: wordEN,
+			role: &fakeRole{role: acRoleAllowed, release: make(chan struct{})}, reason: "role-timeout", async: true,
+		},
+		{
+			name: "missing identity source is unknown", token: wordEN,
+			appid: func(a *session.Actor) {
+				a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+			},
+			reason: "app-unknown",
+		},
+		{
+			name: "unlisted app is not corrected", token: wordEN,
+			appid:  func(a *session.Actor) { a.UseAppid(fakeAppid{app: macrZenityApp}) },
+			reason: "app-not-listed",
+		},
+		{name: "no surrounding-text cap", token: wordEN, caps: 0, reason: "no-caps"},
+		{name: "detector unsure on a both-dictionary miss", token: "vjcrdf", reason: "trigram-unsure"},
+		{name: "short word abstains", token: "ok", reason: "abstain-short"},
+	}
+}
+
+// TestAutoCorrect_SilenceMatrix pins the fail-closed conjunction cell by
+// cell: EVERY unknown — a forbidden role (password 40, terminal 60), a
+// role error, a role deadline, a missing identity source, an unlisted
+// app, a missing capability, an unsure verdict, a short word — stays
+// silent (zero correction ops, the word stays in the field) and counts
+// exactly one abstention with its reason slug.
+func TestAutoCorrect_SilenceMatrix(t *testing.T) {
+	for _, tc := range silenceMatrixCells() {
+		t.Run(tc.name, func(t *testing.T) {
+			caps := tc.caps
+			if caps == 0 && tc.reason != "no-caps" {
+				caps = engine.CapSurroundingText
+			}
+			a, sink := wiredActorCaps(caps)
+			if tc.appid != nil {
+				tc.appid(a)
+			} else {
+				a.UseAppid(fakeAppid{app: acListedApp})
+			}
+			if tc.role != nil {
+				a.UseRole(tc.role)
+			}
+			a.SetOptions(acOptions())
+
+			boundaryWord(t, a, tc.token)
+			if tc.async {
+				eventually(t, func() bool { return a.AutoCorrectCounters().Abstained >= 1 },
+					"the confirm never concluded")
+			}
+			assertSilence(t, a, sink, tc.reason)
+		})
+	}
+}
+
+// TestAutoCorrect_FailClosedNoFailOpen pins the DIRECTION inversion
+// (ADR-007): a missing identity source means TOTAL silence — the global
+// MACR degradation rung is never copied, the word survives untouched.
+func TestAutoCorrect_FailClosedNoFailOpen(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+
+	assertSilence(t, a, sink, "app-unknown")
+}
+
+// TestAutoCorrect_WarnOncePerEpisode pins the warn discipline (the
+// warnAppid form): a dead role source warns exactly ONCE per episode while
+// every boundary still counts its reason; a healthy answer closes the
+// episode, and the next failing episode warns once again.
+func TestAutoCorrect_WarnOncePerEpisode(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{err: errAppidBusDead}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	eventually(t, func() bool { return a.AutoCorrectCounters().Abstained == 1 },
+		"the first failing boundary never counted")
+	boundaryWord(t, a, "cnhjrf")
+	eventually(t, func() bool { return a.AutoCorrectCounters().Abstained == 2 },
+		"the second failing boundary never counted")
+	if got := strings.Count(buf.String(), `"msg":"autocorrect role unavailable"`); got != 1 {
+		t.Fatalf("role WARNs in the first episode = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+
+	role.set(acRoleAllowed, nil) // a healthy answer closes the episode
+	boundaryWord(t, a, "cegth")
+	eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
+		"the healthy boundary never fired")
+
+	role.set(0, errAppidBusDead) // a fresh failing episode
+	boundaryWord(t, a, "vtyz")
+	eventually(t, func() bool { return a.AutoCorrectCounters().Abstained == 3 },
+		"the third failing boundary never counted")
+	if got := strings.Count(buf.String(), `"msg":"autocorrect role unavailable"`); got != 2 {
+		t.Errorf("role WARNs after the fresh episode = %d, want exactly 2; log:\n%s", got, buf.String())
+	}
+	if got := a.AutoCorrectCounters().Reasons["role-unknown"]; got != 3 {
+		t.Errorf("role-unknown count = %d, want 3 — every boundary counted", got)
+	}
+}
+
+// TestAutoCorrect_RoleDeadlineBounded pins the off-mutex deadline
+// discipline (T-06-06-04): while the live role call blocks, the keystroke
+// path stays fully live (HandleKey completes — the mutex never leaks into
+// the call), and the confirm concludes on its own deadline with the
+// role-timeout abstention — no pipeline launched.
+func TestAutoCorrect_RoleDeadlineBounded(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	awaitRoleStart(t, role)
+
+	keyDone := make(chan bool, 1)
+	go func() { keyDone <- a.HandleKey(engine.EngineEvent{Keyval: uint32('z')}) }()
+	select {
+	case <-keyDone:
+	case <-time.After(acPollBudget):
+		t.Fatal("HandleKey blocked while the role call was in flight — the mutex leaked into the live call")
+	}
+
+	eventually(t, func() bool { return a.AutoCorrectCounters().Abstained == 1 },
+		"the confirm never concluded after the role deadline")
+	counters := a.AutoCorrectCounters()
+	if counters.Reasons["role-timeout"] != 1 {
+		t.Errorf("reasons = %v, want [role-timeout:1]", counters.Reasons)
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("requires = %d, want 0 — a timed-out decision never launches the pipeline", got)
+	}
+}
+
+// TestAutoCorrect_ReEntryRechecks pins the stale-payload guard
+// (T-06-06-06): the config flips OFF between the armed boundary and the
+// confirm's verdict — the re-check under the mutex silences the confirm
+// (no correction, one recheck-disabled abstention).
+func TestAutoCorrect_ReEntryRechecks(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	awaitRoleStart(t, role)
+
+	a.SetOptions(session.Options{}) // the hot-reload shift lands between arm and verdict
+	close(role.release)
+
+	eventually(t, func() bool { return a.AutoCorrectCounters().Abstained == 1 },
+		"the confirm never concluded")
+	counters := a.AutoCorrectCounters()
+	if counters.Fired != 0 || counters.Reasons["recheck-disabled"] != 1 {
+		t.Errorf("counters = %+v, want {Fired:0, recheck-disabled:1} — the stale payload never corrects", counters)
+	}
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Errorf("correction ops = %d, want 0", got)
+	}
+}
+
+// The review-fix corpus of 06-REVIEW (CR-01/CR-02/WR-01): the async confirm
+// must never execute against state that moved on inside the role-RTT
+// window. Every test drives the interleaving deterministically — arm the
+// payload, block the live role call on the double's release channel, mutate
+// the interleaved state, then let the confirm conclude — no sleeps: the
+// gating is the double's own channels (the awaitRoleStart precedent).
+
+// TestAutoConfirm_RevalidatesArmedPayload pins the CR-01 fix: a
+// token-capable keystroke inside the role-RTT window moves the buffer off
+// the armed payload while the cached surrounding push still ends with the
+// armed token+tail (the keystroke's own client push is in flight) — the
+// cached-push fast path would fire the delete+commit against the stale
+// geometry and corrupt the field and the mirror. The confirm must
+// re-validate the armed payload against the live buffer under the mutex and
+// refuse fail-closed: silence + the payload-stale counter, the word never
+// logged (D-20/D-21).
+func TestAutoConfirm_RevalidatesArmedPayload(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	awaitRoleStart(t, role)
+
+	// The client's post-separator push lands while the role round trip is
+	// in flight: the cache ends with the armed token+tail — the exact
+	// freshness the cached fast path trusts.
+	tokenEnd := uint32(len([]rune(wordEN)) + 1)
+	a.HandleSurroundingText(wordEN+" ", tokenEnd, tokenEnd)
+
+	// The interleaved keystroke: the daemon has processed it, the client's
+	// own push for it is still in flight — the buffer has moved on, the
+	// cache has not.
+	a.HandleKey(engine.EngineEvent{Keyval: uint32('x')})
+	close(role.release)
+
+	eventually(t, func() bool {
+		c := a.AutoCorrectCounters()
+
+		return c.Abstained >= 1 || c.Fired >= 1
+	}, "the confirm never concluded")
+	if c := a.AutoCorrectCounters(); c.Fired != 0 {
+		t.Fatalf("fired = %d — the moved-on buffer must never fire the armed payload (CR-01)", c.Fired)
+	}
+	assertSilence(t, a, sink, "payload-stale")
+	logged := buf.String()
+	for _, word := range []string{wordEN, wordRU} {
+		if strings.Contains(logged, word) {
+			t.Errorf("the log leaked %q (D-20/D-21); log:\n%s", word, logged)
+		}
+	}
+}
+
+// TestAutoConfirm_ResetBoundaryAlwaysVerifies pins the CR-02 fix: a
+// reset-boundary payload (Enter/Tab/Escape) must NEVER take the cached-push
+// fast path — the arming keystroke is itself an in-flight field-mutating or
+// focus-moving key, so the cached push is the PRE-reset state by
+// construction and a delete+commit on it can land in a moved-on or entirely
+// different input context. The payload always runs the pre-correction
+// verify round, whose answer names the field as the reset key left it: a
+// stale answer refuses fail-closed (verify-mismatch), never a
+// wrong-context write (ADR-004).
+func TestAutoConfirm_ResetBoundaryAlwaysVerifies(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	typeWord(a, wordEN)
+	// The client's last spontaneous push before the reset key: the cache
+	// ends with the armed word — the pre-reset state the cached fast path
+	// must not trust for a boundary-armed payload.
+	end := uint32(len([]rune(wordEN)))
+	a.HandleSurroundingText(wordEN, end, end)
+
+	if a.HandleKey(engine.EngineEvent{Keyval: engine.KeyEscape}) {
+		t.Fatal("the reset key was consumed — the reset is engine state, never consumption")
+	}
+	awaitRoleStart(t, role)
+	close(role.release)
+
+	// The conclusion must be the verify round's Require — never the cached
+	// delete+commit.
+	eventually(t, func() bool {
+		return sink.requireCount() >= 1 || len(sink.deleteCalls())+len(sink.commitTexts()) > 0
+	}, "the reset-boundary payload never concluded")
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Fatalf("correction ops without a verify round = %d — "+
+			"the cached push must never shortcut a reset boundary (CR-02)", got)
+	}
+
+	// The verify answer names the field AFTER the reset key's own effect —
+	// the single-line entry consumed/submitted: the armed word is gone.
+	// The round refuses fail-closed with zero field edits.
+	a.HandleSurroundingText("", 0, 0)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-mismatch"`); got != 1 {
+		t.Errorf("verify-mismatch records after the post-reset answer = %d, want exactly 1; log:\n%s",
+			got, buf.String())
+	}
+	if got := len(sink.deleteCalls()) + len(sink.commitTexts()); got != 0 {
+		t.Errorf("correction ops after the post-reset answer = %d, want 0 — the stale word stays untouched", got)
+	}
+}
+
+// TestAutoConfirm_RechecksFocusedApp pins the WR-01 fix: the D-53
+// conjunction must be evaluated for ONE object at ONE instant — the
+// white-list app identity checked at arm time is re-checked under the mutex
+// at confirm time. A focus switch inside the role-RTT window re-points the
+// live role query at a different app's object: without the re-check the
+// confirm pairs the armed app's white-list verdict with the new app's role
+// and fires. The mismatch refuses fail-closed: silence + the app-changed
+// counter, zero field edits.
+func TestAutoConfirm_RechecksFocusedApp(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	awaitRoleStart(t, role)
+
+	// The focus moves to an unlisted app inside the window: the live role
+	// call now answers for the NEW object (allowed — a text field of the
+	// other app). The armed app's white-list verdict must not ride on it.
+	a.UseAppid(fakeAppid{app: macrZenityApp})
+	close(role.release)
+
+	eventually(t, func() bool {
+		c := a.AutoCorrectCounters()
+
+		return c.Abstained >= 1 || c.Fired >= 1
+	}, "the confirm never concluded")
+	if c := a.AutoCorrectCounters(); c.Fired != 0 {
+		t.Fatalf("fired = %d — the white-list verdict must be re-checked at confirm (WR-01)", c.Fired)
+	}
+	assertSilence(t, a, sink, "app-changed")
+}
+
+// TestAutoCorrect_CountersAndReasons pins the counter surface over a mixed
+// scenario: fired and every abstention class accumulate in
+// AutoCorrectCounters — counts and closed slugs only, no word in the log.
+func TestAutoCorrect_CountersAndReasons(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{role: acRoleAllowed}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, "ok")     // short → abstain-short (synchronous)
+	boundaryWord(t, a, "vjcrdf") // unsure → trigram-unsure (synchronous)
+	if got := a.AutoCorrectCounters(); got.Abstained != 2 {
+		t.Fatalf("abstained after the sync cells = %d, want 2", got.Abstained)
+	}
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)      // fired (role 61)
+	a.UseRole(&fakeRole{role: acRoleForbiddenEntry}) // fireAutocorrect installed its own double
+	boundaryWord(t, a, "cnhjrf")                     // role 40 → role-forbidden
+	eventually(t, func() bool { return a.AutoCorrectCounters().Abstained == 3 },
+		"the forbidden-role boundary never counted")
+
+	counters := a.AutoCorrectCounters()
+	want := map[string]int{"abstain-short": 1, "trigram-unsure": 1, acReasonRoleForbidden: 1}
+	if counters.Fired != 1 || counters.Abstained != 3 || !maps.Equal(counters.Reasons, want) {
+		t.Errorf("counters = {Fired:%d Abstained:%d Reasons:%v}, want {Fired:1 Abstained:3 Reasons:%v}",
+			counters.Fired, counters.Abstained, counters.Reasons, want)
+	}
+	logged := buf.String()
+	for _, word := range []string{wordEN, wordRU, "cnhjrf", "vjcrdf"} {
+		if strings.Contains(logged, word) {
+			t.Errorf("the log leaked %q (D-20/D-21)", word)
+		}
+	}
+}
+
+// The status/fold corpus of plan 06-06 Task 3 (D-54): the autocorrect
+// state and counters ride the status snapshot, the config section folds
+// live through applySnapshot, and the ctl line carries the new tokens.
+
+// acEnabledCfg is a defaults-based document with the autocorrect section
+// ACTIVE on the corpus white list. The post-correction flip is pinned OFF
+// here: the fold corpus asserts counters, not the owner's mode rule, and
+// a mid-test script flip would retarget the detector's mode side.
+func acEnabledCfg() config.Config {
+	cfg := config.Defaults()
+	cfg.Correction.FlipAfterCorrection = false
+	cfg.Autocorrect = config.Autocorrect{
+		Enabled:       true,
+		Apps:          []string{acListedApp},
+		MinWordLen:    acMinWordLen,
+		TrigramMargin: acTrigramMargin,
+		TrigramFloor:  acTrigramFloor,
+	}
+
+	return cfg
+}
+
+// TestStatus_AutocorrectFields pins the snapshot surface (D-54): the
+// in-force switch, the fired/abstained counts and the CLONED reason map —
+// zeros with the layer off, the real counts after a fired round, and a
+// snapshot mutation never reaches the actor's own counters.
+func TestStatus_AutocorrectFields(t *testing.T) {
+	a, sink := wiredActor()
+	st := a.StatusSnapshot()
+	off := st.AutoCorrectEnabled || st.AutoCorrectFired != 0 ||
+		st.AutoCorrectAbstained != 0 || len(st.AutoCorrectSkipReasons) != 0
+	if off {
+		t.Fatalf("off-state snapshot = %+v, want the zero autocorrect state", st)
+	}
+
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	st = a.StatusSnapshot()
+	if !st.AutoCorrectEnabled || st.AutoCorrectFired != 1 || st.AutoCorrectAbstained != 0 {
+		t.Fatalf("snapshot after the fired round = %+v, want {enabled true, fired 1, abstained 0}", st)
+	}
+
+	// One abstention gives the reason map a carried entry; the clone probe
+	// mutates the snapshot's map and demands the actor's own counters
+	// untouched (maps.Clone semantics — a nil source stays nil).
+	boundaryWord(t, a, "ok")
+	st = a.StatusSnapshot()
+	if st.AutoCorrectAbstained != 1 || st.AutoCorrectSkipReasons["abstain-short"] != 1 {
+		t.Fatalf("snapshot after the abstention = %+v, want [abstain-short:1]", st)
+	}
+	st.AutoCorrectSkipReasons["mutated"] = 99
+	again := a.StatusSnapshot()
+	if again.AutoCorrectSkipReasons["mutated"] != 0 || again.AutoCorrectSkipReasons["abstain-short"] != 1 {
+		t.Errorf("the snapshot map is not a clone: %v", again.AutoCorrectSkipReasons)
+	}
+}
+
+// TestApplySnapshot_AutocorrectFold pins the live fold (the MACR-fold
+// precedent): the attached document's autocorrect section governs the
+// boundary gates — the feature appears and disappears LIVE on reload, the
+// folded MinWordLen gates the detector, and the white list starts the
+// identity observer.
+func TestApplySnapshot_AutocorrectFold(t *testing.T) {
+	a, sink := wiredActor()
+	starts := 0
+	a.UseAppidStarter(func() (session.AppidSource, error) {
+		starts++
+
+		return fakeAppid{app: acListedApp}, nil
+	})
+	src := &reloadSource{cfg: acEnabledCfg()}
+	a.AttachConfig(src)
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+	if starts != 1 {
+		t.Errorf("the folded white list started the observer %d times, want exactly 1", starts)
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 1 {
+		t.Fatalf("counters after the enabled fold = %+v, want Fired 1", got)
+	}
+
+	// The section disappears live: the same boundary is now the off
+	// no-op (zero behavior, zero counters).
+	cfg := config.Defaults()
+	src.set(cfg)
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	typeWord(a, "cegth")
+	a.HandleKey(spaceKey())
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Errorf("counters after the disabled fold = %+v, want unchanged — the off fold is byte-as-today", got)
+	}
+
+	// The thresholds fold too: min_word_len 16 refuses the six-rune word
+	// with the detector's own slug.
+	cfg = acEnabledCfg()
+	cfg.Autocorrect.MinWordLen = 16
+	src.set(cfg)
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	typeWord(a, "vtyz")
+	a.HandleKey(spaceKey())
+	if got := a.AutoCorrectCounters().Reasons["abstain-short"]; got != 1 {
+		t.Errorf("abstain-short after the threshold fold = %d, want 1", got)
+	}
+}
+
+// TestCtlStatus_EndToEnd drives the real actor's snapshot through the
+// control line: a fired autocorrect shows as autocorrect_enabled=true with
+// the fired count — the goswitchctl grammar needs no change (the generic
+// key=value parser).
+func TestCtlStatus_EndToEnd(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{Status: a})
+	reply, err := svc.Status()
+	if err != nil {
+		t.Fatalf("Status error = %v, want nil", err)
+	}
+	for _, want := range []string{"autocorrect_enabled=true", "autocorrect_fired=1"} {
+		if !strings.Contains(reply, want) {
+			t.Errorf("Status reply %q missing %q", reply, want)
+		}
 	}
 }

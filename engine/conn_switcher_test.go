@@ -8,9 +8,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -28,6 +30,13 @@ const serveBudget = 5 * time.Second
 
 // callBudget bounds one switcher round trip against the fake bus.
 const callBudget = 5 * time.Second
+
+// flipDeadline is the actor's switchTimeout (150 ms) mirrored for the
+// reattach witnesses: the seam context the flip path hands SetGlobalEngine.
+// The witnesses prove the factory answers INSIDE it when the handler plays
+// the fixed actor's lock-free discipline, and that a blocking handler burns
+// it — the only gate of the re-entrant path.
+const flipDeadline = 150 * time.Millisecond
 
 // errSaslHandshake is the stand's static refusal: the client left the SASL
 // script the fake bus answers.
@@ -191,6 +200,12 @@ type fakeBus struct {
 	mu       sync.Mutex
 	switches []string
 	fail     bool
+	// reattach, when non-nil, runs SYNCHRONOUSLY in the SetGlobalEngine
+	// dispatch goroutine BEFORE the reply — the live G-6-1 shape: ibus-daemon
+	// answers a flip by minting the target engine through the daemon's
+	// factory (CreateEngine → handler.AttachEngine) while the flip's
+	// SetGlobalEngine await is still in flight. Controlled like fail.
+	reattach func(name string)
 
 	// writeMu serializes every write to the client connection: the
 	// dispatch loop answers method calls from its own goroutine while the
@@ -364,7 +379,14 @@ func (fb *fakeBus) answer(msg *dbus.Message) *dbus.Message {
 		fb.mu.Lock()
 		fb.switches = append(fb.switches, name)
 		fail := fb.fail
+		hook := fb.reattach
 		fb.mu.Unlock()
+		if hook != nil {
+			// The reattach mode: the target engine is minted synchronously
+			// in this dispatcher goroutine, before the reply — the exact
+			// live form of ibus-daemon during a flip (G-6-1).
+			hook(name)
+		}
 		if fail {
 			return replyMsg(dbus.TypeError, errFailMember, errInjectedFail.Error())
 		}
@@ -426,6 +448,84 @@ func (fb *fakeBus) setFail(on bool) {
 	defer fb.mu.Unlock()
 
 	fb.fail = on
+}
+
+// setReattach arms the reattach mode: every subsequent SetGlobalEngine runs
+// hook(name) synchronously in its dispatch goroutine before the reply — the
+// controlled G-6-1 hook, the setFail precedent.
+func (fb *fakeBus) setReattach(hook func(name string)) {
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+
+	fb.reattach = hook
+}
+
+// dialFakeBus opens a second client connection to the stand's socket — the
+// connection a witness's own factory exports engines on (the same SASL
+// server script the serve connection walked; IBUS_ADDRESS points at the
+// socket since newFakeBus).
+func dialFakeBus(t *testing.T) *dbus.Conn {
+	t.Helper()
+
+	conn, err := dbus.Dial(os.Getenv("IBUS_ADDRESS"))
+	if err != nil {
+		t.Fatalf("dial fake bus: %v", err)
+	}
+	if err := conn.Auth(userAuth()); err != nil {
+		t.Fatalf("fake bus auth: %v", err)
+	}
+	if err := conn.Hello(); err != nil {
+		t.Fatalf("fake bus hello: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return conn
+}
+
+// reattachHandler is the factory witness's handler double: AttachEngine
+// records the minted engine (the factory sets conn and path BEFORE the
+// attach — the recorded path is the wire truth), announces the entry, and —
+// in the blocking discipline — holds until released, the pre-fix actor
+// emulated. Every other EventHandler method is a no-op: the witnesses drive
+// only the CreateEngine chain.
+type reattachHandler struct {
+	mu       sync.Mutex
+	attached []*Engine
+	block    bool
+	entered  chan struct{}
+	release  chan struct{}
+}
+
+// AttachEngine records the engine and optionally blocks — the single gate
+// the witnesses discriminate on.
+func (h *reattachHandler) AttachEngine(eng Emitter) {
+	if e, ok := eng.(*Engine); ok {
+		h.mu.Lock()
+		h.attached = append(h.attached, e)
+		h.mu.Unlock()
+	}
+	if h.entered != nil {
+		h.entered <- struct{}{}
+	}
+	if h.block {
+		<-h.release
+	}
+}
+
+func (h *reattachHandler) HandleKey(EngineEvent) bool { return false }
+
+func (h *reattachHandler) HandleLifecycle(LifecycleKind) {}
+
+func (h *reattachHandler) HandleSurroundingText(string, uint32, uint32) {}
+
+func (h *reattachHandler) HandleCapabilities(uint32) {}
+
+// attachedEngines snapshots the recorded engines.
+func (h *reattachHandler) attachedEngines() []*Engine {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return append([]*Engine(nil), h.attached...)
 }
 
 // setGlobalEngine fixes what the stand's GetGlobalEngine answers with —
@@ -604,6 +704,123 @@ func TestSwitcherNilNoOp(t *testing.T) {
 	awaitSeam(t, reached, serveOnce(ctx, cfg, 0), 0)
 	if gen := <-sewn; gen != 0 {
 		t.Errorf("PostRegister generation = %d, want 0 — the pre-seam cycle must be intact", gen)
+	}
+}
+
+// mintSeq is the witness factory's first mint: a fresh factory's seq starts
+// at zero, so the first CreateEngine mints object path .../goswitch/1.
+const mintSeq = 1
+
+// TestFactoryReentrantCreateEngineAnswersDuringAwait is witness A of G-6-1
+// (the factory contract): with the handler playing the FIXED actor's
+// lock-free discipline (an instant AttachEngine), the reattach hook — the
+// live form of ibus-daemon answering a flip — completes CreateEngine INSIDE
+// the SetGlobalEngine await: the seam reply arrives far inside the 150 ms
+// flip deadline, the mint is clean, and AttachEngine received the engine
+// with the minted path and the requested name. The factory adds no block of
+// its own to the re-entrant path.
+func TestFactoryReentrantCreateEngineAnswersDuringAwait(t *testing.T) {
+	flip, bus := boundSeam(t)
+	fconn := dialFakeBus(t)
+	handler := &reattachHandler{}
+	f := &factory{conn: fconn, handler: handler}
+	mint := make(chan mintResult, 1)
+	bus.setReattach(func(name string) {
+		path, dbusErr := f.CreateEngine(name)
+		mint <- mintResult{path: path, err: dbusErr}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), flipDeadline)
+	defer cancel()
+	start := time.Now()
+	if err := flip(ctx, NameRU); err != nil {
+		t.Fatalf("switcher(%q) = %v — the re-entrant CreateEngine did not complete during the"+
+			" SetGlobalEngine await", NameRU, err)
+	}
+	if elapsed := time.Since(start); elapsed >= flipDeadline {
+		t.Errorf("the seam reply took %v — at the flip deadline; an instant handler must be answered"+
+			" far inside it", elapsed)
+	}
+	select {
+	case res := <-mint:
+		want := dbus.ObjectPath(fmt.Sprintf(enginePathFmt, mintSeq))
+		if res.err != nil {
+			t.Errorf("CreateEngine = %v, want a clean mint", res.err)
+		}
+		if res.path != want {
+			t.Errorf("CreateEngine path = %q, want %q — the witness factory's first mint", res.path, want)
+		}
+	case <-time.After(callBudget):
+		t.Fatal("the reattach hook never completed CreateEngine")
+	}
+	attached := handler.attachedEngines()
+	if len(attached) != 1 {
+		t.Fatalf("AttachEngine fired %d times, want exactly 1 — the factory attaches the minted engine", len(attached))
+	}
+	if got := attached[0].path; got != dbus.ObjectPath(fmt.Sprintf(enginePathFmt, mintSeq)) {
+		t.Errorf("attached engine path = %q, want the minted path — conn and path are bound BEFORE the attach", got)
+	}
+	if got := attached[0].name; got != NameRU {
+		t.Errorf("attached engine name = %q, want %q — the requested engine name rides into the mint", got, NameRU)
+	}
+}
+
+// mintResult is the reattach hook's handoff: the mint's path and error travel
+// through a channel so the -race detector sees the dispatch goroutine's
+// happens-before edge to the witness's assertions.
+type mintResult struct {
+	path dbus.ObjectPath
+	err  *dbus.Error
+}
+
+// TestFactoryReentrantCreateEngineBlockingHandlerIsOnlyGate is witness B of
+// G-6-1 (mechanism discrimination): a handler whose AttachEngine blocks
+// until release — the PRE-FIX actor emulated — is the only gate of the
+// re-entrant factory path: the SetGlobalEngine reply never arrives inside
+// the flip deadline (the seam returns DeadlineExceeded), and after the
+// release the goroutines are collected — the blocked mint completes and a
+// fresh flip answers with the hook still armed. No FocusOut/FocusIn chain
+// takes part: the gate is the handler, nothing else.
+func TestFactoryReentrantCreateEngineBlockingHandlerIsOnlyGate(t *testing.T) {
+	flip, bus := boundSeam(t)
+	fconn := dialFakeBus(t)
+	handler := &reattachHandler{
+		block:   true,
+		entered: make(chan struct{}, 2),
+		release: make(chan struct{}),
+	}
+	f := &factory{conn: fconn, handler: handler}
+	bus.setReattach(func(name string) {
+		_, _ = f.CreateEngine(name) // the blocked mint's outcome is not this witness's subject
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), flipDeadline)
+	if err := flip(ctx, NameRU); !errors.Is(err, context.DeadlineExceeded) {
+		cancel()
+		t.Fatalf("switcher(%q) = %v, want context.DeadlineExceeded — a blocking AttachEngine must burn the"+
+			" flip deadline: the handler is the only gate of the re-entrant factory path", NameRU, err)
+	}
+	cancel()
+	select {
+	case <-handler.entered:
+	case <-time.After(callBudget):
+		t.Fatal("AttachEngine was never entered — the re-entrant CreateEngine path did not run")
+	}
+
+	// The release collects the goroutines: CreateEngine completes, the
+	// dispatch goroutine unblocks, and a fresh flip answers — the hook is
+	// still armed, so the collected state itself serves the live path.
+	close(handler.release)
+	ctx2, cancel2 := context.WithTimeout(context.Background(), callBudget)
+	defer cancel2()
+	if err := flip(ctx2, NameEN); err != nil {
+		t.Fatalf("post-release switcher(%q) = %v — the dispatch goroutine never collected after"+
+			" the release", NameEN, err)
+	}
+	attached := handler.attachedEngines()
+	if len(attached) != 2 {
+		t.Fatalf("AttachEngine fired %d times across the two flips, want exactly 2 — the blocked mint"+
+			" completed and the fresh one answered", len(attached))
 	}
 }
 
