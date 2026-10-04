@@ -5584,6 +5584,15 @@ func TestAutoCorrect_ConfirmUnknownPasses(t *testing.T) {
 	if c := a.AutoCorrectCounters(); c.Abstained != 0 {
 		t.Errorf("abstained = %d, want 0 — the unknown identity never refuses", c.Abstained)
 	}
+
+	// The fired confirm launches THE pipeline: settle its pre-correction
+	// verify with the field's post-boundary state — the confirmed word
+	// runs the ladder exactly like any other fired round.
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the pipeline never armed after the confirm")
+	tokenEnd := uint32(len([]rune(wordEN)) + 1)
+	a.HandleSurroundingText(wordEN+" ", tokenEnd, tokenEnd)
+
 	if got := len(sink.deleteCalls()); got != 1 {
 		t.Errorf("deletes = %d, want 1 — the confirmed word runs the ladder", got)
 	}

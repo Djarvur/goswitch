@@ -93,7 +93,6 @@ const (
 const (
 	acReasonAppBlocked      = "app-blocked"
 	acReasonNoCaps          = "no-caps"
-	acReasonAppUnknown      = "app-unknown"
 	acReasonRoleUnknown     = "role-unknown"
 	acReasonRoleForbidden   = "role-forbidden"
 	acReasonRoleTimeout     = "role-timeout"
@@ -452,7 +451,7 @@ func (a *Actor) SetOptions(o Options) {
 
 	a.opts = o
 	a.refreshACBlocklist(o.AutoCorrectBlocklist) // the no-config surface owns the same cache
-	a.ensureAppid()                              // a non-empty app list arrives through this surface too
+	a.ensureAppid()                              // an enabled autocorrect layer or a non-empty macr list arrives through this surface too
 }
 
 // AttachConfig connects the live config source (the 03-02 watcher's
@@ -1103,7 +1102,7 @@ func (a *Actor) applySnapshot() {
 	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
 	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
 	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
-	a.ensureAppid() // the per-app list may have appeared with this document
+	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
 }
 
 // handleSurroundingLocked is the mutex-held core of HandleSurroundingText.
@@ -1514,13 +1513,16 @@ func (a *Actor) warnAppid(err error) {
 }
 
 // ensureAppid lazily starts the per-app identity source: only once a
-// NON-EMPTY app list is in force, only once per actor (ADR-005 a: the
-// a11y bus is connected IFF per-app lists exist). A failed start WARNs
-// and leaves the source nil — the global rule covers the gap for good
-// (one documented degradation, not a retry loop). The caller holds the
-// mutex.
+// NON-EMPTY macr list is in force OR autocorrect is ENABLED (the 07-04
+// condition — the blocklist negatives need an identity to refuse on, and
+// the confirm's live role query needs the observer as its RoleSource), and
+// only once per actor (ADR-005 a: the a11y bus is connected IFF per-app
+// scope or the enabled autocorrect layer can need it). A failed start WARNs
+// and leaves the source nil — the quiet unknown-identity pass-through
+// covers the gap for good (one documented degradation, not a retry loop).
+// The caller holds the mutex.
 func (a *Actor) ensureAppid() {
-	if a.appidStarted || (len(a.opts.MACRApps) == 0 && len(a.opts.AutoCorrectBlocklist) == 0) {
+	if a.appidStarted || (len(a.opts.MACRApps) == 0 && !a.opts.AutoCorrectEnabled) {
 		return
 	}
 	a.appidStarted = true
@@ -1885,17 +1887,20 @@ func (a *Actor) armAutoCorrect(payload acPayload, armed bool) {
 // autoCorrectBoundary decides one word boundary under the CHEAP half of
 // the D-53 conjunction (the caller holds the mutex — feedKey): enabled,
 // the surrounding-text capability, the focused app's bridge-namespace
-// identity against the BLOCKLIST (the D-53 revision — any regex pattern
-// matching the identity FORBIDS the correction; an empty list forbids
-// nothing) and the detector's CONFIDENT wrong-layout verdict on the
-// finished token. Every refusal counts its reason and refuses the
-// payload. TRANSITIONAL (this plan, 07-02): an UNKNOWN identity still
-// means SILENCE — the fail-closed direction of phase 6; the final D-53
-// contract inverts it (unknown is not a prohibition — plan 07-04 turns
-// this branch into a pass-through). The expensive half — the live GetRole
-// — never runs here: the armed payload hands the decision outside the
-// mutex (the off-mutex discipline, T-06-06-04). The off state is the
-// zero-behavior invariant: no counter, no record — the boundary is
+// identity against the BLOCKLIST (any regex pattern matching the identity
+// FORBIDS the correction; an empty list forbids nothing) and the
+// detector's CONFIDENT wrong-layout verdict on the finished token. The
+// 07-04 revision (locked 07-CONTEXT) inverts EXACTLY ONE segment: an
+// UNKNOWN identity — no source started, or no focus event yet — is NOT a
+// prohibition: the identity is omitted from the payload (no app field),
+// the detector still runs, and the confirm gate plus the payload-stale
+// buffer geometry carry the safety story. A KNOWN identity matching any
+// pattern refuses with app-blocked. Role, caps and the detector stay
+// fail-closed — the pinned direction is
+// TestAutoCorrect_IdentityUnknownNotProhibition. The expensive half — the
+// live GetRole — never runs here: the armed payload hands the decision
+// outside the mutex (the off-mutex discipline, T-06-06-04). The off state
+// is the zero-behavior invariant: no counter, no record — the boundary is
 // byte-as-today (D-54).
 func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 	if !a.opts.AutoCorrectEnabled {
@@ -1908,21 +1913,21 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 
 		return acPayload{}, false
 	}
-	app, ok := a.acFocusedApp()
-	if !ok {
-		a.recordACAbstain(acReasonAppUnknown)
+	// The 07-04 inversion: an unknown identity PASSES — only a KNOWN
+	// identity can be forbidden, the payload simply carries no app.
+	app, appKnown := a.acFocusedApp()
+	if appKnown {
+		// The blocklist matches by regex SUBSTRING over the identity (RE2
+		// — linear, no catastrophic backtracking; ^…$ anchoring is the
+		// document's explicit choice) — the compiled cache from
+		// applySnapshot, never the raw strings. Any matching pattern
+		// forbids.
+		for _, re := range a.acBlocklist {
+			if re.MatchString(app) {
+				a.recordACAbstain(acReasonAppBlocked)
 
-		return acPayload{}, false
-	}
-	// The blocklist matches by regex SUBSTRING over the identity (RE2 —
-	// linear, no catastrophic backtracking; ^…$ anchoring is the
-	// document's explicit choice) — the compiled cache from applySnapshot,
-	// never the raw strings. Any matching pattern forbids.
-	for _, re := range a.acBlocklist {
-		if re.MatchString(app) {
-			a.recordACAbstain(acReasonAppBlocked)
-
-			return acPayload{}, false
+				return acPayload{}, false
+			}
 		}
 	}
 	tok := a.buf.Token()
@@ -1989,13 +1994,17 @@ func compileACBlocklist(patterns []string) []*regexp.Regexp {
 	return compiled
 }
 
-// acFocusedApp resolves the focused app identity for the boundary gate: a
-// missing source is an UNKNOWN (fail-closed — never the MACR degradation),
-// reported with the one-WARN-per-episode discipline of warnAppid. The
+// acFocusedApp resolves the focused app identity for the boundary and
+// confirm gates. The 07-04 warn discipline (locked 07-CONTEXT): a WARN
+// fires ONLY on a SOURCE ERROR — the source is installed but its answer
+// broke (the one-per-episode warnAppid form). A MISSING identity — no
+// source started, or no focus event yet — is the quiet norm under the
+// blocklist semantics (nothing is visible to forbid, the unknown passes
+// both gates) and never warns; a debug record is its only trace. The
 // caller holds the mutex.
 func (a *Actor) acFocusedApp() (string, bool) {
 	if a.appid == nil {
-		a.warnACApp(nil)
+		slog.Debug("autocorrect app identity unknown", "reason", "no source started")
 
 		return "", false
 	}
@@ -2005,24 +2014,27 @@ func (a *Actor) acFocusedApp() (string, bool) {
 
 		return "", false
 	}
+	if app == "" {
+		slog.Debug("autocorrect app identity unknown", "reason", "no focus event yet")
+
+		return "", false
+	}
 	a.acAppWarned = false // a healthy answer closes the episode
 
 	return app, true
 }
 
-// warnACApp records one autocorrect identity-source failure: the WARN
-// fires once per degradation episode (the warnAppid form — per boundary
-// would spam the journal of a broken source). The caller holds the mutex.
+// warnACApp records one autocorrect identity-source ERROR — the source is
+// installed but its answer broke: the WARN fires once per degradation
+// episode (the warnAppid form — per boundary would spam the journal of a
+// broken source). A missing identity never reaches here: that is the
+// quiet unknown of acFocusedApp (the 07-04 warn discipline). The caller
+// holds the mutex.
 func (a *Actor) warnACApp(err error) {
 	if a.acAppWarned {
 		return
 	}
 	a.acAppWarned = true
-	if err == nil {
-		slog.Warn("autocorrect app identity unavailable")
-
-		return
-	}
 	slog.Warn("autocorrect app identity unavailable", "error", err)
 }
 
@@ -2133,6 +2145,10 @@ func (a *Actor) autoConfirm(payload acPayload) {
 // source is the unknown (fail-closed), a different app is the changed one.
 // Every refusal counts its closed slug and reports false; the caller holds
 // the mutex.
+//
+// TRANSITIONAL (this plan, 07-04 Task 2): the unknown identity no longer
+// refuses here — the same pass-through as the arming gate (the final
+// blocklist-only form of the confirm lands with the equality removal).
 func (a *Actor) acConfirmRefusals(payload acPayload) bool {
 	if !slices.Equal(a.buf.Token(), payload.expectToken) ||
 		!slices.Equal(a.buf.Tail(), payload.expectTail) {
@@ -2141,12 +2157,7 @@ func (a *Actor) acConfirmRefusals(payload acPayload) bool {
 		return false
 	}
 	app, ok := a.acFocusedApp()
-	if !ok {
-		a.recordACAbstain(acReasonAppUnknown)
-
-		return false
-	}
-	if app != payload.app {
+	if ok && app != payload.app {
 		a.recordACAbstain(acReasonAppChanged)
 
 		return false
