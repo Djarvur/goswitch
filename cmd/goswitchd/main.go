@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -163,6 +165,56 @@ func notifyStatus(conn *dbus.Conn, actor *session.Actor) {
 		slog.Warn("status notification failed", "component", "tray indicator", "error", call.Err)
 	}
 }
+
+// procStarter is the started-process seam of the settings launcher (plan
+// 07-05): Start brings the editor up, Wait reaps it. *exec.Cmd is the
+// production value; the corpus installs a fake.
+type procStarter interface {
+	Start() error
+	Wait() error
+}
+
+// newEditorProc builds the editor launch: xdg-open with the config path as
+// its ONLY argument — never a shell, never user data (T-07-05-01) — and NO
+// pipes: the fork-shaped grandchild (a GUI editor outliving the daemon)
+// would deadlock a piped Run on its write-ends (the wl-copy precedent,
+// clipboard.go:141-150). The package var is the corpus seam.
+//
+//nolint:gochecknoglobals // the launcher's test seam (the D-37 stamping precedent)
+var newEditorProc = func(bin, path string) procStarter {
+	return exec.Command(bin, path) // nil Stdout/Stderr: the no-pipes fork-shaped form (T-07-05-02)
+}
+
+// configEditor opens the config document in the desktop editor
+// («Настройки…», plan 07-05): the document is ensured first (an editor on
+// an empty buffer would strict-decode-refuse on save, research Q7), then
+// xdg-open launches on the pinned path. RED stub: the episode lands in
+// GREEN.
+type configEditor struct {
+	ensure func(path string) error
+	mu     sync.Mutex
+	warned bool
+}
+
+// open runs one ensure+launch episode. RED stub.
+func (e *configEditor) open(_ string) {}
+
+// configToggle is one persisted menu toggle (plan 07-05): the click reads
+// the APPLIED value from the actor's status snapshot, inverts it, writes it
+// through the config writer (the 07-03 Node round-trip), pushes the menu at
+// the click and applies the document synchronously through the reload —
+// never a write-only toggle (research Q3b anti-pattern).
+type configToggle struct {
+	path   string
+	read   func() bool
+	write  func(path string, on bool) error
+	push   func(on bool)
+	reload func() // nil without a config source — impossible after adopt (07-03), guarded anyway
+}
+
+// flip executes one click in the pinned order: snapshot → write → menu
+// push → reload. RED stub.
+func (t *configToggle) flip() {}
 
 // reloadConfig drives the forced synchronous re-read and logs the outcome —
 // the menu item's mirror of goswitchctl reload: WARN on the rejection (the
