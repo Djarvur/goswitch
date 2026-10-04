@@ -4620,12 +4620,18 @@ func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
 	}
 }
 
-// The autocorrect corpus of plan 06-06 (D-53/D-54): the word boundary of
-// feedKey, the cheap-gate arming and the fail-closed silence. The listed
-// app is a bridge-namespace literal distinct from the MACR corpus names.
+// The autocorrect corpus of plan 06-06 (blocklist re-pinned by 07-02):
+// the word boundary of feedKey, the cheap-gate arming and the fail-closed
+// silence. The fixture app is a bridge-namespace literal distinct from
+// the MACR corpus names.
 
-// acListedApp is the autocorrect white-list entry of the corpus.
+// acListedApp is the fixture app identity of the autocorrect corpus.
 const acListedApp = "org.gnome.gedit"
+
+// acBlockMiss is the corpus's blocklist pattern: an ANCHORED prefix that
+// never matches acListedApp — the fire paths' Options (a blocklist entry
+// that forbids nothing on this corpus).
+const acBlockMiss = `^com\.google\.Chrome`
 
 // The detector thresholds of the corpus — the config 06-04 defaults (the
 // detect.DefaultParams mirror: change the places together).
@@ -4640,15 +4646,26 @@ const (
 // timeout.
 const acPollBudget = 2 * time.Second
 
-// acOptions is the enabled autocorrect Options of the corpus.
+// acOptions is the enabled autocorrect Options of the corpus: a blocklist
+// pattern that does NOT match the fixture app, so every fire path fires.
 func acOptions() session.Options {
 	return session.Options{
 		AutoCorrectEnabled:    true,
-		AutoCorrectBlocklist:  []string{acListedApp},
+		AutoCorrectBlocklist:  []string{acBlockMiss},
 		AutoCorrectMinWordLen: acMinWordLen,
 		AutoCorrectMargin:     acTrigramMargin,
 		AutoCorrectFloor:      acTrigramFloor,
 	}
+}
+
+// acBlockedOptions is the blocklist-match cell's configuration: the
+// pattern is a bare SUBSTRING of the fixture identity (no anchors — the
+// MatchString substring semantics pinned at the actor level).
+func acBlockedOptions() session.Options {
+	opts := acOptions()
+	opts.AutoCorrectBlocklist = []string{"gedit"}
+
+	return opts
 }
 
 // eventually polls cond until it holds or the budget lapses — the poll-
@@ -4939,10 +4956,13 @@ const (
 )
 
 // acReasonFired is the fired record's reason literal (the INFO log class
-// of the fired decision); acReasonRoleForbidden is the shared matrix slug.
+// of the fired decision); acReasonRoleForbidden is the shared matrix slug;
+// acReasonAppBlocked is the 07-02 blocklist slug (pinned by the e2e oracle
+// name ac_skip_app_blocked).
 const (
 	acReasonFired         = "fired"
 	acReasonRoleForbidden = "role-forbidden"
+	acReasonAppBlocked    = "app-blocked"
 )
 
 // boundaryWord types one wrong-layout token and lands its separator — the
@@ -5075,22 +5095,24 @@ func TestAutoCorrect_FiresThroughPipeline(t *testing.T) {
 // cells conclude on their own goroutine (async); the cheap-gate cells
 // abstain synchronously.
 func silenceMatrixCells() []struct {
-	name   string
-	token  string
-	caps   uint32
-	appid  func(a *session.Actor)
-	role   *fakeRole
-	reason string
-	async  bool
+	name    string
+	token   string
+	caps    uint32
+	appid   func(a *session.Actor)
+	role    *fakeRole
+	options func() session.Options
+	reason  string
+	async   bool
 } {
 	return []struct {
-		name   string
-		token  string
-		caps   uint32
-		appid  func(a *session.Actor)
-		role   *fakeRole
-		reason string
-		async  bool
+		name    string
+		token   string
+		caps    uint32
+		appid   func(a *session.Actor)
+		role    *fakeRole
+		options func() session.Options
+		reason  string
+		async   bool
 	}{
 		{
 			name: "role 40 password text is forbidden", token: wordEN,
@@ -5116,9 +5138,13 @@ func silenceMatrixCells() []struct {
 			reason: "app-unknown",
 		},
 		{
-			name: "unlisted app is not corrected", token: wordEN,
-			appid:  func(a *session.Actor) { a.UseAppid(fakeAppid{app: macrZenityApp}) },
-			reason: "app-not-listed",
+			// The 07-02 blocklist polarity: a KNOWN identity matching a
+			// pattern forbids the correction (app-blocked) — replacing the
+			// white-list "unlisted app" cell.
+			name: "blocklist match forbids a known app", token: wordEN,
+			appid:   func(a *session.Actor) { a.UseAppid(fakeAppid{app: acListedApp}) },
+			options: acBlockedOptions,
+			reason:  acReasonAppBlocked,
 		},
 		{name: "no surrounding-text cap", token: wordEN, caps: 0, reason: "no-caps"},
 		{name: "detector unsure on a both-dictionary miss", token: "vjcrdf", reason: "trigram-unsure"},
@@ -5148,7 +5174,11 @@ func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 			if tc.role != nil {
 				a.UseRole(tc.role)
 			}
-			a.SetOptions(acOptions())
+			if tc.options != nil {
+				a.SetOptions(tc.options())
+			} else {
+				a.SetOptions(acOptions())
+			}
 
 			boundaryWord(t, a, tc.token)
 			if tc.async {
@@ -5461,15 +5491,16 @@ func TestAutoCorrect_CountersAndReasons(t *testing.T) {
 // live through applySnapshot, and the ctl line carries the new tokens.
 
 // acEnabledCfg is a defaults-based document with the autocorrect section
-// ACTIVE on the corpus white list. The post-correction flip is pinned OFF
-// here: the fold corpus asserts counters, not the owner's mode rule, and
-// a mid-test script flip would retarget the detector's mode side.
+// ACTIVE on a blocklist pattern that never matches the fixture app (the
+// fire paths). The post-correction flip is pinned OFF here: the fold
+// corpus asserts counters, not the owner's mode rule, and a mid-test
+// script flip would retarget the detector's mode side.
 func acEnabledCfg() config.Config {
 	cfg := config.Defaults()
 	cfg.Correction.FlipAfterCorrection = false
 	cfg.Autocorrect = config.Autocorrect{
 		Enabled:       true,
-		AppsBlocklist: []string{acListedApp},
+		AppsBlocklist: []string{acBlockMiss},
 		MinWordLen:    acMinWordLen,
 		TrigramMargin: acTrigramMargin,
 		TrigramFloor:  acTrigramFloor,
@@ -5518,8 +5549,8 @@ func TestStatus_AutocorrectFields(t *testing.T) {
 // TestApplySnapshot_AutocorrectFold pins the live fold (the MACR-fold
 // precedent): the attached document's autocorrect section governs the
 // boundary gates — the feature appears and disappears LIVE on reload, the
-// folded MinWordLen gates the detector, and the white list starts the
-// identity observer.
+// folded MinWordLen gates the detector, and the blocklist starts the
+// identity observer (and recompiles its pattern cache per edit).
 func TestApplySnapshot_AutocorrectFold(t *testing.T) {
 	a, sink := wiredActor()
 	starts := 0
@@ -5534,7 +5565,7 @@ func TestApplySnapshot_AutocorrectFold(t *testing.T) {
 
 	fireAutocorrect(t, a, sink, wordEN, wordRU)
 	if starts != 1 {
-		t.Errorf("the folded white list started the observer %d times, want exactly 1", starts)
+		t.Errorf("the folded blocklist started the observer %d times, want exactly 1", starts)
 	}
 	if got := a.AutoCorrectCounters(); got.Fired != 1 {
 		t.Fatalf("counters after the enabled fold = %+v, want Fired 1", got)

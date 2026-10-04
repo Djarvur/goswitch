@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -90,10 +91,9 @@ const (
 // closed reasons (internal/detect). Closed and word-free (D-20/D-21,
 // Pitfall 6).
 const (
-	acReasonNoApps          = "no-apps"
+	acReasonAppBlocked      = "app-blocked"
 	acReasonNoCaps          = "no-caps"
 	acReasonAppUnknown      = "app-unknown"
-	acReasonAppNotListed    = "app-not-listed"
 	acReasonRoleUnknown     = "role-unknown"
 	acReasonRoleForbidden   = "role-forbidden"
 	acReasonRoleTimeout     = "role-timeout"
@@ -215,6 +215,13 @@ type Actor struct {
 	acRoleWarned bool
 	appid        AppidSource
 	appidStarted bool
+	// acBlocklist is the compiled view of the document's blocklist — the
+	// gate matches the identity against these, never against the raw
+	// strings (one compile per list change, not per boundary). Names is
+	// the raw list the cache was built from, the macrLettersName
+	// parse-cache form: rebuilt only when the document's list changed.
+	acBlocklistNames []string
+	acBlocklist      []*regexp.Regexp
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -269,11 +276,11 @@ type Options struct {
 	MACRAltModifier     string
 	// The autocorrect layer (plan 06-06, D-53/D-54): OFF at the zero value —
 	// the unit corpus and the no-SetOptions path — exactly like MACR above.
-	// AutoCorrectBlocklist carries the D-53 revision's regex patterns; the
-	// gate polarity below is transitional inside plan 07-02 (exact
-	// membership until the consumer task lands the blocklist semantics).
-	// The thresholds mirror detect.Params and the config 06-04 defaults
-	// (4/2.0/1.0 — change the places together).
+	// AutoCorrectBlocklist carries the D-53 revision's regex patterns: a
+	// SUBSTRING match (RE2 MatchString, ^…$ anchoring explicit) against the
+	// focused app's bridge-namespace identity FORBIDS the correction; an
+	// empty list forbids nothing. The thresholds mirror detect.Params and
+	// the config 06-04 defaults (4/2.0/1.0 — change the places together).
 	AutoCorrectEnabled    bool
 	AutoCorrectBlocklist  []string
 	AutoCorrectMinWordLen int
@@ -346,9 +353,9 @@ type correctionRange struct {
 // range snapshot (token+tail+replace) taken under the mutex at the
 // boundary, the detector's direction, the typed word the verdict was about
 // and the arming generation. app is the bridge-namespace identity the
-// white-list verdict was taken for (WR-01 — the confirm re-checks the live
-// identity against it, so the conjunction is evaluated for one object at
-// one instant). expectToken/expectTail snapshot the buffer as
+// blocklist verdict was evaluated for (the confirm re-checks the live
+// identity against the blocklist — the WR-01 equality removal and the
+// confirm rework are plan 07-04). expectToken/expectTail snapshot the buffer as
 // the arming event LEAVES it (the reset branch of feedKey hard-resets
 // between the capture and the launch — CR-01): the confirm's under-the-
 // mutex revalidation compares the live buffer against them, so the
@@ -444,7 +451,8 @@ func (a *Actor) SetOptions(o Options) {
 	defer a.mu.Unlock()
 
 	a.opts = o
-	a.ensureAppid() // a non-empty app list arrives through this surface too
+	a.refreshACBlocklist(o.AutoCorrectBlocklist) // the no-config surface owns the same cache
+	a.ensureAppid()                              // a non-empty app list arrives through this surface too
 }
 
 // AttachConfig connects the live config source (the 03-02 watcher's
@@ -1087,11 +1095,14 @@ func (a *Actor) applySnapshot() {
 	// precedent): the D-54 defaults are off, so a document without the
 	// section keeps the boundary byte-as-today; the thresholds mirror
 	// detect.Params (the config 06-04 pair — change the places together).
+	// The blocklist recompiles only when the document's pattern list
+	// changed (one compile per edit, not per boundary).
 	a.opts.AutoCorrectEnabled = snap.Autocorrect.Enabled
 	a.opts.AutoCorrectBlocklist = snap.Autocorrect.AppsBlocklist
 	a.opts.AutoCorrectMinWordLen = snap.Autocorrect.MinWordLen
 	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
 	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
+	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
 	a.ensureAppid() // the per-app list may have appeared with this document
 }
 
@@ -1872,23 +1883,22 @@ func (a *Actor) armAutoCorrect(payload acPayload, armed bool) {
 }
 
 // autoCorrectBoundary decides one word boundary under the CHEAP half of
-// the D-53 conjunction (the caller holds the mutex — feedKey): enabled, a
-// non-empty white list, the surrounding-text capability, the focused app's
-// exact bridge-namespace identity and the detector's CONFIDENT
-// wrong-layout verdict on the finished token. Every refusal counts its
-// reason and refuses the payload; any unknown means SILENCE — the
-// fail-closed direction INVERTED from macrTargetActive's degradation (no
-// rung upward, ADR-007). The expensive half — the live GetRole — never
-// runs here: the armed payload hands the decision outside the mutex (the
-// off-mutex discipline, T-06-06-04). The off state is the zero-behavior
-// invariant: no counter, no record — the boundary is byte-as-today (D-54).
+// the D-53 conjunction (the caller holds the mutex — feedKey): enabled,
+// the surrounding-text capability, the focused app's bridge-namespace
+// identity against the BLOCKLIST (the D-53 revision — any regex pattern
+// matching the identity FORBIDS the correction; an empty list forbids
+// nothing) and the detector's CONFIDENT wrong-layout verdict on the
+// finished token. Every refusal counts its reason and refuses the
+// payload. TRANSITIONAL (this plan, 07-02): an UNKNOWN identity still
+// means SILENCE — the fail-closed direction of phase 6; the final D-53
+// contract inverts it (unknown is not a prohibition — plan 07-04 turns
+// this branch into a pass-through). The expensive half — the live GetRole
+// — never runs here: the armed payload hands the decision outside the
+// mutex (the off-mutex discipline, T-06-06-04). The off state is the
+// zero-behavior invariant: no counter, no record — the boundary is
+// byte-as-today (D-54).
 func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 	if !a.opts.AutoCorrectEnabled {
-		return acPayload{}, false
-	}
-	if len(a.opts.AutoCorrectBlocklist) == 0 {
-		a.recordACAbstain(acReasonNoApps)
-
 		return acPayload{}, false
 	}
 	if a.caps&correct.CapSurroundingText == 0 {
@@ -1904,12 +1914,16 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 
 		return acPayload{}, false
 	}
-	// The white list is an EXACT bridge-namespace match: no prefix or
-	// suffix merging (org.gnome.ZenityX never matches org.gnome.Zenity).
-	if !slices.Contains(a.opts.AutoCorrectBlocklist, app) {
-		a.recordACAbstain(acReasonAppNotListed)
+	// The blocklist matches by regex SUBSTRING over the identity (RE2 —
+	// linear, no catastrophic backtracking; ^…$ anchoring is the
+	// document's explicit choice) — the compiled cache from applySnapshot,
+	// never the raw strings. Any matching pattern forbids.
+	for _, re := range a.acBlocklist {
+		if re.MatchString(app) {
+			a.recordACAbstain(acReasonAppBlocked)
 
-		return acPayload{}, false
+			return acPayload{}, false
+		}
 	}
 	tok := a.buf.Token()
 	v := detect.Check(tok, a.modeSymbol(),
@@ -1940,6 +1954,39 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 		word: tok,
 		app:  app,
 	}, true
+}
+
+// refreshACBlocklist rebuilds the compiled blocklist cache only when the
+// raw pattern LIST changed (the macrLettersName parse-cache form) — one
+// compile per document edit or SetOptions install, never per boundary.
+// The caller holds the mutex.
+func (a *Actor) refreshACBlocklist(names []string) {
+	if slices.Equal(names, a.acBlocklistNames) {
+		return
+	}
+	a.acBlocklistNames = names
+	a.acBlocklist = compileACBlocklist(names)
+}
+
+// compileACBlocklist compiles the document's blocklist patterns for the
+// boundary gate. A compile failure is impossible from a validated
+// document (config.Validate refuses it at Load, D-33); the defensive
+// branch WARNs once per rebuild and treats the whole list as EMPTY —
+// nothing matches, nothing is forbidden (the failure falls open toward
+// the role gate, never around it).
+func compileACBlocklist(patterns []string) []*regexp.Regexp {
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, pattern := range patterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			slog.Warn("autocorrect blocklist pattern rejected at fold", "error", err)
+
+			return nil
+		}
+		compiled = append(compiled, re)
+	}
+
+	return compiled
 }
 
 // acFocusedApp resolves the focused app identity for the boundary gate: a
