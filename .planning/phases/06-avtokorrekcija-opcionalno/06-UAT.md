@@ -38,13 +38,25 @@ note: "Владелец 2026-10-04: принимаю. Status → Accepted с д�
 expected: autocorrect включён для white-list приложения; набрать слово + разделитель и НЕМЕДЛЕННО
   продолжить набор (пересечение с role-RTT ≤25 мс). Поле: либо корректное исправление ровно
   в диапазоне слова, либо молчание со счётчиком `ac_skip_payload_stale`. Никакой порчи поля/зеркала.
-result: [pending]
+result: pass
+note: "2026-10-04, три инструмента: (1) юнит-корпус гонки детерминирован и зелёный под -race
+  (TestActor_RevalidatesArmedPayload / AttachEngineWhileFlipInFlight); (2) живая проба
+  /tmp/gsy-ac-race.sh — 18/18 продолжений набора через 0..100 мс после разделителя: поле всегда
+  чистое (ноль порчи), молчание честное; (3) живой fires-кейс (исправление + ручной Double
+  регресс) зелёный на починенном дереве. Первый прогон кейса после остановки юнита был красным
+  (флейк прогрева регистрации, второй прогон зелёный). Найден UX-нюанс: белый список требует
+  НАБЛЮДАЕМУЮ идентичность приложения — проба с документационной догадкой org.gnome.Zenity
+  честно abstain-ит 18×ac_skip_app_not_listed; follow-up: статусу стоит показывать последнюю
+  наблюдаемую идентичность (см. Deferred Follow-Ups)."
 
 ### 4. Живой UAT трёх e2e-кейсов на стабильной сессии
 expected: `mise run e2e-autocorrect-fires` (исправление без хоткея + ручной Double Shift отменяет),
   `mise run e2e-autocorrect-password-silent` (пароль не тронут, witness роль 40, FINAL дословный,
   fired=0), `mise run e2e-autocorrect-terminal-silent` (fired=0 при любой IME-доставке)
-result: [pending]
+result: pass
+note: "2026-10-04, все три зелёные: fires (исправление без хоткея + Double-регресс),
+  password-silent (witness PASSWORD_TEXT 0→7, fired=0, одна role-forbidden абстенция),
+  terminal-silent (fired=0 при обеих формах доставки IME; wezterm вне a11y — ожидаемый негатив)."
 
 ### 5. Judgment-запреты ADR (4 позиции)
 expected: Владелец подтверждает вердикты, не имеющие авторитетного статуса: дословность audit-trail
@@ -55,9 +67,9 @@ result: [pending]
 ## Summary
 
 total: 5
-passed: 2
+passed: 4
 issues: 1
-pending: 3
+pending: 1
 skipped: 0
 blocked: 0
 
@@ -66,6 +78,9 @@ blocked: 0
 - test: 1
   idea: "РЕШЕНИЕ ВЛАДЕЛЬЦА 2026-10-03: смешанный текст конвертировать инверсией раскладки посимвольно (латиница→кириллица, кириллица→латиница) — целевая семантика для word-mixed/phrase-mixed; WINDOWS #12-фриз отклонён. Работа: отдельный план (флип-путь/контекст буфера), строки матрицы перезакрепить на новую семантику. Бэклог v1.1.x."
   deferred_at: 2026-10-03
+- test: 3
+  idea: "UX: белый список autocorrect требует наблюдаемую bridge-идентичность приложения (проба с документационной догадкой org.gnome.Zenity даёт 18×ac_skip_app_not_listed) — goswitchctl status стоит дополнить токеном последней наблюдаемой идентичности, чтобы пользователь мог заполнить список без кейс-харнесса. Бэклог v1.1.x."
+  deferred_at: 2026-10-04
 
 ## Gaps
 
