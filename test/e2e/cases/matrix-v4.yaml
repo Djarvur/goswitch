@@ -1,7 +1,12 @@
 # goswitch e2e matrix v4 (plan 06-07, критерий 5 ROADMAP) — the SUPERSET of
 # the frozen matrix-v3.yaml: every v3 case below is byte-verbatim (v3 itself
 # is CASES-FROZEN, 04-05/D-47 — the git diff gate on matrix-v3.yaml is the
-# regression carrier's lock), plus the autocorrect case block:
+# regression carrier's lock), plus the autocorrect case block.
+# SANCTIONED RETIREMENT 2026-10-04 (owner, UAT test 1): super-space-alive
+# removed — a leftover of the two-source era; the desktop carries ONE goswitch
+# input source (owner decision 260930-toa), GNOME Super+Space has nothing to
+# switch to, the daemon owns switching (proven live by e2e-flip-keystroke).
+# 34 cases remain.
 #   - autocorrect-fires — the word corrects WITHOUT any gesture (config_base:
 #     autocorrect; a bare "x " keystroke starts the daemon's lazy per-app
 #     observer — the per-KEY-EVENT fold/live finding of 06-07 — and the
@@ -253,19 +258,6 @@ steps:
   - {type: "ghbdtn"}
   - {combo: "SHIFT_R+CTRL_R"}  # SWCH-02/D-36: the combo step gates on the combo record + the mode flip
 expect_text: "привет"  # the word corrected FIRST, then the layout flipped
----
-name: super-space-alive
-surface: zenity
-mode: en
-steps:
-  - {type: "ghbdtn"}   # the word feeds the focus gate's char count (the field survives the episode)
-  - {key: Super}       # SWCH-03 (D-34 working interpretation): the shell's native Super mechanism fires (the overview)
-  - {key: Escape}      # close the overview (esc — the proven spelling)
-  - {focus: zenity}    # settle the entry back into focus (chars=6 — the word is still there)
-  - {select: "ctrl+a"} # the episode's FocusOut hard-reset the BUFFER (live finding of the first v2 run): select the stale word…
-  - {type: "ghbdtn"}   # …and retype over the selection — the field is fresh AND the live buffer re-fed
-  - {tap: double}      # the daemon survived the native chords: the correction still runs
-expect_text: "привет"
 ---
 name: reload-window
 surface: zenity
