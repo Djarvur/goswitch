@@ -458,10 +458,87 @@ func TestValidate_AutocorrectDormantShapesValid(t *testing.T) {
 		t.Errorf("zero autocorrect section rejected: %v", err)
 	}
 
+	// Re-pinned by plan 07-02 (the ACTIVE condition — Q4c): an enabled
+	// section IS the active state (an empty blocklist forbids nothing), so
+	// the thresholds are mandatory — the 06-04 zero-threshold shape is now
+	// a loud refusal naming its field.
 	enabledEmpty := validDoc()
 	enabledEmpty.Autocorrect = config.Autocorrect{Enabled: true, AppsBlocklist: []string{}}
-	if err := enabledEmpty.Validate(); err != nil {
-		t.Errorf("enabled-with-empty-list rejected: %v (the empty list is the off state, D-54)", err)
+	assertRejected(t, "enabled without thresholds", enabledEmpty, fieldAutoCorrectWordLn)
+}
+
+// TestValidate_EnabledRequiresThresholds pins the ACTIVE condition
+// (T-07-02-05): enabled: true with zero thresholds would fire the
+// detector with a degenerate min_word_len=0 — validation refuses loudly,
+// every rejection naming its own field.
+func TestValidate_EnabledRequiresThresholds(t *testing.T) {
+	t.Parallel()
+
+	t.Run("min word len zero", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := validDoc()
+		cfg.Autocorrect = config.Autocorrect{Enabled: true}
+		assertRejected(t, "enabled zero thresholds", cfg, fieldAutoCorrectWordLn)
+	})
+
+	t.Run("trigram thresholds zero", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tc := range []struct {
+			name      string
+			mutate    func(*config.Autocorrect)
+			wantField string
+		}{
+			{
+				name:      "trigram margin zero",
+				mutate:    func(a *config.Autocorrect) { a.TrigramMargin = 0 },
+				wantField: fieldAutoCorrectMargin,
+			},
+			{
+				name:      "trigram floor zero",
+				mutate:    func(a *config.Autocorrect) { a.TrigramFloor = 0 },
+				wantField: fieldAutoCorrectFloor,
+			},
+		} {
+			cfg := validDoc()
+			cfg.Autocorrect = config.Autocorrect{Enabled: true, MinWordLen: 4}
+			tc.mutate(&cfg.Autocorrect)
+			assertRejected(t, tc.name, cfg, tc.wantField)
+		}
+	})
+}
+
+// TestValidate_EnabledEmptyBlocklistWithThresholdsValid pins the new
+// active shape: enabled + a NIL blocklist + the documented thresholds is
+// VALID — an empty blocklist forbids nothing, so the layer fires wherever
+// the field's role gate lets it through (Q4c).
+func TestValidate_EnabledEmptyBlocklistWithThresholdsValid(t *testing.T) {
+	t.Parallel()
+
+	cfg := validDoc()
+	cfg.Autocorrect = config.Autocorrect{
+		Enabled:       true,
+		AppsBlocklist: nil,
+		MinWordLen:    4,
+		TrigramMargin: 2.0,
+		TrigramFloor:  1.0,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("enabled with an empty blocklist and thresholds rejected: %v", err)
+	}
+}
+
+// TestValidate_DisabledZeroThresholdsValid pins the D-54 dormant shape:
+// enabled: false with zero thresholds stays VALID — the threshold checks
+// never run on a dormant layer, so the zero value remains the off state.
+func TestValidate_DisabledZeroThresholdsValid(t *testing.T) {
+	t.Parallel()
+
+	cfg := validDoc()
+	cfg.Autocorrect = config.Autocorrect{Enabled: false}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("dormant section with zero thresholds rejected: %v", err)
 	}
 }
 
