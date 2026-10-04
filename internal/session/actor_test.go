@@ -5090,9 +5090,12 @@ func TestAutoCorrect_FiresThroughPipeline(t *testing.T) {
 	}
 }
 
-// silenceMatrixCells is the plan-06-06 silence matrix (D-53): every
-// unknown cell of the conjunction with its expected reason slug. The role
-// cells conclude on their own goroutine (async); the cheap-gate cells
+// silenceMatrixCells is the D-53 conjunction matrix (plan 06-06, inverted
+// by 07-04 per the locked 07-CONTEXT semantics): every refusal cell with
+// its expected reason slug, plus the one FIRE cell — an UNKNOWN app
+// identity is NOT a prohibition (the identity is the only conjunction
+// segment whose unknown passes; role/caps/detector stay fail-closed). The
+// role cells conclude on their own goroutine (async); the cheap-gate cells
 // abstain synchronously.
 func silenceMatrixCells() []struct {
 	name    string
@@ -5103,6 +5106,7 @@ func silenceMatrixCells() []struct {
 	options func() session.Options
 	reason  string
 	async   bool
+	fired   bool
 } {
 	return []struct {
 		name    string
@@ -5113,6 +5117,7 @@ func silenceMatrixCells() []struct {
 		options func() session.Options
 		reason  string
 		async   bool
+		fired   bool
 	}{
 		{
 			name: "role 40 password text is forbidden", token: wordEN,
@@ -5131,11 +5136,16 @@ func silenceMatrixCells() []struct {
 			role: &fakeRole{role: acRoleAllowed, release: make(chan struct{})}, reason: "role-timeout", async: true,
 		},
 		{
-			name: "missing identity source is unknown", token: wordEN,
+			// The 07-04 inversion (locked 07-CONTEXT): an UNKNOWN identity
+			// is NOT a prohibition — the arm gate passes the payload
+			// WITHOUT the app field, the detector runs, and with a healthy
+			// text role the word FIRES.
+			name: "unknown identity is not a prohibition: no source fires", token: wordEN,
 			appid: func(a *session.Actor) {
 				a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
 			},
-			reason: "app-unknown",
+			role:  &fakeRole{role: acRoleAllowed},
+			fired: true,
 		},
 		{
 			// The 07-02 blocklist polarity: a KNOWN identity matching a
@@ -5152,12 +5162,13 @@ func silenceMatrixCells() []struct {
 	}
 }
 
-// TestAutoCorrect_SilenceMatrix pins the fail-closed conjunction cell by
-// cell: EVERY unknown — a forbidden role (password 40, terminal 60), a
-// role error, a role deadline, a missing identity source, an unlisted
-// app, a missing capability, an unsure verdict, a short word — stays
-// silent (zero correction ops, the word stays in the field) and counts
-// exactly one abstention with its reason slug.
+// TestAutoCorrect_SilenceMatrix pins the conjunction cell by cell: every
+// SECURITY segment — a forbidden role (password 40, terminal 60), a role
+// error, a role deadline, a missing capability, an unsure verdict, a short
+// word — stays silent (zero correction ops, the word stays in the field)
+// and counts exactly one abstention with its reason slug, while the
+// identity segment's unknown FIRES (the 07-04 inversion: unknown is not a
+// prohibition — the pinned direction).
 func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 	for _, tc := range silenceMatrixCells() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -5181,6 +5192,18 @@ func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 			}
 
 			boundaryWord(t, a, tc.token)
+			if tc.fired {
+				eventually(t, func() bool {
+					c := a.AutoCorrectCounters()
+
+					return c.Fired == 1 && c.Abstained == 0
+				}, "the unknown identity never fired — unknown is not a prohibition (07-CONTEXT locked)")
+				if got := a.AutoCorrectCounters(); got.Fired != 1 {
+					t.Errorf("fired = %d, want exactly 1", got.Fired)
+				}
+
+				return
+			}
 			if tc.async {
 				eventually(t, func() bool { return a.AutoCorrectCounters().Abstained >= 1 },
 					"the confirm never concluded")
@@ -5190,17 +5213,105 @@ func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 	}
 }
 
-// TestAutoCorrect_FailClosedNoFailOpen pins the DIRECTION inversion
-// (ADR-007): a missing identity source means TOTAL silence — the global
-// MACR degradation rung is never copied, the word survives untouched.
-func TestAutoCorrect_FailClosedNoFailOpen(t *testing.T) {
+// TestAutoCorrect_UnknownIdentityFires pins the 07-04 arm inversion
+// (locked 07-CONTEXT): with NO identity source at all and a healthy text
+// role, the wrong-layout word IS corrected — the identity is simply
+// omitted from the payload (no app), the detector runs, and the full
+// pipeline fires. The old D-53-unknown silence is gone: an invisible app
+// is not a forbidden app.
+func TestAutoCorrect_UnknownIdentityFires(t *testing.T) {
 	a, sink := wiredActor()
 	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
 	a.SetOptions(acOptions())
 
-	boundaryWord(t, a, wordEN)
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
 
-	assertSilence(t, a, sink, "app-unknown")
+	deletes := sink.deleteCalls()
+	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
+		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the correction ran without any identity", deletes)
+	}
+	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
+		t.Fatalf("commits = %q, want [%q] — the conversion plus the tail", commits, wordRU+" ")
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Errorf("counters = %+v, want {Fired:1 Abstained:0} — the unknown identity never refused", got)
+	}
+}
+
+// TestAutoCorrect_KnownNotBlockedFires pins the positive blocklist cell
+// (07-04, the mirror of the match refusal): a KNOWN identity that matches
+// NO pattern leaves every gate green — the word fires exactly as before
+// the blocklist existed. Green-by-design continuity pin against the 07-02
+// corpus (the fire paths never depended on the list).
+func TestAutoCorrect_KnownNotBlockedFires(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Errorf("counters = %+v, want {Fired:1 Abstained:0} — a non-blocked app fires", got)
+	}
+	if got := len(sink.deleteCalls()); got != 1 {
+		t.Errorf("deletes = %d, want 1 — the known-not-blocked path runs the ladder", got)
+	}
+}
+
+// TestAutoCorrect_IdentityUnknownNotProhibition pins the DIRECTION of the
+// 07-04 inversion: ONLY the app-identity segment softened. With the
+// identity unknown, every other unknown of the conjunction keeps its
+// fail-closed refusal — a role error is role-unknown, a role deadline is
+// role-timeout, a missing surrounding-text capability is no-caps, an
+// unsure detector verdict is trigram-unsure. The inversion must never
+// creep into the safety segments (T-07-04-02).
+func TestAutoCorrect_IdentityUnknownNotProhibition(t *testing.T) {
+	cases := []struct {
+		name   string
+		caps   uint32
+		role   *fakeRole
+		token  string
+		reason string
+		async  bool
+	}{
+		{
+			name: "role error stays role-unknown", token: wordEN,
+			role: &fakeRole{err: errAppidBusDead}, reason: "role-unknown", async: true,
+		},
+		{
+			name: "role deadline stays role-timeout", token: wordEN,
+			role: &fakeRole{role: acRoleAllowed, release: make(chan struct{})}, reason: "role-timeout", async: true,
+		},
+		{
+			name: "missing caps stays no-caps", token: wordEN,
+			caps: 0, reason: "no-caps",
+		},
+		{
+			name: "unsure detector stays trigram-unsure", token: "vjcrdf",
+			reason: "trigram-unsure",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			caps := tc.caps
+			if caps == 0 && tc.reason != "no-caps" {
+				caps = engine.CapSurroundingText
+			}
+			a, sink := wiredActorCaps(caps)
+			a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+			if tc.role != nil {
+				a.UseRole(tc.role)
+			}
+			a.SetOptions(acOptions())
+
+			boundaryWord(t, a, tc.token)
+			if tc.async {
+				eventually(t, func() bool { return a.AutoCorrectCounters().Abstained >= 1 },
+					"the confirm never concluded")
+			}
+			assertSilence(t, a, sink, tc.reason)
+		})
+	}
 }
 
 // TestAutoCorrect_WarnOncePerEpisode pins the warn discipline (the
@@ -5304,12 +5415,17 @@ func TestAutoCorrect_ReEntryRechecks(t *testing.T) {
 	}
 }
 
-// The review-fix corpus of 06-REVIEW (CR-01/CR-02/WR-01): the async confirm
-// must never execute against state that moved on inside the role-RTT
-// window. Every test drives the interleaving deterministically — arm the
-// payload, block the live role call on the double's release channel, mutate
-// the interleaved state, then let the confirm conclude — no sleeps: the
-// gating is the double's own channels (the awaitRoleStart precedent).
+// The review-fix corpus of 06-REVIEW (CR-01/CR-02) with the 07-04
+// confirm-gate rework on top: the async confirm must never execute against
+// state that moved on inside the role-RTT window (CR-01/CR-02), and the
+// confirm's identity check is BLOCKLIST-ONLY on the CURRENT identity
+// (owner variant 1 — the arming/confirm equality of WR-01 is deliberately
+// REMOVED: a focus move inside the window is caught by the buffer's own
+// payload-stale geometry, FocusOut hard-resets the buffer). Every test
+// drives the interleaving deterministically — arm the payload, block the
+// live role call on the double's release channel, mutate the interleaved
+// state, then let the confirm conclude — no sleeps: the gating is the
+// double's own channels (the awaitRoleStart precedent).
 
 // TestAutoConfirm_RevalidatesArmedPayload pins the CR-01 fix: a
 // token-capable keystroke inside the role-RTT window moves the buffer off
@@ -5414,28 +5530,27 @@ func TestAutoConfirm_ResetBoundaryAlwaysVerifies(t *testing.T) {
 	}
 }
 
-// TestAutoConfirm_RechecksFocusedApp pins the WR-01 fix: the D-53
-// conjunction must be evaluated for ONE object at ONE instant — the
-// white-list app identity checked at arm time is re-checked under the mutex
-// at confirm time. A focus switch inside the role-RTT window re-points the
-// live role query at a different app's object: without the re-check the
-// confirm pairs the armed app's white-list verdict with the new app's role
-// and fires. The mismatch refuses fail-closed: silence + the app-changed
-// counter, zero field edits.
-func TestAutoConfirm_RechecksFocusedApp(t *testing.T) {
+// TestAutoCorrect_ConfirmBlocklistRefuses pins the 07-04 confirm form
+// (owner variant 1, locked 07-CONTEXT): the payload was armed while the
+// identity was UNKNOWN, and by confirm time the identity has appeared AND
+// matches the blocklist. The confirm evaluates the CURRENT identity — the
+// refusal is app-blocked, the field is untouched. The removed arming/
+// confirm equality would have produced a phantom mismatch here instead
+// (the armed payload carries no app): the locked scenario "unknown at
+// arm, learned by confirm" requires its absence.
+func TestAutoCorrect_ConfirmBlocklistRefuses(t *testing.T) {
 	a, sink := wiredActor()
-	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
 	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
 	a.UseRole(role)
-	a.SetOptions(acOptions())
+	a.SetOptions(acBlockedOptions())
 
-	boundaryWord(t, a, wordEN)
+	boundaryWord(t, a, wordEN) // armed at UNKNOWN identity — the blocklist sees nothing yet
 	awaitRoleStart(t, role)
 
-	// The focus moves to an unlisted app inside the window: the live role
-	// call now answers for the NEW object (allowed — a text field of the
-	// other app). The armed app's white-list verdict must not ride on it.
-	a.UseAppid(fakeAppid{app: macrZenityApp})
+	// The identity is learned inside the role-RTT window and MATCHES the
+	// list: the current identity is exactly what the confirm must consult.
+	a.UseAppid(fakeAppid{app: acListedApp})
 	close(role.release)
 
 	eventually(t, func() bool {
@@ -5444,9 +5559,34 @@ func TestAutoConfirm_RechecksFocusedApp(t *testing.T) {
 		return c.Abstained >= 1 || c.Fired >= 1
 	}, "the confirm never concluded")
 	if c := a.AutoCorrectCounters(); c.Fired != 0 {
-		t.Fatalf("fired = %d — the white-list verdict must be re-checked at confirm (WR-01)", c.Fired)
+		t.Fatalf("fired = %d — a blocklisted app must never fire at confirm", c.Fired)
 	}
-	assertSilence(t, a, sink, "app-changed")
+	assertSilence(t, a, sink, acReasonAppBlocked)
+}
+
+// TestAutoCorrect_ConfirmUnknownPasses pins the confirm-side mirror of the
+// arm inversion: an identity that stays UNKNOWN through the whole episode
+// never refuses the confirm — unknown is not a prohibition on either gate
+// (locked 07-CONTEXT). With a healthy role the word fires.
+func TestAutoCorrect_ConfirmUnknownPasses(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN) // unknown at arm — the payload carries no app
+	awaitRoleStart(t, role)
+	close(role.release) // still unknown at confirm — the pass-through
+
+	eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
+		"the never-known identity refused the confirm — unknown must pass")
+	if c := a.AutoCorrectCounters(); c.Abstained != 0 {
+		t.Errorf("abstained = %d, want 0 — the unknown identity never refuses", c.Abstained)
+	}
+	if got := len(sink.deleteCalls()); got != 1 {
+		t.Errorf("deletes = %d, want 1 — the confirmed word runs the ladder", got)
+	}
 }
 
 // TestAutoCorrect_CountersAndReasons pins the counter surface over a mixed
@@ -5544,6 +5684,45 @@ func TestStatus_AutocorrectFields(t *testing.T) {
 	if again.AutoCorrectSkipReasons["mutated"] != 0 || again.AutoCorrectSkipReasons["abstain-short"] != 1 {
 		t.Errorf("the snapshot map is not a clone: %v", again.AutoCorrectSkipReasons)
 	}
+}
+
+// TestActor_AppidStartsForAutocorrect pins the 07-04 observer start
+// condition: autocorrect ENABLED starts the a11y observer even with an
+// EMPTY blocklist and no MACR list — the blocklist negatives need the
+// identity to refuse on, and the confirm's live role query needs the
+// observer as its RoleSource. With the layer off and no lists the start
+// count stays zero (the off state is byte-as-today, D-54).
+func TestActor_AppidStartsForAutocorrect(t *testing.T) {
+	t.Run("enabled autocorrect starts the observer with no lists", func(t *testing.T) {
+		a, _ := wiredActor()
+		starts := 0
+		a.UseAppidStarter(func() (session.AppidSource, error) {
+			starts++
+
+			return fakeAppid{app: acListedApp}, nil
+		})
+
+		a.SetOptions(session.Options{AutoCorrectEnabled: true})
+
+		if starts != 1 {
+			t.Fatalf("observer starts = %d, want exactly 1 — enabled autocorrect needs the identity source", starts)
+		}
+	})
+	t.Run("off with no lists never starts", func(t *testing.T) {
+		a, _ := wiredActor()
+		starts := 0
+		a.UseAppidStarter(func() (session.AppidSource, error) {
+			starts++
+
+			return fakeAppid{app: acListedApp}, nil
+		})
+
+		a.SetOptions(session.Options{})
+
+		if starts != 0 {
+			t.Fatalf("observer starts = %d, want 0 — the off state is byte-as-today (D-54)", starts)
+		}
+	})
 }
 
 // TestApplySnapshot_AutocorrectFold pins the live fold (the MACR-fold

@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/session/ -race -count=1 -run \"TestAutoCorrect_(UnknownIdentityFires|KnownNotBlockedFires|ConfirmBlocklistRefuses|ConfirmUnknownPasses|IdentityUnknownNotProhibition)\" -v (transcribed to node-test TAP per repo precedent; raw output /tmp/07-04-t1-red-raw.txt)",
+  "exitCode": 1,
+  "targetTest": "TestAutoCorrect_UnknownIdentityFires",
+  "failingTest": "TestAutoCorrect_UnknownIdentityFires",
+  "expected": "With NO identity source and a healthy text role the wrong-layout word IS corrected: the arm gate passes the payload without the app field, the detector runs, the pipeline fires (deletes=[{-7 7}], commits=[wordRU+\" \"], Fired=1 Abstained=0) — unknown is not a prohibition (07-CONTEXT locked).",
+  "actual": "Fired=0, Abstained=1 reason=app-unknown — the 07-02 code still silences the unknown identity at the arm gate: \"the pipeline never armed after the boundary (no RequireSurroundingText)\". The direction pin subtests fail the same way (role-unknown/role-timeout/trigram-unsure expected, app-unknown counted); the confirm cells fail with \"the role source was never consulted\" (no arm without identity). TestAutoCorrect_KnownNotBlockedFires is the green-by-design continuity pin.",
+  "output": "not ok 1 - TestAutoCorrect_UnknownIdentityFires\nok 2 - TestAutoCorrect_KnownNotBlockedFires\nnot ok 3 - TestAutoCorrect_IdentityUnknownNotProhibition\nnot ok 4 - TestAutoCorrect_ConfirmBlocklistRefuses\nnot ok 5 - TestAutoCorrect_ConfirmUnknownPasses\n# tests 5\n# pass 1\n# fail 4\n"
+}
