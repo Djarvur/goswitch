@@ -1,20 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 06-Система автокоррекции
 source: [06-VERIFICATION.md]
 started: 2026-10-02T20:20:00Z
-updated: 2026-10-02T20:20:00Z
+updated: 2026-10-04T19:10:00Z
 ---
 
 ## Current Test
 
-number: 3
-name: CR-01 — живая проверка асинхронного окна подтверждения
-expected: |
-  autocorrect включён для white-list приложения; набрать слово + разделитель и НЕМЕДЛЕННО
-  продолжить набор (пересечение с role-RTT ≤25 мс). Поле: либо корректное исправление ровно
-  в диапазоне слова, либо молчание со счётчиком ac_skip_payload_stale. Никакой порчи поля.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -62,14 +56,15 @@ note: "2026-10-04, все три зелёные: fires (исправление �
 expected: Владелец подтверждает вердикты, не имеющие авторитетного статуса: дословность audit-trail
   SPEC §11, GPL-чистота dictgen-данных, cache-not-basis (D-53), отсутствие утечки содержимого из
   фикстур (D-20/D-21)
-result: [pending]
+result: pass
+note: "Владелец 2026-10-04: да — все четыре подтверждены."
 
 ## Summary
 
 total: 5
-passed: 4
-issues: 1
-pending: 1
+passed: 5
+issues: 0
+pending: 0
 skipped: 0
 blocked: 0
 
