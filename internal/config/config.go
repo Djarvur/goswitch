@@ -9,6 +9,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -24,9 +25,9 @@ const (
 	maxBackspaceCap = 500
 	maxMACRApps     = 64
 
-	maxAutocorrectApps    = 64
-	minAutocorrectWordLen = 2
-	maxAutocorrectWordLen = 16
+	maxAutocorrectBlocklist = 64
+	minAutocorrectWordLen   = 2
+	maxAutocorrectWordLen   = 16
 )
 
 // The documented default values (config_schema): the tap window is
@@ -57,9 +58,11 @@ var (
 	errMACRAppsOverCeil   = errors.New("entries, at most 64 allowed")
 	errMACRAltModifierSet = errors.New("must be ctrl_l, ctrl_r or empty (empty = not introduced)")
 
-	errAutocorrectAppsOverCeil    = errors.New("entries, at most 64 allowed")
-	errAutocorrectMinWordLenRange = errors.New("must be in [2, 16]")
-	errAutocorrectThresholdRange  = errors.New("must be positive, with trigram_margin >= trigram_floor")
+	errAutocorrectBlocklistOverCeil = errors.New("entries, at most 64 allowed")
+	errAutocorrectBlocklistRegex    = errors.New("must be a valid regular expression")
+	errAutocorrectBlocklistEmpty    = errors.New("must not be empty or blank — an empty pattern matches everything")
+	errAutocorrectMinWordLenRange   = errors.New("must be in [2, 16]")
+	errAutocorrectThresholdRange    = errors.New("must be positive, with trigram_margin >= trigram_floor")
 )
 
 // altModifierCandidates is the closed set of alternative MACR modifiers
@@ -112,13 +115,7 @@ type MACR struct {
 // state: a document without the section decodes disabled, never
 // activated (default off everywhere, D-54).
 type Autocorrect struct {
-	Enabled bool `yaml:"enabled"`
-	// AppsBlocklist is the D-53 revision's per-app BLOCKLIST (regex
-	// patterns, substring matching). The legacy white-list key below is
-	// removed by this plan — it is still decoded so the pre-revision
-	// corpus decodes; the strict decoder will refuse the old key once
-	// the rename lands (D-33, no half-support).
-	Apps          []string `yaml:"apps"`
+	Enabled       bool     `yaml:"enabled"`
 	AppsBlocklist []string `yaml:"apps_blocklist"`
 	MinWordLen    int      `yaml:"min_word_len"`
 	TrigramMargin float64  `yaml:"trigram_margin"`
@@ -185,8 +182,9 @@ type Config struct {
 // D-27's 50, the clipboard rung off (D-28), MACR off with no
 // alternative modifier (ADR-005 b.3), the post-correction script flip
 // ON (owner decision 2, 2026-09-27: the mode follows a changed
-// correction) and the autocorrect layer OFF with an empty white list —
-// the zero value is the off state (D-54 default off everywhere).
+// correction), the autocorrect layer OFF with a nil blocklist and the
+// sound section ON with the built-in autocorrect event — the zero
+// Autocorrect value is the off state (D-54 default off everywhere).
 func Defaults() Config {
 	return Config{
 		Hotkeys: Hotkeys{
@@ -214,7 +212,6 @@ func Defaults() Config {
 		// and detect.Params TOGETHER, never one side.
 		Autocorrect: Autocorrect{
 			Enabled:       false,
-			Apps:          nil,
 			AppsBlocklist: nil,
 			MinWordLen:    defaultMinWordLen,
 			TrigramMargin: defaultTrigramMargin,
@@ -343,19 +340,34 @@ func (m MACR) validate() error {
 	return nil
 }
 
-// validate enforces the autocorrect grammar (D-54): the white list is
+// validate enforces the autocorrect grammar (D-54/D-53): the blocklist is
 // capped unconditionally — a giant list is a DoS vector even while the
-// layer is dormant (T-06-04-01, the maxMACRApps precedent). The threshold
-// ranges bite only on an ACTIVE section — enabled with a non-empty white
-// list, the only shape that can ever fire (T-06-04-03) — so the zero
-// value stays valid and documents without the section (or with the
-// feature switched off) decode off, never defaulted on (default off
-// everywhere, D-54). Every error names its field (D-33).
+// layer is dormant (T-06-04-01, the maxMACRApps precedent) — and every
+// pattern is compiled here, the only place a broken regex is visible
+// before runtime; an empty or blank pattern is refused before the compile
+// attempt (an empty string is a VALID RE2 that matches everything — the
+// silent "block everywhere" trap, T-07-02-03). The threshold ranges bite
+// on an ACTIVE section — enabled with a non-empty blocklist, the shape
+// that can fire today (T-06-04-03) — so the zero value stays valid and
+// documents without the section (or with the feature switched off)
+// decode off, never defaulted on (default off everywhere, D-54). Every
+// error names its field and, where one exists, the element index (D-33).
 func (a Autocorrect) validate() error {
-	if len(a.Apps) > maxAutocorrectApps {
-		return fmt.Errorf("autocorrect.apps has %d %w", len(a.Apps), errAutocorrectAppsOverCeil)
+	if len(a.AppsBlocklist) > maxAutocorrectBlocklist {
+		return fmt.Errorf(
+			"autocorrect.apps_blocklist has %d %w",
+			len(a.AppsBlocklist), errAutocorrectBlocklistOverCeil,
+		)
 	}
-	if !a.Enabled || len(a.Apps) == 0 {
+	for i, pattern := range a.AppsBlocklist {
+		if strings.TrimSpace(pattern) == "" {
+			return fmt.Errorf("autocorrect.apps_blocklist[%d] %q: %w", i, pattern, errAutocorrectBlocklistEmpty)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("autocorrect.apps_blocklist[%d] = %q: %w", i, pattern, errAutocorrectBlocklistRegex)
+		}
+	}
+	if !a.Enabled || len(a.AppsBlocklist) == 0 {
 		return nil
 	}
 	if a.MinWordLen < minAutocorrectWordLen || a.MinWordLen > maxAutocorrectWordLen {

@@ -236,7 +236,7 @@ macr:
   alt_modifier: ""
 autocorrect:
   enabled: true
-  apps: ["` + appGedit + `"]
+  apps_blocklist: ["` + appGedit + `"]
   min_word_len: 4
   trigram_margin: ` + margin + `
   trigram_floor: 1.0

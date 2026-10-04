@@ -269,11 +269,13 @@ type Options struct {
 	MACRAltModifier     string
 	// The autocorrect layer (plan 06-06, D-53/D-54): OFF at the zero value —
 	// the unit corpus and the no-SetOptions path — exactly like MACR above.
-	// The white list matches the focused app's bridge-namespace EXACTLY (no
-	// prefix merging); the thresholds mirror detect.Params and the config
-	// 06-04 defaults (4/2.0/1.0 — change the places together).
+	// AutoCorrectBlocklist carries the D-53 revision's regex patterns; the
+	// gate polarity below is transitional inside plan 07-02 (exact
+	// membership until the consumer task lands the blocklist semantics).
+	// The thresholds mirror detect.Params and the config 06-04 defaults
+	// (4/2.0/1.0 — change the places together).
 	AutoCorrectEnabled    bool
-	AutoCorrectApps       []string
+	AutoCorrectBlocklist  []string
 	AutoCorrectMinWordLen int
 	AutoCorrectMargin     float64
 	AutoCorrectFloor      float64
@@ -1086,7 +1088,7 @@ func (a *Actor) applySnapshot() {
 	// section keeps the boundary byte-as-today; the thresholds mirror
 	// detect.Params (the config 06-04 pair — change the places together).
 	a.opts.AutoCorrectEnabled = snap.Autocorrect.Enabled
-	a.opts.AutoCorrectApps = snap.Autocorrect.Apps
+	a.opts.AutoCorrectBlocklist = snap.Autocorrect.AppsBlocklist
 	a.opts.AutoCorrectMinWordLen = snap.Autocorrect.MinWordLen
 	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
 	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
@@ -1507,7 +1509,7 @@ func (a *Actor) warnAppid(err error) {
 // (one documented degradation, not a retry loop). The caller holds the
 // mutex.
 func (a *Actor) ensureAppid() {
-	if a.appidStarted || (len(a.opts.MACRApps) == 0 && len(a.opts.AutoCorrectApps) == 0) {
+	if a.appidStarted || (len(a.opts.MACRApps) == 0 && len(a.opts.AutoCorrectBlocklist) == 0) {
 		return
 	}
 	a.appidStarted = true
@@ -1884,7 +1886,7 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 	if !a.opts.AutoCorrectEnabled {
 		return acPayload{}, false
 	}
-	if len(a.opts.AutoCorrectApps) == 0 {
+	if len(a.opts.AutoCorrectBlocklist) == 0 {
 		a.recordACAbstain(acReasonNoApps)
 
 		return acPayload{}, false
@@ -1904,7 +1906,7 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 	}
 	// The white list is an EXACT bridge-namespace match: no prefix or
 	// suffix merging (org.gnome.ZenityX never matches org.gnome.Zenity).
-	if !slices.Contains(a.opts.AutoCorrectApps, app) {
+	if !slices.Contains(a.opts.AutoCorrectBlocklist, app) {
 		a.recordACAbstain(acReasonAppNotListed)
 
 		return acPayload{}, false

@@ -4644,7 +4644,7 @@ const acPollBudget = 2 * time.Second
 func acOptions() session.Options {
 	return session.Options{
 		AutoCorrectEnabled:    true,
-		AutoCorrectApps:       []string{acListedApp},
+		AutoCorrectBlocklist:  []string{acListedApp},
 		AutoCorrectMinWordLen: acMinWordLen,
 		AutoCorrectMargin:     acTrigramMargin,
 		AutoCorrectFloor:      acTrigramFloor,
@@ -5469,7 +5469,7 @@ func acEnabledCfg() config.Config {
 	cfg.Correction.FlipAfterCorrection = false
 	cfg.Autocorrect = config.Autocorrect{
 		Enabled:       true,
-		Apps:          []string{acListedApp},
+		AppsBlocklist: []string{acListedApp},
 		MinWordLen:    acMinWordLen,
 		TrigramMargin: acTrigramMargin,
 		TrigramFloor:  acTrigramFloor,

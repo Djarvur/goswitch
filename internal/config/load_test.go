@@ -28,7 +28,7 @@ macr:
   alt_modifier: ""
 autocorrect:
   enabled: false
-  apps: []
+  apps_blocklist: []
   min_word_len: 4
   trigram_margin: 2.0
   trigram_floor: 1.0
@@ -74,8 +74,8 @@ func assertDecodeDefaults(t *testing.T, cfg *config.Config) {
 	if cfg.Autocorrect.Enabled {
 		t.Error("autocorrect.enabled = true, want false")
 	}
-	if len(cfg.Autocorrect.Apps) != 0 {
-		t.Errorf("autocorrect.apps = %v, want empty", cfg.Autocorrect.Apps)
+	if len(cfg.Autocorrect.AppsBlocklist) != 0 {
+		t.Errorf("autocorrect.apps_blocklist = %v, want empty", cfg.Autocorrect.AppsBlocklist)
 	}
 	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
 		t.Errorf(
@@ -219,7 +219,9 @@ func TestLoad_DocumentWithoutSectionDecodesOff(t *testing.T) {
 		t.Fatalf("Load(pre-phase document): %v", err)
 	}
 	got := cfg.Autocorrect
-	if got.Enabled || got.Apps != nil || got.MinWordLen != 0 || got.TrigramMargin != 0 || got.TrigramFloor != 0 {
+	zero := got.Enabled || got.AppsBlocklist != nil ||
+		got.MinWordLen != 0 || got.TrigramMargin != 0 || got.TrigramFloor != 0
+	if zero {
 		t.Errorf(
 			"autocorrect = %+v, want the zero value (no defaults overlay in Load; absent section = off, D-54)",
 			got,
@@ -244,24 +246,24 @@ func TestLoad_StrictDecodeRejectsTypo(t *testing.T) {
 	}
 }
 
-// TestLoad_EmptyAppsEnabledIsValid pins the D-54 kill-switch semantics
-// (T-06-04-03): `enabled: true` with an empty white list is a VALID
-// document — the empty list silences the feature everywhere (the consumer
-// conjunction of plan 06-06 requires a non-empty list), so no combination
-// of absent or empty values can widen the policy.
+// TestLoad_EmptyAppsEnabledIsValid pins the kill-switch shape at load
+// level: `enabled: true` with an empty blocklist and the documented
+// thresholds is a VALID document — under the blocklist semantics (D-53)
+// an empty list forbids nothing, so the layer is ACTIVE wherever the
+// field's role gate lets it through.
 func TestLoad_EmptyAppsEnabledIsValid(t *testing.T) {
 	t.Parallel()
 
 	corpus := strings.Replace(fullDocYAML, "autocorrect:\n  enabled: false", "autocorrect:\n  enabled: true", 1)
 	cfg, err := config.Load(writeConfig(t, corpus))
 	if err != nil {
-		t.Fatalf("Load(enabled, empty list): %v", err)
+		t.Fatalf("Load(enabled, empty blocklist): %v", err)
 	}
 	if !cfg.Autocorrect.Enabled {
 		t.Error("autocorrect.enabled = false, want true (the document's value)")
 	}
-	if len(cfg.Autocorrect.Apps) != 0 {
-		t.Errorf("autocorrect.apps = %v, want empty — the feature fires nowhere", cfg.Autocorrect.Apps)
+	if len(cfg.Autocorrect.AppsBlocklist) != 0 {
+		t.Errorf("autocorrect.apps_blocklist = %v, want empty — nothing is forbidden", cfg.Autocorrect.AppsBlocklist)
 	}
 }
 
@@ -274,8 +276,8 @@ func TestLoad_AutocorrectRangeViolationRejected(t *testing.T) {
 
 	active := strings.Replace(
 		fullDocYAML,
-		"autocorrect:\n  enabled: false\n  apps: []",
-		"autocorrect:\n  enabled: true\n  apps: [\"org.gnome.Gedit\"]",
+		"autocorrect:\n  enabled: false\n  apps_blocklist: []",
+		"autocorrect:\n  enabled: true\n  apps_blocklist: [\"org.gnome.Gedit\"]",
 		1,
 	)
 	broken := strings.Replace(active, "min_word_len: 4", "min_word_len: 1", 1)
@@ -408,8 +410,9 @@ func TestSound_ExplicitOffAndCustomEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(sound default event): %v", err)
 	}
-	if got := cfg.Sound.EffectiveAutocorrectEvent(); got != config.DefaultSoundAutocorrectEvent {
-		t.Errorf("Sound.EffectiveAutocorrectEvent() = %q, want the default %q", got, config.DefaultSoundAutocorrectEvent)
+	want := config.DefaultSoundAutocorrectEvent
+	if got := cfg.Sound.EffectiveAutocorrectEvent(); got != want {
+		t.Errorf("Sound.EffectiveAutocorrectEvent() = %q, want the default %q", got, want)
 	}
 }
 
