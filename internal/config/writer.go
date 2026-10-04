@@ -26,7 +26,18 @@ const (
 	sectionAutocorrect = "autocorrect"
 	sectionSound       = "sound"
 	keyEnabled         = "enabled"
+
+	keyAppsBlocklist    = "apps_blocklist"
+	keyMinWordLen       = "min_word_len"
+	keyTrigramMargin    = "trigram_margin"
+	keyTrigramFloor     = "trigram_floor"
+	keyAutocorrectEvent = "autocorrect_event"
 )
+
+// createdHeaderComment heads every document the writer CREATES (the first
+// toggle on a machine without a config, or «Настройки…» on an absent
+// file) — the pointer to the key reference, never section content.
+const createdHeaderComment = "goswitch config — создан тумблером меню; справочник ключей: docs/CONFIG.md"
 
 // configPerm is the persisted config's mode (mnd) — owner-only by the
 // e2e stand's configFilePerm precedent (test/e2e/case_select.go).
@@ -40,10 +51,9 @@ const kvStride = 2
 // there is no section to toggle inside a scalar or a sequence.
 var errWriterNotMapping = errors.New("config document is not a mapping")
 
-// errWriterSectionMissing refuses a flip whose section is absent from an
-// existing document — the insertion branch of Task 2 replaces this
-// refusal with a whole-section insert.
-var errWriterSectionMissing = errors.New("section not found")
+// errWriterSectionUnknown refuses to build a section the writer does not
+// own — the toggle surface is the two named sections above.
+var errWriterSectionUnknown = errors.New("unknown section")
 
 // SetAutocorrectEnabled persists the autocorrect master switch into the
 // YAML document at path — the menu toggle's storage (plan 07-05 is the
@@ -53,23 +63,33 @@ func SetAutocorrectEnabled(path string, on bool) error {
 	return setDocumentToggle(path, sectionAutocorrect, keyEnabled, on)
 }
 
-// errEnsureStub is the RED-stage refusal (the 06-03 RED-stub precedent:
-// the RED commit carries the shape, GREEN the behavior) — every
-// ensure-surface attempt fails loudly until the ensure branch lands.
-var errEnsureStub = errors.New("ensure: not implemented")
-
 // SetSoundEnabled persists the sound master switch into the YAML document
 // at path — the «Звук» toggle rides the SAME Node round-trip mechanism as
 // the autocorrect toggle (owner decision: one persist mechanism).
 func SetSoundEnabled(path string, on bool) error {
-	return fmt.Errorf("set sound.enabled = %v in %s: %w", on, path, errEnsureStub)
+	return setDocumentToggle(path, sectionSound, keyEnabled, on)
 }
 
 // EnsureDocument creates the full defaults document when the path has no
 // file — the «Настройки…» prerequisite (the editor must never open an
-// empty buffer) — and is a byte-level no-op when the file exists.
+// empty buffer, Q7) — and is a byte-level no-op when the file exists.
 func EnsureDocument(path string) error {
-	return fmt.Errorf("ensure config %s: %w", path, errEnsureStub)
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return nil // exists: never rewrite a live document
+	case !errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("stat config %s: %w", path, err)
+	}
+	doc, err := buildFullDocument(false, true)
+	if err != nil {
+		return fmt.Errorf("assemble config %s: %w", path, err)
+	}
+	if err := rewriteAtomically(path, doc); err != nil {
+		return fmt.Errorf("write config %s: %w", path, err)
+	}
+
+	return nil
 }
 
 // DefaultPath resolves the canonical user config path — the user config
@@ -77,15 +97,27 @@ func EnsureDocument(path string) error {
 // selfcheck-pinned path of plan 04-02. Empty when the user config dir
 // cannot be resolved (no HOME/XDG in the environment).
 func DefaultPath() string {
-	return "" // RED stub: the resolver lands with the ensure GREEN
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+
+	return filepath.Join(dir, "goswitch", "config.yaml")
 }
 
-// setDocumentToggle is the ONE flip path: read the document, parse it into
-// a Node tree, flip the single bool scalar under (section, key), encode
-// back with the 2-space indent and land the bytes through the atomic
-// temp+rename write. Any failure leaves the original file byte-untouched.
+// setDocumentToggle is the ONE persist path: read the document, parse it
+// into a Node tree, land the toggle (in-place flip, key insertion, whole
+// section insertion — upsertToggle), encode back with the 2-space indent
+// and write through the atomic temp+rename. An absent file is the ensure
+// branch: the toggle CREATES the complete defaults document with the
+// switch in place — generation happens only on a user action, never at
+// daemon start (the 04-02 contract, owner decision adopt+watch). Any
+// failure leaves the original file byte-untouched.
 func setDocumentToggle(path, section, key string, on bool) error {
 	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ensureFullDocument(path, section, on)
+	}
 	if err != nil {
 		return fmt.Errorf("read config %s: %w", path, err)
 	}
@@ -99,26 +131,149 @@ func setDocumentToggle(path, section, key string, on bool) error {
 	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
 		return fmt.Errorf("edit config %s: %w", path, errWriterNotMapping)
 	}
-	if !setMappingToggle(root.Content[0], section, key, on) {
-		return fmt.Errorf("edit config %s: section %s: %w", path, section, errWriterSectionMissing)
+	if err := upsertToggle(root.Content[0], section, key, on); err != nil {
+		return fmt.Errorf("edit config %s: %w", path, err)
 	}
 
 	return rewriteAtomically(path, &root)
 }
 
-// setMappingToggle flips the bool key inside the named section of the
-// document mapping. Reports whether the section+key pair was found and
-// set — a false return leaves the tree untouched.
-func setMappingToggle(doc *yaml.Node, section, key string, on bool) bool {
+// ensureFullDocument creates the complete defaults document with the
+// toggled section's switch at the requested value and the sibling switch
+// at its default — autocorrect OFF (D-54) and sound ON (the owner's
+// default-ON verdict) when the other one is the toggle.
+func ensureFullDocument(path, section string, on bool) error {
+	autocorrectOn, soundOn := on, true
+	if section == sectionSound {
+		autocorrectOn, soundOn = false, on
+	}
+	doc, err := buildFullDocument(autocorrectOn, soundOn)
+	if err != nil {
+		return fmt.Errorf("assemble config %s: %w", path, err)
+	}
+	if err := rewriteAtomically(path, doc); err != nil {
+		return fmt.Errorf("write config %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// buildFullDocument assembles the complete Defaults()-equivalent document
+// as a Node tree with the two switches at the given values — every other
+// value comes from Defaults() (one source of truth with the schema, never
+// duplicated literals), the shape is guaranteed strict-decodable because
+// it round-trips through the marshaled struct itself.
+func buildFullDocument(autocorrectOn, soundOn bool) (*yaml.Node, error) {
+	cfg := Defaults()
+	cfg.Autocorrect.Enabled = autocorrectOn
+	cfg.Sound.Enabled = boolPtr(soundOn)
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshal defaults document: %w", err)
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("reparse defaults document: %w", err)
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("assemble defaults document: %w", errWriterNotMapping)
+	}
+	root.Content[0].HeadComment = createdHeaderComment
+
+	return &root, nil
+}
+
+// upsertToggle lands the toggle in the document mapping: the section's
+// key flips in place, a missing key joins the existing section, a
+// null/empty section is replaced wholesale and a missing section is
+// appended whole — never a duplicate section (yaml.v3 refuses duplicate
+// mapping keys at decode).
+func upsertToggle(doc *yaml.Node, section, key string, on bool) error {
 	for i := 0; i+1 < len(doc.Content); i += kvStride {
 		if doc.Content[i].Value != section {
 			continue
 		}
+		target := doc.Content[i+1]
+		if target.Kind != yaml.MappingNode {
+			fresh, err := buildSectionNode(section, on)
+			if err != nil {
+				return err
+			}
+			doc.Content[i+1] = fresh
 
-		return setScalar(doc.Content[i+1], key, on)
+			return nil
+		}
+		if !setScalar(target, key, on) {
+			target.Content = append(target.Content, scalarString(key), scalarBool(on))
+		}
+
+		return nil
 	}
+	fresh, err := buildSectionNode(section, on)
+	if err != nil {
+		return err
+	}
+	doc.Content = append(doc.Content, scalarString(section), fresh)
 
-	return false
+	return nil
+}
+
+// buildSectionNode assembles a whole missing/null section from the schema
+// defaults — the values cross-reference Defaults() and the 07-02 schema
+// constants (change the pair together, never literals).
+func buildSectionNode(section string, on bool) (*yaml.Node, error) {
+	switch section {
+	case sectionAutocorrect:
+		d := Defaults().Autocorrect
+
+		return mapping(
+			scalarString(keyEnabled), scalarBool(on),
+			scalarString(keyAppsBlocklist), emptySeq(),
+			scalarString(keyMinWordLen), scalarInt(d.MinWordLen),
+			scalarString(keyTrigramMargin), scalarFloat(d.TrigramMargin),
+			scalarString(keyTrigramFloor), scalarFloat(d.TrigramFloor),
+		), nil
+	case sectionSound:
+		d := Defaults().Sound
+
+		return mapping(
+			scalarString(keyEnabled), scalarBool(on),
+			scalarString(keyAutocorrectEvent), scalarString(d.AutocorrectEvent),
+		), nil
+	default:
+		return nil, fmt.Errorf("build section %s: %w", section, errWriterSectionUnknown)
+	}
+}
+
+// mapping builds a mapping node from alternating key/value children.
+func mapping(pairs ...*yaml.Node) *yaml.Node {
+	return &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: pairs}
+}
+
+// emptySeq builds the empty flow sequence — `key: []` in the document.
+func emptySeq() *yaml.Node {
+	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+}
+
+// scalarString builds a plain string scalar.
+func scalarString(s string) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s}
+}
+
+// scalarBool builds a plain bool scalar.
+func scalarBool(b bool) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(b)}
+}
+
+// scalarInt builds a plain int scalar.
+func scalarInt(i int) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: strconv.Itoa(i)}
+}
+
+// scalarFloat builds a plain float scalar — 'g' formatting renders the
+// Defaults' 2.0/1.0 as the documents' "2"/"1".
+func scalarFloat(f float64) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: strconv.FormatFloat(f, 'g', -1, 64)}
 }
 
 // setScalar assigns the bool scalar in place — the node keeps its

@@ -226,6 +226,34 @@ func TestWriter_BrokenSourceUntouched(t *testing.T) {
 	}
 }
 
+// assertCreatedDefaults fails unless the created document carries the
+// Defaults()-equivalent values — the shared tail of the creation corpus.
+func assertCreatedDefaults(t *testing.T, cfg *config.Config) {
+	t.Helper()
+
+	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
+		t.Errorf(
+			"created thresholds = %d/%v/%v, want the Defaults 4/2.0/1.0",
+			cfg.Autocorrect.MinWordLen, cfg.Autocorrect.TrigramMargin, cfg.Autocorrect.TrigramFloor,
+		)
+	}
+	if len(cfg.Autocorrect.AppsBlocklist) != 0 {
+		t.Errorf("created blocklist = %v, want empty", cfg.Autocorrect.AppsBlocklist)
+	}
+	if cfg.Hotkeys.TapKey != "shift_r" || cfg.Hotkeys.WordLayoutCombo != "shift+ctrl_r" {
+		t.Errorf("created hotkeys = %v, want the Defaults bindings", cfg.Hotkeys)
+	}
+	if cfg.Hotkeys.ModeSwitchChord != "super+space" {
+		t.Errorf("created mode_switch_chord = %q, want super+space", cfg.Hotkeys.ModeSwitchChord)
+	}
+	if cfg.Timeouts.TapWindowMs != 300 || cfg.Timeouts.VerifyWaitMs != 100 {
+		t.Errorf("created timeouts = %v, want 300/100", cfg.Timeouts)
+	}
+	if cfg.Correction.BackspaceCap != 50 || cfg.Correction.ClipboardRung || !cfg.Correction.FlipAfterCorrection {
+		t.Errorf("created correction = %v, want the Defaults 50/false/true", cfg.Correction)
+	}
+}
+
 // TestWriter_CreatesFullDocumentOnAbsent pins the ensure semantics of the
 // first toggle (owner decision, adopt+watch): on a machine without a
 // config file the autocorrect toggle CREATES the complete
@@ -244,24 +272,7 @@ func TestWriter_CreatesFullDocumentOnAbsent(t *testing.T) {
 	if !cfg.Autocorrect.Enabled {
 		t.Error("created autocorrect.enabled = false, want the toggle value true")
 	}
-	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
-		t.Errorf(
-			"created thresholds = %d/%v/%v, want the Defaults 4/2.0/1.0",
-			cfg.Autocorrect.MinWordLen, cfg.Autocorrect.TrigramMargin, cfg.Autocorrect.TrigramFloor,
-		)
-	}
-	if len(cfg.Autocorrect.AppsBlocklist) != 0 {
-		t.Errorf("created blocklist = %v, want empty", cfg.Autocorrect.AppsBlocklist)
-	}
-	if cfg.Hotkeys.TapKey != "shift_r" || cfg.Hotkeys.WordLayoutCombo != "shift+ctrl_r" || cfg.Hotkeys.ModeSwitchChord != "super+space" {
-		t.Errorf("created hotkeys = %v, want the three Defaults bindings", cfg.Hotkeys)
-	}
-	if cfg.Timeouts.TapWindowMs != 300 || cfg.Timeouts.VerifyWaitMs != 100 {
-		t.Errorf("created timeouts = %v, want 300/100", cfg.Timeouts)
-	}
-	if cfg.Correction.BackspaceCap != 50 || cfg.Correction.ClipboardRung || !cfg.Correction.FlipAfterCorrection {
-		t.Errorf("created correction = %v, want the Defaults 50/false/true", cfg.Correction)
-	}
+	assertCreatedDefaults(t, cfg)
 }
 
 // TestWriter_EnsureDocumentCreatesAndNoOps pins EnsureDocument: creation
