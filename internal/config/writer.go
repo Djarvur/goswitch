@@ -53,6 +53,33 @@ func SetAutocorrectEnabled(path string, on bool) error {
 	return setDocumentToggle(path, sectionAutocorrect, keyEnabled, on)
 }
 
+// errEnsureStub is the RED-stage refusal (the 06-03 RED-stub precedent:
+// the RED commit carries the shape, GREEN the behavior) — every
+// ensure-surface attempt fails loudly until the ensure branch lands.
+var errEnsureStub = errors.New("ensure: not implemented")
+
+// SetSoundEnabled persists the sound master switch into the YAML document
+// at path — the «Звук» toggle rides the SAME Node round-trip mechanism as
+// the autocorrect toggle (owner decision: one persist mechanism).
+func SetSoundEnabled(path string, on bool) error {
+	return fmt.Errorf("set sound.enabled = %v in %s: %w", on, path, errEnsureStub)
+}
+
+// EnsureDocument creates the full defaults document when the path has no
+// file — the «Настройки…» prerequisite (the editor must never open an
+// empty buffer) — and is a byte-level no-op when the file exists.
+func EnsureDocument(path string) error {
+	return fmt.Errorf("ensure config %s: %w", path, errEnsureStub)
+}
+
+// DefaultPath resolves the canonical user config path — the user config
+// dir (XDG_CONFIG_HOME, else $HOME/.config) + /goswitch/config.yaml, the
+// selfcheck-pinned path of plan 04-02. Empty when the user config dir
+// cannot be resolved (no HOME/XDG in the environment).
+func DefaultPath() string {
+	return "" // RED stub: the resolver lands with the ensure GREEN
+}
+
 // setDocumentToggle is the ONE flip path: read the document, parse it into
 // a Node tree, flip the single bool scalar under (section, key), encode
 // back with the 2-space indent and land the bytes through the atomic
