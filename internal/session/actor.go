@@ -98,7 +98,6 @@ const (
 	acReasonRoleTimeout     = "role-timeout"
 	acReasonRecheckDisabled = "recheck-disabled"
 	acReasonPayloadStale    = "payload-stale"
-	acReasonAppChanged      = "app-changed"
 )
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
@@ -352,8 +351,10 @@ type correctionRange struct {
 // range snapshot (token+tail+replace) taken under the mutex at the
 // boundary, the detector's direction, the typed word the verdict was about
 // and the arming generation. app is the bridge-namespace identity the
-// blocklist verdict was evaluated for (the confirm re-checks the live
-// identity against the blocklist — the WR-01 equality removal and the
+// blocklist verdict was evaluated for — EMPTY when no identity was visible
+// at arm (the 07-04 inversion: unknown passes without an app; the confirm
+// consults the LIVE identity against the blocklist — the WR-01 equality
+// removal and the
 // confirm rework are plan 07-04). expectToken/expectTail snapshot the buffer as
 // the arming event LEAVES it (the reset branch of feedKey hard-resets
 // between the capture and the launch — CR-01): the confirm's under-the-
@@ -451,7 +452,9 @@ func (a *Actor) SetOptions(o Options) {
 
 	a.opts = o
 	a.refreshACBlocklist(o.AutoCorrectBlocklist) // the no-config surface owns the same cache
-	a.ensureAppid()                              // an enabled autocorrect layer or a non-empty macr list arrives through this surface too
+	// An enabled autocorrect layer or a non-empty macr list arrives through
+	// this surface too.
+	a.ensureAppid()
 }
 
 // AttachConfig connects the live config source (the 03-02 watcher's
@@ -2061,9 +2064,11 @@ func (a *Actor) recordACAbstain(reason string) {
 // owns the decision); the fired branch additionally revalidates the armed
 // payload against the live buffer (CR-01 — the generation advances only at
 // boundaries, so a non-boundary mutation inside the role-RTT window must
-// be caught by content) and re-checks the focused app identity the
-// white-list verdict was taken for (WR-01 — a focus switch inside the
-// window must not pair one app's verdict with another app's role). Any
+// be caught by content) and consults the blocklist on the CURRENT focused
+// identity (07-04: the confirm gate is blocklist-only, owner variant 1 —
+// the ADR-007 amendment removed the arming/confirm equality; a focus
+// switch inside the window surfaces as payload-stale via the buffer, or as
+// a blocklist hit on the new app). Any
 // unknown means SILENCE with its counted slug —
 // the fail-closed direction INVERTED from macrTargetActive's degradation
 // (no rung upward, ADR-007): a role error or the deadline is
@@ -2115,10 +2120,12 @@ func (a *Actor) autoConfirm(payload acPayload) {
 	a.acRoleWarned = false // a healthy answer closes the episode
 	switch role {
 	case acRoleText, acRoleEntry, acRoleDocumentText:
-		// CR-01/WR-01: the fired threshold re-checks the armed payload's
-		// preconditions under the mutex — the window between the boundary
-		// and this verdict must not move the field or the focus out from
-		// under the payload.
+		// CR-01 + the 07-04 confirm form: the fired threshold re-checks the
+		// armed payload's preconditions under the mutex — the window
+		// between the boundary and this verdict must not move the field
+		// out from under the payload, and the current app must not sit on
+		// the blocklist (a focus move lands as payload-stale, or as a
+		// blocklist hit on the new app).
 		if !a.acConfirmRefusals(payload) {
 			return
 		}
@@ -2136,19 +2143,21 @@ func (a *Actor) autoConfirm(payload acPayload) {
 // keystroke, a Backspace, a second reset, a focus loss) means the armed
 // range no longer describes the field, and executing it would delete the
 // wrong runes and corrupt the mirror (T-06-06-06 extended past the
-// generation guard). WR-01: the white-list verdict was taken at arm time —
-// the focused app is re-checked so the conjunction is evaluated for ONE
-// object at ONE instant: a focus switch inside the role-RTT window
-// re-points the live role query at another app's object, and the armed
-// app's verdict must not ride on it (D-53). The identity comparison is the
-// same bridge-namespace equality as the arming gate; a lost identity
-// source is the unknown (fail-closed), a different app is the changed one.
+// generation guard). The identity check is BLOCKLIST-ONLY on the CURRENT
+// identity (07-04, owner variant 1 — the ADR-007 amendment): a known
+// focused app matching any compiled pattern refuses with app-blocked; an
+// unknown identity passes — the same "unknown is not a prohibition" as the
+// arming gate (the blocklist cannot exclude what it cannot see). The
+// arming/confirm equality of WR-01 (the 06-REVIEW fix) is deliberately
+// REMOVED with this revision: under the live role query it is redundant —
+// the verdict is taken for the object the query answers NOW, and a focus
+// move inside the window surfaces as payload-stale (FocusOut hard-resets
+// the buffer; the replacement pipeline re-verifies the field before any
+// Delete) — while kept conditionally it would break the locked scenario
+// "unknown at arm, learned by confirm" with a phantom mismatch (a payload
+// armed without an app can never equality-match a learned identity).
 // Every refusal counts its closed slug and reports false; the caller holds
 // the mutex.
-//
-// TRANSITIONAL (this plan, 07-04 Task 2): the unknown identity no longer
-// refuses here — the same pass-through as the arming gate (the final
-// blocklist-only form of the confirm lands with the equality removal).
 func (a *Actor) acConfirmRefusals(payload acPayload) bool {
 	if !slices.Equal(a.buf.Token(), payload.expectToken) ||
 		!slices.Equal(a.buf.Tail(), payload.expectTail) {
@@ -2156,11 +2165,16 @@ func (a *Actor) acConfirmRefusals(payload acPayload) bool {
 
 		return false
 	}
-	app, ok := a.acFocusedApp()
-	if ok && app != payload.app {
-		a.recordACAbstain(acReasonAppChanged)
+	// The 07-04 confirm form: the blocklist consults the CURRENT identity;
+	// unknown passes, a matching known app forbids.
+	if app, ok := a.acFocusedApp(); ok {
+		for _, re := range a.acBlocklist {
+			if re.MatchString(app) {
+				a.recordACAbstain(acReasonAppBlocked)
 
-		return false
+				return false
+			}
+		}
 	}
 
 	return true

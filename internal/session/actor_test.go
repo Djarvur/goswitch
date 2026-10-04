@@ -4958,12 +4958,19 @@ const (
 // acReasonFired is the fired record's reason literal (the INFO log class
 // of the fired decision); acReasonRoleForbidden is the shared matrix slug;
 // acReasonAppBlocked is the 07-02 blocklist slug (pinned by the e2e oracle
-// name ac_skip_app_blocked).
+// name ac_skip_app_blocked); acReasonNoCaps and acReasonTrigramUnsure are
+// the security-cell slugs the inverted corpus reuses across tables.
 const (
 	acReasonFired         = "fired"
 	acReasonRoleForbidden = "role-forbidden"
 	acReasonAppBlocked    = "app-blocked"
+	acReasonNoCaps        = "no-caps"
+	acReasonTrigramUnsure = "trigram-unsure"
 )
+
+// acUnsureWord is the corpus's OOV token ("москва" typed in EN): a
+// both-dictionary miss the detector answers unsure with.
+const acUnsureWord = "vjcrdf"
 
 // boundaryWord types one wrong-layout token and lands its separator — the
 // raw boundary of the counter/warn corpora (no verify dance: the cells
@@ -5156,8 +5163,8 @@ func silenceMatrixCells() []struct {
 			options: acBlockedOptions,
 			reason:  acReasonAppBlocked,
 		},
-		{name: "no surrounding-text cap", token: wordEN, caps: 0, reason: "no-caps"},
-		{name: "detector unsure on a both-dictionary miss", token: "vjcrdf", reason: "trigram-unsure"},
+		{name: "no surrounding-text cap", token: wordEN, caps: 0, reason: acReasonNoCaps},
+		{name: "detector unsure on a both-dictionary miss", token: acUnsureWord, reason: acReasonTrigramUnsure},
 		{name: "short word abstains", token: "ok", reason: "abstain-short"},
 	}
 }
@@ -5173,7 +5180,7 @@ func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 	for _, tc := range silenceMatrixCells() {
 		t.Run(tc.name, func(t *testing.T) {
 			caps := tc.caps
-			if caps == 0 && tc.reason != "no-caps" {
+			if caps == 0 && tc.reason != acReasonNoCaps {
 				caps = engine.CapSurroundingText
 			}
 			a, sink := wiredActorCaps(caps)
@@ -5284,17 +5291,17 @@ func TestAutoCorrect_IdentityUnknownNotProhibition(t *testing.T) {
 		},
 		{
 			name: "missing caps stays no-caps", token: wordEN,
-			caps: 0, reason: "no-caps",
+			caps: 0, reason: acReasonNoCaps,
 		},
 		{
-			name: "unsure detector stays trigram-unsure", token: "vjcrdf",
-			reason: "trigram-unsure",
+			name: "unsure detector stays trigram-unsure", token: acUnsureWord,
+			reason: acReasonTrigramUnsure,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			caps := tc.caps
-			if caps == 0 && tc.reason != "no-caps" {
+			if caps == 0 && tc.reason != acReasonNoCaps {
 				caps = engine.CapSurroundingText
 			}
 			a, sink := wiredActorCaps(caps)
@@ -5622,7 +5629,7 @@ func TestAutoCorrect_CountersAndReasons(t *testing.T) {
 		"the forbidden-role boundary never counted")
 
 	counters := a.AutoCorrectCounters()
-	want := map[string]int{"abstain-short": 1, "trigram-unsure": 1, acReasonRoleForbidden: 1}
+	want := map[string]int{"abstain-short": 1, acReasonTrigramUnsure: 1, acReasonRoleForbidden: 1}
 	if counters.Fired != 1 || counters.Abstained != 3 || !maps.Equal(counters.Reasons, want) {
 		t.Errorf("counters = {Fired:%d Abstained:%d Reasons:%v}, want {Fired:1 Abstained:3 Reasons:%v}",
 			counters.Fired, counters.Abstained, counters.Reasons, want)

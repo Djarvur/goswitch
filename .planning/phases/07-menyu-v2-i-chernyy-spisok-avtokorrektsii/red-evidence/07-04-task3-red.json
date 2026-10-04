@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/session/ -race -count=1 -run \"TestAutoCorrect_ConfirmBlocklistRefuses\" -v (transcribed to node-test TAP per repo precedent; raw output /tmp/07-04-t3-red-raw.txt; tree = 07-04 arm GREEN, equality branch still present)",
+  "exitCode": 1,
+  "targetTest": "TestAutoCorrect_ConfirmBlocklistRefuses",
+  "failingTest": "TestAutoCorrect_ConfirmBlocklistRefuses",
+  "expected": "Arm at UNKNOWN identity, identity learned AND blocklist-matching by confirm time: the refusal is app-blocked (the current identity is what the confirm consults — owner variant 1).",
+  "actual": "reasons = map[app-changed:1] — the transitional confirm still consults the arming/confirm equality: payload.app is \"\" (armed unknown), the learned identity differs, the phantom mismatch refuses instead of the blocklist verdict. Exactly the WR-01 remainder Task 3 removes.",
+  "output": "not ok 1 - TestAutoCorrect_ConfirmBlocklistRefuses\n# tests 1\n# pass 0\n# fail 1\n"
+}
