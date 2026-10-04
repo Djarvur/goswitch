@@ -32,51 +32,6 @@ autocorrect:
   trigram_floor: 1.0
 `
 
-// writerDocNoAutocorrectYAML is a complete pre-autocorrect document with a
-// marker comment inside the hotkeys section — the insertion corpus proves
-// the rest of the document (marker included) survives a section insert.
-const writerDocNoAutocorrectYAML = `# goswitch config — hand-tuned
-hotkeys:
-  tap_key: shift_r # marker — another section's comment must survive
-  word_layout_combo: shift+ctrl_r
-timeouts:
-  tap_window_ms: 300
-  verify_wait_ms: 100
-correction:
-  backspace_cap: 50
-  clipboard_rung: false
-  flip_after_correction: true
-macr:
-  enabled: false
-  letters: ""
-  apps: []
-  alt_modifier: ""
-`
-
-// writerSoundDocYAML carries a sound section with an inline marker on its
-// enabled key — the sound-flip corpus reads it back after the write.
-const writerSoundDocYAML = `# goswitch config — hand-tuned
-hotkeys:
-  tap_key: shift_r
-  word_layout_combo: shift+ctrl_r
-timeouts:
-  tap_window_ms: 300
-  verify_wait_ms: 100
-correction:
-  backspace_cap: 50
-  clipboard_rung: false
-  flip_after_correction: true
-autocorrect:
-  enabled: false # the autocorrect marker
-  apps_blocklist: []
-  min_word_len: 4
-  trigram_margin: 2.0
-  trigram_floor: 1.0
-sound:
-  enabled: true # the sound marker — comments must survive
-  autocorrect_event: message
-`
-
 // writerBrokenYAML is not YAML — the broken-source corpus demands an error
 // and a byte-untouched file.
 const writerBrokenYAML = "hotkeys: [unclosed"
