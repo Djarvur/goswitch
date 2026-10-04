@@ -7,11 +7,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -118,7 +120,9 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 		// SAME flipTo path as every other gesture), «Статус» posts a
 		// mode+version notification on this connection (counts/states only
 		// — T-03-06-03), «Перечитать конфиг» drives the watcher's Reload and
-		// is served greyed without -config. The supervisor rides the serve
+		// is served greyed only when no config path resolved (the degenerate
+		// no-HOME case; under adopt+watch the default path always resolves
+		// one). The supervisor rides the serve
 		// context OnConn receives — the tray dies with the daemon, and the
 		// icon self-heals when the shell's watcher appears late or evicts
 		// the item.
@@ -184,20 +188,79 @@ type loadedConfig struct {
 	fromFile bool
 }
 
+// adoptLoad is the watcher loader for the ADOPTED default path: a missing
+// file serves the built-in defaults (the 04-02 green-defaults contract —
+// the watcher constructs before the first toggle creates the document),
+// a broken one rejects the reload and keeps the last-good snapshot
+// serving (D-32).
+func adoptLoad(path string) (*config.Config, error) {
+	cfg, err := config.Load(path)
+	if err == nil {
+		return cfg, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		d := config.Defaults()
+
+		return &d, nil
+	}
+
+	return nil, fmt.Errorf("load config %s: %w", path, err)
+}
+
+// configDirPerm is the adopted config DIRECTORY's mode (mnd) —
+// owner-private like the file (the configPerm precedent).
+const configDirPerm = 0o700
+
 // startConfigWatcher starts the hot-reload watcher on the FACTUAL config
-// path. RED stage: the old explicit-only wiring in the new shape.
+// path — unconditionally whenever a path resolved (adopt+watch, the owner
+// decision: the file the first toggle creates is picked up by the same
+// watch, and an explicit -config keeps its hot reload as today). An
+// explicit -config keeps the plain Load contract; the adopted path serves
+// the defaults until the document exists (adoptLoad), and its parent
+// directory is created first — a fresh install has neither file nor
+// directory, the watcher watches the DIRECTORY, and refusing the start
+// over a missing empty directory would break the 04-02 green-defaults
+// contract (the FILE itself is still never generated at start). A watcher
+// failure is a start refusal, as with -config today.
 func startConfigWatcher(ctx context.Context, lc loadedConfig, explicit string) (*config.Watcher, error) {
-	return config.NewWatcher(ctx, lc.path)
+	loader := config.Load
+	if explicit == "" {
+		loader = adoptLoad
+		if err := os.MkdirAll(filepath.Dir(lc.path), configDirPerm); err != nil {
+			return nil, fmt.Errorf("create config directory: %w", err)
+		}
+	}
+
+	w, err := config.NewWatcher(ctx, lc.path, config.WithLoader(loader))
+	if err != nil {
+		return nil, fmt.Errorf("start config watcher: %w", err)
+	}
+
+	return w, nil
 }
 
 // loadConfig resolves the startup configuration: an explicit -config must
 // load and validate (a refusal is a visible start error, never silent
-// defaults); without the flag the documented built-in defaults apply — the
-// tap window 300 ms of ADR-002 — so the Phase 2 behavior is preserved
-// unchanged (SWCH-04/D-35).
-func loadConfig(path string) (loadedConfig, error) {
+// defaults); without the flag the daemon ADOPTS the default path — an
+// existing document loads with the same contract as an explicit -config
+// (a broken file refuses the start loudly, T-07-03-03: the divergence
+// with the disk is invisible otherwise), an absent one stays the green
+// defaults start of plan 04-02 with the default path returned for the
+// watcher (nothing is created at start — generation is a user action).
+// The degenerate no-HOME environment gets the defaults without a watcher.
+func loadConfig(explicit string) (loadedConfig, error) {
+	path, adopt := explicit, false
 	if path == "" {
-		return loadedConfig{cfg: config.Defaults()}, nil
+		path = config.DefaultPath()
+		if path == "" {
+			return loadedConfig{cfg: config.Defaults()}, nil
+		}
+		adopt = true
+	}
+	if adopt {
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			return loadedConfig{cfg: config.Defaults(), path: path}, nil
+		}
 	}
 	cfg, err := config.Load(path)
 	if err != nil {

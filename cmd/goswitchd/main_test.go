@@ -303,7 +303,7 @@ func TestLoadConfigExplicitPriority(t *testing.T) {
 		t.Errorf("loaded path = %q, want the explicit path %q", lc.path, explicit)
 	}
 	if lc.cfg.Timeouts.TapWindowMs != 777 {
-		t.Errorf("tap_window_ms = %d, want the explicit file's 777 — the explicit -config is priority", lc.cfg.Timeouts.TapWindowMs)
+		t.Errorf("tap_window_ms = %d, want the explicit file's 777 — explicit wins", lc.cfg.Timeouts.TapWindowMs)
 	}
 }
 
