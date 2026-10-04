@@ -311,7 +311,7 @@ Plans:
 **Wave 1** *(spec-delta до кода, D-55 — блокирует все кодовые планы)*
 
 - [x] 07-01-PLAN.md — SPEC §11 третья ревизия (blocklist, 2026-10-04) + ADR-007 amendment — SPEC §11
-- [ ] 07-02-PLAN.md — Схема: apps_blocklist (regex-валидация, пустой паттерн, потолок, ACTIVE-условие) + механическая адаптация актора + docs/CONFIG.md — MACR-ACL
+- [x] 07-02-PLAN.md — Схема: apps_blocklist (regex-валидация, пустой паттерн, потолок, ACTIVE-условие) + механическая адаптация актора + docs/CONFIG.md — MACR-ACL
 - [ ] 07-03-PLAN.md — Персист: SetAutocorrectEnabled/EnsureDocument/DefaultPath (Node round-trip, temp+rename, 0600) + adopt+watch дефолтного пути — MACR-ACL
 - [ ] 07-04-PLAN.md — Гейт: unknown⇒пропуск (только идентичность), confirm blocklist-only, удаление WR-01-равенства, ensureAppid по enabled — MACR-ACL, CORR-01..09 (регресс)
 
