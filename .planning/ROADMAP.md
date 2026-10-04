@@ -317,7 +317,7 @@ Plans:
 
 **Wave 4** *(blocked on 07-03 + 07-04)*
 
-- [ ] 07-05-PLAN.md — Меню v2: радиопара EN/RU (SwitchMode→flipTo), тумблер с персистом, живые макро-инфопункты, Настройки (xdg-open no-pipes), О программе; ItemsPropertiesUpdated-динамика — SWCH-01..04 (регресс)
+- [x] 07-05-PLAN.md — Меню v2: радиопара EN/RU (SwitchMode→flipTo), тумблер с персистом, живые макро-инфопункты, Настройки (xdg-open no-pipes), О программе; ItemsPropertiesUpdated-динамика — SWCH-01..04 (регресс)
 
 **Wave 5** *(blocked on Waves 1-4; 07-06 и 07-08 параллельны — файлы не пересекаются)*
 

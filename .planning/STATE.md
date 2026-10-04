@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 07
 current_phase_name: Меню v2 и чёрный список автокоррекции
 status: executing
-stopped_at: Completed 07-04-PLAN.md
-last_updated: "2026-10-04T22:32:02.613Z"
+stopped_at: Completed 07-05-PLAN.md
+last_updated: "2026-10-04T23:47:24.802Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 07 execution started
-state_head: e01ae82efee267b23099a2531c29dbc6b2eb6e31
+state_head: 34aecb79ae7aa02b5348165847cc7e6f13cd724b
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 51
-  completed_plans: 47
+  completed_plans: 48
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 07 (Меню v2 и чёрный список автокоррекции) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-10-04 — Phase 07 execution started
 
@@ -112,6 +112,7 @@ Progress: [████████░░] 75%
 | Phase 07 P02 | 28 min | 3 tasks | 7 files |
 | Phase 07 P03 | 32 min | 3 tasks | 4 files |
 | Phase 07 P04 | 22 min | 3 tasks | 5 files |
+| Phase 07 P05 | 62 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -245,6 +246,8 @@ Recent decisions affecting current work:
 - [Phase 06]: Journal audit post-fix: every switch_engine record INFO-form, zero deadline-abort WARNs in a full run, RTT mode→switch_engine 6.5–9.2 ms (median 8.32, n=8) vs the pre-fix WARN-on-every-flip picture — The 150 ms wedge-guard deadline is silent on a healthy flip — the engine factory answers during the await (06-09 lock-free AttachEngine)
 - [Phase 07]: Ревизия D-53 зафиксирована в спеке ДО кода (D-55, прецедент 06-01): SPEC §11 — третья датированная ревизия (blocklist: fire ⇔ enabled ∧ role-гейт ∧ NOT apps_blocklist; unknown-идентичность НЕ запрет; confirm blocklist-only, payload-stale; default off D-54) + ADR-007 amendment (датированный append, статус Accepted сохранён, слаг app-blocked) — SPEC-DELTA-OK: кодовые планы 07-02..07-07 строят на записанном контракте §11/ADR-007; аудит-трейл §11 цел (оба прежних вердикта + §10 bullet), ноль .go в дифе 07-01
 - [Phase 07]: Решение «Звуки при переключении» внесено в §11 ревизии 2026-10-04 ДО кода плана 07-08: секция sound — enabled по умолчанию включён + отдельное событие тона автокоррекции; тон на любой флип языка; воспроизведение субпроцессом canberra-gtk-play (paplay-фолбэк); отказ — только WARN; тумблер «Звук» в меню с persist по каноническому макету 287999c — D-55: решение о звуках записано в спеку до кода; зелёная итерация подтверждена mise run ci на docs-only дереве
+- [Phase 07]: [07-05] Menu-side dedupe: the actor pushes per flip/fold, the menu drops identical values — the per-keystroke applySnapshot fold never spams the bus; the click+echo+fold triple application is harmless by construction
+- [Phase 07]: [07-05] The wiring seeds the menu's initial state from the STARTUP config right after Attach (version, both toggles, raw key names) and SetMenuSync's install push shows the current mode — the actor re-folds the same truth per event, idempotently; Item owns its Menu instance so the snapshot survives every supervisor re-attach
 
 ### Pending Todos
 
@@ -277,6 +280,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-04T22:32:02.488Z
-Stopped at: Completed 07-04-PLAN.md
+Last session: 2026-10-04T23:46:56.681Z
+Stopped at: Completed 07-05-PLAN.md
 Resume file: None
