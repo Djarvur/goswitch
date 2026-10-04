@@ -45,44 +45,88 @@ func TestMenuProperties(t *testing.T) {
 	}
 }
 
-// menuKidWant is one layout node's expected identity: the id, the exact
-// label and the enabled flag.
+// menuKidWant is one layout node's expected identity: the id, the label,
+// the item type, the enabled and visible flags and the toggle ornament
+// (type + state) — the full renderer dictionary the extension reads.
 type menuKidWant struct {
-	id      int32
-	label   string
-	enabled bool
+	id          int32
+	label       string
+	typ         string
+	enabled     bool
+	visible     bool
+	toggleType  string
+	toggleState int32
 }
 
-// checkMenuKid asserts one layout node against its expected identity triple
-// and the flat no-kids shape.
+// checkMenuKid asserts one layout node against its expected identity and
+// the flat no-kids shape.
+//
+//nolint:cyclop // one assertion per served property — the table below carries them
 func checkMenuKid(t *testing.T, node menuLayout, want menuKidWant) {
 	t.Helper()
 
 	if node.ID != want.id {
-		t.Errorf("node id = %d, want %d (the toggle must be FIRST)", node.ID, want.id)
+		t.Errorf("node id = %d, want %d", node.ID, want.id)
 	}
 	if node.Props[menuPropLabel].Value() != want.label {
-		t.Errorf("node label = %v, want %q", node.Props[menuPropLabel].Value(), want.label)
+		t.Errorf("node %d label = %v, want %q", node.ID, node.Props[menuPropLabel].Value(), want.label)
 	}
-	if node.Props[menuPropType].Value() != menuTypeStandard {
-		t.Errorf("node type = %v, want %q", node.Props[menuPropType].Value(), menuTypeStandard)
+	if node.Props[menuPropType].Value() != want.typ {
+		t.Errorf("node %d type = %v, want %q", node.ID, node.Props[menuPropType].Value(), want.typ)
 	}
 	if node.Props[menuPropEnabled].Value() != want.enabled {
-		t.Errorf("node enabled = %v, want %t", node.Props[menuPropEnabled].Value(), want.enabled)
+		t.Errorf("node %d enabled = %v, want %t", node.ID, node.Props[menuPropEnabled].Value(), want.enabled)
+	}
+	if node.Props[menuPropVisible].Value() != want.visible {
+		t.Errorf("node %d visible = %v, want %t", node.ID, node.Props[menuPropVisible].Value(), want.visible)
+	}
+	gotType, gotState := node.Props[menuPropToggleType].Value(), node.Props[menuPropToggleState].Value()
+	if gotType != want.toggleType {
+		t.Errorf("node %d toggle-type = %v, want %q", node.ID, gotType, want.toggleType)
+	}
+	if gotState != want.toggleState {
+		t.Errorf("node %d toggle-state = %v, want %d", node.ID, gotState, want.toggleState)
 	}
 	if len(node.Kids) != 0 {
 		t.Errorf("node carries %d kids, want none — the menu is flat", len(node.Kids))
 	}
 }
 
-// TestMenuLayout pins the static layout: parentId 0 serves the root with
-// the three kids in order — «Переключить раскладку» FIRST (on GNOME's
-// ubuntu-appindicators ANY click opens the menu, so the menu IS the
-// interaction surface), then «Статус», then «Перечитать конфиг» — with the
-// exact labels, the enabled flags (reload greyed without callbacks), the
-// flat depth-ignoring shape, and the (ia{sv}av) wire signature.
+// menuFixture builds a fully seeded v2 menu over a fresh fake emitter —
+// the canonical state the layout pins read: RU active, autocorrect ON,
+// sound ON, the built-in key names, the dev version. The seeding emits are
+// drained so every test starts from a quiet emitter.
+func menuFixture(t *testing.T) (*Menu, *fakeEmitter) {
+	t.Helper()
+
+	em := &fakeEmitter{}
+	m := newMenu(Callbacks{}, em)
+	m.SetMode(symbolRU)
+	m.SetAutocorrectEnabled(true)
+	m.SetKeys("shift_r", "shift+ctrl_r", "super+space")
+	m.SetVersion("dev")
+	drainEmits(em)
+
+	return m, em
+}
+
+// drainEmits drops every recorded emission — the per-test isolation of the
+// signal corpus.
+func drainEmits(em *fakeEmitter) {
+	em.mu.Lock()
+	em.calls = nil
+	em.mu.Unlock()
+}
+
+// TestMenuLayout pins the canonical layout (07-CONTEXT «Approved Menu
+// Layout», 287999c): the EN/RU radio pair marked with the current mode,
+// the checkmark toggles «Автокоррекция» and «Звук» ADJACENT (the canonical
+// order), the five grey macro info rows with live key names (the
+// underscores doubled — Pitfall 1), two separators, and the four standard
+// items — every id pinned by constant, the (ia{sv}av) wire signature and
+// the depth-ignoring flat shape intact.
 func TestMenuLayout(t *testing.T) {
-	m := &Menu{} // zero callbacks: the reload item must come out disabled
+	m, _ := menuFixture(t)
 
 	if got := dbus.SignatureOf(menuLayout{}); got != dbus.ParseSignatureMust("(ia{sv}av)") {
 		t.Fatalf("menuLayout wire signature = %s, want (ia{sv}av)", got)
@@ -92,16 +136,31 @@ func TestMenuLayout(t *testing.T) {
 	if derr != nil {
 		t.Fatalf("GetLayout(0) error = %v, want nil", derr)
 	}
-	if rev != menuRevision {
-		t.Errorf("layout revision = %d, want the static %d", rev, menuRevision)
+	if rev != menuRevisionBase {
+		t.Errorf("layout revision = %d, want the initial %d (property updates never bump it)", rev, menuRevisionBase)
 	}
-	if root.ID != menuIDRoot || len(root.Kids) != 3 {
-		t.Fatalf("root layout = (id %d, %d kids), want id 0 with exactly 3 kids", root.ID, len(root.Kids))
+	if root.ID != menuIDRoot {
+		t.Fatalf("root layout id = %d, want %d", root.ID, menuIDRoot)
 	}
 	wantKids := []menuKidWant{
-		{menuIDToggle, labelToggle, true},
-		{menuIDStatus, labelStatus, true},
-		{menuIDReload, labelReload, false},
+		{menuIDEN, labelEN, menuTypeStandard, true, true, menuToggleRadio, 0},
+		{menuIDRU, labelRU, menuTypeStandard, true, true, menuToggleRadio, 1},
+		{menuIDSep1, "", menuTypeSeparator, true, true, "", 0},
+		{menuIDACToggle, labelACToggle, menuTypeStandard, true, true, menuToggleCheckmark, 1},
+		{menuIDSoundToggle, labelSoundToggle, menuTypeStandard, true, true, menuToggleCheckmark, 1},
+		{menuIDMacro1, "1× shift__r — язык", menuTypeStandard, false, true, "", 0},
+		{menuIDMacro2, "2× shift__r — слово", menuTypeStandard, false, true, "", 0},
+		{menuIDMacro3, "3× shift__r — фраза", menuTypeStandard, false, true, "", 0},
+		{menuIDMacroCombo, "shift+ctrl_r — слово и язык", menuTypeStandard, false, true, "", 0},
+		{menuIDMacroChord, "super+space — смена режима", menuTypeStandard, false, true, "", 0},
+		{menuIDSep2, "", menuTypeSeparator, true, true, "", 0},
+		{menuIDSettings, labelSettings, menuTypeStandard, true, true, "", 0},
+		{menuIDAbout, "О программе — goswitch dev", menuTypeStandard, true, true, "", 0},
+		{menuIDStatus, labelStatus, menuTypeStandard, true, true, "", 0},
+		{menuIDReload, labelReload, menuTypeStandard, false, true, "", 0},
+	}
+	if len(root.Kids) != len(wantKids) {
+		t.Fatalf("root layout = %d kids, want exactly %d (the canonical set)", len(root.Kids), len(wantKids))
 	}
 	for i, want := range wantKids {
 		kid, ok := root.Kids[i].Value().(menuLayout)
@@ -113,110 +172,352 @@ func TestMenuLayout(t *testing.T) {
 
 	// The depth argument is ignored: the menu is flat and full.
 	_, deep, derr := m.GetLayout(menuIDRoot, 9, nil)
-	if derr != nil || len(deep.Kids) != 3 {
+	if derr != nil || len(deep.Kids) != len(wantKids) {
 		t.Errorf("deep GetLayout changed the shape (err %v, %d kids)", derr, len(deep.Kids))
 	}
 
 	// A non-root parent id serves that item alone with no kids.
-	_, one, derr := m.GetLayout(menuIDToggle, 0, nil)
+	_, one, derr := m.GetLayout(menuIDACToggle, 0, nil)
 	if derr != nil {
-		t.Fatalf("GetLayout(1) error = %v, want nil", derr)
+		t.Fatalf("GetLayout(%d) error = %v, want nil", menuIDACToggle, derr)
 	}
-	checkMenuKid(t, one, wantKids[0])
+	checkMenuKid(t, one, wantKids[3])
+}
+
+// TestMenuMacroVisibility pins the disappearing-row contract (canonical
+// layout: «отключённый режим — строка исчезает»): a macro row with an EMPTY
+// binding is absent from the layout entirely (visible:false served
+// defensively if asked), its appearance/disappearance is a SET change —
+// LayoutUpdated plus a revision bump — and a SetKeys with unchanged values
+// emits nothing at all. The combo branch is defensive (the schema refuses
+// an empty word_layout_combo on Load) and is exercised here DIRECTLY.
+func TestMenuMacroVisibility(t *testing.T) {
+	em := &fakeEmitter{}
+	m := newMenu(Callbacks{Reload: func() {}}, em)
+
+	// The chord binding appears: a set change — the revision bumps and the
+	// row enters the layout.
+	m.SetKeys("shift_r", "shift+ctrl_r", "super+space")
+	_, root, _ := m.GetLayout(menuIDRoot, 0, nil)
+	if rev := m.layoutRevision(); rev != menuRevisionBase+1 {
+		t.Errorf("revision after the chord appeared = %d, want %d (the set changed)", rev, menuRevisionBase+1)
+	}
+	if !rootHasID(root, menuIDMacroChord) {
+		t.Error("the chord row is missing from the layout despite the non-empty binding")
+	}
+
+	// The chord binding empties: the row DISAPPEARS from the layout — the
+	// canonical disabled-mode reading.
+	m.SetKeys("shift_r", "shift+ctrl_r", "")
+	_, root, _ = m.GetLayout(menuIDRoot, 0, nil)
+	if rootHasID(root, menuIDMacroChord) {
+		t.Error("the chord row is still served despite the empty binding — it must disappear")
+	}
+	// Asked defensively, the hidden row answers visible:false.
+	props, derr := m.GetGroupProperties([]int32{menuIDMacroChord}, nil)
+	if derr != nil || len(props) != 1 {
+		t.Fatalf("GetGroupProperties(hidden chord) = (%v, %v), want one entry", props, derr)
+	}
+	if props[0].Props[menuPropVisible].Value() != false {
+		t.Errorf("hidden chord visible = %v, want false", props[0].Props[menuPropVisible].Value())
+	}
+
+	// The defensive combo branch: an empty combo binding hides its row the
+	// same way (unreachable through Load, corpus-tested directly).
+	m.SetKeys("shift_r", "", "")
+	_, root, _ = m.GetLayout(menuIDRoot, 0, nil)
+	if rootHasID(root, menuIDMacroCombo) {
+		t.Error("the combo row is still served despite the empty binding")
+	}
+	if rootHasID(root, menuIDMacroChord) {
+		t.Error("the chord row returned despite the empty binding")
+	}
+	if rev := m.layoutRevision(); rev != menuRevisionBase+3 {
+		t.Errorf("revision after both rows disappeared = %d, want %d", rev, menuRevisionBase+3)
+	}
+
+	// The tap-series rows NEVER disappear (tap_key is schema-required): an
+	// empty name still serves the three rows.
+	if !rootHasID(root, menuIDMacro1) || !rootHasID(root, menuIDMacro2) || !rootHasID(root, menuIDMacro3) {
+		t.Error("the tap-series rows must always be present")
+	}
+
+	// A SetKeys with unchanged values is a silent no-op — the actor pushes
+	// per fold, the menu dedupes.
+	drainEmits(em)
+	m.SetKeys("shift_r", "", "")
+	if got := len(em.emitCalls()); got != 0 {
+		t.Errorf("unchanged SetKeys emitted %d signals, want none", got)
+	}
+}
+
+// rootHasID reports whether the root layout serves the item id.
+func rootHasID(root menuLayout, id int32) bool {
+	for _, kid := range root.Kids {
+		if node, ok := kid.Value().(menuLayout); ok && node.ID == id {
+			return true
+		}
+	}
+
+	return false
+}
+
+// TestMenuSignalFormPins pins the dynamic channel (research Pattern 1,
+// Pitfall 7): every snapshot change emits EXACTLY ONE ItemsPropertiesUpdated
+// carrying the affected items' deltas and an EMPTY (non-nil) removed slice —
+// the a(ias) signature the godbus reflection computes from the literal —
+// and a property update NEVER bumps the layout revision.
+func TestMenuSignalFormPins(t *testing.T) {
+	if got := dbus.SignatureOf([]menuItemProps{}); got != dbus.ParseSignatureMust("a(ia{sv})") {
+		t.Fatalf("updated-props signature = %s, want a(ia{sv})", got)
+	}
+	if got := dbus.SignatureOf([]removedProps{}); got != dbus.ParseSignatureMust("a(ias)") {
+		t.Fatalf("removed-props signature = %s, want a(ias)", got)
+	}
+
+	em := &fakeEmitter{}
+	m := newMenu(Callbacks{}, em)
+
+	// The mode flip: one signal, BOTH radio deltas, empty removed slice.
+	m.SetMode(symbolRU)
+	calls := em.emitCalls()
+	if len(calls) != 1 {
+		t.Fatalf("SetMode emitted %d signals, want exactly one", len(calls))
+	}
+	call := calls[0]
+	if call.path != menuPath || call.iface != menuIface || call.signal != signalItemsPropsUpdated {
+		t.Errorf("emit = %s %s.%s, want %s %s.ItemsPropertiesUpdated",
+			call.path, call.iface, call.signal, menuPath, menuIface)
+	}
+	if len(call.args) != 2 {
+		t.Fatalf("signal arity = %d, want 2 (updated, removed)", len(call.args))
+	}
+	deltas, ok := call.args[0].([]menuItemProps)
+	if !ok {
+		t.Fatalf("updated-args type = %T, want []menuItemProps", call.args[0])
+	}
+	if len(deltas) != 2 || deltas[0].ID != menuIDEN || deltas[1].ID != menuIDRU {
+		t.Fatalf("radio deltas = %+v, want exactly the EN and RU toggle-state pair", deltas)
+	}
+	for _, d := range deltas {
+		if d.Props[menuPropToggleState].Value() == nil {
+			t.Errorf("delta %d carries no toggle-state", d.ID)
+		}
+	}
+	removed, ok := call.args[1].([]removedProps)
+	if !ok {
+		t.Fatalf("removed-args type = %T, want []removedProps (never nil)", call.args[1])
+	}
+	if removed == nil || len(removed) != 0 {
+		t.Errorf("removed = (nil: %t, len %d), want an EMPTY non-nil slice literal (Pitfall 7)",
+			removed == nil, len(removed))
+	}
+	if rev := m.layoutRevision(); rev != menuRevisionBase {
+		t.Errorf("revision after a property update = %d, want the unchanged %d", rev, menuRevisionBase)
+	}
+
+	// The toggles: one delta per click, the right id each.
+	drainEmits(em)
+	m.SetAutocorrectEnabled(true)
+	m.SetSoundEnabled(false)
+	calls = em.emitCalls()
+	if len(calls) != 2 {
+		t.Fatalf("toggle pushes emitted %d signals, want exactly 2", len(calls))
+	}
+	first, ok := calls[0].args[0].([]menuItemProps)
+	if !ok || len(first) != 1 || first[0].ID != menuIDACToggle {
+		t.Errorf("autocorrect delta = %v, want exactly id %d", calls[0].args[0], menuIDACToggle)
+	}
+	second, ok := calls[1].args[0].([]menuItemProps)
+	if !ok || len(second) != 1 || second[0].ID != menuIDSoundToggle {
+		t.Errorf("sound delta = %v, want exactly id %d", calls[1].args[0], menuIDSoundToggle)
+	}
+
+	// The version: the About label's delta.
+	drainEmits(em)
+	m.SetVersion("1.2.3")
+	calls = em.emitCalls()
+	if len(calls) != 1 {
+		t.Fatalf("SetVersion emitted %d signals, want exactly one", len(calls))
+	}
+	about, ok := calls[0].args[0].([]menuItemProps)
+	if !ok || len(about) != 1 || about[0].ID != menuIDAbout {
+		t.Errorf("version delta = %v, want exactly id %d", calls[0].args[0], menuIDAbout)
+	}
+	if label, _ := about[0].Props[menuPropLabel].Value().(string); !strings.Contains(label, "1.2.3") {
+		t.Errorf("About label = %q, want the version inside", label)
+	}
+}
+
+// TestMenuUnderscoreDoubling pins the mnemonic discipline (Pitfall 1): the
+// renderer cuts single underscores with /_([^_])/, '$1' (dbusMenu.js:746),
+// so every key name enters its label DOUBLED — shift_r serves as shift__r.
+func TestMenuUnderscoreDoubling(t *testing.T) {
+	m, _ := menuFixture(t)
+
+	_, root, derr := m.GetLayout(menuIDRoot, 0, nil)
+	if derr != nil {
+		t.Fatalf("GetLayout error = %v, want nil", derr)
+	}
+	var labels []string
+	for _, kid := range root.Kids {
+		if node, ok := kid.Value().(menuLayout); ok {
+			if l, ok := node.Props[menuPropLabel].Value().(string); ok {
+				labels = append(labels, l)
+			}
+		}
+	}
+	joined := strings.Join(labels, "|")
+	if !strings.Contains(joined, "shift__r") {
+		t.Errorf("no doubled shift__r in the labels %q — the mnemonic would eat the underscore", joined)
+	}
+	if strings.Contains(joined, "shift_r") {
+		t.Errorf("a raw single-underscore shift_r leaked into the labels %q", joined)
+	}
+	if !strings.Contains(joined, "1× shift__r — язык") {
+		t.Errorf("the tap-series label is not the canonical «1× <tap> — язык» form: %q", joined)
+	}
+}
+
+// TestMenuNilEmitterDegradation pins the nil-emitter degradation: the
+// setters update the snapshot WITHOUT emitting and never panic — a menu
+// built before wiring stays a correct display.
+func TestMenuNilEmitterDegradation(t *testing.T) {
+	m := newMenu(Callbacks{}, nil)
+
+	m.SetMode(symbolRU)
+	m.SetAutocorrectEnabled(true)
+	m.SetSoundEnabled(false)
+	m.SetKeys("shift_r", "shift+ctrl_r", "super+space")
+	m.SetVersion("dev")
+
+	_, root, derr := m.GetLayout(menuIDRoot, 0, nil)
+	if derr != nil {
+		t.Fatalf("GetLayout error = %v, want nil", derr)
+	}
+	if !rootHasID(root, menuIDRU) || !rootHasID(root, menuIDMacroChord) {
+		t.Error("the snapshot was not updated without an emitter — the display must stay correct")
+	}
+	if rev := m.layoutRevision(); rev != menuRevisionBase+1 {
+		t.Errorf("revision = %d, want %d — the chord's appearance is a set change even unemitted", rev, menuRevisionBase+1)
+	}
 }
 
 // TestMenuGetGroupProperties pins the (ia{sv}) batch read: the requested
-// known ids come back with their props in order; the reload item is
-// disabled without callbacks; unknown ids are skipped.
+// known ids come back with their props in order — the ornaments included —
+// the reload item is disabled without callbacks, unknown ids are skipped,
+// and a hidden row answers visible:false.
 func TestMenuGetGroupProperties(t *testing.T) {
-	m := &Menu{} // zero callbacks
+	m, _ := menuFixture(t)
 
 	if got := dbus.SignatureOf(menuItemProps{}); got != dbus.ParseSignatureMust("(ia{sv})") {
 		t.Fatalf("menuItemProps wire signature = %s, want (ia{sv})", got)
 	}
 
-	props, derr := m.GetGroupProperties([]int32{menuIDToggle, menuIDReload, 99}, nil)
+	props, derr := m.GetGroupProperties([]int32{menuIDRU, menuIDACToggle, menuIDReload, 99}, nil)
 	if derr != nil {
 		t.Fatalf("GetGroupProperties error = %v, want nil", derr)
 	}
-	if len(props) != 2 {
-		t.Fatalf("GetGroupProperties returned %d entries, want exactly 2 (the unknown id skipped)", len(props))
+	if len(props) != 3 {
+		t.Fatalf("GetGroupProperties returned %d entries, want exactly 3 (the unknown id skipped)", len(props))
 	}
-	if props[0].ID != menuIDToggle || props[0].Props[menuPropLabel].Value() != labelToggle {
-		t.Errorf("entry 0 = (id %d, label %v), want the toggle item",
-			props[0].ID, props[0].Props[menuPropLabel].Value())
+	if props[0].ID != menuIDRU || props[0].Props[menuPropToggleState].Value() != int32(1) {
+		t.Errorf("entry 0 = (id %d, state %v), want the marked RU radio",
+			props[0].ID, props[0].Props[menuPropToggleState].Value())
 	}
-	if props[1].ID != menuIDReload || props[1].Props[menuPropEnabled].Value() != false {
-		t.Errorf("entry 1 = (id %d, enabled %v), want the reload item disabled without callbacks",
-			props[1].ID, props[1].Props[menuPropEnabled].Value())
+	if props[1].ID != menuIDACToggle || props[1].Props[menuPropToggleType].Value() != menuToggleCheckmark {
+		t.Errorf("entry 1 = (id %d, toggle-type %v), want the autocorrect checkmark",
+			props[1].ID, props[1].Props[menuPropToggleType].Value())
+	}
+	if props[2].ID != menuIDReload || props[2].Props[menuPropEnabled].Value() != false {
+		t.Errorf("entry 2 = (id %d, enabled %v), want the reload item disabled without callbacks",
+			props[2].ID, props[2].Props[menuPropEnabled].Value())
 	}
 }
 
-// TestMenuAboutToShow pins the static-menu answer: nothing is ever pending.
+// TestMenuAboutToShow pins the honest-signal answer: nothing is ever
+// pending — the signals keep the renderer current.
 func TestMenuAboutToShow(t *testing.T) {
-	m := &Menu{}
+	m, _ := menuFixture(t)
 
 	update, derr := m.AboutToShow(menuIDRoot)
 	if derr != nil || update {
-		t.Errorf("AboutToShow = (%t, %v), want (false, nil) — the menu is static", update, derr)
+		t.Errorf("AboutToShow = (%t, %v), want (false, nil)", update, derr)
 	}
 }
 
-// TestMenuEventDispatch pins the clicked dispatch: id 1 → Toggle, 2 →
-// Status, 3 → Reload; a nil callback is a silent no-op (the disabled reload
-// item); unknown ids and unknown event ids are ignored.
+// TestMenuEventDispatch pins the clicked dispatch of the canonical set:
+// id 1 → Switch("en"), 2 → Switch("ru"), 4 → ToggleAutocorrect,
+// 5 → ToggleSound, 12 → Settings, 13 → About, 14 → Status, 15 → Reload;
+// a nil callback is a silent no-op; unknown ids and unknown event ids are
+// ignored.
 func TestMenuEventDispatch(t *testing.T) {
-	toggles, statuses, reloads := 0, 0, 0
+	var switched []string
+	acs, sounds, settings, abouts, statuses, reloads := 0, 0, 0, 0, 0, 0
 	m := &Menu{cb: Callbacks{
-		Toggle: func() { toggles++ },
-		Status: func() { statuses++ },
-		Reload: func() { reloads++ },
+		Switch:            func(target string) { switched = append(switched, target) },
+		ToggleAutocorrect: func() { acs++ },
+		ToggleSound:       func() { sounds++ },
+		Settings:          func() { settings++ },
+		About:             func() { abouts++ },
+		Status:            func() { statuses++ },
+		Reload:            func() { reloads++ },
 	}}
 
 	for _, tc := range []struct {
 		id      int32
 		eventID string
-		want    func() int
-		name    string
 	}{
-		{menuIDToggle, eventClicked, func() int { return toggles }, "toggle click"},
-		{menuIDStatus, eventClicked, func() int { return statuses }, "status click"},
-		{menuIDReload, eventClicked, func() int { return reloads }, "reload click"},
+		{menuIDEN, eventClicked},
+		{menuIDRU, eventClicked},
+		{menuIDACToggle, eventClicked},
+		{menuIDSoundToggle, eventClicked},
+		{menuIDSettings, eventClicked},
+		{menuIDAbout, eventClicked},
+		{menuIDStatus, eventClicked},
+		{menuIDReload, eventClicked},
 	} {
 		if derr := m.Event(tc.id, tc.eventID, dbus.Variant{}, 0); derr != nil {
-			t.Fatalf("%s error = %v, want nil", tc.name, derr)
+			t.Fatalf("click id %d error = %v, want nil", tc.id, derr)
 		}
-		if got := tc.want(); got != 1 {
-			t.Errorf("%s fired %d times, want exactly one", tc.name, got)
-		}
+	}
+	if got := strings.Join(switched, ","); got != "en,ru" {
+		t.Errorf("switch targets = %q, want exactly en,ru", got)
+	}
+	if acs != 1 || sounds != 1 || settings != 1 || abouts != 1 || statuses != 1 || reloads != 1 {
+		t.Errorf("click counts = (ac %d, sound %d, settings %d, about %d, status %d, reload %d), want all 1",
+			acs, sounds, settings, abouts, statuses, reloads)
 	}
 
 	// A nil callback is a silent no-op; unknown ids and event ids ignored.
-	nilMenu := &Menu{}
-	if derr := nilMenu.Event(menuIDToggle, eventClicked, dbus.Variant{}, 0); derr != nil {
-		t.Errorf("nil-callback Event error = %v, want nil", derr)
+	nilMenu := newMenu(Callbacks{}, nil)
+	for _, id := range []int32{menuIDEN, menuIDRU, menuIDACToggle, menuIDSoundToggle, menuIDSettings, menuIDAbout} {
+		if derr := nilMenu.Event(id, eventClicked, dbus.Variant{}, 0); derr != nil {
+			t.Errorf("nil-callback Event(%d) error = %v, want nil", id, derr)
+		}
 	}
 	if derr := m.Event(99, eventClicked, dbus.Variant{}, 0); derr != nil {
 		t.Errorf("unknown-id Event error = %v, want nil", derr)
 	}
-	if derr := m.Event(menuIDToggle, "opened", dbus.Variant{}, 0); derr != nil {
+	if derr := m.Event(menuIDEN, "opened", dbus.Variant{}, 0); derr != nil {
 		t.Errorf("unknown-event Event error = %v, want nil", derr)
 	}
-	if toggles != 1 || statuses != 1 || reloads != 1 {
-		t.Errorf("ignored events fired callbacks (toggles %d, statuses %d, reloads %d)",
-			toggles, statuses, reloads)
+	if got := strings.Join(switched, ","); got != "en,ru" {
+		t.Errorf("ignored events fired callbacks (switched %q)", got)
+	}
+	if acs != 1 || sounds != 1 || settings != 1 || abouts != 1 || statuses != 1 || reloads != 1 {
+		t.Error("ignored events fired the counters")
 	}
 }
 
-// TestMenuEventPanicContained pins the recover shim: a panicking callback is
-// contained — Event answers with a D-Bus error instead of killing the
-// daemon, and the ERROR record carries the stack (T-FG3-01, the ctlsvc
-// recoverMethod precedent).
+// TestMenuEventPanicContained pins the recover shim: a panicking click
+// callback is contained — Event answers with a D-Bus error instead of
+// killing the daemon, and the ERROR record carries the stack (T-FG3-01).
 func TestMenuEventPanicContained(t *testing.T) {
 	buf := captureLogs(t)
-	m := &Menu{cb: Callbacks{Toggle: func() { panic("boom") }}}
+	m := &Menu{cb: Callbacks{Switch: func(string) { panic("boom") }}}
 
-	derr := m.Event(menuIDToggle, eventClicked, dbus.Variant{}, 0)
+	derr := m.Event(menuIDEN, eventClicked, dbus.Variant{}, 0)
 
 	if derr == nil {
 		t.Fatal("panicking callback produced no error reply — the daemon would die on a click")
@@ -230,49 +531,20 @@ func TestMenuEventPanicContained(t *testing.T) {
 	}
 }
 
-// TestItemActivateInvokesToggle pins the menu-less path: the SNI Activate
-// method drives the same Callbacks.Toggle exactly once.
-func TestItemActivateInvokesToggle(t *testing.T) {
-	w, em, exp := &fakeWatcher{owner: true}, &fakeEmitter{}, &fakeExporter{}
-	calls := 0
-	item := attach(w, em, exp, testService, Callbacks{Toggle: func() { calls++ }})
-
-	if derr := item.Activate(10, 20); derr != nil {
-		t.Fatalf("Activate error = %v, want nil", derr)
-	}
-	if calls != 1 {
-		t.Errorf("Activate fired the toggle %d times, want exactly one", calls)
-	}
-}
-
-// TestItemActivateNilToggleWarnsOnce pins the nil-callback degradation:
-// without a toggle the Activate is a no-op with exactly one WARN per item
-// lifetime (the emitWarned discipline pattern).
-func TestItemActivateNilToggleWarnsOnce(t *testing.T) {
-	buf := captureLogs(t)
-	w, em, exp := &fakeWatcher{owner: true}, &fakeEmitter{}, &fakeExporter{}
-	item := attach(w, em, exp, testService, Callbacks{})
-
-	if derr := item.Activate(0, 0); derr != nil {
-		t.Fatalf("nil-toggle Activate error = %v, want nil", derr)
-	}
-	if derr := item.Activate(1, 1); derr != nil {
-		t.Fatalf("second nil-toggle Activate error = %v, want nil", derr)
-	}
-	if got := strings.Count(buf.String(), `"level":"WARN"`); got != 1 {
-		t.Errorf("nil-toggle Activate warned %d times, want exactly one; log:\n%s", got, buf.String())
-	}
-}
-
 // TestMenuWireNamesPinned pins the DBusMenu wire constants against the REAL
 // protocol literals — the 261001-fg3 lesson: a self-consistent corpus cannot
 // catch a wrong interface NAME (the fakes compare the same constant), only a
 // literal pin can. The DBusMenu protocol lives at com.canonical.dbusmenu
-// (the org. prefix variant does not exist on any stack we target), and the
-// SNI surface stays org.kde.*.
+// (the org. prefix variant does not exist on any stack we target), the
+// signal members carry their real dbusmenu v3 spellings, and the SNI
+// surface stays org.kde.*.
 func TestMenuWireNamesPinned(t *testing.T) {
 	if menuIface != "com.canonical.dbusmenu" {
 		t.Errorf("menuIface = %q, want the real protocol name com.canonical.dbusmenu", menuIface)
+	}
+	if signalItemsPropsUpdated != "ItemsPropertiesUpdated" || signalLayoutUpdated != "LayoutUpdated" {
+		t.Errorf("signal names = %q/%q, want the real dbusmenu v3 members",
+			signalItemsPropsUpdated, signalLayoutUpdated)
 	}
 	if watcherName != "org.kde.StatusNotifierWatcher" {
 		t.Errorf("watcherName = %q, want org.kde.StatusNotifierWatcher", watcherName)
