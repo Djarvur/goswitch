@@ -502,7 +502,12 @@ func TestValidate_EnabledRequiresThresholds(t *testing.T) {
 			},
 		} {
 			cfg := validDoc()
-			cfg.Autocorrect = config.Autocorrect{Enabled: true, MinWordLen: 4}
+			cfg.Autocorrect = config.Autocorrect{
+				Enabled:       true,
+				MinWordLen:    4,
+				TrigramMargin: 2.0,
+				TrigramFloor:  1.0,
+			}
 			tc.mutate(&cfg.Autocorrect)
 			assertRejected(t, tc.name, cfg, tc.wantField)
 		}

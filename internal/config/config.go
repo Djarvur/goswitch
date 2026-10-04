@@ -347,11 +347,12 @@ func (m MACR) validate() error {
 // before runtime; an empty or blank pattern is refused before the compile
 // attempt (an empty string is a VALID RE2 that matches everything — the
 // silent "block everywhere" trap, T-07-02-03). The threshold ranges bite
-// on an ACTIVE section — enabled with a non-empty blocklist, the shape
-// that can fire today (T-06-04-03) — so the zero value stays valid and
-// documents without the section (or with the feature switched off)
-// decode off, never defaulted on (default off everywhere, D-54). Every
-// error names its field and, where one exists, the element index (D-33).
+// on every ENABLED section (the ACTIVE condition, plan 07-02 Q4c): an
+// empty blocklist no longer silences the layer — it forbids nothing — so
+// enabled with zero thresholds would fire the detector degenerately and
+// is refused loudly instead; a dormant (disabled) section keeps the zero
+// value valid (default off everywhere, D-54). Every error names its field
+// and, where one exists, the element index (D-33).
 func (a Autocorrect) validate() error {
 	if len(a.AppsBlocklist) > maxAutocorrectBlocklist {
 		return fmt.Errorf(
@@ -367,7 +368,7 @@ func (a Autocorrect) validate() error {
 			return fmt.Errorf("autocorrect.apps_blocklist[%d] = %q: %w", i, pattern, errAutocorrectBlocklistRegex)
 		}
 	}
-	if !a.Enabled || len(a.AppsBlocklist) == 0 {
+	if !a.Enabled {
 		return nil
 	}
 	if a.MinWordLen < minAutocorrectWordLen || a.MinWordLen > maxAutocorrectWordLen {

@@ -385,6 +385,7 @@ func TestWatch_BrokenBlocklistPatternKeepsLastGood(t *testing.T) {
 	fx.send(path, fsnotify.Write)
 	if !waitUntil(func() bool {
 		got := w.Snapshot().Autocorrect.AppsBlocklist
+
 		return len(got) == 1 && got[0] == "chrom"
 	}) {
 		t.Fatalf("snapshot blocklist = %v after the repair, want [chrom]", w.Snapshot().Autocorrect.AppsBlocklist)
