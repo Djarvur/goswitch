@@ -81,7 +81,7 @@ func run(ctx context.Context, debug bool, configPath string) error {
 	}
 
 	actor := newActor(lc.cfg, watcher)
-	startCtl(ctx, actor, watcher)
+	startCtl(ctx, actor, watcher, lc.cfg, lc.path)
 	if err := engine.Run(ctx, engineConfig(actor)); err != nil {
 		return fmt.Errorf("engine run: %w", err)
 	}
@@ -99,13 +99,16 @@ const (
 // startCtl runs the control service on the session bus — the daemon's
 // SECOND godbus connection (the engine rides the private IBus socket,
 // this one the session bus), started and stopped on the daemon's signal
-// context. A ctl failure NEVER kills the daemon: the desktop's input rides
-// this process, so the error is logged and the daemon keeps serving
-// without the control surface (the appid degradation precedent).
-func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher) {
+// context. The startup config and the FACTUAL config path (explicit
+// -config or the adopted default, 07-03) ride along: the menu's toggles and
+// «Настройки…» read and write THAT document. A ctl failure NEVER kills the
+// daemon: the desktop's input rides this process, so the error is logged
+// and the daemon keeps serving without the control surface (the appid
+// degradation precedent).
+func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher, cfg config.Config, cfgPath string) {
 	var reload ctlsvc.Reloader
 	if watcher != nil {
-		reload = watcher // nil without -config: ReloadConfig answers "no config file"
+		reload = watcher // nil without a resolvable path: ReloadConfig answers "no config file"
 	}
 	go func() {
 		deps := ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}
@@ -117,27 +120,52 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 		// the icon is live from the first generation; SetModeDisplay's
 		// install push covers any ordering skew.
 		//
-		// The interactive surface (quick plan 261001-fg3): the menu's first
-		// item toggles the mode through the actor's public ToggleMode (the
-		// SAME flipTo path as every other gesture), «Статус» posts a
-		// mode+version notification on this connection (counts/states only
-		// — T-03-06-03), «Перечитать конфиг» drives the watcher's Reload and
-		// is served greyed only when no config path resolved (the degenerate
-		// no-HOME case; under adopt+watch the default path always resolves
-		// one). The supervisor rides the serve
-		// context OnConn receives — the tray dies with the daemon, and the
-		// icon self-heals when the shell's watcher appears late or evicts
-		// the item.
+		// The interactive surface — menu v2 (plan 07-05, the canonical
+		// layout 287999c): the EN/RU radio pair flips through the actor's
+		// public SwitchMode (the SAME flipTo path as every other gesture —
+		// ADR-006, never a second mechanism), both checkmark toggles persist
+		// through the 07-03 writer (snapshot → invert → write → menu push →
+		// synchronous reload; the 200 ms echo re-applies the same values
+		// harmlessly), «Настройки…» ensures the document then xdg-opens it
+		// no-pipes, «О программе» posts the mode+version notification
+		// (counts/states only — T-03-06-03), «Перечитать конфиг» drives the
+		// watcher's Reload and is served greyed only when no config path
+		// resolved (the degenerate no-HOME case). The menu's INITIAL state
+		// rides the STARTUP config (the truth the actor re-folds per event)
+		// and SetMenuSync's install push shows the current mode. The
+		// supervisor rides the serve context OnConn receives — the tray
+		// dies with the daemon, and the icon self-heals when the shell's
+		// watcher appears late or evicts the item.
 		deps.OnConn = func(connCtx context.Context, conn *dbus.Conn) error {
-			cb := indicator.Callbacks{
-				Toggle: actor.ToggleMode,
-				Status: func() { notifyStatus(conn, actor) },
-			}
+			var menu *indicator.Menu
+			editor := &configEditor{ensure: config.EnsureDocument}
+			var syncReload func()
 			if reload != nil {
-				cb.Reload = func() { reloadConfig(reload) }
+				syncReload = func() { reloadConfig(reload) }
+			}
+			toggles := newMenuToggles(actor, &menu, cfgPath, syncReload)
+			cb := indicator.Callbacks{
+				Toggle:            actor.ToggleMode,
+				Status:            func() { notifyStatus(conn, actor) },
+				Switch:            actor.SwitchMode,
+				ToggleAutocorrect: toggles.ac.flip,
+				ToggleSound:       toggles.sound.flip,
+				Settings:          func() { editor.open(cfgPath) },
+				About:             func() { notifyStatus(conn, actor) },
+			}
+			if syncReload != nil {
+				cb.Reload = syncReload
 			}
 			item := indicator.Attach(conn, ctlsvc.BusName, cb)
-			actor.SetModeDisplay(item) // the install push covers ordering skew
+			menu = item.Menu()
+			// The initial menu state: version, both toggles, the raw key
+			// names — the menu dedupes later identical pushes from the fold.
+			menu.SetVersion(version)
+			menu.SetAutocorrectEnabled(cfg.Autocorrect.Enabled)
+			menu.SetSoundEnabled(cfg.Sound.EffectiveEnabled())
+			menu.SetKeys(cfg.Hotkeys.TapKey, cfg.Hotkeys.WordLayoutCombo, cfg.Hotkeys.ModeSwitchChord)
+			actor.SetMenuSync(menu) // the install push covers ordering skew, as SetModeDisplay
+			actor.SetModeDisplay(item)
 			go item.Supervise(connCtx, conn)
 
 			return nil
@@ -146,6 +174,48 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			slog.Error("ctl service stopped", "error", err)
 		}
 	}()
+}
+
+// menuToggles carries the two persisted-toggle compositions of the menu
+// (plan 07-05): the autocorrect and the sound click both ride the SAME
+// composition — snapshot → invert → write → push → reload — over their own
+// writer and their own status truth.
+type menuToggles struct {
+	ac    *configToggle
+	sound *configToggle
+}
+
+// newMenuToggles wires the compositions: the applied value reads from the
+// actor's status snapshot, the write goes through the 07-03 writer on the
+// FACTUAL config path, the push lands on the menu (nil until Attach — the
+// guard keeps a click before attach a harmless no-op), the synchronous
+// apply rides the reload (nil without a config source — the flip's own
+// guard handles it).
+func newMenuToggles(actor *session.Actor, menu **indicator.Menu, cfgPath string, syncReload func()) menuToggles {
+	return menuToggles{
+		ac: &configToggle{
+			path:  cfgPath,
+			read:  func() bool { return actor.StatusSnapshot().AutoCorrectEnabled },
+			write: config.SetAutocorrectEnabled,
+			push: func(on bool) {
+				if *menu != nil {
+					(*menu).SetAutocorrectEnabled(on)
+				}
+			},
+			reload: syncReload,
+		},
+		sound: &configToggle{
+			path:  cfgPath,
+			read:  func() bool { return actor.StatusSnapshot().SoundEnabled },
+			write: config.SetSoundEnabled,
+			push: func(on bool) {
+				if *menu != nil {
+					(*menu).SetSoundEnabled(on)
+				}
+			},
+			reload: syncReload,
+		},
+	}
 }
 
 // notifyStatus posts ONE desktop notification with the current mode and the
@@ -188,16 +258,39 @@ var newEditorProc = func(bin, path string) procStarter {
 // configEditor opens the config document in the desktop editor
 // («Настройки…», plan 07-05): the document is ensured first (an editor on
 // an empty buffer would strict-decode-refuse on save, research Q7), then
-// xdg-open launches on the pinned path. RED stub: the episode lands in
-// GREEN.
+// xdg-open launches on the pinned path. A failed start is ONE WARN per
+// editor lifetime and the menu keeps working; $EDITOR is deliberately not
+// consulted — the daemon has no controlling tty (research Q7).
 type configEditor struct {
 	ensure func(path string) error
 	mu     sync.Mutex
 	warned bool
 }
 
-// open runs one ensure+launch episode. RED stub.
-func (e *configEditor) open(_ string) {}
+// open runs one ensure+launch episode. The Start error path keeps the
+// one-WARN-per-lifetime discipline (the emitWarned precedent); the launch
+// itself is fire-and-forget — the reaper goroutine has no deadline, nothing
+// kills a running editor.
+func (e *configEditor) open(path string) {
+	if err := e.ensure(path); err != nil {
+		slog.Warn("config ensure failed", "component", "tray indicator", "error", err)
+
+		return
+	}
+	cmd := newEditorProc("xdg-open", path)
+	if err := cmd.Start(); err != nil {
+		e.mu.Lock()
+		first := !e.warned
+		e.warned = true
+		e.mu.Unlock()
+		if first {
+			slog.Warn("config editor start failed", "component", "tray indicator", "error", err)
+		}
+
+		return
+	}
+	go func() { _ = cmd.Wait() }() // reap without a deadline — nothing kills a running editor
+}
 
 // configToggle is one persisted menu toggle (plan 07-05): the click reads
 // the APPLIED value from the actor's status snapshot, inverts it, writes it
@@ -213,8 +306,26 @@ type configToggle struct {
 }
 
 // flip executes one click in the pinned order: snapshot → write → menu
-// push → reload. RED stub.
-func (t *configToggle) flip() {}
+// push → reload. A failed write leaves everything untouched (one WARN —
+// the state did not change); a missing reload keeps the write AND the push
+// (the file is the truth, the status catches up through the next fold) and
+// WARNs the deferred apply. The 200 ms echo reload re-applies the same
+// values harmlessly (the idempotent fold, 07-03).
+func (t *configToggle) flip() {
+	on := !t.read()
+	if err := t.write(t.path, on); err != nil {
+		slog.Warn("config toggle write failed", "component", "tray indicator", "error", err)
+
+		return
+	}
+	t.push(on)
+	if t.reload == nil {
+		slog.Warn("config toggle apply deferred", "component", "tray indicator", "reason", "no config source")
+
+		return
+	}
+	t.reload()
+}
 
 // reloadConfig drives the forced synchronous re-read and logs the outcome —
 // the menu item's mirror of goswitchctl reload: WARN on the rejection (the

@@ -377,10 +377,24 @@ func captureLogs(t *testing.T) *syncBuffer {
 // (the pinned snapshot → write → push → reload order, both toggles) and the
 // settings launcher (the no-pipes xdg-open shape, T-07-05-01/02).
 
+// toggleTestPath is the factual-path stand-in of the composition corpus.
+const toggleTestPath = "/tmp/goswitch-toggle.yaml"
+
+// errWriteInjected is the toggle-writer failure of the composition corpus.
+var errWriteInjected = errors.New("write exploded")
+
+// fakeCfgSource is the config-source double of the composition corpus: a
+// value document standing in for the watcher's Snapshot contract.
+type fakeCfgSource struct{ cfg config.Config }
+
+// Snapshot returns the document.
+func (s fakeCfgSource) Snapshot() config.Config { return s.cfg }
+
 // fakeProc is the started-process double of the launcher seam: the REAL
 // exec.Cmd shape is recorded for the argv/pipes pins, Start/Wait are
 // counted, Start can fail.
 type fakeProc struct {
+	mu       sync.Mutex
 	cmd      *exec.Cmd
 	startErr error
 	started  int
@@ -389,16 +403,29 @@ type fakeProc struct {
 
 // Start counts and answers the canned verdict — nothing spawns.
 func (f *fakeProc) Start() error {
+	f.mu.Lock()
 	f.started++
+	f.mu.Unlock()
 
 	return f.startErr
 }
 
 // Wait counts the reap.
 func (f *fakeProc) Wait() error {
+	f.mu.Lock()
 	f.waited++
+	f.mu.Unlock()
 
 	return nil
+}
+
+// counts snapshots the Start/Wait counters under the guard — the reaper
+// goroutine races the test's polling.
+func (f *fakeProc) counts() (started, waited int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.started, f.waited
 }
 
 // installFakeProc swaps the launcher seam for the counting double and
@@ -409,7 +436,8 @@ func installFakeProc(t *testing.T, startErr error) *fakeProc {
 	fp := &fakeProc{startErr: startErr}
 	prev := newEditorProc
 	newEditorProc = func(bin, path string) procStarter {
-		fp.cmd = exec.Command(bin, path) // the REAL shape for the argv/pipes pins
+		// The REAL shape for the argv/pipes pins — nothing spawns.
+		fp.cmd = exec.CommandContext(context.Background(), bin, path)
 
 		return fp
 	}
@@ -426,102 +454,56 @@ func waitFor(t *testing.T, cond func() bool) {
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatal("condition never became true")
-
-			return
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+// appliedReader folds one toggle's truth into the actor's snapshot: the
+// config document carries the applied value, one ExpiryAt drives the fold.
+func appliedReader(t *testing.T, section string, applied bool) *session.Actor {
+	t.Helper()
+
+	actor := session.NewActor(time.Hour)
+	cfg := config.Defaults()
+	switch section {
+	case "autocorrect":
+		cfg.Autocorrect.Enabled = applied
+	case "sound":
+		if applied {
+			cfg.Sound = config.Sound{} // the absent section reads enabled
+		} else {
+			off := false
+			cfg.Sound = config.Sound{Enabled: &off}
+		}
+	}
+	actor.AttachConfig(fakeCfgSource{cfg: cfg})
+	actor.ExpiryAt(2 * time.Hour) // one fold: the applied truth lands in the snapshot
+
+	return actor
 }
 
 // TestConfigToggleComposition pins BOTH persisted toggles' composition
 // (plan 07-05): the click reads the APPLIED value from the actor's status
 // snapshot, inverts it, writes it through the config writer, pushes the
 // menu, then applies synchronously through the reload — in that order, for
-// autocorrect and for sound alike. A failed write stops everything; a nil
-// reload keeps the write (the file is the truth) and WARNs the deferred
-// apply.
+// autocorrect and for sound alike. A failed write stops everything.
 func TestConfigToggleComposition(t *testing.T) {
 	t.Run("autocorrect-order-and-inversion", func(t *testing.T) {
-		actor := session.NewActor(time.Hour)
-		actor.SetOptions(session.Options{AutoCorrectEnabled: true})
-		var order []string
-		tg := &configToggle{
-			path: "/tmp/goswitch-toggle.yaml",
-			read: func() bool {
-				order = append(order, "snapshot")
-
-				return actor.StatusSnapshot().AutoCorrectEnabled
-			},
-			write: func(path string, on bool) error {
-				if path != "/tmp/goswitch-toggle.yaml" {
-					t.Errorf("write path = %q, want the factual config path", path)
-				}
-				if on {
-					t.Error("write value = true, want the inverted false")
-				}
-				order = append(order, "write")
-
-				return nil
-			},
-			push: func(on bool) {
-				if on {
-					t.Error("push value = true, want the inverted false")
-				}
-				order = append(order, "push")
-			},
-			reload: func() { order = append(order, "reload") },
-		}
-
-		tg.flip()
-
-		want := []string{"snapshot", "write", "push", "reload"}
-		if !slices.Equal(order, want) {
-			t.Errorf("composition order = %q, want exactly %q", order, want)
-		}
+		assertToggleFlip(t, appliedReader(t, "autocorrect", true),
+			func(a *session.Actor) bool { return a.StatusSnapshot().AutoCorrectEnabled }, false)
 	})
 
 	t.Run("sound-order-and-inversion", func(t *testing.T) {
-		actor := session.NewActor(time.Hour)
-		cfg := config.Defaults()
-		cfg.Sound = config.Sound{} // the absent section: the fold reads enabled
-		actor.AttachConfig(fakeCfgSource{cfg: cfg})
-		actor.ExpiryAt(2 * time.Hour) // one fold: the sound truth lands in the snapshot
-		if !actor.StatusSnapshot().SoundEnabled {
-			t.Fatal("sound truth did not land in the snapshot — the test's own premise broke")
-		}
-		var order []string
-		tg := &configToggle{
-			path:   "/tmp/goswitch-toggle.yaml",
-			read:   func() bool { order = append(order, "snapshot"); return actor.StatusSnapshot().SoundEnabled },
-			write:  config.SetSoundEnabled, // the production writer seam — replaced below
-			push:   func(on bool) { order = append(order, "push") },
-			reload: func() { order = append(order, "reload") },
-		}
-		// Wrap the production writer: the order pin needs the record, the
-		// seam identity needs the real function's shape.
-		prodWrite := tg.write
-		tg.write = func(path string, on bool) error {
-			if !on {
-				t.Errorf("write value = %v, want the inverted false→true flip", on)
-			}
-			order = append(order, "write")
-
-			return prodWrite(path, on)
-		}
-
-		tg.flip()
-
-		want := []string{"snapshot", "write", "push", "reload"}
-		if !slices.Equal(order, want) {
-			t.Errorf("composition order = %q, want exactly %q", order, want)
-		}
+		assertToggleFlip(t, appliedReader(t, "sound", false),
+			func(a *session.Actor) bool { return a.StatusSnapshot().SoundEnabled }, true)
 	})
 
 	t.Run("write-failure-stops-everything", func(t *testing.T) {
 		buf := captureLogs(t)
 		pushed, reloaded := false, false
 		tg := &configToggle{
-			path:   "/tmp/goswitch-toggle.yaml",
+			path:   toggleTestPath,
 			read:   func() bool { return false },
 			write:  func(string, bool) error { return errWriteInjected },
 			push:   func(bool) { pushed = true },
@@ -537,97 +519,152 @@ func TestConfigToggleComposition(t *testing.T) {
 			t.Errorf("the write failure is not WARNed; log:\n%s", buf.String())
 		}
 	})
+}
 
-	t.Run("nil-reload-warns-but-keeps-the-write", func(t *testing.T) {
-		buf := captureLogs(t)
-		wrote, pushed := false, false
-		tg := &configToggle{
-			path:   "/tmp/goswitch-toggle.yaml",
-			read:   func() bool { return true },
-			write:  func(string, bool) error { wrote = true; return nil },
-			push:   func(bool) { pushed = true },
-			reload: nil,
-		}
+// assertToggleFlip runs one composition order pin: snapshot →
+// write(inverted) → push → reload, with the write value asserted against
+// the inversion of the applied truth.
+func assertToggleFlip(t *testing.T, actor *session.Actor, read func(*session.Actor) bool, wantWrite bool) {
+	t.Helper()
 
-		tg.flip()
+	var order []string
+	tg := &configToggle{
+		path: toggleTestPath,
+		read: func() bool {
+			order = append(order, "snapshot")
 
-		if !wrote || !pushed {
-			t.Errorf("nil reload dropped the write (wrote %t) or the push (pushed %t) — the file is the truth", wrote, pushed)
-		}
-		if !strings.Contains(buf.String(), `"level":"WARN"`) {
-			t.Errorf("the deferred apply is not WARNed; log:\n%s", buf.String())
-		}
+			return read(actor)
+		},
+		write: func(path string, on bool) error {
+			if path != toggleTestPath {
+				t.Errorf("write path = %q, want the factual config path", path)
+			}
+			if on != wantWrite {
+				t.Errorf("write value = %t, want the inverted %t", on, wantWrite)
+			}
+			order = append(order, "write")
+
+			return nil
+		},
+		push:   func(on bool) { order = append(order, "push") },
+		reload: func() { order = append(order, "reload") },
+	}
+
+	tg.flip()
+
+	want := []string{"snapshot", "write", "push", "reload"}
+	if !slices.Equal(order, want) {
+		t.Errorf("composition order = %q, want exactly %q", order, want)
+	}
+}
+
+// TestToggleNilReloadKeepsWrite pins the degenerate no-source guard (plan
+// 07-05): nil reload is impossible after the 07-03 adopt (the watcher is
+// unconditional), but the defensive path keeps the write AND the push — the
+// file is the truth, the status catches up through the next fold — and
+// WARNs the deferred apply.
+func TestToggleNilReloadKeepsWrite(t *testing.T) {
+	buf := captureLogs(t)
+	wrote, pushed := false, false
+	tg := &configToggle{
+		path: toggleTestPath,
+		read: func() bool { return true },
+		write: func(string, bool) error {
+			wrote = true
+
+			return nil
+		},
+		push:   func(bool) { pushed = true },
+		reload: nil,
+	}
+
+	tg.flip()
+
+	if !wrote || !pushed {
+		t.Errorf("nil reload dropped the write (wrote %t) or the push (pushed %t) — the file is the truth",
+			wrote, pushed)
+	}
+	if !strings.Contains(buf.String(), `"level":"WARN"`) {
+		t.Errorf("the deferred apply is not WARNed; log:\n%s", buf.String())
+	}
+}
+
+// TestOpenConfigEditorLauncher pins the settings launcher's happy path
+// (plan 07-05, research Q7): the document is ensured first, then xdg-open
+// starts on the pinned path as its ONLY argument with NO piped descriptors
+// (the fork-shaped wl-copy precedent) and is reaped by a Wait goroutine.
+func TestOpenConfigEditorLauncher(t *testing.T) {
+	var ensured []string
+	fp := installFakeProc(t, nil)
+	editor := &configEditor{
+		ensure: func(path string) error {
+			ensured = append(ensured, path)
+
+			return nil
+		},
+	}
+
+	editor.open("/tmp/goswitch-config.yaml")
+
+	if !slices.Equal(ensured, []string{"/tmp/goswitch-config.yaml"}) {
+		t.Errorf("ensure paths = %q, want exactly the pinned config path", ensured)
+	}
+	if fp.cmd == nil {
+		t.Fatal("no process was built — the launch never happened")
+	}
+	if !slices.Equal(fp.cmd.Args, []string{"xdg-open", "/tmp/goswitch-config.yaml"}) {
+		t.Errorf("argv = %q, want exactly [xdg-open, path] — never a shell, never user data (T-07-05-01)", fp.cmd.Args)
+	}
+	if fp.cmd.Stdout != nil || fp.cmd.Stderr != nil {
+		t.Error("the editor got piped descriptors — the fork-shaped grandchild would deadlock a Run (T-07-05-02)")
+	}
+	started, _ := fp.counts()
+	if started != 1 {
+		t.Errorf("Start calls = %d, want exactly 1", started)
+	}
+	waitFor(t, func() bool {
+		_, waited := fp.counts()
+
+		return waited == 1
 	})
 }
 
-// fakeCfgSource is the config-source double of the composition corpus: a
-// value document standing in for the watcher's Snapshot contract.
-type fakeCfgSource struct{ cfg config.Config }
+// TestOpenConfigEditorStartErrorWarnsOnce pins the one-WARN-per-lifetime
+// degradation of a failed launch: the menu keeps working, the second
+// failure is silent (the emitWarned precedent).
+func TestOpenConfigEditorStartErrorWarnsOnce(t *testing.T) {
+	buf := captureLogs(t)
+	fp := installFakeProc(t, errWriteInjected)
+	editor := &configEditor{ensure: func(string) error { return nil }}
 
-// Snapshot returns the document.
-func (s fakeCfgSource) Snapshot() config.Config { return s.cfg }
+	editor.open("/tmp/goswitch-config.yaml")
+	editor.open("/tmp/goswitch-config.yaml")
 
-// errWriteInjected is the toggle-writer failure of the composition corpus.
-var errWriteInjected = errors.New("write exploded")
+	waitFor(t, func() bool {
+		started, _ := fp.counts()
 
-// TestOpenConfigEditorLauncher pins the settings launcher (plan 07-05,
-// research Q7): the document is ensured first, then xdg-open starts on the
-// pinned path as its ONLY argument with NO piped descriptors (the
-// fork-shaped wl-copy precedent) and is reaped by a Wait goroutine; a
-// failed start is ONE WARN per editor lifetime and an ensure failure skips
-// the launch entirely.
-func TestOpenConfigEditorLauncher(t *testing.T) {
-	t.Run("ensure-then-argv-no-pipes-reap", func(t *testing.T) {
-		var ensured []string
-		fp := installFakeProc(t, nil)
-		editor := &configEditor{ensure: func(path string) error { ensured = append(ensured, path); return nil }}
-
-		editor.open("/tmp/goswitch-config.yaml")
-
-		if !slices.Equal(ensured, []string{"/tmp/goswitch-config.yaml"}) {
-			t.Errorf("ensure paths = %q, want exactly the pinned config path", ensured)
-		}
-		if fp.cmd == nil {
-			t.Fatal("no process was built — the launch never happened")
-		}
-		if !slices.Equal(fp.cmd.Args, []string{"xdg-open", "/tmp/goswitch-config.yaml"}) {
-			t.Errorf("argv = %q, want exactly [xdg-open, path] — never a shell, never user data (T-07-05-01)", fp.cmd.Args)
-		}
-		if fp.cmd.Stdout != nil || fp.cmd.Stderr != nil {
-			t.Error("the editor got piped descriptors — the fork-shaped grandchild would deadlock a Run (T-07-05-02)")
-		}
-		if fp.started != 1 {
-			t.Errorf("Start calls = %d, want exactly 1", fp.started)
-		}
-		waitFor(t, func() bool { return fp.waited == 1 })
+		return started == 2
 	})
+	if got := strings.Count(buf.String(), "config editor start failed"); got != 1 {
+		t.Errorf("start failures warned %d times, want exactly one per editor lifetime; log:\n%s", got, buf.String())
+	}
+}
 
-	t.Run("start-error-warns-once", func(t *testing.T) {
-		buf := captureLogs(t)
-		fp := installFakeProc(t, errWriteInjected)
-		editor := &configEditor{ensure: func(string) error { return nil }}
+// TestOpenConfigEditorEnsureFailureSkipsLaunch pins the Q7 guard: a failed
+// ensure never launches — an editor on an empty buffer would
+// strict-decode-refuse on save.
+func TestOpenConfigEditorEnsureFailureSkipsLaunch(t *testing.T) {
+	buf := captureLogs(t)
+	fp := installFakeProc(t, nil)
+	editor := &configEditor{ensure: func(string) error { return errWriteInjected }}
 
-		editor.open("/tmp/goswitch-config.yaml")
-		editor.open("/tmp/goswitch-config.yaml")
+	editor.open("/tmp/goswitch-config.yaml")
 
-		waitFor(t, func() bool { return fp.started == 2 })
-		if got := strings.Count(buf.String(), "config editor start failed"); got != 1 {
-			t.Errorf("start failures warned %d times, want exactly one per editor lifetime; log:\n%s", got, buf.String())
-		}
-	})
-
-	t.Run("ensure-failure-skips-the-launch", func(t *testing.T) {
-		buf := captureLogs(t)
-		fp := installFakeProc(t, nil)
-		editor := &configEditor{ensure: func(string) error { return errWriteInjected }}
-
-		editor.open("/tmp/goswitch-config.yaml")
-
-		if fp.cmd != nil || fp.started != 0 {
-			t.Error("a failed ensure still launched the editor — the editor would open an empty buffer (Q7)")
-		}
-		if !strings.Contains(buf.String(), `"level":"WARN"`) {
-			t.Errorf("the ensure failure is not WARNed; log:\n%s", buf.String())
-		}
-	})
+	started, _ := fp.counts()
+	if fp.cmd != nil || started != 0 {
+		t.Error("a failed ensure still launched the editor — the editor would open an empty buffer (Q7)")
+	}
+	if !strings.Contains(buf.String(), `"level":"WARN"`) {
+		t.Errorf("the ensure failure is not WARNed; log:\n%s", buf.String())
+	}
 }
