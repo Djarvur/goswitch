@@ -212,6 +212,7 @@ type Item struct {
 	menuWarned     bool
 	activateWarned bool
 	cb             Callbacks   // the interactive surface; immutable after attach
+	menu           *Menu       // the DBusMenu object; immutable after attach, snapshot survives re-attach
 	menuPath       string      // the served Menu value: /Menu or the sentinel
 	sup            *supervisor // the lifecycle owner; born with the item
 }
@@ -235,7 +236,8 @@ func attach(w Watcher, em Emitter, exp exporter, service string, cb Callbacks) *
 		emitter:  em,
 		path:     itemPath,
 		cb:       cb,
-		menuPath: menuNoDBusMenu, // icon-only until the menu exports succeed
+		menu:     newMenu(cb, em), // the menu rides the SAME emitter (its own signals)
+		menuPath: menuNoDBusMenu,  // icon-only until the menu exports succeed
 	}
 	if pm, ok := PixmapFor(symbolEN); ok {
 		it.pix = pm // EN at start (ADR-001); the install-push corrects any skew
@@ -269,7 +271,10 @@ func registerItem(w Watcher, exp exporter, it *Item, service string) error {
 		return errNoWatcher
 	}
 
-	menu := &Menu{cb: it.cb}
+	// The EXPORTED menu is the item's own live instance — its snapshot
+	// survives a supervisor re-attach (the re-export is idempotent
+	// replacement; a fresh Menu would reset the state the wiring seeded).
+	menu := it.menu
 	if err := exp.Export(menu, menuPath, menuIface); err != nil {
 		it.menuFailed(fmt.Errorf("export %s: %w", menuIface, err))
 	} else if err := exp.Export(menu, menuPath, propertiesIface); err != nil {
@@ -292,6 +297,14 @@ func registerItem(w Watcher, exp exporter, it *Item, service string) error {
 	}
 
 	return nil
+}
+
+// Menu exposes the item's DBusMenu object — the wiring seeds the version
+// and the initial state on it and installs it as the actor's menu-sync
+// target after Attach. The field is immutable after construction (the cb
+// precedent); the menu carries its own mutex.
+func (it *Item) Menu() *Menu {
+	return it.menu
 }
 
 // ModeChanged implements the actor's ModeDisplay seam (the observer is

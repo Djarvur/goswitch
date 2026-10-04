@@ -60,8 +60,6 @@ type menuKidWant struct {
 
 // checkMenuKid asserts one layout node against its expected identity and
 // the flat no-kids shape.
-//
-//nolint:cyclop // one assertion per served property — the table below carries them
 func checkMenuKid(t *testing.T, node menuLayout, want menuKidWant) {
 	t.Helper()
 
@@ -80,12 +78,15 @@ func checkMenuKid(t *testing.T, node menuLayout, want menuKidWant) {
 	if node.Props[menuPropVisible].Value() != want.visible {
 		t.Errorf("node %d visible = %v, want %t", node.ID, node.Props[menuPropVisible].Value(), want.visible)
 	}
-	gotType, gotState := node.Props[menuPropToggleType].Value(), node.Props[menuPropToggleState].Value()
+	// The absent ornament keys read as their zero values — the renderer's
+	// PropertyStore defaults (toggle-type '' → ornament NONE, state 0).
+	gotType, _ := node.Props[menuPropToggleType].Value().(string)
 	if gotType != want.toggleType {
-		t.Errorf("node %d toggle-type = %v, want %q", node.ID, gotType, want.toggleType)
+		t.Errorf("node %d toggle-type = %q, want %q", node.ID, gotType, want.toggleType)
 	}
+	gotState, _ := node.Props[menuPropToggleState].Value().(int32)
 	if gotState != want.toggleState {
-		t.Errorf("node %d toggle-state = %v, want %d", node.ID, gotState, want.toggleState)
+		t.Errorf("node %d toggle-state = %d, want %d", node.ID, gotState, want.toggleState)
 	}
 	if len(node.Kids) != 0 {
 		t.Errorf("node carries %d kids, want none — the menu is flat", len(node.Kids))
@@ -136,8 +137,10 @@ func TestMenuLayout(t *testing.T) {
 	if derr != nil {
 		t.Fatalf("GetLayout(0) error = %v, want nil", derr)
 	}
-	if rev != menuRevisionBase {
-		t.Errorf("layout revision = %d, want the initial %d (property updates never bump it)", rev, menuRevisionBase)
+	// The fixture's chord binding ENTERED after construction — a set change,
+	// the one legal bump: the seeded canonical state carries revision 2.
+	if rev != menuRevisionBase+1 {
+		t.Errorf("layout revision = %d, want %d (the chord's appearance bumped it once)", rev, menuRevisionBase+1)
 	}
 	if root.ID != menuIDRoot {
 		t.Fatalf("root layout id = %d, want %d", root.ID, menuIDRoot)
@@ -151,7 +154,7 @@ func TestMenuLayout(t *testing.T) {
 		{menuIDMacro1, "1× shift__r — язык", menuTypeStandard, false, true, "", 0},
 		{menuIDMacro2, "2× shift__r — слово", menuTypeStandard, false, true, "", 0},
 		{menuIDMacro3, "3× shift__r — фраза", menuTypeStandard, false, true, "", 0},
-		{menuIDMacroCombo, "shift+ctrl_r — слово и язык", menuTypeStandard, false, true, "", 0},
+		{menuIDMacroCombo, "shift+ctrl__r — слово и язык", menuTypeStandard, false, true, "", 0},
 		{menuIDMacroChord, "super+space — смена режима", menuTypeStandard, false, true, "", 0},
 		{menuIDSep2, "", menuTypeSeparator, true, true, "", 0},
 		{menuIDSettings, labelSettings, menuTypeStandard, true, true, "", 0},
@@ -262,11 +265,41 @@ func rootHasID(root menuLayout, id int32) bool {
 	return false
 }
 
-// TestMenuSignalFormPins pins the dynamic channel (research Pattern 1,
-// Pitfall 7): every snapshot change emits EXACTLY ONE ItemsPropertiesUpdated
-// carrying the affected items' deltas and an EMPTY (non-nil) removed slice —
-// the a(ias) signature the godbus reflection computes from the literal —
-// and a property update NEVER bumps the layout revision.
+// signalDeltas extracts the updated-props payload of one recorded emit —
+// the []menuItemProps the corpus asserts on.
+func signalDeltas(t *testing.T, call emitCall) []menuItemProps {
+	t.Helper()
+
+	deltas, ok := call.args[0].([]menuItemProps)
+	if !ok {
+		t.Fatalf("updated-args type = %T, want []menuItemProps", call.args[0])
+	}
+
+	return deltas
+}
+
+// signalRemoved extracts and validates the removed-props payload: the EMPTY
+// non-nil slice literal the wire shape demands (Pitfall 7).
+func signalRemoved(t *testing.T, call emitCall) []removedProps {
+	t.Helper()
+
+	removed, ok := call.args[1].([]removedProps)
+	if !ok {
+		t.Fatalf("removed-args type = %T, want []removedProps (never nil)", call.args[1])
+	}
+	if removed == nil || len(removed) != 0 {
+		t.Errorf("removed = (nil: %t, len %d), want an EMPTY non-nil slice literal (Pitfall 7)",
+			removed == nil, len(removed))
+	}
+
+	return removed
+}
+
+// TestMenuSignalFormPins pins the dynamic channel's byte form (research
+// Pattern 1, Pitfall 7): the SetMode push is EXACTLY ONE
+// ItemsPropertiesUpdated carrying BOTH radio deltas and an empty removed
+// slice — the a(ias) signature the godbus reflection computes from the
+// literal — and a property update NEVER bumps the layout revision.
 func TestMenuSignalFormPins(t *testing.T) {
 	if got := dbus.SignatureOf([]menuItemProps{}); got != dbus.ParseSignatureMust("a(ia{sv})") {
 		t.Fatalf("updated-props signature = %s, want a(ia{sv})", got)
@@ -278,7 +311,6 @@ func TestMenuSignalFormPins(t *testing.T) {
 	em := &fakeEmitter{}
 	m := newMenu(Callbacks{}, em)
 
-	// The mode flip: one signal, BOTH radio deltas, empty removed slice.
 	m.SetMode(symbolRU)
 	calls := em.emitCalls()
 	if len(calls) != 1 {
@@ -292,10 +324,7 @@ func TestMenuSignalFormPins(t *testing.T) {
 	if len(call.args) != 2 {
 		t.Fatalf("signal arity = %d, want 2 (updated, removed)", len(call.args))
 	}
-	deltas, ok := call.args[0].([]menuItemProps)
-	if !ok {
-		t.Fatalf("updated-args type = %T, want []menuItemProps", call.args[0])
-	}
+	deltas := signalDeltas(t, call)
 	if len(deltas) != 2 || deltas[0].ID != menuIDEN || deltas[1].ID != menuIDRU {
 		t.Fatalf("radio deltas = %+v, want exactly the EN and RU toggle-state pair", deltas)
 	}
@@ -304,44 +333,41 @@ func TestMenuSignalFormPins(t *testing.T) {
 			t.Errorf("delta %d carries no toggle-state", d.ID)
 		}
 	}
-	removed, ok := call.args[1].([]removedProps)
-	if !ok {
-		t.Fatalf("removed-args type = %T, want []removedProps (never nil)", call.args[1])
-	}
-	if removed == nil || len(removed) != 0 {
-		t.Errorf("removed = (nil: %t, len %d), want an EMPTY non-nil slice literal (Pitfall 7)",
-			removed == nil, len(removed))
-	}
+	signalRemoved(t, call)
 	if rev := m.layoutRevision(); rev != menuRevisionBase {
 		t.Errorf("revision after a property update = %d, want the unchanged %d", rev, menuRevisionBase)
 	}
+}
 
-	// The toggles: one delta per click, the right id each.
-	drainEmits(em)
+// TestMenuToggleAndVersionDeltas pins the one-delta-per-push discipline of
+// the toggles and the version: each setter emits exactly one signal with
+// exactly the affected item's delta.
+func TestMenuToggleAndVersionDeltas(t *testing.T) {
+	em := &fakeEmitter{}
+	m := newMenu(Callbacks{}, em)
+
 	m.SetAutocorrectEnabled(true)
 	m.SetSoundEnabled(false)
-	calls = em.emitCalls()
+	calls := em.emitCalls()
 	if len(calls) != 2 {
 		t.Fatalf("toggle pushes emitted %d signals, want exactly 2", len(calls))
 	}
-	first, ok := calls[0].args[0].([]menuItemProps)
-	if !ok || len(first) != 1 || first[0].ID != menuIDACToggle {
+	if first := signalDeltas(t, calls[0]); len(first) != 1 || first[0].ID != menuIDACToggle {
 		t.Errorf("autocorrect delta = %v, want exactly id %d", calls[0].args[0], menuIDACToggle)
 	}
-	second, ok := calls[1].args[0].([]menuItemProps)
-	if !ok || len(second) != 1 || second[0].ID != menuIDSoundToggle {
+	if second := signalDeltas(t, calls[1]); len(second) != 1 || second[0].ID != menuIDSoundToggle {
 		t.Errorf("sound delta = %v, want exactly id %d", calls[1].args[0], menuIDSoundToggle)
 	}
+	signalRemoved(t, calls[0])
 
-	// The version: the About label's delta.
 	drainEmits(em)
 	m.SetVersion("1.2.3")
 	calls = em.emitCalls()
 	if len(calls) != 1 {
 		t.Fatalf("SetVersion emitted %d signals, want exactly one", len(calls))
 	}
-	about, ok := calls[0].args[0].([]menuItemProps)
-	if !ok || len(about) != 1 || about[0].ID != menuIDAbout {
+	about := signalDeltas(t, calls[0])
+	if len(about) != 1 || about[0].ID != menuIDAbout {
 		t.Errorf("version delta = %v, want exactly id %d", calls[0].args[0], menuIDAbout)
 	}
 	if label, _ := about[0].Props[menuPropLabel].Value().(string); !strings.Contains(label, "1.2.3") {
@@ -399,7 +425,8 @@ func TestMenuNilEmitterDegradation(t *testing.T) {
 		t.Error("the snapshot was not updated without an emitter — the display must stay correct")
 	}
 	if rev := m.layoutRevision(); rev != menuRevisionBase+1 {
-		t.Errorf("revision = %d, want %d — the chord's appearance is a set change even unemitted", rev, menuRevisionBase+1)
+		t.Errorf("revision = %d, want %d — the chord appearance is a set change even unemitted",
+			rev, menuRevisionBase+1)
 	}
 }
 
@@ -448,9 +475,8 @@ func TestMenuAboutToShow(t *testing.T) {
 
 // TestMenuEventDispatch pins the clicked dispatch of the canonical set:
 // id 1 → Switch("en"), 2 → Switch("ru"), 4 → ToggleAutocorrect,
-// 5 → ToggleSound, 12 → Settings, 13 → About, 14 → Status, 15 → Reload;
-// a nil callback is a silent no-op; unknown ids and unknown event ids are
-// ignored.
+// 5 → ToggleSound, 12 → Settings, 13 → About, 14 → Status, 15 → Reload —
+// each exactly once.
 func TestMenuEventDispatch(t *testing.T) {
 	var switched []string
 	acs, sounds, settings, abouts, statuses, reloads := 0, 0, 0, 0, 0, 0
@@ -488,8 +514,24 @@ func TestMenuEventDispatch(t *testing.T) {
 		t.Errorf("click counts = (ac %d, sound %d, settings %d, about %d, status %d, reload %d), want all 1",
 			acs, sounds, settings, abouts, statuses, reloads)
 	}
+}
 
-	// A nil callback is a silent no-op; unknown ids and event ids ignored.
+// TestMenuEventNilAndUnknownSilent pins the no-op discipline: a nil callback
+// is a silent no-op on every clickable id, and unknown ids and unknown
+// event ids are ignored — nothing fires anywhere.
+func TestMenuEventNilAndUnknownSilent(t *testing.T) {
+	var switched []string
+	acs, sounds, settings, abouts, statuses, reloads := 0, 0, 0, 0, 0, 0
+	m := &Menu{cb: Callbacks{
+		Switch:            func(target string) { switched = append(switched, target) },
+		ToggleAutocorrect: func() { acs++ },
+		ToggleSound:       func() { sounds++ },
+		Settings:          func() { settings++ },
+		About:             func() { abouts++ },
+		Status:            func() { statuses++ },
+		Reload:            func() { reloads++ },
+	}}
+
 	nilMenu := newMenu(Callbacks{}, nil)
 	for _, id := range []int32{menuIDEN, menuIDRU, menuIDACToggle, menuIDSoundToggle, menuIDSettings, menuIDAbout} {
 		if derr := nilMenu.Event(id, eventClicked, dbus.Variant{}, 0); derr != nil {
@@ -502,11 +544,8 @@ func TestMenuEventDispatch(t *testing.T) {
 	if derr := m.Event(menuIDEN, "opened", dbus.Variant{}, 0); derr != nil {
 		t.Errorf("unknown-event Event error = %v, want nil", derr)
 	}
-	if got := strings.Join(switched, ","); got != "en,ru" {
-		t.Errorf("ignored events fired callbacks (switched %q)", got)
-	}
-	if acs != 1 || sounds != 1 || settings != 1 || abouts != 1 || statuses != 1 || reloads != 1 {
-		t.Error("ignored events fired the counters")
+	if len(switched) != 0 || acs != 0 || sounds != 0 || settings != 0 || abouts != 0 || statuses != 0 || reloads != 0 {
+		t.Error("ignored events fired callbacks")
 	}
 }
 
