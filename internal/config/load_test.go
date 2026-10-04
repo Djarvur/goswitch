@@ -309,3 +309,122 @@ func TestLoad_FlipAfterCorrectionDecode(t *testing.T) {
 		t.Error("correction.flip_after_correction = false, want true (the document's value)")
 	}
 }
+
+// legacyAppsDocYAML is the PRE-revision document: the autocorrect section
+// carries the white-list key the D-53 revision REMOVED. The strict
+// decoder must reject the whole file (D-33 — the old key gets no silent
+// half-support, and an old white list is never transferred to the
+// blocklist mechanically: the two keys carry opposite intents).
+const legacyAppsDocYAML = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: false
+  apps: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// TestLoad_StrictDecodeRejectsLegacyAppsKey pins the D-33 hard rename
+// (plan 07-02): the white-list key is GONE from the schema — a document
+// carrying it is rejected WHOLE by the strict decoder, loudly, never
+// half-applied or quietly ignored (T-07-02-04).
+func TestLoad_StrictDecodeRejectsLegacyAppsKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(writeConfig(t, legacyAppsDocYAML))
+	if err == nil {
+		t.Fatal("legacy autocorrect.apps key accepted, want a whole-document rejection (D-33)")
+	}
+	if !strings.Contains(err.Error(), "apps") {
+		t.Errorf("error %q does not name the removed field apps", err)
+	}
+}
+
+// soundDocYAML renders the complete document with the given sound section
+// body — the decode corpus's template for the sound keys (the chordDoc
+// idiom: full document, one section under test).
+func soundDocYAML(body string) string {
+	return strings.Replace(fullDocYAML, "autocorrect:", "sound:\n"+body+"autocorrect:", 1)
+}
+
+// TestSound_AbsentSectionMeansOn pins the default-ON contract (owner
+// decision, 07-CONTEXT): a document without the sound section decodes
+// the ZERO value — and the section's effective switch reads ON, because
+// Load never overlays defaults (03-02) and the pointer-bool's nil is the
+// "on" verdict; a plain bool's zero value would have read "off".
+func TestSound_AbsentSectionMeansOn(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, fullDocYAML))
+	if err != nil {
+		t.Fatalf("Load(document without sound): %v", err)
+	}
+	if !cfg.Sound.EffectiveEnabled() {
+		t.Error("Sound.EffectiveEnabled() = false for an absent section, want true (default ON)")
+	}
+	if cfg.Sound.AutocorrectEvent != "" {
+		t.Errorf("Sound.AutocorrectEvent = %q, want empty — Load never overlays defaults", cfg.Sound.AutocorrectEvent)
+	}
+}
+
+// TestSound_ExplicitOffAndCustomEvent pins the decode round-trip of the
+// sound keys: an explicit enabled: false silences the sounds, a custom
+// autocorrect_event reaches the accessor verbatim, and an omitted event
+// name reads as the built-in default event.
+func TestSound_ExplicitOffAndCustomEvent(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, soundDocYAML("  enabled: false\n")))
+	if err != nil {
+		t.Fatalf("Load(sound off): %v", err)
+	}
+	if cfg.Sound.EffectiveEnabled() {
+		t.Error("Sound.EffectiveEnabled() = true for enabled: false, want false (the document's value)")
+	}
+
+	cfg, err = config.Load(writeConfig(t, soundDocYAML("  enabled: true\n  autocorrect_event: custom\n")))
+	if err != nil {
+		t.Fatalf("Load(sound custom event): %v", err)
+	}
+	if got := cfg.Sound.EffectiveAutocorrectEvent(); got != "custom" {
+		t.Errorf("Sound.EffectiveAutocorrectEvent() = %q, want %q (the document's value)", got, "custom")
+	}
+
+	cfg, err = config.Load(writeConfig(t, soundDocYAML("  enabled: true\n")))
+	if err != nil {
+		t.Fatalf("Load(sound default event): %v", err)
+	}
+	if got := cfg.Sound.EffectiveAutocorrectEvent(); got != config.DefaultSoundAutocorrectEvent {
+		t.Errorf("Sound.EffectiveAutocorrectEvent() = %q, want the default %q", got, config.DefaultSoundAutocorrectEvent)
+	}
+}
+
+// TestSound_StrictDecodeUnknownKey pins D-33 propagation to the new
+// section: an unknown key inside the sound section invalidates the WHOLE
+// document — the strict decoder covers the section automatically, no new
+// code in load.go.
+func TestSound_StrictDecodeUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(writeConfig(t, soundDocYAML("  enabled: true\n  sound_effect: wat\n")))
+	if err == nil {
+		t.Fatal("unknown sound key accepted, want a whole-document rejection (D-33)")
+	}
+	if !strings.Contains(err.Error(), "sound_effect") {
+		t.Errorf("error %q does not name the unknown field sound_effect", err)
+	}
+}

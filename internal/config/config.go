@@ -105,27 +105,78 @@ type MACR struct {
 }
 
 // Autocorrect is the automatic wrong-layout correction layer's schema
-// section (D-54, opt-in): the global switch, the per-app white list of
-// bridge-namespace names — exact string matches, order carries no
-// meaning — and the detector thresholds. The zero value is the OFF
+// section (D-54, opt-in): the global switch, the per-app blocklist of
+// regex patterns (the D-53 revision — a match FORBIDS the correction;
+// substring RE2 matching, explicit ^…$ anchoring, order carries no
+// meaning) and the detector thresholds. The zero value is the OFF
 // state: a document without the section decodes disabled, never
 // activated (default off everywhere, D-54).
 type Autocorrect struct {
-	Enabled       bool     `yaml:"enabled"`
+	Enabled bool `yaml:"enabled"`
+	// AppsBlocklist is the D-53 revision's per-app BLOCKLIST (regex
+	// patterns, substring matching). The legacy white-list key below is
+	// removed by this plan — it is still decoded so the pre-revision
+	// corpus decodes; the strict decoder will refuse the old key once
+	// the rename lands (D-33, no half-support).
 	Apps          []string `yaml:"apps"`
+	AppsBlocklist []string `yaml:"apps_blocklist"`
 	MinWordLen    int      `yaml:"min_word_len"`
 	TrigramMargin float64  `yaml:"trigram_margin"`
 	TrigramFloor  float64  `yaml:"trigram_floor"`
 }
 
-// Config is the whole daemon configuration: exactly the five sections
-// hotkeys / timeouts / correction / macr / autocorrect (D-31, D-54).
+// The sound-theme event names of the built-in defaults (owner decision
+// «Звуки при переключении», 2026-10-04): the flip tone and the
+// autocorrect tone both play through the desktop's sound theme — both
+// names verified present in this desktop's Yaru theme. The flip tone is
+// NOT configurable — the owner asked for the switch and the distinct
+// autocorrect event only.
+const (
+	DefaultSoundFlipEvent        = "bell"
+	DefaultSoundAutocorrectEvent = "message"
+)
+
+// Sound is the acoustic-feedback schema section (owner decision «Звуки
+// при переключении», 2026-10-04): the master switch and the distinct
+// autocorrect tone's sound-theme event name. Enabled is a POINTER on
+// purpose: Load never overlays defaults (the complete-document contract,
+// 03-02), so an absent section decodes nil — and nil must read "on" (the
+// owner's default-ON verdict), which a plain bool's zero value could not
+// express. An empty AutocorrectEvent reads as the built-in default
+// event. No validation: both keys are optional, and an event name is
+// only checkable against the runtime desktop's sound theme.
+type Sound struct {
+	Enabled          *bool  `yaml:"enabled"`
+	AutocorrectEvent string `yaml:"autocorrect_event"`
+}
+
+// EffectiveEnabled reports the section's effective switch: nil (the
+// absent key or the whole absent section) means ON — the owner's
+// default — so only an explicit enabled: false silences the sounds.
+func (s Sound) EffectiveEnabled() bool {
+	return s.Enabled == nil || *s.Enabled
+}
+
+// EffectiveAutocorrectEvent resolves the autocorrect tone's event name:
+// an empty document value reads as the built-in default event.
+func (s Sound) EffectiveAutocorrectEvent() string {
+	if s.AutocorrectEvent == "" {
+		return DefaultSoundAutocorrectEvent
+	}
+
+	return s.AutocorrectEvent
+}
+
+// Config is the whole daemon configuration: exactly the six sections
+// hotkeys / timeouts / correction / macr / autocorrect / sound
+// (D-31, D-54).
 type Config struct {
 	Hotkeys     Hotkeys     `yaml:"hotkeys"`
 	Timeouts    Timeouts    `yaml:"timeouts"`
 	Correction  Correction  `yaml:"correction"`
 	MACR        MACR        `yaml:"macr"`
 	Autocorrect Autocorrect `yaml:"autocorrect"`
+	Sound       Sound       `yaml:"sound"`
 }
 
 // Defaults returns the documented built-in defaults: the daemon runs on
@@ -164,12 +215,24 @@ func Defaults() Config {
 		Autocorrect: Autocorrect{
 			Enabled:       false,
 			Apps:          nil,
+			AppsBlocklist: nil,
 			MinWordLen:    defaultMinWordLen,
 			TrigramMargin: defaultTrigramMargin,
 			TrigramFloor:  defaultTrigramFloor,
 		},
+		// The sounds ship ON (the owner's default-ON verdict) with the
+		// built-in autocorrect event name — an absent document section
+		// reads the same through the Effective* accessors.
+		Sound: Sound{
+			Enabled:          boolPtr(true),
+			AutocorrectEvent: DefaultSoundAutocorrectEvent,
+		},
 	}
 }
+
+// boolPtr returns a pointer to v — the Sound section's pointer-bool
+// default needs an addressable literal.
+func boolPtr(v bool) *bool { return &v }
 
 // The documented default binding names (shared with the corpus).
 const (

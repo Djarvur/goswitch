@@ -28,8 +28,16 @@ const (
 	fieldAutoCorrectMargin = "autocorrect.trigram_margin"
 	fieldAutoCorrectFloor  = "autocorrect.trigram_floor"
 
-	// appGedit is the corpus's bridge-namespace white-list example.
+	// fieldAutoCorrectBlocklist is the D-53 revision's blocklist key.
+	fieldAutoCorrectBlocklist = "autocorrect.apps_blocklist"
+
+	// appGedit is the corpus's bridge-namespace example app.
 	appGedit = "org.gnome.Gedit"
+
+	// Blocklist corpus patterns (D-53): a bare substring and an explicit
+	// anchor — both legal RE2, both pinned by the compile corpus.
+	acBlockSubstr = "chrom"
+	acBlockAnchor = `^org\.gnome\.`
 )
 
 // validDoc is the complete schema document every Validate case starts from
@@ -524,6 +532,159 @@ func TestValidate_AppsOrderIrrelevant(t *testing.T) {
 	}
 	if err := second.Validate(); err != nil {
 		t.Errorf("second order rejected: %v", err)
+	}
+}
+
+// TestValidate_BlocklistRegexCompile pins the D-53 compile gate: every
+// blocklist pattern is compiled by regexp on Load — the only place a
+// broken regex is visible before runtime — and a non-compilable pattern
+// rejects the whole config with the field AND the element index named
+// (D-33). A bare substring and an explicit anchor both compile.
+func TestValidate_BlocklistRegexCompile(t *testing.T) {
+	t.Parallel()
+
+	broken := activeAutocorrectDoc()
+	broken.Autocorrect.AppsBlocklist = []string{appGedit, "["}
+	err := broken.Validate()
+	if err == nil {
+		t.Fatal("broken blocklist pattern accepted, want a whole-config rejection")
+	}
+	if !strings.Contains(err.Error(), fieldAutoCorrectBlocklist) || !strings.Contains(err.Error(), "[1]") {
+		t.Errorf("error %q does not name %q and the element index [1]", err, fieldAutoCorrectBlocklist)
+	}
+
+	valid := activeAutocorrectDoc()
+	valid.Autocorrect.AppsBlocklist = []string{acBlockSubstr, acBlockAnchor}
+	if err := valid.Validate(); err != nil {
+		t.Errorf("valid blocklist patterns rejected: %v", err)
+	}
+}
+
+// TestValidate_BlocklistEmptyPattern pins the empty-pattern trap
+// (T-07-02-03): an empty or blank pattern is a VALID RE2 that matches
+// EVERYTHING — a silent "block everywhere" — so validation refuses it
+// with its own sentinel and the index, before any compile attempt.
+func TestValidate_BlocklistEmptyPattern(t *testing.T) {
+	t.Parallel()
+
+	for _, pattern := range []string{"", "   "} {
+		cfg := activeAutocorrectDoc()
+		cfg.Autocorrect.AppsBlocklist = []string{appGedit, pattern}
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatalf("blank blocklist pattern %q accepted, want a whole-config rejection", pattern)
+		}
+		if !strings.Contains(err.Error(), fieldAutoCorrectBlocklist) || !strings.Contains(err.Error(), "[1]") {
+			t.Errorf("error %q does not name %q and the element index [1]", err, fieldAutoCorrectBlocklist)
+		}
+		if !strings.Contains(err.Error(), "matches everything") {
+			t.Errorf("error %q does not cite the empty-pattern trap", err)
+		}
+	}
+}
+
+// TestValidate_BlocklistCeilUnconditional pins the blocklist DoS ceiling
+// (T-07-02-02, the T-06-04-01 precedent): 65 patterns reject the whole
+// config even with the layer DORMANT — the ceiling does not depend on
+// enabled — with the field and the 64-entry limit named; 64 validate in
+// both the dormant and the active shape.
+func TestValidate_BlocklistCeilUnconditional(t *testing.T) {
+	t.Parallel()
+
+	over := validDoc()
+	over.Autocorrect.AppsBlocklist = make([]string, 65)
+	err := over.Validate()
+	if err == nil {
+		t.Fatal("65 blocklist patterns accepted while dormant, want a whole-config rejection")
+	}
+	if !strings.Contains(err.Error(), fieldAutoCorrectBlocklist) || !strings.Contains(err.Error(), "64") {
+		t.Errorf("error %q does not name %q and the 64-entry limit", err, fieldAutoCorrectBlocklist)
+	}
+
+	overActive := activeAutocorrectDoc()
+	overActive.Autocorrect.AppsBlocklist = make([]string, 65)
+	if err := overActive.Validate(); err == nil {
+		t.Fatal("65 blocklist patterns accepted while active, want a whole-config rejection")
+	}
+
+	atCeil := validDoc()
+	atCeil.Autocorrect.AppsBlocklist = make([]string, 64)
+	if err := atCeil.Validate(); err != nil {
+		t.Errorf("64-entry blocklist rejected: %v", err)
+	}
+}
+
+// TestValidate_BlocklistOrderIrrelevant pins the blocklist's set
+// semantics (D-53): the same patterns in a different order validate
+// identically — any match forbids, so order carries no meaning.
+func TestValidate_BlocklistOrderIrrelevant(t *testing.T) {
+	t.Parallel()
+
+	first := activeAutocorrectDoc()
+	first.Autocorrect.AppsBlocklist = []string{acBlockSubstr, appGedit, acBlockAnchor}
+	second := activeAutocorrectDoc()
+	second.Autocorrect.AppsBlocklist = []string{acBlockAnchor, acBlockSubstr, appGedit}
+
+	if err := first.Validate(); err != nil {
+		t.Errorf("first order rejected: %v", err)
+	}
+	if err := second.Validate(); err != nil {
+		t.Errorf("second order rejected: %v", err)
+	}
+}
+
+// TestDefaults_AutocorrectBlocklistNil pins the D-54 default-off shape
+// under the D-53 schema: the feature ships disabled with a nil blocklist
+// and the start thresholds 4/2.0/1.0 — nothing activates on its own, and
+// the defaults still validate as a whole.
+func TestDefaults_AutocorrectBlocklistNil(t *testing.T) {
+	t.Parallel()
+
+	got := config.Defaults().Autocorrect
+	if got.Enabled {
+		t.Error("Defaults().Autocorrect.Enabled = true, want false (D-54 default off)")
+	}
+	if got.AppsBlocklist != nil {
+		t.Errorf("Defaults().Autocorrect.AppsBlocklist = %v, want nil (the empty blocklist is the off state)", got.AppsBlocklist)
+	}
+	if got.MinWordLen != 4 {
+		t.Errorf("Defaults().Autocorrect.MinWordLen = %d, want 4", got.MinWordLen)
+	}
+	if got.TrigramMargin != 2.0 {
+		t.Errorf("Defaults().Autocorrect.TrigramMargin = %v, want 2.0", got.TrigramMargin)
+	}
+	if got.TrigramFloor != 1.0 {
+		t.Errorf("Defaults().Autocorrect.TrigramFloor = %v, want 1.0", got.TrigramFloor)
+	}
+	if err := config.Defaults().Validate(); err != nil {
+		t.Errorf("Defaults() does not validate with the autocorrect section: %v", err)
+	}
+}
+
+// TestDefaults_SoundOn pins the sound section's built-in defaults (owner
+// decision «Звуки при переключении»): the sounds ship ON and the
+// autocorrect tone carries the default event name — both constants
+// verified present in this desktop's Yaru sound theme — and the defaults
+// still validate as a whole (the section carries no validation).
+func TestDefaults_SoundOn(t *testing.T) {
+	t.Parallel()
+
+	got := config.Defaults().Sound
+	if !got.EffectiveEnabled() {
+		t.Error("Defaults().Sound.EffectiveEnabled() = false, want true (default ON — owner decision)")
+	}
+	if got.EffectiveAutocorrectEvent() != config.DefaultSoundAutocorrectEvent {
+		t.Errorf(
+			"Defaults().Sound.EffectiveAutocorrectEvent() = %q, want %q",
+			got.EffectiveAutocorrectEvent(), config.DefaultSoundAutocorrectEvent,
+		)
+	}
+	flipEvent, corrEvent := config.DefaultSoundFlipEvent, config.DefaultSoundAutocorrectEvent
+	if flipEvent != "bell" || corrEvent != "message" {
+		t.Errorf("sound event constants = %q/%q, want the verified Yaru names bell/message", flipEvent, corrEvent)
+	}
+	if err := config.Defaults().Validate(); err != nil {
+		t.Errorf("Defaults() does not validate with the sound section: %v", err)
 	}
 }
 
