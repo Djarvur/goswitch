@@ -4634,8 +4634,6 @@ type fakeMenuSync struct {
 	ac     []bool
 	sound  []bool
 	keys   []string
-	opMu   sync.Mutex
-	ops    []string
 	onMode func(symbol string)
 }
 
@@ -4645,9 +4643,6 @@ func (f *fakeMenuSync) SetMode(symbol string) {
 	f.modes = append(f.modes, symbol)
 	hook := f.onMode
 	f.mu.Unlock()
-	f.opMu.Lock()
-	f.ops = append(f.ops, "menu:"+symbol)
-	f.opMu.Unlock()
 	if hook != nil {
 		hook(symbol)
 	}
@@ -4706,21 +4701,6 @@ func (f *fakeMenuSync) menuKeys() []string {
 	return append([]string(nil), f.keys...)
 }
 
-// menuOps snapshots the interleaved op log.
-func (f *fakeMenuSync) menuOps() []string {
-	f.opMu.Lock()
-	defer f.opMu.Unlock()
-
-	return append([]string(nil), f.ops...)
-}
-
-// clearMenuOps drops the op log (the install push is pinned separately).
-func (f *fakeMenuSync) clearMenuOps() {
-	f.opMu.Lock()
-	f.ops = nil
-	f.opMu.Unlock()
-}
-
 // TestActor_SwitchModeFlipsToTarget pins the radio pair's gesture (plan
 // 07-05): SwitchMode drives the SAME flipTo execution path — the target
 // mode's switch, the byte-stable mode record, one panel symbol — and the
@@ -4753,37 +4733,44 @@ func TestActor_SwitchModeFlipsToTarget(t *testing.T) {
 // display, exactly as ModeChanged (the D-36 order with both observers
 // appended).
 func TestActor_MenuSyncSetModeOnFlip(t *testing.T) {
-	a, sink := wiredActor()
-	sink.modeHook = func(symbol string) {
-		// The op log interleave lives in the doubles themselves.
+	a, _ := wiredActor()
+	var opMu sync.Mutex
+	var ops []string
+	record := func(op string) {
+		opMu.Lock()
+		ops = append(ops, op)
+		opMu.Unlock()
 	}
-	sync := &fakeMenuSync{}
+	msync := &fakeMenuSync{}
+	msync.onMode = func(symbol string) { record("menu:" + symbol) }
 	disp := &fakeDisplay{}
-	a.SetMenuSync(sync)
+	disp.onCall = func(symbol string) { record("display:" + symbol) }
+
+	// The install self-syncs: the menu receives the CURRENT mode, exactly
+	// like the display (the SetModeDisplay mirror).
+	a.SetMenuSync(msync)
 	a.SetModeDisplay(disp)
-	sync.clearMenuOps() // the install pushes are pinned above; only the change order matters
+	if got := msync.menuModes(); !slices.Equal(got, []string{"en"}) {
+		t.Errorf("install mode pushes = %q, want exactly [en] — the current mode", got)
+	}
+
+	opMu.Lock()
+	ops = nil // the install pushes are pinned above; only the change order matters
+	opMu.Unlock()
 
 	a.ToggleMode()              // EN → RU
 	a.SyncEngine(engine.NameEN) // a drift back: RU → EN
 
-	if got := sync.menuModes(); !slices.Equal(got, []string{"ru", "en"}) {
-		t.Errorf("menu mode pushes = %q, want exactly [ru en] — one per flip and per drift", got)
+	if got := msync.menuModes(); !slices.Equal(got, []string{"en", "ru", "en"}) {
+		t.Errorf("menu mode pushes = %q, want [en ru en] — the install plus one per flip and per drift", got)
 	}
-	if got := disp.symbols(); !slices.Equal(got, []string{"ru", "en"}) {
-		t.Errorf("display pushes = %q, want exactly [ru en]", got)
-	}
-	got := sync.menuOps()
-	want := []string{opMenuRU, opDisplayRU, opMenuEN, opDisplayEN}
-	if !slices.Equal(got, want) {
-		t.Errorf("menu op order = %q, want exactly %q — the menu fires WITH the display, observer-last", got, want)
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{opDisplayRU, "menu:ru", opDisplayEN, "menu:en"}
+	if !slices.Equal(ops, want) {
+		t.Errorf("menu op order = %q, want exactly %q — the menu fires AFTER the display, observer-last", ops, want)
 	}
 }
-
-// The menu op-log labels of the order pin (the display-corpus form).
-const (
-	opMenuRU = "menu:ru"
-	opMenuEN = "menu:en"
-)
 
 // TestActor_MenuSyncApplySnapshotPushes pins the fold push: applySnapshot
 // hands the menu the APPLIED config truth — the autocorrect switch and the
@@ -4794,15 +4781,15 @@ func TestActor_MenuSyncApplySnapshotPushes(t *testing.T) {
 	cfg.Autocorrect.Enabled = true
 	src := &reloadSource{cfg: cfg}
 	a.AttachConfig(src)
-	sync := &fakeMenuSync{}
-	a.SetMenuSync(sync)
+	msync := &fakeMenuSync{}
+	a.SetMenuSync(msync)
 
 	a.ExpiryAt(expiryAfterWindow) // one applySnapshot fold
 
-	if got := sync.menuAC(); !slices.Equal(got, []bool{true}) {
+	if got := msync.menuAC(); !slices.Equal(got, []bool{true}) {
 		t.Errorf("autocorrect pushes = %v, want exactly [true]", got)
 	}
-	if got := sync.menuKeys(); !slices.Equal(got, []string{"shift_r|shift+ctrl_r|super+space"}) {
+	if got := msync.menuKeys(); !slices.Equal(got, []string{"shift_r|shift+ctrl_r|super+space"}) {
 		t.Errorf("key pushes = %q, want the raw config names of the defaults document", got)
 	}
 
@@ -4811,7 +4798,7 @@ func TestActor_MenuSyncApplySnapshotPushes(t *testing.T) {
 	cfg.Autocorrect.Enabled = false
 	src.set(cfg)
 	a.ExpiryAt(expiryAfterWindow)
-	if got := sync.menuAC(); !slices.Equal(got, []bool{true, false}) {
+	if got := msync.menuAC(); !slices.Equal(got, []bool{true, false}) {
 		t.Errorf("autocorrect pushes after the flip = %v, want exactly [true false]", got)
 	}
 }
@@ -4827,12 +4814,12 @@ func TestActor_MenuSyncApplySnapshotPushesSound(t *testing.T) {
 	cfg.Sound = config.Sound{} // the absent section: decodes as enabled (default ON)
 	src := &reloadSource{cfg: cfg}
 	a.AttachConfig(src)
-	sync := &fakeMenuSync{}
-	a.SetMenuSync(sync)
+	msync := &fakeMenuSync{}
+	a.SetMenuSync(msync)
 
 	a.ExpiryAt(expiryAfterWindow)
 
-	if got := sync.menuSound(); !slices.Equal(got, []bool{true}) {
+	if got := msync.menuSound(); !slices.Equal(got, []bool{true}) {
 		t.Errorf("sound pushes = %v, want exactly [true] — the absent section reads enabled", got)
 	}
 	if st := a.StatusSnapshot(); !st.SoundEnabled {
@@ -4843,7 +4830,7 @@ func TestActor_MenuSyncApplySnapshotPushesSound(t *testing.T) {
 	cfg.Sound = config.Sound{Enabled: &off}
 	src.set(cfg)
 	a.ExpiryAt(expiryAfterWindow)
-	if got := sync.menuSound(); !slices.Equal(got, []bool{true, false}) {
+	if got := msync.menuSound(); !slices.Equal(got, []bool{true, false}) {
 		t.Errorf("sound pushes after the explicit off = %v, want exactly [true false]", got)
 	}
 	if st := a.StatusSnapshot(); st.SoundEnabled {

@@ -113,6 +113,14 @@ const (
 	modeRU
 )
 
+// The mode symbols the observers receive (owner decision 1): the panel
+// glyph and the menu's radio mark are the same wire-literal — one truth,
+// two consumers (quick plan 260930-pf6, plan 07-05).
+const (
+	symbolEN = "en"
+	symbolRU = "ru"
+)
+
 // emitterSlot wraps the actor's emitter sink for the atomic pointer: Go
 // atomics store pointers, not interface values, so the engine.Emitter rides
 // in a one-field wrapper (G-6-1).
@@ -618,7 +626,7 @@ func (a *Actor) StatusSnapshot() Status {
 
 	st := Status{
 		Version:               a.version,
-		Mode:                  "en",
+		Mode:                  symbolEN,
 		Engine:                engineNameOf(a.mode),
 		CorrectionsDone:       a.corrDone,
 		CorrectionsSkipped:    a.corrSkipped,
@@ -628,12 +636,13 @@ func (a *Actor) StatusSnapshot() Status {
 		AutoCorrectEnabled:    a.opts.AutoCorrectEnabled,
 		AutoCorrectFired:      a.acFired,
 		AutoCorrectAbstained:  a.acAbstained,
+		SoundEnabled:          a.soundEnabled,
 
 		AutoCorrectSkipReasons: maps.Clone(a.acReasons),
 		ConfigValid:            true, // built-in defaults, or a source without a status surface
 	}
 	if a.mode == modeRU {
-		st.Mode = "ru"
+		st.Mode = symbolRU
 	}
 	if cs, ok := a.cfgSrc.(configStatus); ok {
 		st.ConfigPath = cs.ConfigPath()
@@ -831,13 +840,19 @@ func (a *Actor) SetModeDisplay(md ModeDisplay) {
 }
 
 // SetMenuSync installs the menu seam — the SetModeDisplay mirror (plan
-// 07-05). RED stub: stores the seam; the install push and the flip/fold
-// push points land in GREEN.
+// 07-05). The menu immediately receives the CURRENT mode: the startup
+// install shows the initial mode, and a late install (after flips or
+// syncs) self-syncs to the factual state instead of waiting for the next
+// change. The applied config truth reaches the menu through the fold
+// (applySnapshot) and the click composition's direct pushes.
 func (a *Actor) SetMenuSync(ms MenuSync) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.menuSync = ms
+	if ms != nil {
+		ms.SetMode(a.modeSymbol())
+	}
 }
 
 // SyncEngine pulls the daemon under the FACTUAL active engine (05-04,
@@ -946,9 +961,22 @@ func (a *Actor) ToggleMode() {
 // gsettings or SetGlobalEngine shortcut (the SWCH regression guard: the
 // D-36 record order and the flip guard discipline are flipTo's, untouched).
 // The same-target case lands on flipTo's no-op guard — never a duplicated
-// check; an unknown symbol is a silent no-op. RED stub: the flip lands in
-// GREEN.
-func (a *Actor) SwitchMode(_ string) {}
+// check; an unknown symbol is a silent no-op.
+func (a *Actor) SwitchMode(target string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	var m scriptMode
+	switch target {
+	case symbolRU:
+		m = modeRU
+	case symbolEN:
+		m = modeEN
+	default:
+		return
+	}
+	a.flipTo(m)
+}
 
 // MenuSync is the tray-menu state seam (plan 07-05): the pushes the menu
 // snapshot needs to mirror the actor — the mode symbol and the applied
@@ -1152,6 +1180,23 @@ func (a *Actor) applySnapshot() {
 	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
 	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
 	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
+	a.pushMenuSync(snap)
+}
+
+// pushMenuSync hands the menu the applied config truth (plan 07-05): both
+// toggles' applied values and the RAW key names — the actor hands CONFIG
+// truth, the menu renders (the mnemonic doubling lives in the indicator).
+// The sound value is the EffectiveEnabled truth — an absent section reads
+// ON (the owner's default-ON verdict). The menu dedupes identical pushes,
+// so the per-fold push of unchanged values is cheap. The caller holds the
+// mutex.
+func (a *Actor) pushMenuSync(snap config.Config) {
+	a.soundEnabled = snap.Sound.EffectiveEnabled()
+	if a.menuSync != nil {
+		a.menuSync.SetAutocorrectEnabled(snap.Autocorrect.Enabled)
+		a.menuSync.SetSoundEnabled(a.soundEnabled)
+		a.menuSync.SetKeys(snap.Hotkeys.TapKey, snap.Hotkeys.WordLayoutCombo, snap.Hotkeys.ModeSwitchChord)
+	}
 }
 
 // handleSurroundingLocked is the mutex-held core of HandleSurroundingText.
@@ -1734,6 +1779,13 @@ func (a *Actor) flipTo(target scriptMode) {
 	if a.display != nil {
 		a.display.ModeChanged(a.modeSymbol())
 	}
+	// The menu observer fires with the display — the second appended
+	// observer of the same record (plan 07-05): the radio pair re-marks
+	// itself from the same push the icon uses. The menu dedupes identical
+	// symbols; the actor adds no error handling around the call.
+	if a.menuSync != nil {
+		a.menuSync.SetMode(a.modeSymbol())
+	}
 }
 
 // oppositeMode is the toggle target of the gesture flips (the Single
@@ -1778,17 +1830,22 @@ func (a *Actor) syncMode(target scriptMode, name string) {
 	if a.display != nil {
 		a.display.ModeChanged(a.modeSymbol())
 	}
+	// The menu observer fires with the display, mirroring flipTo (plan
+	// 07-05): the radio pair follows the FACTUAL engine too.
+	if a.menuSync != nil {
+		a.menuSync.SetMode(a.modeSymbol())
+	}
 }
 
 // modeSymbol returns the panel symbol of the current script mode — the
-// glyph the mode-indicator property carries (owner decision 1). The caller
-// holds the mutex.
+// glyph the mode-indicator property carries and the value both observers
+// receive (owner decision 1; plan 07-05). The caller holds the mutex.
 func (a *Actor) modeSymbol() string {
 	if a.mode == modeRU {
-		return "ru"
+		return symbolRU
 	}
 
-	return "en"
+	return symbolEN
 }
 
 // feedKey decides one press: whether the engine consumes the key and which

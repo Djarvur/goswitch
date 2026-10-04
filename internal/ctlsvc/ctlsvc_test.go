@@ -735,6 +735,7 @@ func TestRenderStatus_AutocorrectTokens(t *testing.T) {
 	}
 	for _, want := range []string{
 		"autocorrect_enabled=true", "autocorrect_fired=2", "autocorrect_abstained=3",
+		"sound_enabled=false",
 		"ac_skip_abstain_short=2", "ac_skip_no_caps=1",
 	} {
 		if !strings.Contains(reply, want) {
