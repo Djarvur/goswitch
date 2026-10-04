@@ -305,8 +305,24 @@ Plans:
   4. Регресс фаз 5-6 зелёный: `mise run ci`, матрица v4 (строки автокоррекции перезакреплены), flip-keystroke 24/24.
   5. Релиз v1.1.0: тег → goreleaser → ассеты; README/CONFIG.md соответствуют v1.1.0.
 
-**Plans:** 0 plans
+**Plans:** 7/7 planned
 
 Plans:
+**Wave 1** *(spec-delta до кода, D-55 — блокирует все кодовые планы)*
 
-- [ ] TBD (run /gsd-plan-phase 7 to break down)
+- [ ] 07-01-PLAN.md — SPEC §11 третья ревизия (blocklist, 2026-10-04) + ADR-007 amendment — SPEC §11
+- [ ] 07-02-PLAN.md — Схема: apps_blocklist (regex-валидация, пустой паттерн, потолок, ACTIVE-условие) + механическая адаптация актора + docs/CONFIG.md — MACR-ACL
+- [ ] 07-03-PLAN.md — Персист: SetAutocorrectEnabled/EnsureDocument/DefaultPath (Node round-trip, temp+rename, 0600) + adopt+watch дефолтного пути — MACR-ACL
+- [ ] 07-04-PLAN.md — Гейт: unknown⇒пропуск (только идентичность), confirm blocklist-only, удаление WR-01-равенства, ensureAppid по enabled — MACR-ACL, CORR-01..09 (регресс)
+
+**Wave 4** *(blocked on 07-03 + 07-04)*
+
+- [ ] 07-05-PLAN.md — Меню v2: радиопара EN/RU (SwitchMode→flipTo), тумблер с персистом, живые макро-инфопункты, Настройки (xdg-open no-pipes), О программе; ItemsPropertiesUpdated-динамика — SWCH-01..04 (регресс)
+
+**Wave 5** *(blocked on Waves 1-4)*
+
+- [ ] 07-06-PLAN.md — e2e: упрощение fires/silents, новый autocorrect-blocklist-silent, Event-драйв case_menu (переживает рестарт), матричная config_base, mise-задачи — MACR-ACL, CORR/SWCH (регресс)
+
+**Wave 6** *(blocked on Waves 1-5)*
+
+- [ ] 07-07-PLAN.md — Релизная готовность v1.1.0: README, полный регресс (ci + матрица ×2 + flip-keystroke 24/24 + новые кейсы), RELEASE-READINESS (тег — post-merge действие владельца) — CORR/SWCH (регресс), критерии 4-5
