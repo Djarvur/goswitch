@@ -305,7 +305,7 @@ Plans:
   4. Регресс фаз 5-6 зелёный: `mise run ci`, матрица v4 (строки автокоррекции перезакреплены), flip-keystroke 24/24.
   5. Релиз v1.1.0: тег → goreleaser → ассеты; README/CONFIG.md соответствуют v1.1.0.
 
-**Plans:** 7/7 planned
+**Plans:** 8/8 planned
 
 Plans:
 **Wave 1** *(spec-delta до кода, D-55 — блокирует все кодовые планы)*
@@ -319,10 +319,11 @@ Plans:
 
 - [ ] 07-05-PLAN.md — Меню v2: радиопара EN/RU (SwitchMode→flipTo), тумблер с персистом, живые макро-инфопункты, Настройки (xdg-open no-pipes), О программе; ItemsPropertiesUpdated-динамика — SWCH-01..04 (регресс)
 
-**Wave 5** *(blocked on Waves 1-4)*
+**Wave 5** *(blocked on Waves 1-4; 07-06 и 07-08 параллельны — файлы не пересекаются)*
 
-- [ ] 07-06-PLAN.md — e2e: упрощение fires/silents, новый autocorrect-blocklist-silent, Event-драйв case_menu (переживает рестарт), матричная config_base, mise-задачи — MACR-ACL, CORR/SWCH (регресс)
+- [ ] 07-06-PLAN.md — e2e: упрощение fires/silents, новый autocorrect-blocklist-silent, Event-драйв case_menu (оба тумблера переживают рестарт), матричная config_base, mise-задачи — MACR-ACL, CORR/SWCH (регресс)
+- [ ] 07-08-PLAN.md — Звуки переключения: package internal/sound (canberra→paplay no-pipes, комплектные тоны, WARN-best-effort), SoundSink-шов актора (flipTo-флип + fire автокоррекции), gating sound.enabled через hot reload, wiring — SPEC §11 (решение «Звуки при переключении»)
 
 **Wave 6** *(blocked on Waves 1-5)*
 
-- [ ] 07-07-PLAN.md — Релизная готовность v1.1.0: README, полный регресс (ci + матрица ×2 + flip-keystroke 24/24 + новые кейсы), RELEASE-READINESS (тег — post-merge действие владельца) — CORR/SWCH (регресс), критерии 4-5
+- [ ] 07-07-PLAN.md — Релизная готовность v1.1.0: README (blocklist, меню v2 со «Звуком», звуки), полный регресс (ci + матрица ×2 + flip-keystroke 24/24 + новые кейсы), RELEASE-READINESS (тег — post-merge действие владельца) — CORR/SWCH (регресс), критерии 4-5
