@@ -4620,6 +4620,253 @@ func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
 	}
 }
 
+// The menu-sync corpus of plan 07-05: the tray-menu state seam — SwitchMode
+// (the radio pair's flip through the SAME flipTo path) and the observer
+// pushes (the mode on every flip/sync observer-last; the applied config
+// truth on every snapshot fold).
+
+// fakeMenuSync is the actor's MenuSync double (plan 07-05): every push
+// recorded under a mutex, with an op-log hook the order pins interleave
+// against the display's.
+type fakeMenuSync struct {
+	mu     sync.Mutex
+	modes  []string
+	ac     []bool
+	sound  []bool
+	keys   []string
+	opMu   sync.Mutex
+	ops    []string
+	onMode func(symbol string)
+}
+
+// SetMode records the mode push.
+func (f *fakeMenuSync) SetMode(symbol string) {
+	f.mu.Lock()
+	f.modes = append(f.modes, symbol)
+	hook := f.onMode
+	f.mu.Unlock()
+	f.opMu.Lock()
+	f.ops = append(f.ops, "menu:"+symbol)
+	f.opMu.Unlock()
+	if hook != nil {
+		hook(symbol)
+	}
+}
+
+// SetAutocorrectEnabled records the applied autocorrect push.
+func (f *fakeMenuSync) SetAutocorrectEnabled(on bool) {
+	f.mu.Lock()
+	f.ac = append(f.ac, on)
+	f.mu.Unlock()
+}
+
+// SetSoundEnabled records the applied sound push.
+func (f *fakeMenuSync) SetSoundEnabled(on bool) {
+	f.mu.Lock()
+	f.sound = append(f.sound, on)
+	f.mu.Unlock()
+}
+
+// SetKeys records the raw key names push.
+func (f *fakeMenuSync) SetKeys(tap, combo, chord string) {
+	f.mu.Lock()
+	f.keys = append(f.keys, tap+"|"+combo+"|"+chord)
+	f.mu.Unlock()
+}
+
+// menuModes snapshots the recorded mode pushes.
+func (f *fakeMenuSync) menuModes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.modes...)
+}
+
+// menuAC snapshots the recorded autocorrect pushes.
+func (f *fakeMenuSync) menuAC() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]bool(nil), f.ac...)
+}
+
+// menuSound snapshots the recorded sound pushes.
+func (f *fakeMenuSync) menuSound() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]bool(nil), f.sound...)
+}
+
+// menuKeys snapshots the recorded key-name pushes.
+func (f *fakeMenuSync) menuKeys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.keys...)
+}
+
+// menuOps snapshots the interleaved op log.
+func (f *fakeMenuSync) menuOps() []string {
+	f.opMu.Lock()
+	defer f.opMu.Unlock()
+
+	return append([]string(nil), f.ops...)
+}
+
+// clearMenuOps drops the op log (the install push is pinned separately).
+func (f *fakeMenuSync) clearMenuOps() {
+	f.opMu.Lock()
+	f.ops = nil
+	f.opMu.Unlock()
+}
+
+// TestActor_SwitchModeFlipsToTarget pins the radio pair's gesture (plan
+// 07-05): SwitchMode drives the SAME flipTo execution path — the target
+// mode's switch, the byte-stable mode record, one panel symbol — and the
+// same-target case lands on flipTo's no-op guard: zero extra records, zero
+// extra switch calls.
+func TestActor_SwitchModeFlipsToTarget(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	a.SwitchMode("ru")
+	a.SwitchMode("ru") // the same-target no-op
+
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("switch targets = %q, want exactly [%s] — one flip to the named target", got, engine.NameRU)
+	}
+	logged := buf.String()
+	if strings.Count(logged, `"msg":"mode","to":"ru"`) != 1 {
+		t.Errorf("mode records = %q, want exactly one to=ru (the same-target click is a no-op)", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru]", got)
+	}
+}
+
+// TestActor_MenuSyncSetModeOnFlip pins the mode push of the menu seam: the
+// install receives the CURRENT mode (the SetModeDisplay mirror), every flip
+// and every sync drift pushes the new symbol observer-last — after the
+// display, exactly as ModeChanged (the D-36 order with both observers
+// appended).
+func TestActor_MenuSyncSetModeOnFlip(t *testing.T) {
+	a, sink := wiredActor()
+	sink.modeHook = func(symbol string) {
+		// The op log interleave lives in the doubles themselves.
+	}
+	sync := &fakeMenuSync{}
+	disp := &fakeDisplay{}
+	a.SetMenuSync(sync)
+	a.SetModeDisplay(disp)
+	sync.clearMenuOps() // the install pushes are pinned above; only the change order matters
+
+	a.ToggleMode()              // EN → RU
+	a.SyncEngine(engine.NameEN) // a drift back: RU → EN
+
+	if got := sync.menuModes(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("menu mode pushes = %q, want exactly [ru en] — one per flip and per drift", got)
+	}
+	if got := disp.symbols(); !slices.Equal(got, []string{"ru", "en"}) {
+		t.Errorf("display pushes = %q, want exactly [ru en]", got)
+	}
+	got := sync.menuOps()
+	want := []string{opMenuRU, opDisplayRU, opMenuEN, opDisplayEN}
+	if !slices.Equal(got, want) {
+		t.Errorf("menu op order = %q, want exactly %q — the menu fires WITH the display, observer-last", got, want)
+	}
+}
+
+// The menu op-log labels of the order pin (the display-corpus form).
+const (
+	opMenuRU = "menu:ru"
+	opMenuEN = "menu:en"
+)
+
+// TestActor_MenuSyncApplySnapshotPushes pins the fold push: applySnapshot
+// hands the menu the APPLIED config truth — the autocorrect switch and the
+// raw key names — once per fold, whatever the document says.
+func TestActor_MenuSyncApplySnapshotPushes(t *testing.T) {
+	a, _ := wiredActor()
+	cfg := config.Defaults()
+	cfg.Autocorrect.Enabled = true
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	sync := &fakeMenuSync{}
+	a.SetMenuSync(sync)
+
+	a.ExpiryAt(expiryAfterWindow) // one applySnapshot fold
+
+	if got := sync.menuAC(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("autocorrect pushes = %v, want exactly [true]", got)
+	}
+	if got := sync.menuKeys(); !slices.Equal(got, []string{"shift_r|shift+ctrl_r|super+space"}) {
+		t.Errorf("key pushes = %q, want the raw config names of the defaults document", got)
+	}
+
+	// The document flips the switch off: the next fold pushes the applied
+	// false (the actor hands CONFIG truth, never a cache).
+	cfg.Autocorrect.Enabled = false
+	src.set(cfg)
+	a.ExpiryAt(expiryAfterWindow)
+	if got := sync.menuAC(); !slices.Equal(got, []bool{true, false}) {
+		t.Errorf("autocorrect pushes after the flip = %v, want exactly [true false]", got)
+	}
+}
+
+// TestActor_MenuSyncApplySnapshotPushesSound pins the sound push (plan
+// 07-05, the owner's default-ON verdict): a document WITHOUT the sound
+// section pushes true (the EffectiveEnabled reading), an explicit
+// enabled:false pushes false, and the status snapshot carries the same
+// truth for the `sound_enabled` token.
+func TestActor_MenuSyncApplySnapshotPushesSound(t *testing.T) {
+	a, _ := wiredActor()
+	cfg := config.Defaults()
+	cfg.Sound = config.Sound{} // the absent section: decodes as enabled (default ON)
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	sync := &fakeMenuSync{}
+	a.SetMenuSync(sync)
+
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sync.menuSound(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("sound pushes = %v, want exactly [true] — the absent section reads enabled", got)
+	}
+	if st := a.StatusSnapshot(); !st.SoundEnabled {
+		t.Error("status snapshot SoundEnabled = false after the fold, want true")
+	}
+
+	off := false
+	cfg.Sound = config.Sound{Enabled: &off}
+	src.set(cfg)
+	a.ExpiryAt(expiryAfterWindow)
+	if got := sync.menuSound(); !slices.Equal(got, []bool{true, false}) {
+		t.Errorf("sound pushes after the explicit off = %v, want exactly [true false]", got)
+	}
+	if st := a.StatusSnapshot(); st.SoundEnabled {
+		t.Error("status snapshot SoundEnabled = true after the explicit off, want false")
+	}
+}
+
+// TestActor_NilMenuSyncNoOp pins the nil-seam degradation: without
+// SetMenuSync every gesture works and every push point is a no-op — zero
+// panics, zero behavior drift.
+func TestActor_NilMenuSyncNoOp(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.AttachConfig(&reloadSource{cfg: config.Defaults()})
+
+	a.ToggleMode()
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"msg":"mode","to":"ru"`) {
+		t.Errorf("the flip did not happen without a menu sync; log:\n%s", buf.String())
+	}
+}
+
 // The autocorrect corpus of plan 06-06 (blocklist re-pinned by 07-02):
 // the word boundary of feedKey, the cheap-gate arming and the fail-closed
 // silence. The fixture app is a bridge-namespace literal distinct from

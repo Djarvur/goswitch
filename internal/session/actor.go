@@ -243,6 +243,13 @@ type Actor struct {
 	// mode change stays invisible to it. The display degrades itself — the
 	// actor adds no error handling around the call.
 	display ModeDisplay
+	// menuSync is the tray-menu state seam (plan 07-05): the MenuSync the
+	// daemon wiring installs via SetMenuSync; nil = no menu, every push
+	// stays a no-op. The menu degrades itself (the display precedent).
+	menuSync MenuSync
+	// soundEnabled is the applied sound switch folded from the snapshot
+	// (plan 07-05) — the EffectiveEnabled truth the status token serves.
+	soundEnabled bool
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -581,9 +588,14 @@ type Status struct {
 	AutoCorrectFired       int
 	AutoCorrectAbstained   int
 	AutoCorrectSkipReasons map[string]int
-	ConfigPath             string
-	ConfigValid            bool
-	ConfigError            string
+	// SoundEnabled is the applied sound switch (plan 07-05) — the
+	// EffectiveEnabled truth of the applied snapshot (an absent section
+	// reads ON, the owner's default), the `sound_enabled` status token the
+	// menu composition and the e2e oracle read.
+	SoundEnabled bool
+	ConfigPath   string
+	ConfigValid  bool
+	ConfigError  string
 }
 
 // configStatus is the optional status surface of a config source: the
@@ -818,6 +830,16 @@ func (a *Actor) SetModeDisplay(md ModeDisplay) {
 	}
 }
 
+// SetMenuSync installs the menu seam — the SetModeDisplay mirror (plan
+// 07-05). RED stub: stores the seam; the install push and the flip/fold
+// push points land in GREEN.
+func (a *Actor) SetMenuSync(ms MenuSync) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.menuSync = ms
+}
+
 // SyncEngine pulls the daemon under the FACTUAL active engine (05-04,
 // criterion 3): every GlobalEngineChanged on the daemon's ibus connection
 // and every FocusIn lands here with the observed wire name. The enum is
@@ -916,6 +938,30 @@ func (a *Actor) ToggleMode() {
 	defer a.mu.Unlock()
 
 	a.flipTo(oppositeMode(a.mode))
+}
+
+// SwitchMode flips the script mode to the NAMED target (plan 07-05): the
+// menu's EN/RU radio pair is ONE MORE GESTURE on the single flipTo
+// execution path (ADR-006) — never a second flip mechanism, never a
+// gsettings or SetGlobalEngine shortcut (the SWCH regression guard: the
+// D-36 record order and the flip guard discipline are flipTo's, untouched).
+// The same-target case lands on flipTo's no-op guard — never a duplicated
+// check; an unknown symbol is a silent no-op. RED stub: the flip lands in
+// GREEN.
+func (a *Actor) SwitchMode(_ string) {}
+
+// MenuSync is the tray-menu state seam (plan 07-05): the pushes the menu
+// snapshot needs to mirror the actor — the mode symbol and the applied
+// config truth. Defined at the point of use; the interface travels with
+// the consumer (the AppidSource precedent). The pushes ride the SAME
+// discipline as ModeDisplay: synchronous under the actor's mutex, the
+// implementation must stay quick (the menu dedupes identical values, so a
+// redundant push is a cheap no-op) and must never panic or block.
+type MenuSync interface {
+	SetMode(symbol string)
+	SetAutocorrectEnabled(on bool)
+	SetSoundEnabled(on bool)
+	SetKeys(tap, combo, chord string)
 }
 
 // emitter returns the attached emitter sink — the snapshot accessor of the
