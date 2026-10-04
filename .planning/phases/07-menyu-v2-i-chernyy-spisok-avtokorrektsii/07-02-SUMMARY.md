@@ -269,3 +269,10 @@ None - no external service configuration required.
 ---
 *Phase: 07-menyu-v2-i-chernyy-spisok-avtokorrektsii*
 *Completed: 2026-10-05*
+
+## Self-Check: PASSED
+
+- All 7 modified key-files exist on disk; SUMMARY.md exists.
+- All 6 commits verified in git log (8985e50, a7dac34, e7a0cb0, 6d0cc5d, 92380f6, 22067ad).
+- Commits measured from the plan ledger: `git rev-list --count b28862a..HEAD` = 6 (5 task commits + 1 SUMMARY commit), matching the Task Commits section.
+- Plan verification re-run on the committed tree: `mise run ci` exit 0; grep gates (SCHEMA-OK / EMPTY-PAT-OK / SOUND-SCHEMA-OK / CONSUMER-DOC-OK / SOUND-DOC-OK) all pass; `git diff` for load.go/watch.go is empty.
