@@ -4,14 +4,14 @@ milestone: v1.0.0
 current_phase: 07
 current_phase_name: Меню v2 и чёрный список автокоррекции
 status: executing
-stopped_at: Phase 6 complete, ready to plan Phase 4
-last_updated: "2026-10-04T20:33:30.817Z"
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-10-04T20:43:21.448Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 6 complete, transitioned to Phase 4
-state_head: 91ee078a3ade0171d909e1249f59b0d308d83a72
+last_activity_desc: Phase 07 execution started
+state_head: ea772c57ffc7d0b74af63eb04553934d79d7d9ae
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 51
   completed_plans: 43
 ---
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 06 — Система автокоррекции
+**Current focus:** Phase 07 — Меню v2 и чёрный список автокоррекции
 
 ## Current Position
 
-Phase: 07 (Меню v2 и чёрный список автокоррекции) — READY TO EXECUTE
-Plan: Not started
+Phase: 07 (Меню v2 и чёрный список автокоррекции) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-10-04 — Phase 6 complete, transitioned to Phase 4
+Last activity: 2026-10-04 — Phase 07 execution started
 
 Progress: [████████░░] 75%
 
@@ -108,6 +108,7 @@ Progress: [████████░░] 75%
 | Phase 06 P08 | 41min | 2 tasks | 7 files |
 | Phase 06 P09 | 25 min | 2 tasks | 5 files |
 | Phase 06 P10 | 16min | 2 tasks | 3 files |
+| Phase 07 P01 | 7 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -239,6 +240,8 @@ Recent decisions affecting current work:
 - [Phase 06]: G-6-1 closed by mechanism (b): lock-free AttachEngine (atomic emitter slot) — the deadline-under-mutex pin (05-03) kept and re-confirmed — The factory path must answer CreateEngine during a flip; freeing AttachEngine from a.mu removes the self-deadlock without touching the flip's D-36 record order or the wedge-guard deadline
 - [Phase 06]: G-6-1 live proof landed: e2e case flip-keystroke injects 'd' with NO pause after the daemon flip's mode record — 24/24 letters delivered across 4 consecutive runs (pre-fix probe lost 5/5) — The probe's mechanics raised to a stand oracle; the injection stays immediate, direction expectations pinned (en→ru 'в', ru→en 'd')
 - [Phase 06]: Journal audit post-fix: every switch_engine record INFO-form, zero deadline-abort WARNs in a full run, RTT mode→switch_engine 6.5–9.2 ms (median 8.32, n=8) vs the pre-fix WARN-on-every-flip picture — The 150 ms wedge-guard deadline is silent on a healthy flip — the engine factory answers during the await (06-09 lock-free AttachEngine)
+- [Phase 07]: Ревизия D-53 зафиксирована в спеке ДО кода (D-55, прецедент 06-01): SPEC §11 — третья датированная ревизия (blocklist: fire ⇔ enabled ∧ role-гейт ∧ NOT apps_blocklist; unknown-идентичность НЕ запрет; confirm blocklist-only, payload-stale; default off D-54) + ADR-007 amendment (датированный append, статус Accepted сохранён, слаг app-blocked) — SPEC-DELTA-OK: кодовые планы 07-02..07-07 строят на записанном контракте §11/ADR-007; аудит-трейл §11 цел (оба прежних вердикта + §10 bullet), ноль .go в дифе 07-01
+- [Phase 07]: Решение «Звуки при переключении» внесено в §11 ревизии 2026-10-04 ДО кода плана 07-08: секция sound — enabled по умолчанию включён + отдельное событие тона автокоррекции; тон на любой флип языка; воспроизведение субпроцессом canberra-gtk-play (paplay-фолбэк); отказ — только WARN; тумблер «Звук» в меню с persist по каноническому макету 287999c — D-55: решение о звуках записано в спеку до кода; зелёная итерация подтверждена mise run ci на docs-only дереве
 
 ### Pending Todos
 
@@ -271,6 +274,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-03T19:57:32.314Z
-Stopped at: Phase 6 complete, ready to plan Phase 4
+Last session: 2026-10-04T20:43:07.524Z
+Stopped at: Completed 07-01-PLAN.md
 Resume file: None
