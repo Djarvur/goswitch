@@ -3,10 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -153,5 +158,180 @@ func TestMain_WiringSyncAndReader(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("PostRegister never returned — the foreign-engine skip is stuck")
+	}
+}
+
+// adoptDefaultDocYAML is a complete valid document planted at the adopted
+// default path with a distinguishable tap window (555).
+const adoptDefaultDocYAML = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+  mode_switch_chord: super+space
+timeouts:
+  tap_window_ms: 555
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+autocorrect:
+  enabled: false
+  apps_blocklist: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// adoptExplicitDocYAML is the explicit -config competitor — same shape, a
+// distinguishable tap window (777).
+const adoptExplicitDocYAML = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+  mode_switch_chord: super+space
+timeouts:
+  tap_window_ms: 777
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+autocorrect:
+  enabled: false
+  apps_blocklist: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// writeAdoptDoc plants a document at path inside the temp user config dir.
+func writeAdoptDoc(t *testing.T, path, corpus string) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(corpus), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+// TestLoadConfigAdoptExisting pins the adopt branch for an EXISTING
+// default-path file: without -config the daemon loads it — the same
+// contract as an explicit -config (values, fromFile, the factual path).
+func TestLoadConfigAdoptExisting(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path := config.DefaultPath()
+	writeAdoptDoc(t, path, adoptDefaultDocYAML)
+
+	lc, err := loadConfig("")
+	if err != nil {
+		t.Fatalf("loadConfig with an existing default file: %v", err)
+	}
+	if !lc.fromFile {
+		t.Error("loadConfig reports defaults, want a file load — the adopt contract")
+	}
+	if lc.path != path {
+		t.Errorf("loaded path = %q, want the adopted default path %q", lc.path, path)
+	}
+	if lc.cfg.Timeouts.TapWindowMs != 555 {
+		t.Errorf("tap_window_ms = %d, want the file's 555 — the file content must apply", lc.cfg.Timeouts.TapWindowMs)
+	}
+}
+
+// TestLoadConfigAdoptAbsent pins the 04-02 contract under adopt: an absent
+// default file stays the green defaults start — the daemon watches the
+// default path but creates NOTHING at start (generation is a user action,
+// never startup).
+func TestLoadConfigAdoptAbsent(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path := config.DefaultPath()
+
+	lc, err := loadConfig("")
+	if err != nil {
+		t.Fatalf("loadConfig with an absent default file: %v", err)
+	}
+	if lc.fromFile {
+		t.Error("loadConfig reports a file load, want the defaults start")
+	}
+	if lc.path != path {
+		t.Errorf("watch path = %q, want the default path %q — the first toggle's file must be watchable", lc.path, path)
+	}
+	if lc.cfg.Timeouts.TapWindowMs != config.Defaults().Timeouts.TapWindowMs {
+		t.Errorf("tap_window_ms = %d, want the built-in default", lc.cfg.Timeouts.TapWindowMs)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stat after loadConfig = %v, want ErrNotExist — the start must not create the file", err)
+	}
+}
+
+// TestLoadConfigAdoptBroken pins the loud refusal (T-07-03-03): a broken
+// default-path file refuses the start with the Load error — silently
+// serving defaults would hide an on-disk/behavior divergence the user
+// cannot see any other way.
+func TestLoadConfigAdoptBroken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path := config.DefaultPath()
+	writeAdoptDoc(t, path, "{ not yaml")
+
+	_, err := loadConfig("")
+	if err == nil {
+		t.Fatal("loadConfig on a broken default file returned nil — the divergence went unnoticed")
+	}
+	if !strings.Contains(err.Error(), "decode config") {
+		t.Errorf("error %q does not carry the Load error — the refusal must name the cause", err)
+	}
+}
+
+// TestLoadConfigExplicitPriority pins the explicit -config contract
+// byte-as-today: with both files present the explicit one wins, and its
+// load is mandatory (fromFile).
+func TestLoadConfigExplicitPriority(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	writeAdoptDoc(t, config.DefaultPath(), adoptDefaultDocYAML)
+	explicit := filepath.Join(tmp, "explicit.yaml")
+	writeAdoptDoc(t, explicit, adoptExplicitDocYAML)
+
+	lc, err := loadConfig(explicit)
+	if err != nil {
+		t.Fatalf("loadConfig with an explicit -config: %v", err)
+	}
+	if !lc.fromFile {
+		t.Error("loadConfig reports defaults for an explicit -config, want a mandatory file load")
+	}
+	if lc.path != explicit {
+		t.Errorf("loaded path = %q, want the explicit path %q", lc.path, explicit)
+	}
+	if lc.cfg.Timeouts.TapWindowMs != 777 {
+		t.Errorf("tap_window_ms = %d, want the explicit file's 777 — the explicit -config is priority", lc.cfg.Timeouts.TapWindowMs)
+	}
+}
+
+// TestAdoptWatcherServesDefaultsOnAbsentFile pins the adopt+watch
+// construction: the watcher starts on the ABSENT default path (serving
+// the defaults through the adopt loader) so the file the first toggle
+// creates is picked up by the same watch — the non-nil watcher in the
+// absent-file scenario is the acceptance evidence.
+func TestAdoptWatcherServesDefaultsOnAbsentFile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	lc, err := loadConfig("")
+	if err != nil {
+		t.Fatalf("loadConfig with an absent default file: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // the watcher loop exits on ctx — goroutine hygiene
+
+	w, err := startConfigWatcher(ctx, lc, "")
+	if err != nil {
+		t.Fatalf("startConfigWatcher on the absent default path: %v", err)
+	}
+	if w == nil {
+		t.Fatal("watcher is nil — the adopt+watch contract requires an unconditional watcher")
+	}
+	if w.ConfigPath() != lc.path {
+		t.Errorf("watch path = %q, want the adopted default path %q", w.ConfigPath(), lc.path)
+	}
+	if got := w.Snapshot().Timeouts.TapWindowMs; got != config.Defaults().Timeouts.TapWindowMs {
+		t.Errorf("watcher snapshot tap_window_ms = %d, want the served defaults", got)
 	}
 }

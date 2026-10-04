@@ -56,25 +56,27 @@ func run(ctx context.Context, debug bool, configPath string) error {
 
 	logging.Setup(os.Stderr, debug)
 
-	cfg, err := loadConfig(configPath)
+	lc, err := loadConfig(configPath)
 	if err != nil {
 		return err
 	}
-	if configPath != "" {
+	if lc.fromFile {
 		// INFO contract (T-03-02-04): the path and the applied window only —
 		// never section content.
-		slog.Info("config loaded", "path", configPath, "tap_window_ms", cfg.Timeouts.TapWindowMs)
+		slog.Info("config loaded", "path", lc.path, "tap_window_ms", lc.cfg.Timeouts.TapWindowMs)
+	} else {
+		slog.Info("config defaults", "path", lc.path)
 	}
 	var watcher *config.Watcher
-	if configPath != "" {
-		w, werr := config.NewWatcher(ctx, configPath)
+	if lc.path != "" {
+		w, werr := startConfigWatcher(ctx, lc, configPath)
 		if werr != nil {
 			return fmt.Errorf("watch config: %w", werr)
 		}
 		watcher = w
 	}
 
-	actor := newActor(cfg, watcher)
+	actor := newActor(lc.cfg, watcher)
 	startCtl(ctx, actor, watcher)
 	if err := engine.Run(ctx, engineConfig(actor)); err != nil {
 		return fmt.Errorf("engine run: %w", err)
@@ -172,21 +174,37 @@ func reloadConfig(r ctlsvc.Reloader) {
 	slog.Info("config reloaded", "applied", msg)
 }
 
+// loadedConfig is loadConfig's explicit result: the effective config, the
+// factual file path (empty only in the no-HOME degenerate case) and
+// whether the values came from a file — the adopt+watch wiring consumes
+// all three; an explicit result, never global state.
+type loadedConfig struct {
+	cfg      config.Config
+	path     string
+	fromFile bool
+}
+
+// startConfigWatcher starts the hot-reload watcher on the FACTUAL config
+// path. RED stage: the old explicit-only wiring in the new shape.
+func startConfigWatcher(ctx context.Context, lc loadedConfig, explicit string) (*config.Watcher, error) {
+	return config.NewWatcher(ctx, lc.path)
+}
+
 // loadConfig resolves the startup configuration: an explicit -config must
 // load and validate (a refusal is a visible start error, never silent
 // defaults); without the flag the documented built-in defaults apply — the
 // tap window 300 ms of ADR-002 — so the Phase 2 behavior is preserved
 // unchanged (SWCH-04/D-35).
-func loadConfig(path string) (config.Config, error) {
+func loadConfig(path string) (loadedConfig, error) {
 	if path == "" {
-		return config.Defaults(), nil
+		return loadedConfig{cfg: config.Defaults()}, nil
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
-		return config.Config{}, fmt.Errorf("load config: %w", err)
+		return loadedConfig{}, fmt.Errorf("load config: %w", err)
 	}
 
-	return *cfg, nil
+	return loadedConfig{cfg: *cfg, path: path, fromFile: true}, nil
 }
 
 // newActor builds the session actor with the startup config applied (the
