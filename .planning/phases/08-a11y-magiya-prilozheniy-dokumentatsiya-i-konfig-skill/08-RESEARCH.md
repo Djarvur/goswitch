@@ -10,7 +10,7 @@ Phase 8 carries three backlog streams in dependency order: (1) a config section 
 
 The load-bearing discovery of this research: **`org.gnome.desktop.interface toolkit-accessibility` is read by Chromium/Electron ONCE at app startup and never watched live** — verified both by reading Chromium's `ui/accessibility/platform/atk_util_auralinux.cc` (main branch) and by a live experiment on the target desktop (flipping the key while ZCode was running did not grow its a11y tree within seconds). The owner's manual ZCode precedent therefore equals «set the key, then the app picks it up at its next start». Consequences for design: the daemon's reconcile sets a *persistent* switch and guarantees trees only for apps *started after* enabling; docs must state the restart semantics. A second lever exists — `org.a11y.Status.IsEnabled` on the a11y bus — and was **live-verified settable without root** via a plain D-Bus Properties.Set, but on this GNOME 46 it is *decoupled* from the gsettings key (flipping the key did not move the property; the running `at-spi-bus-launcher` synced neither way).
 
-Stream-2 facts: README.ru.md (217 lines) is materially stale against README.md (410 lines) — the entire v1.1.0 Autocorrect block (7 subsections incl. «Where autocorrect stays silent», «Switch sounds», GTK3 limitation) and «Input sources and the mode indicator» exist only in English; CONFIG.md is currently fully English (D-8-9 makes it russian-first). Stream-3 mechanics: CONFIG.md's key table is a strictly formatted markdown table (the single source D-8-10 names), so the generator parses that table and renders a marked region of `.zcode/skills/goswitch-config/SKILL.md`, gated by the project's existing `tidy-diff`-style discipline.
+Stream-2 facts: README.ru.md (217 lines) is materially stale against README.md (410 lines) — the entire v1.1.0 Autocorrect block (7 subsections incl. «Where autocorrect stays silent», «Switch sounds», GTK3 limitation) and «Input sources and the mode indicator» exist only in English; CONFIG.md is currently fully English (D-8-9 makes it russian-first). Stream-3 mechanics: CONFIG.md's key table is a strictly formatted markdown table (the single source D-8-10 names), so the generator parses that table and renders a marked region of `skills/goswitch-config/SKILL.md`, gated by the project's existing `tidy-diff`-style discipline.
 
 **Primary recommendation:** Stream 1 ships the minimal magic of D-8-6 — a new `a11y` config section (regex app list, zero-value-off like `autocorrect`), a daemon-side reconciler that idempotently sets the global gsettings key (read-verify-then-set, no-pipes subprocess, outside the actor mutex) plus optionally the session-scoped IsEnabled D-Bus belt; the gsettings key joins `install-state.json` for the uninstall revert. Per-app `.desktop` overrides are documented but recommended OUT of the v1 diff (the global key covers the owner's ZCode case after app restart). Spec-delta lands before code (D-55).
 
@@ -62,7 +62,7 @@ Stream-2 facts: README.ru.md (217 lines) is materially stale against README.md (
 - **D-8-10:** Синхрон с доками — **single source**: конфиг-раздел SKILL.md генерируется
   из docs/CONFIG.md mise-задачей (рассинхрон невозможен); разделы процедур и диагностики
   — ручной каркас, CI lint-гейт сверяет ключи/дефолты.
-- **D-8-11:** Расположение — `.zcode/skills/goswitch-config/SKILL.md` (project skill).
+- **D-8-11:** Расположение — `skills/goswitch-config/SKILL.md` (project skill).
 
 ### Claude's Discretion
 
@@ -115,7 +115,7 @@ No new dependencies — the phase runs entirely on the existing stack plus OS to
 | `busctl`/godbus for org.a11y.Bus | at-spi2-core 2.52 [VERIFIED: live, `at-spi-bus-launcher` running] | IsEnabled belt (optional) | Live-verified settable without root |
 | python3-gi + Atspi | 3.48.2 / 2.52.0 [VERIFIED: live dpkg per STACK.md] | Optional manual/executor a11y-tree probes (not product code) | e2e stand convention (`test/e2e/focus_helper.py` uses `Atspi.get_desktop(0)`) |
 | mise tasks | mise.toml | `skill-gen` task + gates | Directive 3: mise, not make |
-| Agent Skills format | SKILL.md + YAML frontmatter | `.zcode/skills/goswitch-config/SKILL.md` | [CITED: agentskills.io/specification] + in-repo precedent |
+| Agent Skills format | SKILL.md + YAML frontmatter | `skills/goswitch-config/SKILL.md` | [CITED: agentskills.io/specification] + in-repo precedent |
 
 ### Alternatives Considered
 
@@ -186,7 +186,7 @@ internal/install/      # + snapshot field in installState, restore step in Unins
 internal/session/      # + one folded field / async trigger in applySnapshot (or wiring in cmd/goswitchd)
 cmd/goswitchd/         # wire reconciler beside activate.IfOwned (self-reactivation precedent)
 cmd/skillgen/          # NEW dev tool: CONFIG.md table → SKILL.md marked region (or internal/skillgen)
-.zcode/skills/goswitch-config/SKILL.md   # frame (hand) + generated region (marked)
+skills/goswitch-config/SKILL.md   # frame (hand) + generated region (marked)
 .github/workflows/     # unchanged — the gate rides existing `mise run test`/tidy-diff shape
 ```
 

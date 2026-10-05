@@ -4,7 +4,7 @@
 **Files analyzed:** 16 (7 stream-1 code files + 4 stream-2 docs files + 5 stream-3 files)
 **Analogs found:** 15 / 16 (the only no-analog item is the SKILL.md — no *tracked* in-repo precedent exists; format comes from RESEARCH.md)
 
-**Tracked-source gate:** every analog path below was verified with `git ls-files` (tracked). Exception: `.zcode/skills/gsd-ns-context/SKILL.md` is **untracked** (the whole `.zcode/` dir is `??` untracked; not gitignored) — it is cited as a *format reference only*, never a copy-from target. The new `.zcode/skills/goswitch-config/SKILL.md` MUST be `git add`ed (no `.gitignore` change needed) or the D-8-10 CI sync gate would check an invisible file.
+**Tracked-source gate:** every analog path below was verified with `git ls-files` (tracked). Exception: `.zcode/skills/gsd-ns-context/SKILL.md` is **untracked** (the whole `.zcode/` dir is `??` untracked; not gitignored) — it is cited as a *format reference only*, never a copy-from target. The new `skills/goswitch-config/SKILL.md` MUST be `git add`ed (no `.gitignore` change needed) or the D-8-10 CI sync gate would check an invisible file.
 
 ## File Classification
 
@@ -23,7 +23,7 @@
 | `README.ru.md` (absorbed into README.md / removed) | docs | content | — | rename surface (research «Docs-file rename surface») |
 | `docs/CONFIG.md` (modify — russian-first + a11y rows, «six»→«seven») | docs | content | itself — the key table (also the stream-3 generator source) | self |
 | `cmd/skillgen/` or `internal/skillgen/` (NEW — CONFIG.md → SKILL.md region) | utility (dev tool) | transform | `layouts/dictgen/main.go` (deterministic committed-golden generator) | role-match |
-| `.zcode/skills/goswitch-config/SKILL.md` (NEW — hand frame + generated region) | docs (skill) | content | `.zcode/skills/gsd-ns-context/SKILL.md` — UNTRACKED, format reference only | no tracked analog |
+| `skills/goswitch-config/SKILL.md` (NEW — hand frame + generated region) | docs (skill) | content | `.zcode/skills/gsd-ns-context/SKILL.md` — UNTRACKED, format reference only | no tracked analog |
 | `mise.toml` (modify — skill-gen task) | config (build tasks) | batch | itself — `[tasks.dictgen-regen]` (dev-only regeneration precedent) | exact |
 | skillgen golden test (NEW) | test | transform | `layouts/dictgen/main_test.go` (byte-determinism + header-marker checks) | role-match |
 
@@ -386,11 +386,11 @@ skillgen's equivalent markers: `goswitch-config:generated BEGIN/END` region sent
 // deterministic.
 ```
 
-Differences for skillgen: input is `docs/CONFIG.md`'s key table (the strictly formatted markdown table, CONFIG.md lines 45-65 — parse THAT, it is the D-8-10 single source), output is the marked region of `.zcode/skills/goswitch-config/SKILL.md`. Hard-error on malformed table rows, never skip. Gate = a Go test that regenerates and compares against the committed file (research Pattern 5, option (a) — needs no workflow change; pr-sanity already runs `mise run test`).
+Differences for skillgen: input is `docs/CONFIG.md`'s key table (the strictly formatted markdown table, CONFIG.md lines 45-65 — parse THAT, it is the D-8-10 single source), output is the marked region of `skills/goswitch-config/SKILL.md`. Hard-error on malformed table rows, never skip. Gate = a Go test that regenerates and compares against the committed file (research Pattern 5, option (a) — needs no workflow change; pr-sanity already runs `mise run test`).
 
 ---
 
-### `.zcode/skills/goswitch-config/SKILL.md` — NEW (docs/skill)
+### `skills/goswitch-config/SKILL.md` — NEW (docs/skill)
 
 **No tracked analog.** `.zcode/skills/gsd-ns-context/SKILL.md` (untracked) shows only the frontmatter shape (lines 1-7):
 
@@ -482,7 +482,7 @@ The `skillgen-regen` task follows this form (`go run ./cmd/skillgen` or equivale
 
 | File | Role | Data Flow | Reason |
 |------|------|-----------|--------|
-| `.zcode/skills/goswitch-config/SKILL.md` | docs (skill) | content | No *tracked* in-repo SKILL.md exists (`.zcode/` is fully untracked). Format source: RESEARCH.md (agentskills.io frontmatter: `name` + `description`); untracked `.zcode/skills/gsd-ns-context/SKILL.md` is a shape reference only. Planner must add the file to git explicitly. |
+| `skills/goswitch-config/SKILL.md` | docs (skill) | content | No *tracked* in-repo SKILL.md exists (`.zcode/` is fully untracked). Format source: RESEARCH.md (agentskills.io frontmatter: `name` + `description`); untracked `.zcode/skills/gsd-ns-context/SKILL.md` is a shape reference only. Planner must add the file to git explicitly. |
 | `README.md` / `README.en.md` restructure | docs | content | Pure bilingual content work; anchors are the heading maps above, not code. |
 
 ## Metadata

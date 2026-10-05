@@ -84,7 +84,7 @@ source: беклог владельца (3 todo от 2026-10-05, дословн�
   — ручной каркас, CI lint-гейт сверяет ключи/дефолты. Todo даёт выбор «генерация из
   CONFIG.md или lint-гейт» — взято первое с гейтом для ручной части. (Рекомендация
   агента; точную механику уточняет планировщик.)
-- **D-8-11:** Расположение — `.zcode/skills/goswitch-config/SKILL.md` (project skill).
+- **D-8-11:** Расположение — `skills/goswitch-config/SKILL.md` (project skill).
   (Рекомендация агента.)
 
 ### Claude's Discretion
