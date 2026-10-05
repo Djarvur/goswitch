@@ -28,6 +28,15 @@ const (
 // task 2's fallback.
 const reasonStartFailed = "start-failed"
 
+// The tone-cache shape of the paplay fallback (the bundled tones live in
+// the user's cache dir — owner-private directory, owner-only files; the
+// GREEN of task 2 owns the synthesis itself).
+const (
+	cacheSubdir  = "goswitch"
+	toneDirPerm  = 0o700
+	toneFilePerm = 0o600
+)
+
 // playProc is one spawned player child — the corpus seam (the daemon
 // launcher's procStarter form): Start brings the player up, Wait reaps it.
 type playProc interface {
