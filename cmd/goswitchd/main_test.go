@@ -783,3 +783,60 @@ func TestNewActor_SoundHotReloadGating(t *testing.T) {
 		t.Errorf("flip tones after the re-enabled reload = %d, want 1 — hot reload re-arms the tones", got)
 	}
 }
+
+// TestNewActor_StartupFoldInForce pins the startup fold (plan 07-06, the
+// restart-survival pin of the menu-v2 case): a daemon built on a LOADED
+// document reports the document truth from the FIRST status read — the
+// fold the first key event would run runs at startup, never a stale off
+// (the live finding: the restart step saw autocorrect_enabled=false and
+// sound_enabled=false against a true/true document on disk).
+func TestNewActor_StartupFoldInForce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	const doc = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: false
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: true
+  apps_blocklist: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+sound:
+  enabled: true
+`
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatalf("write config document: %v", err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("load config document: %v", err)
+	}
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	w, err := config.NewWatcher(ctx, path)
+	if err != nil {
+		t.Fatalf("create watcher: %v", err)
+	}
+
+	actor := newActor(*cfg, w)
+	st := actor.StatusSnapshot()
+	if !st.AutoCorrectEnabled {
+		t.Errorf("autocorrect option at startup = false, want the document truth true — the apply must not wait for a key event")
+	}
+	if !st.SoundEnabled {
+		t.Errorf("sound option at startup = false, want the document truth true")
+	}
+}
