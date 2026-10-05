@@ -405,21 +405,25 @@ description: Настройка goswitch — все секции config.yaml, go
 | A6 | `QT_ACCESSIBILITY=1` env enables Qt a11y (Telegram) at its start | Code Examples | Only if snap/Qt overrides get implemented; live check belongs to that work |
 | A7 | ZCode's manual precedent = «key set + ZCode restarted» (the exact manual steps are the owner's memory; todo says «как сделали вручную») | Summary | If the owner did something else (e.g. flag), the mechanism map still holds — the key is source-verified as a Chromium startup input regardless |
 
-## Open Questions
+## Open Questions (RESOLVED — dispositions locked by plan adoption, 2026-10-05)
 
 1. **Who snapshots the pre-apply key value — install or the daemon?**
    - What we know: install-state.json is the restore contract; daemon applies (D-8-3); uninstall reverts (D-8-4).
    - What's unclear: the canonical flow (install before daemon) favors install; a daemon-maintained state file covers installs older than this field.
    - Recommendation: extend `saveState` (Pattern 3) AND treat a missing field as WARN+skip in uninstall. Planner decides the exact split.
+   - RESOLVED (adopted by plan 08-04): install extends `saveState` — the pre-apply key value is snapshotted into install-state.json at install; uninstall restores only-if-present (missing field = WARN + skip, never "restore false"); the daemon keeps no state file of its own.
 2. **Does the v1 diff include per-app `.desktop` overrides?**
    - What we know: D-8-6 says «опциональные»; the global key covers the ZCode case after app restart; overrides carry the staleness pitfall.
    - Recommendation: document the mechanism (Code Examples), keep the v1 diff to the global key + belt. Owner confirms at verify gate.
+   - RESOLVED (adopted by plans 08-01 + 08-06): the v1 diff carries the global key + belt only; the §4 revision (08-01) fixes "mechanism documented, outside the v1 diff"; docs/CONFIG.md (08-06) carries the manual override recipe with staleness warnings — no automation in v1.
 3. **Ship the IsEnabled belt?**
    - What we know: one godbus call, no root, live-verified; session-scoped so no revert needed; helps IsEnabled-only consumers and (assumed) snap clients.
    - Recommendation: yes — it is one idempotent call with no revert debt.
+   - RESOLVED (adopted by plan 08-03): the belt ships — exported NewDBusStatusSetter() godbus adapter sets org.a11y.Status.IsEnabled=true on every activation episode; session-scoped (A5), no revert debt.
 4. **SKILL.md language.**
    - What we know: D-8-9 makes CONFIG.md russian-first; the generated section inherits its source language.
    - Recommendation: russian-first, consistent with its generator source.
+   - RESOLVED (adopted by plan 08-08): SKILL.md is russian-first; the generated region inherits its source language (docs/CONFIG.md after 08-06); recorded in the plan's assumptions.
 
 ## Environment Availability
 
