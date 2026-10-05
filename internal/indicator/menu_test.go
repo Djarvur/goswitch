@@ -125,8 +125,8 @@ func drainEmits(em *fakeEmitter) {
 // order), the five grey macro info rows with live key names (the
 // underscores doubled — Pitfall 1), two separators, the two standard items
 // (Settings, Reload) and the two GREY live info rows — About (the build
-// identity) and Status (the compact snapshot summary, owner UAT
-// 2026-10-05) — every id pinned by constant, the (ia{sv}av) wire signature
+// identity) and Status (the compact mode+counter row, owner UAT
+// 2026-10-05 trim) — every id pinned by constant, the (ia{sv}av) wire signature
 // and the depth-ignoring flat shape intact.
 func TestMenuLayout(t *testing.T) {
 	m, _ := menuFixture(t)
@@ -161,7 +161,7 @@ func TestMenuLayout(t *testing.T) {
 		{menuIDSep2, "", menuTypeSeparator, true, true, "", 0},
 		{menuIDSettings, labelSettings, menuTypeStandard, true, true, "", 0},
 		{menuIDAbout, "goswitch dev", menuTypeStandard, false, true, "", 0},
-		{menuIDStatus, "RU · автокоррекция вкл · звук вкл · испр. 0", menuTypeStandard, false, true, "", 0},
+		{menuIDStatus, "RU · испр. 0", menuTypeStandard, false, true, "", 0},
 		{menuIDReload, labelReload, menuTypeStandard, false, true, "", 0},
 	}
 	if len(root.Kids) != len(wantKids) {
@@ -353,10 +353,10 @@ func TestMenuSignalFormPins(t *testing.T) {
 }
 
 // TestMenuToggleAndVersionDeltas pins the push discipline of the toggles
-// and the version: each toggle setter emits exactly one signal with its
-// ornament delta plus the Status row's label delta (the summary follows the
-// applied values — owner UAT 2026-10-05); the version emits exactly the
-// About row's label delta.
+// and the version: each toggle setter emits exactly one signal with ONLY
+// its own ornament delta — the Status row does not follow the toggles
+// (owner UAT 2026-10-05 trim: their states are visible as the ornaments
+// right above); the version emits exactly the About row's label delta.
 func TestMenuToggleAndVersionDeltas(t *testing.T) {
 	em := &fakeEmitter{}
 	m := newMenu(Callbacks{}, em)
@@ -368,12 +368,12 @@ func TestMenuToggleAndVersionDeltas(t *testing.T) {
 		t.Fatalf("toggle pushes emitted %d signals, want exactly 2", len(calls))
 	}
 	first := signalDeltas(t, calls[0])
-	if len(first) != 2 || first[0].ID != menuIDACToggle || first[1].ID != menuIDStatus {
-		t.Errorf("autocorrect deltas = %v, want ids %d then %d", calls[0].args[0], menuIDACToggle, menuIDStatus)
+	if len(first) != 1 || first[0].ID != menuIDACToggle {
+		t.Errorf("autocorrect deltas = %v, want exactly id %d", calls[0].args[0], menuIDACToggle)
 	}
 	second := signalDeltas(t, calls[1])
-	if len(second) != 2 || second[0].ID != menuIDSoundToggle || second[1].ID != menuIDStatus {
-		t.Errorf("sound deltas = %v, want ids %d then %d", calls[1].args[0], menuIDSoundToggle, menuIDStatus)
+	if len(second) != 1 || second[0].ID != menuIDSoundToggle {
+		t.Errorf("sound deltas = %v, want exactly id %d", calls[1].args[0], menuIDSoundToggle)
 	}
 	signalRemoved(t, calls[0])
 
@@ -393,9 +393,10 @@ func TestMenuToggleAndVersionDeltas(t *testing.T) {
 }
 
 // TestMenuStatusRowDeltas pins the Status info row's live label (owner UAT
-// 2026-10-05): the corrections push emits exactly one Status label delta
-// with the fresh count, identical values emit nothing, and the served row
-// renders the snapshot compactly — mode, both toggles, the counter.
+// 2026-10-05, trimmed by the same day's verdict): the corrections push
+// emits exactly one Status label delta with the fresh count, identical
+// values emit nothing, and the served row renders the snapshot compactly —
+// mode and counter only (the toggles' states live in the ornaments above).
 func TestMenuStatusRowDeltas(t *testing.T) {
 	em := &fakeEmitter{}
 	m := newMenu(Callbacks{}, em)
@@ -427,7 +428,7 @@ func TestMenuStatusRowDeltas(t *testing.T) {
 	if derr != nil || len(props) != 1 {
 		t.Fatalf("GetGroupProperties(Status) = (%v, %v), want one entry", props, derr)
 	}
-	want := "RU · автокоррекция выкл · звук вкл · испр. 5"
+	want := "RU · испр. 5"
 	if label, _ := props[0].Props[menuPropLabel].Value().(string); label != want {
 		t.Errorf("Status label = %q, want %q", label, want)
 	}
@@ -494,7 +495,7 @@ func TestMenuNilEmitterDegradation(t *testing.T) {
 	if derr != nil || len(props) != 1 {
 		t.Fatalf("GetGroupProperties(Status) = (%v, %v), want one entry", props, derr)
 	}
-	want := "RU · автокоррекция вкл · звук выкл · испр. 7"
+	want := "RU · испр. 7"
 	if label, _ := props[0].Props[menuPropLabel].Value().(string); label != want {
 		t.Errorf("Status label without an emitter = %q, want %q", label, want)
 	}

@@ -221,8 +221,9 @@ func (m *Menu) SetMode(symbol string) {
 
 // SetAutocorrectEnabled installs the applied autocorrect value — the
 // applySnapshot fold and the click composition's push. One toggle-state
-// delta plus the Status row's label (the summary follows the applied
-// value), no revision bump.
+// delta, no revision bump — the Status row does NOT follow it (owner UAT
+// 2026-10-05 trim: the toggle states are visible as the ornaments right
+// above; only the mode and the corrections counter ride the summary).
 func (m *Menu) SetAutocorrectEnabled(on bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -232,17 +233,15 @@ func (m *Menu) SetAutocorrectEnabled(on bool) {
 	}
 	m.acEnabled = on
 	m.emitSignal(signalItemsPropsUpdated,
-		[]menuItemProps{
-			m.stateDelta(menuIDACToggle, on),
-			m.labelDelta(menuIDStatus),
-		},
+		[]menuItemProps{m.stateDelta(menuIDACToggle, on)},
 		[]removedProps{})
 }
 
 // SetSoundEnabled installs the applied sound value — the EffectiveEnabled
 // truth of the applied snapshot (an absent section reads ON, the owner's
 // default) pushed by the same fold, and the click composition's push. One
-// toggle-state delta plus the Status row's label, no revision bump.
+// toggle-state delta, no revision bump — the Status row does NOT follow it
+// (the owner UAT trim, the SetAutocorrectEnabled comment).
 func (m *Menu) SetSoundEnabled(on bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -252,10 +251,7 @@ func (m *Menu) SetSoundEnabled(on bool) {
 	}
 	m.soundEnabled = on
 	m.emitSignal(signalItemsPropsUpdated,
-		[]menuItemProps{
-			m.stateDelta(menuIDSoundToggle, on),
-			m.labelDelta(menuIDStatus),
-		},
+		[]menuItemProps{m.stateDelta(menuIDSoundToggle, on)},
 		[]removedProps{})
 }
 
@@ -665,8 +661,10 @@ func aboutLabel(v string) string {
 }
 
 // statusLabel renders the Status info row — the compact live summary the
-// owner UAT moved into the menu (2026-10-05): the mode, both toggles'
-// applied values and the completed-corrections counter. The setters keep
+// owner UAT moved into the menu (2026-10-05) and trimmed by the same day's
+// second verdict: the toggles' states are visible as their ornaments right
+// above, so the row carries only the active mode and the
+// completed-corrections counter («<MODE> · испр. <N>»). The setters keep
 // it current through the macro rows' delta mechanism; the values carry no
 // underscores, so the mnemonic doubling never applies.
 func (m *Menu) statusLabel() string {
@@ -674,13 +672,6 @@ func (m *Menu) statusLabel() string {
 	if m.mode == symbolRU {
 		mode = labelRU
 	}
-	ac, snd := "выкл", "выкл"
-	if m.acEnabled {
-		ac = "вкл"
-	}
-	if m.soundEnabled {
-		snd = "вкл"
-	}
 
-	return fmt.Sprintf("%s · автокоррекция %s · звук %s · испр. %d", mode, ac, snd, m.corrections)
+	return fmt.Sprintf("%s · испр. %d", mode, m.corrections)
 }
