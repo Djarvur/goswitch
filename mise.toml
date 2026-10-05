@@ -214,3 +214,10 @@ run = "go run ./test/e2e -case menu-v2"
 [tasks.dictgen-regen]
 description = "regen: dictgen — пересобрать golden-словари/триграммы из системных hunspell (dev-only; CI гоняет только goldens)"
 run = "go generate ./layouts"
+
+# Skill region regeneration (08-08): a dev-only task — CI never regenerates
+# it: CI гоняет только golden-тест CommittedFileInSync по закоммиченному
+# файлу (D-8-10).
+[tasks.skillgen-regen]
+description = "regen: skillgen — пересобрать регион SKILL.md из docs/CONFIG.md (dev-only; CI гоняет только golden-тест)"
+run = "go run ./cmd/skillgen"
