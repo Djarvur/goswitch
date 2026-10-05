@@ -4629,12 +4629,13 @@ func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
 // recorded under a mutex, with an op-log hook the order pins interleave
 // against the display's.
 type fakeMenuSync struct {
-	mu     sync.Mutex
-	modes  []string
-	ac     []bool
-	sound  []bool
-	keys   []string
-	onMode func(symbol string)
+	mu          sync.Mutex
+	modes       []string
+	ac          []bool
+	sound       []bool
+	keys        []string
+	corrections []int
+	onMode      func(symbol string)
 }
 
 // SetMode records the mode push.
@@ -4669,6 +4670,14 @@ func (f *fakeMenuSync) SetKeys(tap, combo, chord string) {
 	f.mu.Unlock()
 }
 
+// SetCorrections records the corrections-counter push (owner UAT
+// 2026-10-05: the Status info row renders the live count).
+func (f *fakeMenuSync) SetCorrections(n int) {
+	f.mu.Lock()
+	f.corrections = append(f.corrections, n)
+	f.mu.Unlock()
+}
+
 // menuModes snapshots the recorded mode pushes.
 func (f *fakeMenuSync) menuModes() []string {
 	f.mu.Lock()
@@ -4699,6 +4708,14 @@ func (f *fakeMenuSync) menuKeys() []string {
 	defer f.mu.Unlock()
 
 	return append([]string(nil), f.keys...)
+}
+
+// menuCorrections snapshots the recorded corrections-counter pushes.
+func (f *fakeMenuSync) menuCorrections() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]int(nil), f.corrections...)
 }
 
 // TestActor_SwitchModeFlipsToTarget pins the radio pair's gesture (plan
@@ -4773,8 +4790,9 @@ func TestActor_MenuSyncSetModeOnFlip(t *testing.T) {
 }
 
 // TestActor_MenuSyncApplySnapshotPushes pins the fold push: applySnapshot
-// hands the menu the APPLIED config truth — the autocorrect switch and the
-// raw key names — once per fold, whatever the document says.
+// hands the menu the APPLIED config truth — the autocorrect switch, the
+// raw key names and the corrections counter (the Status row's live value,
+// owner UAT 2026-10-05) — once per fold, whatever the document says.
 func TestActor_MenuSyncApplySnapshotPushes(t *testing.T) {
 	a, _ := wiredActor()
 	cfg := config.Defaults()
@@ -4791,6 +4809,9 @@ func TestActor_MenuSyncApplySnapshotPushes(t *testing.T) {
 	}
 	if got := msync.menuKeys(); !slices.Equal(got, []string{"shift_r|shift+ctrl_r|super+space"}) {
 		t.Errorf("key pushes = %q, want the raw config names of the defaults document", got)
+	}
+	if got := msync.menuCorrections(); !slices.Equal(got, []int{0, 0}) {
+		t.Errorf("corrections pushes = %v, want the install push then the fold push, both 0", got)
 	}
 
 	// The document flips the switch off: the next fold pushes the applied

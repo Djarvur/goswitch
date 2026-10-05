@@ -91,13 +91,6 @@ func run(ctx context.Context, debug bool, configPath string) error {
 	return nil
 }
 
-// The org.freedesktop.Notifications surface the status menu item posts
-// through — pure D-Bus on the SAME ctl connection, no subprocess.
-const (
-	notificationName = "org.freedesktop.Notifications"
-	notificationPath = dbus.ObjectPath("/org/freedesktop/Notifications")
-)
-
 // startCtl runs the control service on the session bus — the daemon's
 // SECOND godbus connection (the engine rides the private IBus socket,
 // this one the session bus), started and stopped on the daemon's signal
@@ -129,15 +122,18 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 		// through the 07-03 writer (snapshot → invert → write → menu push →
 		// synchronous reload; the 200 ms echo re-applies the same values
 		// harmlessly), «Настройки…» ensures the document then xdg-opens it
-		// no-pipes, «О программе» posts the mode+version notification
-		// (counts/states only — T-03-06-03), «Перечитать конфиг» drives the
-		// watcher's Reload and is served greyed only when no config path
-		// resolved (the degenerate no-HOME case). The menu's INITIAL state
-		// rides the STARTUP config (the truth the actor re-folds per event)
-		// and SetMenuSync's install push shows the current mode. The
-		// supervisor rides the serve context OnConn receives — the tray
-		// dies with the daemon, and the icon self-heals when the shell's
-		// watcher appears late or evicts the item.
+		// no-pipes, and «Перечитать конфиг» drives the watcher's Reload and
+		// is served greyed only when no config path resolved (the degenerate
+		// no-HOME case). The «goswitch <версия>» and «Статус» rows are GREYED
+		// LIVE INFO ROWS (owner UAT 2026-10-05): the desktop notifications
+		// nobody saw are gone — the version and the mode+toggles+counter
+		// summary render straight in the menu (counts/states only —
+		// T-03-06-03), kept current by the SetMenuSync pushes. The menu's
+		// INITIAL state rides the STARTUP config (the truth the actor
+		// re-folds per event) and SetMenuSync's install push shows the
+		// current mode. The supervisor rides the serve context OnConn
+		// receives — the tray dies with the daemon, and the icon self-heals
+		// when the shell's watcher appears late or evicts the item.
 		deps.OnConn = func(connCtx context.Context, conn *dbus.Conn) error {
 			// The menu rides an ATOMIC slot (WR-01): Attach exports the menu
 			// object BEFORE `item.Menu()` is stored, so a click's dispatch
@@ -167,12 +163,10 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			toggles := newMenuToggles(actor, &menuSlot, cfgPath, toggleReload)
 			cb := indicator.Callbacks{
 				Toggle:            actor.ToggleMode,
-				Status:            func() { notifyStatus(conn, actor) },
 				Switch:            actor.SwitchMode,
 				ToggleAutocorrect: toggles.ac.flip,
 				ToggleSound:       toggles.sound.flip,
 				Settings:          func() { editor.open(cfgPath) },
-				About:             func() { notifyStatus(conn, actor) },
 			}
 			if syncReload != nil {
 				cb.Reload = syncReload
@@ -250,24 +244,6 @@ func newMenuToggles(
 			},
 			reload: syncReload,
 		},
-	}
-}
-
-// notifyStatus posts ONE desktop notification with the current mode and the
-// build version from the actor's snapshot — counts/states only, never user
-// text (T-03-06-03 canon). An error is a WARN, never a panic: the
-// notification daemon is a same-session, same-uid surface, and its failure
-// costs nothing but the message (the recover shim around menu dispatch
-// bounds whatever else escapes).
-func notifyStatus(conn *dbus.Conn, actor *session.Actor) {
-	st := actor.StatusSnapshot()
-	body := "Mode: " + st.Mode + "\nVersion: " + st.Version
-	call := conn.Object(notificationName, notificationPath).
-		Call("org.freedesktop.Notifications.Notify", 0,
-			"goswitch", uint32(0), "", "goswitch", body,
-			[]string{}, map[string]dbus.Variant{}, int32(-1))
-	if call.Err != nil {
-		slog.Warn("status notification failed", "component", "tray indicator", "error", call.Err)
 	}
 }
 

@@ -75,8 +75,6 @@ const (
 	labelACToggle    = "Автокоррекция"
 	labelSoundToggle = "Звук"
 	labelSettings    = "Настройки…"
-	labelAbout       = "О программе"
-	labelStatus      = "Статус"
 	labelReload      = "Перечитать конфиг"
 
 	// The macro-row wrappers (canonical layout, research A4): RU text around
@@ -140,6 +138,7 @@ type Menu struct {
 	mode         string // "en"/"ru" — the radio pair's mark
 	acEnabled    bool   // the autocorrect toggle's applied value
 	soundEnabled bool   // the sound toggle's applied value (default ON)
+	corrections  int    // the completed-corrections counter the Status row renders
 	tapKey       string // the RAW config names — the menu renders (mnemonics doubled)
 	wordCombo    string
 	modeChord    string
@@ -151,8 +150,9 @@ type Menu struct {
 
 // newMenu builds the menu with its startup snapshot: EN active (ADR-001 —
 // the install push corrects any skew), sound ON (the owner's default-ON
-// verdict — an absent section reads enabled), autocorrect OFF (D-54) and
-// the revision at the base the first published layout carries.
+// verdict — an absent section reads enabled), autocorrect OFF (D-54), the
+// corrections counter at zero and the revision at the base the first
+// published layout carries.
 func newMenu(cb Callbacks, em Emitter) *Menu {
 	return &Menu{
 		cb:           cb,
@@ -200,7 +200,8 @@ func (m *Menu) Set(iface, property string, _ dbus.Variant) *dbus.Error {
 // (observer-last, the ModeChanged mirror): the radio pair re-marks itself
 // from the same truth the icon uses. An identical value is a silent no-op
 // (the actor pushes per record, the menu dedupes). One signal carries BOTH
-// radio deltas and an empty removed slice (Pitfall 7).
+// radio deltas, the Status row's label delta (the mode rides the summary
+// too — owner UAT 2026-10-05) and an empty removed slice (Pitfall 7).
 func (m *Menu) SetMode(symbol string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -213,13 +214,15 @@ func (m *Menu) SetMode(symbol string) {
 		[]menuItemProps{
 			m.stateDelta(menuIDEN, m.mode == symbolEN),
 			m.stateDelta(menuIDRU, m.mode == symbolRU),
+			m.labelDelta(menuIDStatus),
 		},
 		[]removedProps{})
 }
 
 // SetAutocorrectEnabled installs the applied autocorrect value — the
 // applySnapshot fold and the click composition's push. One toggle-state
-// delta, no revision bump.
+// delta plus the Status row's label (the summary follows the applied
+// value), no revision bump.
 func (m *Menu) SetAutocorrectEnabled(on bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -229,14 +232,17 @@ func (m *Menu) SetAutocorrectEnabled(on bool) {
 	}
 	m.acEnabled = on
 	m.emitSignal(signalItemsPropsUpdated,
-		[]menuItemProps{m.stateDelta(menuIDACToggle, on)},
+		[]menuItemProps{
+			m.stateDelta(menuIDACToggle, on),
+			m.labelDelta(menuIDStatus),
+		},
 		[]removedProps{})
 }
 
 // SetSoundEnabled installs the applied sound value — the EffectiveEnabled
 // truth of the applied snapshot (an absent section reads ON, the owner's
 // default) pushed by the same fold, and the click composition's push. One
-// toggle-state delta, no revision bump.
+// toggle-state delta plus the Status row's label, no revision bump.
 func (m *Menu) SetSoundEnabled(on bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -246,7 +252,27 @@ func (m *Menu) SetSoundEnabled(on bool) {
 	}
 	m.soundEnabled = on
 	m.emitSignal(signalItemsPropsUpdated,
-		[]menuItemProps{m.stateDelta(menuIDSoundToggle, on)},
+		[]menuItemProps{
+			m.stateDelta(menuIDSoundToggle, on),
+			m.labelDelta(menuIDStatus),
+		},
+		[]removedProps{})
+}
+
+// SetCorrections installs the completed-corrections counter the Status
+// info row renders — the actor's fold push (pushMenuSync) and the
+// SetMenuSync install push. One label delta; identical values emit nothing
+// (the dedupe discipline of every setter).
+func (m *Menu) SetCorrections(n int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if n == m.corrections {
+		return
+	}
+	m.corrections = n
+	m.emitSignal(signalItemsPropsUpdated,
+		[]menuItemProps{m.labelDelta(menuIDStatus)},
 		[]removedProps{})
 }
 
@@ -358,11 +384,12 @@ func (m *Menu) AboutToShow(_ int32) (bool, *dbus.Error) {
 // Event implements com.canonical.dbusmenu.Event: the click dispatch of the
 // canonical set — the EN/RU pair through the SAME Switch seam every gesture
 // shares (the actor's flipTo path, ADR-006 — never a second flip
-// mechanism), both persisted toggles, the settings launcher, the version
-// notification, the status notification and the config reload. Each is a
-// silent no-op without its callback. Unknown ids and unknown event ids are
-// ignored. The recover shim means a panic below a click can never kill the
-// daemon (T-FG3-01, T-07-05-04).
+// mechanism), both persisted toggles, the settings launcher and the config
+// reload. The About and Status rows are NOT in the dispatch: greyed live
+// info rows since the owner UAT (2026-10-05) replaced their notifications
+// with in-menu display. Each click is a silent no-op without its callback.
+// Unknown ids and unknown event ids are ignored. The recover shim means a
+// panic below a click can never kill the daemon (T-FG3-01, T-07-05-04).
 func (m *Menu) Event(id int32, eventID string, _ dbus.Variant, _ uint32) (err *dbus.Error) {
 	defer recoverMenuCall("Event", &err)
 
@@ -377,8 +404,6 @@ func (m *Menu) Event(id int32, eventID string, _ dbus.Variant, _ uint32) (err *d
 // dispatchClick fires one clicked item's callback — every nil callback is a
 // silent no-op (the disabled item's gesture). The two radio halves share
 // the Switch seam; every other item owns its callback.
-//
-//nolint:cyclop // one case per canonical item — the dispatch table is the truth
 func (m *Menu) dispatchClick(id int32) {
 	switch id {
 	case menuIDEN, menuIDRU:
@@ -400,14 +425,6 @@ func (m *Menu) dispatchClick(id int32) {
 	case menuIDSettings:
 		if m.cb.Settings != nil {
 			m.cb.Settings()
-		}
-	case menuIDAbout:
-		if m.cb.About != nil {
-			m.cb.About()
-		}
-	case menuIDStatus:
-		if m.cb.Status != nil {
-			m.cb.Status()
 		}
 	case menuIDReload:
 		if m.cb.Reload != nil {
@@ -463,9 +480,9 @@ func (m *Menu) itemPropsLocked(id int32) map[string]dbus.Variant {
 	case menuIDSettings:
 		return standardProps(labelSettings, true)
 	case menuIDAbout:
-		return standardProps(aboutLabel(m.version), true)
+		return macroProps(aboutLabel(m.version))
 	case menuIDStatus:
-		return standardProps(labelStatus, true)
+		return macroProps(m.statusLabel())
 	case menuIDReload:
 		return standardProps(labelReload, m.cb.Reload != nil)
 	}
@@ -637,12 +654,33 @@ func doubleUnderscores(name string) string {
 	return strings.ReplaceAll(name, "_", "__")
 }
 
-// aboutLabel renders the About item: the version rides the label (the
-// canonical layout shows it inline), the notification carries the rest.
+// aboutLabel renders the About info row: the build identity inline (owner
+// UAT 2026-10-05 — the row is greyed, the version notification is gone).
 func aboutLabel(v string) string {
 	if v == "" {
-		return labelAbout
+		return serviceID
 	}
 
-	return labelAbout + " — goswitch " + v
+	return serviceID + " " + v
+}
+
+// statusLabel renders the Status info row — the compact live summary the
+// owner UAT moved into the menu (2026-10-05): the mode, both toggles'
+// applied values and the completed-corrections counter. The setters keep
+// it current through the macro rows' delta mechanism; the values carry no
+// underscores, so the mnemonic doubling never applies.
+func (m *Menu) statusLabel() string {
+	mode := labelEN
+	if m.mode == symbolRU {
+		mode = labelRU
+	}
+	ac, snd := "выкл", "выкл"
+	if m.acEnabled {
+		ac = "вкл"
+	}
+	if m.soundEnabled {
+		snd = "вкл"
+	}
+
+	return fmt.Sprintf("%s · автокоррекция %s · звук %s · испр. %d", mode, ac, snd, m.corrections)
 }

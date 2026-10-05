@@ -87,16 +87,16 @@ var errItemsType = errors.New("unexpected registered-items variant payload")
 // Callbacks carries the daemon's interactive surface — small func fields the
 // daemon wiring fills (quick plan 261001-fg3). Reload nil means the daemon
 // runs without -config (the menu serves the reload item disabled); a nil
-// Toggle or Status makes the corresponding gesture a contained no-op. The
-// menu v2 fields (plan 07-05) ride the same nil-safe discipline: Switch is
-// the EN/RU radio pair's target flip (the actor's SwitchMode), the two
-// Toggle* fields the persisted config toggles, Settings the config-editor
-// launcher, About the version notification. The callbacks run on godbus
-// dispatch goroutines and must carry their own synchronization (the actor's
-// mutex).
+// Toggle makes the corresponding gesture a contained no-op. The menu v2
+// fields (plan 07-05) ride the same nil-safe discipline: Switch is the EN/RU
+// radio pair's target flip (the actor's SwitchMode), the two Toggle* fields
+// the persisted config toggles, Settings the config-editor launcher. The
+// About and Status rows carry NO callbacks — greyed live info rows since the
+// owner UAT (2026-10-05) replaced their notifications with in-menu display.
+// The callbacks run on godbus dispatch goroutines and must carry their own
+// synchronization (the actor's mutex).
 type Callbacks struct {
 	Toggle func()
-	Status func()
 	Reload func()
 	// The menu v2 gestures (plan 07-05) — each a silent no-op without its
 	// callback.
@@ -104,7 +104,6 @@ type Callbacks struct {
 	ToggleAutocorrect func()
 	ToggleSound       func()
 	Settings          func()
-	About             func()
 }
 
 // Watcher probes the org.kde.StatusNotifierWatcher owner, registers the

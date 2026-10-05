@@ -861,11 +861,13 @@ func (a *Actor) SetModeDisplay(md ModeDisplay) {
 }
 
 // SetMenuSync installs the menu seam — the SetModeDisplay mirror (plan
-// 07-05). The menu immediately receives the CURRENT mode: the startup
-// install shows the initial mode, and a late install (after flips or
-// syncs) self-syncs to the factual state instead of waiting for the next
-// change. The applied config truth reaches the menu through the fold
-// (applySnapshot) and the click composition's direct pushes.
+// 07-05). The menu immediately receives the CURRENT mode and the CURRENT
+// corrections counter (the Status row's truth from the first paint): the
+// startup install shows the initial state, and a late install (after flips,
+// corrections or syncs) self-syncs to the factual state instead of waiting
+// for the next change (the SetSoundSink install-push precedent). The
+// applied config truth reaches the menu through the fold (applySnapshot)
+// and the click composition's direct pushes.
 func (a *Actor) SetMenuSync(ms MenuSync) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -873,6 +875,7 @@ func (a *Actor) SetMenuSync(ms MenuSync) {
 	a.menuSync = ms
 	if ms != nil {
 		ms.SetMode(a.modeSymbol())
+		ms.SetCorrections(a.corrDone)
 	}
 }
 
@@ -1062,8 +1065,9 @@ func (a *Actor) soundSinkFor() SoundSink {
 }
 
 // MenuSync is the tray-menu state seam (plan 07-05): the pushes the menu
-// snapshot needs to mirror the actor — the mode symbol and the applied
-// config truth. Defined at the point of use; the interface travels with
+// snapshot needs to mirror the actor — the mode symbol, the applied config
+// truth and the corrections counter the Status info row renders (owner UAT
+// 2026-10-05). Defined at the point of use; the interface travels with
 // the consumer (the AppidSource precedent). The pushes ride the SAME
 // discipline as ModeDisplay: synchronous under the actor's mutex, the
 // implementation must stay quick (the menu dedupes identical values, so a
@@ -1073,6 +1077,7 @@ type MenuSync interface {
 	SetAutocorrectEnabled(on bool)
 	SetSoundEnabled(on bool)
 	SetKeys(tap, combo, chord string)
+	SetCorrections(n int)
 }
 
 // emitter returns the attached emitter sink — the snapshot accessor of the
@@ -1272,13 +1277,14 @@ func (a *Actor) applySnapshot() {
 }
 
 // pushMenuSync hands the menu the applied config truth (plan 07-05): both
-// toggles' applied values and the RAW key names — the actor hands CONFIG
-// truth, the menu renders (the mnemonic doubling lives in the indicator).
-// The sound value is the EffectiveEnabled truth — an absent section reads
-// ON (the owner's default-ON verdict) — and the effective autocorrect
-// event rides the same fold to the sound sink on change (WR-02). The menu
-// dedupes identical pushes, so the per-fold push of unchanged values is
-// cheap. The caller holds the mutex.
+// toggles' applied values, the RAW key names and the corrections counter
+// the Status row renders (owner UAT 2026-10-05 — the counter rides the
+// same per-fold push, so the row catches up with the next fold after a
+// correction lands). The sound value is the EffectiveEnabled truth — an
+// absent section reads ON (the owner's default-ON verdict) — and the
+// effective autocorrect event rides the same fold to the sound sink on
+// change (WR-02). The menu dedupes identical pushes, so the per-fold push
+// of unchanged values is cheap. The caller holds the mutex.
 func (a *Actor) pushMenuSync(snap config.Config) {
 	a.soundEnabled = snap.Sound.EffectiveEnabled()
 	// The autocorrect tone's event folds live too (WR-02): every changed
@@ -1298,6 +1304,7 @@ func (a *Actor) pushMenuSync(snap config.Config) {
 		a.menuSync.SetAutocorrectEnabled(snap.Autocorrect.Enabled)
 		a.menuSync.SetSoundEnabled(a.soundEnabled)
 		a.menuSync.SetKeys(snap.Hotkeys.TapKey, snap.Hotkeys.WordLayoutCombo, snap.Hotkeys.ModeSwitchChord)
+		a.menuSync.SetCorrections(a.corrDone)
 	}
 }
 

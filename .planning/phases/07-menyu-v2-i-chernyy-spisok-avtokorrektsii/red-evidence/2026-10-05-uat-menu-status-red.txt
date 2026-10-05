@@ -1,0 +1,11 @@
+# github.com/Djarvur/goswitch/internal/indicator [github.com/Djarvur/goswitch/internal/indicator.test]
+internal/indicator/menu_test.go:397:4: m.SetCorrections undefined (type *Menu has no field or method SetCorrections)
+internal/indicator/menu_test.go:413:4: m.SetCorrections undefined (type *Menu has no field or method SetCorrections)
+internal/indicator/menu_test.go:474:4: m.SetCorrections undefined (type *Menu has no field or method SetCorrections)
+FAIL	github.com/Djarvur/goswitch/internal/indicator [build failed]
+FAIL
+--- FAIL: TestActor_MenuSyncApplySnapshotPushes (0.01s)
+    actor_test.go:4814: corrections pushes = [], want the install push then the fold push, both 0
+FAIL
+FAIL	github.com/Djarvur/goswitch/internal/session	0.042s
+FAIL
