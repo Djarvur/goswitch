@@ -255,6 +255,11 @@ type Actor struct {
 	// daemon wiring installs via SetMenuSync; nil = no menu, every push
 	// stays a no-op. The menu degrades itself (the display precedent).
 	menuSync MenuSync
+	// soundSink is the acoustic-feedback seam (plan 07-08): the SoundSink
+	// the daemon wiring installs via SetSoundSink; nil = no sink, every
+	// tone stays a silent no-op. The sink degrades itself (the menu
+	// precedent).
+	soundSink SoundSink
 	// soundEnabled is the applied sound switch folded from the snapshot
 	// (plan 07-05) — the EffectiveEnabled truth the status token serves.
 	soundEnabled bool
@@ -853,6 +858,28 @@ func (a *Actor) SetMenuSync(ms MenuSync) {
 	if ms != nil {
 		ms.SetMode(a.modeSymbol())
 	}
+}
+
+// SoundSink is the acoustic-feedback seam (plan 07-08, the owner's «Звуки
+// при переключении»): Flip plays the flip tone, AutoCorrect the distinct
+// autocorrect tone. Defined at the point of use; the interface travels
+// with the consumer (the AppidSource precedent). The implementation is
+// fire-and-forget by contract — it must never block the actor's hot path
+// and must never panic; every playback failure is the sink's own best-
+// effort episode (one WARN), never an actor error.
+type SoundSink interface {
+	Flip()
+	AutoCorrect()
+}
+
+// SetSoundSink installs the sound seam — the SetMenuSync mirror (plan
+// 07-08). nil = no sink: every tone stays a silent no-op (the menu nil
+// form — a degradation, never an error).
+func (a *Actor) SetSoundSink(s SoundSink) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.soundSink = s
 }
 
 // SyncEngine pulls the daemon under the FACTUAL active engine (05-04,

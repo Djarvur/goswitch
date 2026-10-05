@@ -6045,3 +6045,113 @@ func TestCtlStatus_EndToEnd(t *testing.T) {
 		}
 	}
 }
+
+// The sound-sink corpus of plan 07-08: the acoustic-feedback seam — ONE
+// Flip per flipTo execution path (the single flip point: the Single
+// decision, SwitchMode, settleCombo, settleCorrectionFlip all land here),
+// one AutoCorrect per fired correction, and the D-36 order pin (the tone
+// fires after the mode record's observers).
+
+// fakeSoundSink is the actor's SoundSink double (plan 07-08): both tones
+// counted under a mutex, with an optional flip hook the order pins
+// interleave against the display/menu hooks.
+type fakeSoundSink struct {
+	mu     sync.Mutex
+	flips  int
+	fires  int
+	onFlip func()
+}
+
+// Flip records one flip tone and plays the hook.
+func (f *fakeSoundSink) Flip() {
+	f.mu.Lock()
+	f.flips++
+	hook := f.onFlip
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+}
+
+// AutoCorrect records one autocorrect tone.
+func (f *fakeSoundSink) AutoCorrect() {
+	f.mu.Lock()
+	f.fires++
+	f.mu.Unlock()
+}
+
+func (f *fakeSoundSink) flipCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.flips
+}
+
+// TestActor_FlipSoundsSink pins the single flip point (plan 07-08): a
+// gesture flip (the Single decision at expiry) and a menu flip
+// (SwitchMode — the SAME flipTo path) each sound exactly one Flip; the
+// same-target click lands on flipTo's no-op guard and stays silent.
+func TestActor_FlipSoundsSink(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeSoundSink{}
+	a.SetSoundSink(sink)
+
+	flipMode(a)        // the Single decision at expiry — EN → RU
+	a.SwitchMode("en") // the menu's radio pair — the same flipTo path
+	a.SwitchMode("en") // the same-target no-op — silence
+
+	if got := sink.flipCount(); got != 2 {
+		t.Errorf("flip tones after a gesture flip + a menu flip + a same-target no-op = %d, want exactly 2", got)
+	}
+}
+
+// TestActor_SameTargetFlipSilent pins the guard's silence: a flipTo to the
+// CURRENT mode is a no-op — no record, no tone (the owner's rule: a no-op
+// flip does not sound).
+func TestActor_SameTargetFlipSilent(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeSoundSink{}
+	a.SetSoundSink(sink)
+
+	a.SwitchMode("en") // already EN — the same-target guard
+
+	if got := sink.flipCount(); got != 0 {
+		t.Errorf("flip tones after a same-target flip = %d, want exactly 0", got)
+	}
+}
+
+// TestActor_SoundSinkAfterModeRecord extends the D-36 order pin (plan
+// 07-08): the tone fires LAST — after the mode record's panel symbol, the
+// display and the menu observers — on the same synchronous push chain.
+func TestActor_SoundSinkAfterModeRecord(t *testing.T) {
+	a, sink := wiredActor()
+	var opMu sync.Mutex
+	var ops []string
+	record := func(op string) {
+		opMu.Lock()
+		ops = append(ops, op)
+		opMu.Unlock()
+	}
+	sink.modeHook = func(symbol string) { record("symbol:" + symbol) }
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) { record("display:" + symbol) }
+	msync := &fakeMenuSync{}
+	msync.onMode = func(symbol string) { record("menu:" + symbol) }
+	sound := &fakeSoundSink{}
+	sound.onFlip = func() { record("sound:flip") }
+	a.SetMenuSync(msync)
+	a.SetModeDisplay(disp)
+	a.SetSoundSink(sound)
+	opMu.Lock()
+	ops = nil // the install pushes are pinned elsewhere; only the flip order matters here
+	opMu.Unlock()
+
+	flipMode(a) // EN → RU
+
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{opSymbolRU, "display:ru", "menu:ru", "sound:flip"}
+	if !slices.Equal(ops, want) {
+		t.Errorf("flip op order = %q, want exactly %q — the tone fires after every observer, D-36 intact", ops, want)
+	}
+}
