@@ -264,6 +264,11 @@ type Actor struct {
 	// tone stays a silent no-op. The sink degrades itself (the menu
 	// precedent).
 	soundSink SoundSink
+	// soundACEvent is the autocorrect tone's event last seen in a folded
+	// document (WR-02): the dedupe key of the sink pushes and the value a
+	// late SetSoundSink self-syncs to (the SetMenuSync install-push
+	// precedent).
+	soundACEvent string
 	// soundEnabled is the applied sound switch folded from the snapshot
 	// (plan 07-05) — the EffectiveEnabled truth the status token serves.
 	soundEnabled bool
@@ -873,24 +878,33 @@ func (a *Actor) SetMenuSync(ms MenuSync) {
 
 // SoundSink is the acoustic-feedback seam (plan 07-08, the owner's «Звуки
 // при переключении»): Flip plays the flip tone, AutoCorrect the distinct
-// autocorrect tone. Defined at the point of use; the interface travels
-// with the consumer (the AppidSource precedent). The implementation is
-// fire-and-forget by contract — it must never block the actor's hot path
-// and must never panic; every playback failure is the sink's own best-
-// effort episode (one WARN), never an actor error.
+// autocorrect tone, SetAutocorrectEvent re-pins that tone's document event
+// (WR-02: the key folds live like every other document truth — the D-32
+// contract holds without a restart). Defined at the point of use; the
+// interface travels with the consumer (the AppidSource precedent). The
+// implementation is fire-and-forget by contract — it must never block the
+// actor's hot path and must never panic; every playback failure is the
+// sink's own best-effort episode (one WARN), never an actor error.
 type SoundSink interface {
 	Flip()
 	AutoCorrect()
+	SetAutocorrectEvent(event string)
 }
 
 // SetSoundSink installs the sound seam — the SetMenuSync mirror (plan
 // 07-08). nil = no sink: every tone stays a silent no-op (the menu nil
-// form — a degradation, never an error).
+// form — a degradation, never an error). A non-nil install self-syncs the
+// last folded autocorrect event (the SetMenuSync install-push precedent,
+// WR-02): a sink attached after a fold — the OnConn ordering — still
+// serves the document truth.
 func (a *Actor) SetSoundSink(s SoundSink) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.soundSink = s
+	if s != nil && a.soundACEvent != "" {
+		s.SetAutocorrectEvent(a.soundACEvent)
+	}
 }
 
 // SyncEngine pulls the daemon under the FACTUAL active engine (05-04,
@@ -1261,11 +1275,25 @@ func (a *Actor) applySnapshot() {
 // toggles' applied values and the RAW key names — the actor hands CONFIG
 // truth, the menu renders (the mnemonic doubling lives in the indicator).
 // The sound value is the EffectiveEnabled truth — an absent section reads
-// ON (the owner's default-ON verdict). The menu dedupes identical pushes,
-// so the per-fold push of unchanged values is cheap. The caller holds the
-// mutex.
+// ON (the owner's default-ON verdict) — and the effective autocorrect
+// event rides the same fold to the sound sink on change (WR-02). The menu
+// dedupes identical pushes, so the per-fold push of unchanged values is
+// cheap. The caller holds the mutex.
 func (a *Actor) pushMenuSync(snap config.Config) {
 	a.soundEnabled = snap.Sound.EffectiveEnabled()
+	// The autocorrect tone's event folds live too (WR-02): every changed
+	// effective value is pushed to the sink — the actor keeps the
+	// last-pushed value as the dedupe key (the menu's dedupe discipline),
+	// so an unchanged document costs one comparison. The push rides the
+	// same synchronous under-the-mutex discipline as the menu pushes; the
+	// sink's setter is a field write behind its own mutex, and the
+	// actor.mu → sink.mu ordering is one-way (the sink never calls back).
+	if event := snap.Sound.EffectiveAutocorrectEvent(); event != a.soundACEvent {
+		a.soundACEvent = event
+		if a.soundSink != nil {
+			a.soundSink.SetAutocorrectEvent(event)
+		}
+	}
 	if a.menuSync != nil {
 		a.menuSync.SetAutocorrectEnabled(snap.Autocorrect.Enabled)
 		a.menuSync.SetSoundEnabled(a.soundEnabled)

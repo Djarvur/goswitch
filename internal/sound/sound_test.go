@@ -132,6 +132,34 @@ func TestPlayer_AutoCorrectCanberraArgv(t *testing.T) {
 	}
 }
 
+// TestPlayer_SetAutocorrectEvent pins the hot event re-pin (WR-02): a
+// setter call re-arms the autocorrect tone — the next spawn carries the
+// NEW event as its argv element — while the flip tone stays on the schema
+// constant.
+func TestPlayer_SetAutocorrectEvent(t *testing.T) {
+	b := &fakeBuilder{}
+	p := New(config.DefaultSoundFlipEvent, config.DefaultSoundAutocorrectEvent)
+	p.lookPath = func(name string) (string, error) { return "/usr/bin/" + name, nil }
+	p.newProc = b.newProc
+
+	const changed = "system-message"
+	p.SetAutocorrectEvent(changed)
+
+	p.AutoCorrect()
+	p.Flip()
+
+	calls := b.calls()
+	if len(calls) != 2 {
+		t.Fatalf("runner calls after one autocorrect tone and one flip = %d, want exactly 2", len(calls))
+	}
+	if want := []string{binCanberra, "-i", changed}; !slices.Equal(calls[0], want) {
+		t.Errorf("autocorrect argv after the re-pin = %q, want exactly %q — the re-pinned event rides the next tone", calls[0], want)
+	}
+	if want := []string{binCanberra, "-i", config.DefaultSoundFlipEvent}; !slices.Equal(calls[1], want) {
+		t.Errorf("flip argv after the re-pin = %q, want exactly %q — the flip tone never moves", calls[1], want)
+	}
+}
+
 // TestPlayer_NoPipesForm pins the production builder's descriptor
 // discipline (T-07-08-03, the wl-copy live finding): the spawned child
 // carries NOTHING on Stdin/Stdout/Stderr — a piped descriptor would hang

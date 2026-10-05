@@ -6128,12 +6128,14 @@ func TestCtlStatus_EndToEnd(t *testing.T) {
 // fires after the mode record's observers).
 
 // fakeSoundSink is the actor's SoundSink double (plan 07-08): both tones
-// counted under a mutex, with an optional flip hook the order pins
-// interleave against the display/menu hooks.
+// counted under a mutex, the re-pinned autocorrect event recorded (WR-02),
+// with an optional flip hook the order pins interleave against the
+// display/menu hooks.
 type fakeSoundSink struct {
 	mu     sync.Mutex
 	flips  int
 	fires  int
+	event  string
 	onFlip func()
 }
 
@@ -6153,6 +6155,20 @@ func (f *fakeSoundSink) AutoCorrect() {
 	f.mu.Lock()
 	f.fires++
 	f.mu.Unlock()
+}
+
+// SetAutocorrectEvent records the folded event push (WR-02).
+func (f *fakeSoundSink) SetAutocorrectEvent(event string) {
+	f.mu.Lock()
+	f.event = event
+	f.mu.Unlock()
+}
+
+func (f *fakeSoundSink) autocorrectEvent() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.event
 }
 
 func (f *fakeSoundSink) flipCount() int {

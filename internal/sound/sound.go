@@ -99,7 +99,7 @@ func newPlayProc(name string, args []string) playProc {
 // no-op, never an error to the gesture that triggered the tone.
 type Player struct {
 	flipEvent string // the flip tone's sound-theme event (the schema constant)
-	acEvent   string // the autocorrect tone's event (the document's effective value)
+	acEvent   string // the autocorrect tone's event (the document's effective value; hot — WR-02)
 	lookPath  func(string) (string, error)
 	newProc   func(string, []string) playProc
 	cacheDir  func() (string, error)
@@ -135,9 +135,25 @@ func (p *Player) Flip() {
 }
 
 // AutoCorrect plays the autocorrect tone — the same fire-and-forget path
-// with the document's effective event and its own bundled pitch.
+// with the document's effective event and its own bundled pitch. The event
+// reads under the mutex: the fold's SetAutocorrectEvent may land on any
+// goroutine (WR-02).
 func (p *Player) AutoCorrect() {
-	p.play(p.acEvent, wavAutoCorrect, freqAutoCorrect)
+	p.mu.Lock()
+	event := p.acEvent
+	p.mu.Unlock()
+	p.play(event, wavAutoCorrect, freqAutoCorrect)
+}
+
+// SetAutocorrectEvent re-pins the autocorrect tone's document event (WR-02):
+// the actor's fold pushes every changed effective value, so the
+// sound.autocorrect_event key is HOT — the D-32 contract holds without a
+// restart. The mutex guard keeps the AutoCorrect read race-free.
+func (p *Player) SetAutocorrectEvent(event string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.acEvent = event
 }
 
 // play launches one tone's player child. The canberra path pins the argv

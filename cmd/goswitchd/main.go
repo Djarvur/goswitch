@@ -188,10 +188,11 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			menu.SetKeys(cfg.Hotkeys.TapKey, cfg.Hotkeys.WordLayoutCombo, cfg.Hotkeys.ModeSwitchChord)
 			actor.SetMenuSync(menu) // the install push covers ordering skew, as SetModeDisplay
 			// The sound sink (plan 07-08): the flip tone rides the schema
-			// constant, the autocorrect tone the startup document's
-			// effective event; the switch itself arrives through the
-			// actor's fold on every reload, so no reload branch exists
-			// here (the D-32 contour — the wiring installs once).
+			// constant, the autocorrect tone starts at the startup
+			// document's effective event — the actor's fold re-pushes every
+			// changed event to the installed sink (WR-02: the key folds
+			// live), so no reload branch exists here either (the D-32
+			// contour — the wiring installs once).
 			actor.SetSoundSink(sound.New(config.DefaultSoundFlipEvent, cfg.Sound.EffectiveAutocorrectEvent()))
 			actor.SetModeDisplay(item)
 			go item.Supervise(connCtx, conn)
