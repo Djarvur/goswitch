@@ -336,12 +336,25 @@ Plans:
 **Plans:** 8 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 08-01-PLAN.md — SPEC §4 spec-delta (ревизия 2026-10-05): контракт секции a11y ДО кода (D-55, волна-гейт кодовых планов)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 08-02-PLAN.md — Схема секции a11y (enabled/apps, RE2, потолок 64, Active(), strict decode, hot reload) — D-8-1/D-8-5
 - [ ] 08-03-PLAN.md — Reconciler internal/a11y (read-verify-then-set toolkit-accessibility + пояс org.a11y.Status.IsEnabled, warn-once) — D-8-3/D-8-6
 - [ ] 08-04-PLAN.md — Снапшот ключа в install-state.json + uninstall restore only-if-present — D-8-4
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 08-05-PLAN.md — Wiring: A11ySink-фолд актора с дифф-гейтом + сборка reconciler'а в goswitchd — D-8-3
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 08-06-PLAN.md — docs/CONFIG.md русский-первый + сверка со схемой/поведением (CONFIG.md + SPEC в форме 08-01) + секция a11y (restart-семантика, рецепт оверрайда) — D-8-8/D-8-9/D-8-6
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 08-07-PLAN.md — README русский-первый (README.md = RU полная, README.en.md = EN, README.ru.md удалён), якоря — D-8-7
 - [ ] 08-08-PLAN.md — Skill .zcode/skills/goswitch-config/SKILL.md: генератор cmd/skillgen из CONFIG.md + golden-гейт в mise run test + задача skillgen-regen — D-8-10/D-8-11
