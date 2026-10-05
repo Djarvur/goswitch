@@ -5839,6 +5839,65 @@ func TestAutoCorrect_ConfirmUnknownPasses(t *testing.T) {
 	}
 }
 
+// acRoleAllowedEntry is the ENTRY role (79) of the ambiguity pair corpus:
+// an allowed role that is NOT the ambiguous one — the "unknown passes"
+// direction keeps firing on it under the CR-01 tightening.
+const acRoleAllowedEntry uint32 = 79
+
+// TestAutoConfirm_RoleTextAmbiguity pins the CR-01 tightening (07-REVIEW,
+// owner-sanctioned narrow exception to the "unknown is not a prohibition"
+// rule): role 61 is the AMBIGUOUS role — GTK3 password fields report it
+// exactly like text boxes (ADR-007's live fact) — so a confirm resolving
+// role 61 while the identity is UNKNOWN refuses fail-closed with the
+// role-ambiguous slug. A KNOWN identity keeps the locked semantics: role 61
+// fires and the blocklist decides.
+func TestAutoConfirm_RoleTextAmbiguity(t *testing.T) {
+	t.Run("unknown identity with role 61 refuses", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+		role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+		a.UseRole(role)
+		a.SetOptions(acOptions())
+
+		boundaryWord(t, a, wordEN) // armed at the UNKNOWN identity
+		awaitRoleStart(t, role)
+		close(role.release) // the live role answers 61 — the identity never became known
+
+		eventually(t, func() bool { return a.AutoCorrectCounters().Abstained >= 1 },
+			"the confirm never concluded")
+		if c := a.AutoCorrectCounters(); c.Fired != 0 {
+			t.Fatalf("fired = %d — the ambiguous role 61 with an UNKNOWN identity must refuse (CR-01)", c.Fired)
+		}
+		assertSilence(t, a, sink, "role-ambiguous")
+		logged := buf.String()
+		for _, word := range []string{wordEN, wordRU} {
+			if strings.Contains(logged, word) {
+				t.Errorf("the log leaked %q (D-20/D-21); log:\n%s", word, logged)
+			}
+		}
+	})
+
+	t.Run("known identity with role 61 fires", func(t *testing.T) {
+		a, sink := wiredActor()
+		a.UseAppid(fakeAppid{app: acListedApp})
+		role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+		a.UseRole(role)
+		a.SetOptions(acOptions())
+
+		boundaryWord(t, a, wordEN)
+		awaitRoleStart(t, role)
+		close(role.release)
+
+		eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
+			"role 61 with a KNOWN identity refused — the blocklist decides, the ambiguity must not")
+		eventually(t, func() bool { return sink.requireCount() >= 1 },
+			"the pipeline never armed after the fired confirm")
+		tokenEnd := uint32(len([]rune(wordEN)) + 1)
+		a.HandleSurroundingText(wordEN+" ", tokenEnd, tokenEnd)
+	})
+}
+
 // TestAutoCorrect_CountersAndReasons pins the counter surface over a mixed
 // scenario: fired and every abstention class accumulate in
 // AutoCorrectCounters — counts and closed slugs only, no word in the log.
