@@ -219,6 +219,33 @@ characters long. Manual gestures — the double tap, the phrase and the
 selection — are **never** restricted by the block list: they are your
 explicit action.
 
+### Where autocorrect stays silent — and how to fix it
+
+Beyond the conditions above, two situations keep the layer quiet even
+when it is enabled. The first one is fixable:
+
+**Apps without an accessibility tree.** An Electron/Chromium application
+that runs without the accessibility mode exposes no AT-SPI tree, so the
+daemon can read neither the focused field's role nor the surrounding text
+and stays silent (fail-closed — the same rule as every other «cannot
+verify» case). Known examples: ZCode, the Telegram snap. To make
+autocorrect work in such an application, either enable toolkit
+accessibility globally and restart the application afterwards:
+
+```sh
+gsettings set org.gnome.desktop.interface toolkit-accessibility true
+```
+
+or launch just that one application with its accessibility flag —
+`--force-renderer-accessibility` for Electron/Chromium apps. Once the
+application exposes its accessibility tree, autocorrect starts working
+in it without any further configuration.
+
+**Password and role-less fields.** A GTK4 password field reports the
+dedicated password role (40) and is never corrected. A widget that
+exposes no defined role at all stays silent too. The GTK3 generation
+remains the known limitation below.
+
 ### Switch sounds
 
 Every layout flip can click: a tone accompanies **any** flip (hotkey or
@@ -247,7 +274,10 @@ filter, not a guarantee: put an anchored `^…$` pattern for any
 application whose password prompts you know into `apps_blocklist`, enable
 the layer only where you fully trust the application, and remember that a
 confident dictionary word is all the detector will ever touch — the
-manual gestures remain the override.
+manual gestures remain the override. The residual risk is owner-accepted
+(UAT, 2026-10-05): a known, non-blocklisted application may still see its
+GTK3 password corrected — an AT-SPI limitation; when the application's
+identity cannot be observed at all, the layer stays silent (fail-closed).
 
 ### Manual gestures remain the override
 

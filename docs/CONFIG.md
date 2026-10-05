@@ -220,3 +220,18 @@ Autocorrect is stricter still: the typed word and the corrected word never
 surface reports counters and reason slugs only (D-54, stricter than
 D-20/D-21: an autocorrection fires without a user command, so the word may
 be a password).
+
+Where the layer stays silent (the same semantics the README's «Where
+autocorrect stays silent» documents, with remedies): an application
+without an accessibility tree — Electron/Chromium without the
+accessibility mode (e.g. ZCode, the Telegram snap) — gives the daemon no
+field role to verify, so nothing is ever corrected there; enable
+`org.gnome.desktop.interface toolkit-accessibility` globally (then
+restart the application) or launch that one application with
+`--force-renderer-accessibility` to fix it. A GTK4 password field
+(password-text, role 40) and a widget with no defined role are never
+touched. A GTK3 password field reports the ambiguous text-box role (61):
+in a known, non-blocklisted application it may still be corrected — an
+AT-SPI limitation accepted by the owner (UAT, 2026-10-05); an unknown
+application identity combined with role 61 stays silent (fail-closed,
+review CR-01).
