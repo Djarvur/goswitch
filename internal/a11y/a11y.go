@@ -84,14 +84,19 @@ type Runner func(ctx context.Context, name string, args []string) ([]byte, error
 type StatusSetter func(ctx context.Context) error
 
 // Reconciler serializes the a11y series: the desired state is pinned by
-// Apply, the apply series runs on the reconciler's own mutex — a one-way
-// ordering with the actor's (the sink never calls the actor back, WR-01)
-// — so a config fold never waits for a subprocess.
+// Apply, the apply series runs one-at-a-time on the reconciler's own
+// serialization mutex — a one-way ordering with the actor's (the sink
+// never calls the actor back, WR-01) — so a config fold never waits for a
+// subprocess. The state mutex is a SHORT lock: it guards the pinned fields
+// and the warn budget only and is never held across I/O or logging (CR-01
+// — an Apply landing mid-episode returns at once; the in-flight episode's
+// serialization never blocks the caller).
 type Reconciler struct {
 	runner Runner
 	status StatusSetter
 
-	mu          sync.Mutex      // the series' serialization — never the actor's mutex
+	mu          sync.Mutex      // guards desired/lastApplied/warned — never held across I/O or logging
+	seriesMu    sync.Mutex      // serializes apply series — held across one episode's I/O only
 	desired     bool            // the pinned desired state (the zero value is off, D-54)
 	lastApplied bool            // the diff gate: the desired state the series last converged to
 	warned      map[string]bool // one WARN per episode per reason — a healthy activation reopens
@@ -110,10 +115,12 @@ func New(runner Runner, status StatusSetter) *Reconciler {
 
 // Apply pins the desired a11y state and spawns the apply series —
 // fire-and-forget by contract: the fold's caller never waits for a
-// subprocess (WR-01). A repeated Apply with the same desired state is a
-// no-op (the diff gate keeps dconf churn and log noise at zero); the
-// series itself re-checks the diff under the mutex, so a stale series
-// converges to the newest desired state without races.
+// subprocess, not even for an in-flight series' subprocess (WR-01, CR-01
+// — the series' serialization lives on seriesMu and Apply touches only
+// the short state lock). A repeated Apply with the same desired state is
+// a no-op (the diff gate keeps dconf churn and log noise at zero); the
+// series itself re-checks the diff under the state mutex, so a stale
+// series converges to the newest desired state without races.
 func (r *Reconciler) Apply(active bool) {
 	r.mu.Lock()
 	if active == r.desired {
@@ -124,28 +131,50 @@ func (r *Reconciler) Apply(active bool) {
 	r.desired = active
 	r.mu.Unlock()
 
-	go r.run() // the series on the reconciler's own serialization — never the caller's stack
+	go func() {
+		r.seriesMu.Lock()
+		defer r.seriesMu.Unlock()
+
+		r.runSeries(active) // the series on the reconciler's own serialization — never the caller's stack
+	}()
 }
 
-// run converges the desktop to the pinned desired state, the diff gate
-// first: a deactivation touches NOTHING (D-8-4 — the key is never
-// removed, zero subprocesses); an activation runs one apply episode. The
-// whole series holds the reconciler's mutex — the serialization that
-// keeps Apply(true)→Apply(false)→Apply(true) converging to the last
-// state, with a stale series superseded before it fires a subprocess.
-func (r *Reconciler) run() {
+// runSeries converges the desktop to the desired state this Apply pinned,
+// the stale-series gate first: a series whose desired state was already
+// superseded or already applied returns before any subprocess, and a
+// deactivation touches NOTHING (D-8-4 — the key is never removed, zero
+// subprocesses). The gate and the deactivation bookkeeping share one
+// short state-lock section — the live desired state cannot drift between
+// the check and the record — while the episode's subprocess and D-Bus legs
+// run with NO state lock held (CR-01: a contended Apply lands mid-episode
+// without waiting). The post-episode re-check re-reads the live desired
+// state: a config change that landed mid-episode supersedes this series'
+// convergence record and is honored by the follow-up series.
+func (r *Reconciler) runSeries(desired bool) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	if desired != r.desired || desired == r.lastApplied {
+		r.mu.Unlock()
 
-	if r.desired == r.lastApplied {
 		return // the stale-series gate: a newer Apply supersedes this run
 	}
-	if !r.desired {
+	if !desired {
 		r.lastApplied = false // zero subprocesses — deactivation never touches the desktop (D-8-4)
+		r.mu.Unlock()
 
 		return
 	}
-	r.episode()
+	r.mu.Unlock()
+
+	healthy := r.episode()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.desired == desired && r.lastApplied != desired {
+		r.lastApplied = desired
+		if healthy {
+			clear(r.warned) // a clean activation proves the stack — a LATER failure warns again
+		}
+	}
 }
 
 // episode is one activation series: read-verify-then-set on the global
@@ -153,10 +182,12 @@ func (r *Reconciler) run() {
 // writes, no dconf churn), fail-toward-desired on a failed read, the
 // session-scoped belt on EVERY activation (a key already true is an
 // activation too — a session restart may have reset IsEnabled, research
-// A5), and the warn budget closed only by a clean activation.
-// lastApplied lands true whatever the degradation: the desired state is
-// pinned and the next desired change re-runs the series.
-func (r *Reconciler) episode() {
+// A5). It answers whether the episode ran clean — the caller folds the
+// answer into the convergence record under the state lock: lastApplied
+// lands true whatever the degradation (the desired state is pinned and
+// the next desired change re-runs the series), and a healthy activation
+// reopens the warn budget. NO state lock is held across the body (CR-01).
+func (r *Reconciler) episode() bool {
 	healthy := true
 
 	value, err := r.read()
@@ -172,10 +203,8 @@ func (r *Reconciler) episode() {
 	if !r.belt() { // after the key part; its refusal never fails the episode
 		healthy = false
 	}
-	r.lastApplied = true
-	if healthy {
-		r.closeEpisode() // a clean activation proves the stack — a LATER failure warns again
-	}
+
+	return healthy
 }
 
 // belt sets the session-scoped IsEnabled property through the
@@ -225,22 +254,26 @@ func (r *Reconciler) setKey() bool {
 	return true
 }
 
-// closeEpisode reopens the warn budget (the sound.go closeEpisode form):
-// a healthy activation proves the gsettings stack — a LATER failure
-// warns again. The caller holds the mutex.
-func (r *Reconciler) closeEpisode() {
-	clear(r.warned)
-}
+// closeEpisode's warn-budget reopen (the sound.go closeEpisode form) is
+// folded into runSeries' post-episode section: a healthy activation
+// proves the gsettings stack — a LATER failure warns again.
 
 // warn records ONE degradation WARN per episode per reason (the
 // sound.go warn form): the first failure of an episode warns, the rest
 // stay quiet. The record names the closed reason and the transport error
-// only — never user context (D-20/D-21). The caller holds the mutex.
+// only — never user context (D-20/D-21). The state lock guards the map
+// check-and-record ONLY — the slog call runs outside it (CR-01: logging
+// is I/O and never holds the state lock).
 func (r *Reconciler) warn(reason string, err error) {
+	r.mu.Lock()
 	if r.warned[reason] {
+		r.mu.Unlock()
+
 		return
 	}
 	r.warned[reason] = true
+	r.mu.Unlock()
+
 	if err == nil {
 		slog.Warn("a11y reconcile degraded", "reason", reason)
 
