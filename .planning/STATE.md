@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 8
 current_phase_name: a11y-магия приложений, документация и конфиг-skill
 status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-10-05T16:11:27.086Z"
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-10-05T16:30:53.855Z"
 last_activity: 2026-10-05
-last_activity_desc: Phase 7 complete, transitioned to Phase 4
-state_head: f56ced502a5bf518369a3833a99d4a67e1d6bd28
+last_activity_desc: Phase 8 execution started
+state_head: de53720cda94b3b5bd8707df9e179f41617772f2
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 59
-  completed_plans: 51
+  completed_plans: 52
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 07 — Меню v2 и чёрный список автокоррекции
+**Current focus:** Phase 8 — a11y-магия приложений, документация и конфиг-skill
 
 ## Current Position
 
-Phase: 8 (a11y-магия приложений, документация и конфиг-skill) — READY TO EXECUTE
-Plan: Not started
+Phase: 8 (a11y-магия приложений, документация и конфиг-skill) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-10-05 — Phase 7 complete, transitioned to Phase 4
+Last activity: 2026-10-05 — Phase 8 execution started
 
 Progress: [████████░░] 75%
 
@@ -118,6 +118,7 @@ Progress: [████████░░] 75%
 | Phase 07 P06 | 86 min | 3 tasks | 11 files |
 | Phase 07 P06 | 86 min | 3 tasks | 11 files |
 | Phase 07 P07 | 55 min | 3 tasks | 4 files |
+| Phase 08 P01 | 11 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -257,6 +258,8 @@ Recent decisions affecting current work:
 - [Phase 07]: [07-07] Матрица v4 двойка — 31/34 в обеих: 2 дизайн-красные WINDOWS #12 строки (readback байт = актуалу реестра), по 1 мигрирующему средовому транзиенту SetGlobalEngine на прогон (зелёные в соседнем прогоне); красные не перегонялись в фальшивую зелень — класс-строчный вердикт 06-08
 - [Phase 07]: [07-07] Предусловие свежесессии (<=30 мин) честно НЕ выполнено (3477+ мин, записано в RELEASE-READINESS); двойка — по прямому указанию оркестратора и прецеденту 06-08/WINDOWS #13; формальный fresh_session-гейт остаётся машинным инструментом владельца на verify-work
 - [Phase 07]: [07-07] README v1.1.0: канал B переведён @latest (точен до и после тега — не анонсирует несуществующий v1.1.0 и не оставляет пользователей на v1.0.0); RELEASE-READINESS артефакт — доказательства + чек-лист доков 5/5 + реестр 17/17 probe-строк + post-merge шаги владельца (планом не исполняются); статус RELEASE-READY
+- [Phase 08]: a11y.enabled / a11y.apps зафиксированы как канонические имена секции a11y (discretion по D-8-1) — Точное имя D-8-1 оставила на discretion планировщика; ревизия 08-01 закрепляет канон в SPEC §4
+- [Phase 08]: Ревизия консервативна по A1: демон ставит ОБЕ ручки (ключ + пояс IsEnabled), контракт верен при любой композиции стартовых проверок Chromium/Electron — Live-верифицированное research развязка ключ/IsEnabled; OR-композиция проверок — assumption A1, консервативный контракт снимает риск
 
 ### Pending Todos
 
@@ -289,6 +292,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T13:46:50.692Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-CONTEXT.md
+Last session: 2026-10-05T16:30:23.536Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None
