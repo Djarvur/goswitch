@@ -321,7 +321,7 @@ Plans:
 
 **Wave 5** *(blocked on Waves 1-4; 07-06 и 07-08 параллельны — файлы не пересекаются)*
 
-- [ ] 07-06-PLAN.md — e2e: упрощение fires/silents, новый autocorrect-blocklist-silent, Event-драйв case_menu (оба тумблера переживают рестарт), матричная config_base, mise-задачи — MACR-ACL, CORR/SWCH (регресс)
+- [x] 07-06-PLAN.md — e2e: упрощение fires/silents, новый autocorrect-blocklist-silent, Event-драйв case_menu (оба тумблера переживают рестарт), матричная config_base, mise-задачи — MACR-ACL, CORR/SWCH (регресс)
 - [x] 07-08-PLAN.md — Звуки переключения: package internal/sound (canberra→paplay no-pipes, комплектные тоны, WARN-best-effort), SoundSink-шов актора (flipTo-флип + fire автокоррекции), gating sound.enabled через hot reload, wiring — SPEC §11 (решение «Звуки при переключении»)
 
 **Wave 6** *(blocked on Waves 1-5)*
