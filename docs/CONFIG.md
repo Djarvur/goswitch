@@ -1,92 +1,101 @@
-# goswitch configuration reference
+# Справочник конфигурации goswitch
 
-`goswitchd` reads a single YAML file. Pass it with the `-config` flag:
+`goswitchd` читает один YAML-файл. Путь передаётся флагом `-config`:
 
 ```sh
 goswitchd -config ~/.config/goswitch/goswitch.yaml
 ```
 
-Without `-config` the daemon runs on built-in defaults (documented below) —
-the behavior is identical to a default-valued file.
+Без `-config` демон работает на встроенных дефолтах (описаны ниже) —
+поведение идентично файлу, все ключи которого равны дефолтам.
 
-## Schema
+## Схема
 
-The file has exactly six sections — `hotkeys`, `timeouts`, `correction`,
-`macr`, `autocorrect`, `sound`. Every key of every section is listed here;
-the document must be complete (missing keys are validation errors, not
-silently defaulted) and **strict**: a typo'd key invalidates the whole file
-(D-33), so a setting can never appear applied while it actually is not.
-Documents written before `correction.flip_after_correction` existed must add
-the key: a missing key decodes as `false` (off, not the built-in default)
-instead of refusing to start — the completeness discipline is on the
-document's author. The `autocorrect` section follows the same completeness
-rule with the opposite outcome guarded: absent keys decode into the zero
-values, and the zero value is the **off** state (D-54) — the layer is
-active exactly when `autocorrect.enabled: true`, and an enabled section
-must carry explicit thresholds (enabled with zero thresholds is a loud
-refusal, never a degenerate detector), while an empty blocklist forbids
-nothing. The `sound` section is the one optional-shape exception: both of
-its keys are optional, and an absent section reads as «sounds on» (the
-owner's default). Both tray-menu toggles persist into this file — тумблер
-автокоррекции («Автокоррекция») writes `autocorrect.enabled`, «Звук»
-writes `sound.enabled` — so the choice survives a restart and hot reload
-picks it up.
+В файле ровно шесть секций — `hotkeys`, `timeouts`, `correction`,
+`macr`, `autocorrect`, `sound`. Здесь перечислен каждый ключ каждой
+секции; документ обязан быть полным (отсутствующий ключ — ошибка
+валидации, а не тихий дефолт) и **строгим**: ключ с опечаткой
+инвалидирует весь файл (D-33), поэтому настройка никогда не может
+казаться применённой, фактически не будучи применённой. Документы,
+написанные до появления `correction.flip_after_correction`, обязаны
+дописать ключ: отсутствующий ключ декодируется как `false` (выключено,
+а не встроенный дефолт) вместо отказа старта — дисциплина полноты
+лежит на авторе документа. Секция `autocorrect` следует той же
+дисциплине полноты с охраняемым противоположным исходом: отсутствующие
+ключи декодируются в нулевые значения, а нулевое значение — состояние
+**выключено** (D-54); слой активен ровно при `autocorrect.enabled:
+true`, и включённая секция обязана нести явные пороги (enabled с
+нулевыми порогами — громкий отказ, а не вырожденный детектор), пустой
+же blocklist ничего не запрещает. Секция `sound` — единственное
+исключение по необязательности формы: оба её ключа необязательны, и
+отсутствующая секция читается как «звуки включены» (дефолт владельца).
+Оба тумблера трей-меню сохраняются в этот файл — тумблер автокоррекции
+(«Автокоррекция») пишет `autocorrect.enabled`, «Звук» пишет
+`sound.enabled`, — так что выбор переживает перезапуск, а hot reload
+его подхватывает.
 
-### Migration (D-53 revision, 2026-10-04)
+### Миграция (ревизия D-53, 2026-10-04)
 
-The white-list key `autocorrect.apps` is **removed**. A document carrying
-it no longer loads: the strict decoder rejects the whole file with an
-unknown-field error — rename the key. The old white list is **not**
-transferred to the blocklist mechanically: `apps` used to mean «correct
-ONLY in these apps», `apps_blocklist` means «never correct in these apps» —
-opposite intents, so carrying the list over by hand would silently invert
-your policy.
+Белый список `autocorrect.apps` **удалён**. Документ с этим ключом
+больше не загружается: строгий декодер отвергает весь файл ошибкой
+неизвестного поля — переименуйте ключ. Старый белый список **не**
+переносится в blocklist механически: `apps` означало «исправлять
+ТОЛЬКО в этих приложениях», `apps_blocklist` означает «никогда не
+исправлять в этих приложениях» — замыслы противоположные, поэтому
+ручной перенос списка молча инвертировал бы вашу политику.
 
 | Key | Type | Default | Range / vocabulary | Meaning |
 |-----|-----|---------|--------------------|---------|
-| `hotkeys.tap_key` | string | `shift_r` | closed name table (below) | the key whose tap series (single/double/triple) drives switch/correct-word/correct-phrase |
-| `hotkeys.word_layout_combo` | string | `shift+ctrl_r` | closed name table (below) | the combo «correct the last word, then switch the layout» (D-36) |
-| `hotkeys.mode_switch_chord` | string | `super+space` | closed name table (below); empty = disabled | flips the script mode directly — goswitch owns Super+Space (install clears the GNOME switch-input-source binding) |
-| `timeouts.tap_window_ms` | int | `300` | (0, 2000] | tap disambiguation window; all decisions fire at window expiry (ADR-002) |
-| `timeouts.verify_wait_ms` | int | `100` | (0, 2000] | wait for a fresh surrounding-text push when verifying the correction (ADR-004) |
-| `correction.backspace_cap` | int | `50` | [1, 500] | cap of the Backspace ladder series (D-27); over-cap corrections are refused silently, not half-deleted |
-| `correction.clipboard_rung` | bool | `false` | — | opt-in clipboard replacement rung for selections (D-28); OFF by default |
-| `correction.flip_after_correction` | bool | `true` | — | flip the script mode after a successful correction that changed the text (word, phrase, and selection paths); ON by default |
-| `macr.enabled` | bool | `false` | — | global switch of the Super→Ctrl remapping layer (ADR-005) |
-| `macr.letters` | string | `""` | comma-separated single letters `a`–`z` | the remapped letter set; required (non-empty) when `macr.enabled` is true |
-| `macr.apps` | list | `[]` | at most 64 entries | per-app allow list (ADR-005); empty list = the rule set applies everywhere |
-| `macr.alt_modifier` | string | `""` | `""` \| `ctrl_l` \| `ctrl_r` | alternative modifier for apps that reject Ctrl+letter; empty = do not introduce one (ADR-005 b.3) |
-| `autocorrect.enabled` | bool | `false` | — | global switch of the automatic wrong-layout correction (D-54); OFF by default — the feature never activates on its own; `enabled: true` IS the active state and requires explicit thresholds |
-| `autocorrect.apps_blocklist` | list | `[]` | at most 64 regex patterns (RE2) | per-app block list (D-53) — a pattern matching the focused app's identity forbids the correction; matching is by substring (`chrom` matches `org.chromium.Chromium`), `^…$` anchoring is explicit, matching is case-sensitive, order carries no meaning; an empty list means nothing is forbidden |
-| `autocorrect.min_word_len` | int | `4` | [2, 16] | minimum word length the detector considers; shorter words are never touched; mandatory while the layer is enabled |
-| `autocorrect.trigram_margin` | float | `2.0` | > 0, ≥ `trigram_floor` | required trigram-score margin of the other layout over the current one; checked while the layer is enabled |
-| `autocorrect.trigram_floor` | float | `1.0` | > 0 | absolute floor of the other layout's trigram score (the confidence fallback's plausibility demand); mandatory while the layer is enabled |
-| `sound.enabled` | bool | `true` (on) | — | the switch sounds: a tone accompanies every layout flip and every autocorrect firing; an absent section or key reads as ON (default on — owner decision); the tray menu's «Звук» toggle persists here |
-| `sound.autocorrect_event` | string | `message` | sound-theme event name | the DISTINCT tone for autocorrect firings — the event name played through `canberra-gtk-play` (with `paplay` as the fallback); the flip tone is the fixed `bell` event and is not configurable; an unavailable or failing player is a WARN in the journal and never blocks the switch |
+| `hotkeys.tap_key` | string | `shift_r` | закрытая таблица имён (ниже); только голая клавиша, без модификаторов | клавиша, чья серия тапов (одинарный/двойной/тройной) управляет переключением/исправлением слова/исправлением фразы |
+| `hotkeys.word_layout_combo` | string | `shift+ctrl_r` | закрытая таблица имён (ниже) | сочетание «исправить последнее слово, затем переключить раскладку» (D-36) |
+| `hotkeys.mode_switch_chord` | string | `super+space` | закрытая таблица имён (ниже); пусто = выключено | напрямую переключает режим скрипта — goswitch владеет Super+Space (install перехватывает биндинг GNOME switch-input-source) |
+| `timeouts.tap_window_ms` | int | `300` | (0, 2000] | окно различения тапов; все решения срабатывают при истечении окна (ADR-002) |
+| `timeouts.verify_wait_ms` | int | `100` | (0, 2000] | ожидание свежего push surrounding-text при сверке коррекции (ADR-004) |
+| `correction.backspace_cap` | int | `50` | [1, 500] | потолок серии нажатий Backspace (D-27); коррекции сверх потолка молча отказывают, а не удаляют текст наполовину |
+| `correction.clipboard_rung` | bool | `false` | — | опциональная ступень замены через буфер обмена для выделений (D-28); по умолчанию ВЫКЛЮЧЕНА |
+| `correction.flip_after_correction` | bool | `true` | — | переключение режима скрипта после успешной коррекции, изменившей текст (пути слова, фразы и выделения); по умолчанию ВКЛЮЧЕНО |
+| `macr.enabled` | bool | `false` | — | главный выключатель слоя ремапа Super→Ctrl (ADR-005) |
+| `macr.letters` | string | `""` | одиночные строчные буквы `a`–`z` через запятую | набор перемапленных букв; обязателен (непустой) при `macr.enabled: true` |
+| `macr.apps` | list | `[]` | не более 64 записей | список приложений (allow list) (ADR-005); пустой список = набор правил действует везде |
+| `macr.alt_modifier` | string | `""` | `""` \| `ctrl_l` \| `ctrl_r` | альтернативный модификатор для приложений, отвергающих Ctrl+буква; пусто = не вводить (ADR-005 b.3) |
+| `autocorrect.enabled` | bool | `false` | — | главный выключатель автоматической коррекции не в той раскладке (D-54); по умолчанию ВЫКЛЮЧЕНО — фича никогда не активируется сама; `enabled: true` и есть активное состояние, оно требует явных порогов |
+| `autocorrect.apps_blocklist` | list | `[]` | не более 64 regex-паттернов (RE2) | чёрный список приложений (D-53) — паттерн, совпавший с идентичностью сфокусированного приложения, запрещает коррекцию; матчинг подстрокой (`chromium` находит `org.chromium.Chromium`), анкеровка `^…$` явная, регистр чувствителен, порядок незначим; пустой список ничего не запрещает |
+| `autocorrect.min_word_len` | int | `4` | [2, 16] | минимальная длина слова, которое рассматривает детектор; более короткие слова не трогаются; обязательно при включённом слое |
+| `autocorrect.trigram_margin` | float | `2.0` | > 0, ≥ `trigram_floor` | требуемый отрыв триграммной оценки другой раскладки над текущей; проверяется при включённом слое |
+| `autocorrect.trigram_floor` | float | `1.0` | > 0 | абсолютный нижний порог триграммной оценки другой раскладки (требование правдоподобия у confidence-фолбэка); обязателен при включённом слое |
+| `sound.enabled` | bool | `true` (вкл) | — | звуки переключения: тон сопровождает каждую смену раскладки и каждое срабатывание автокоррекции; отсутствующая секция или ключ читается как ВКЛ (дефолт вкл — решение владельца); тумблер «Звук» трей-меню сохраняется сюда |
+| `sound.autocorrect_event` | string | `message` | имя события звуковой темы | ОТДЕЛЬНЫЙ тон на срабатывания автокоррекции — имя события, проигрываемого через `canberra-gtk-play` (фолбэк — `paplay`); тон флипа — фиксированное событие `bell`, он не настраивается; пустое значение читается как встроенный дефолт; недоступный или падающий плеер — WARN в журнале и никогда не блокирует переключение |
 
-### Binding names
+### Имена привязок
 
-Binding values are name strings from a closed table — a name that is not
-in the table rejects the whole config. Combos are `"+"`-joined with the
-**key last**, the rest are held modifiers:
+Значения привязок — строки-имена из закрытой таблицы; имя вне таблицы
+отвергает весь конфиг. Сочетания собираются через `"+"`, **клавиша —
+последней**, остальное — удерживаемые модификаторы:
 
-- keys: `shift_l`, `shift_r`, `ctrl_l`, `ctrl_r`, `alt_l`, `alt_r`,
-  `super_l`, `super_r`, `space` (keyvals from `ibuskeysyms.h`, verified
-  verbatim)
-- modifiers: `shift`, `ctrl`, `alt`, `super`
+- клавиши: `shift_l`, `shift_r`, `ctrl_l`, `ctrl_r`, `alt_l`, `alt_r`,
+  `super_l`, `super_r`, `space` (кейвалы из `ibuskeysyms.h`, сверены
+  дословно)
+- модификаторы: `shift`, `ctrl`, `alt`, `super`
 
-Examples: `shift_r` (a tap of the right Shift), `shift+ctrl_r` (hold
-Shift, press right Ctrl — the D-36 default combo), `super+space` (the
-default mode-switch chord).
+Примеры: `shift_r` (тап правого Shift), `shift+ctrl_r` (удержать
+Shift, нажать правый Ctrl — дефолтное сочетание D-36), `super+space`
+(дефолтное сочетание переключения режима).
 
-Tradeoff to know: documents written before `hotkeys.mode_switch_chord`
-existed load with the chord **disabled** (a missing key decodes as empty
-= off, not defaulted on) — the completeness discipline is on the
-document's author, the same rule as every other key.
+Ключ `hotkeys.tap_key` обязан быть «голой» клавишей, без модификаторов
+(без `+`): семантика тапа отслеживает единственную клавишу, и
+модификаторные токены «голого» сочетания были бы молча проигнорированы;
+модификаторы допустимы только в `word_layout_combo` и
+`mode_switch_chord`.
 
-## Example
+Нюанс, о котором стоит знать: документы, написанные до появления
+`hotkeys.mode_switch_chord`, загружаются с **выключенным** сочетанием
+(отсутствующий ключ декодируется как пустое = выключено, а не
+дефолт-включено) — дисциплина полноты лежит на авторе документа, то же
+правило, что для всякого другого ключа.
 
-A complete file (the documented defaults):
+## Пример
+
+Полный файл (задокументированные дефолты):
 
 ```yaml
 hotkeys:
@@ -116,7 +125,8 @@ sound:
   autocorrect_event: message
 ```
 
-An activated MACR layer over Chromium only, with the alternative modifier:
+Активированный слой MACR только для Chromium, с альтернативным
+модификатором:
 
 ```yaml
 hotkeys:
@@ -137,9 +147,10 @@ macr:
   alt_modifier: "ctrl_r"
 ```
 
-An enabled autocorrect layer with a blocklist entry (corrections fire
-everywhere except the GNOME Terminal windows), with the documented start
-thresholds (plan 06-05's detector corpus re-pins the values):
+Включённый слой автокоррекции с записью в чёрном списке (коррекции
+срабатывают всюду, кроме окон GNOME Terminal), с задокументированными
+стартовыми порогами (золотой корпус детектора плана 06-05 перепинивает
+значения):
 
 ```yaml
 hotkeys:
@@ -169,69 +180,70 @@ sound:
   autocorrect_event: message
 ```
 
-## Hot reload (D-32)
+## Горячая перезагрузка (D-32)
 
-Once started with `-config`, the daemon watches the config file's
-**directory** and re-reads the file after every change (debounced). Editors
-that save via write-temporary-then-rename (vim, gedit, kwrite) are covered
-by design.
+Запущенный с `-config`, демон следит за **каталогом** конфигурационного
+файла и перечитывает файл после каждого изменения (с дебаунсом).
+Редакторы, сохраняющие через запись-во-временный-файл-и-rename (vim,
+gedit, kwrite), покрыты изначально.
 
-- A valid edit takes effect **without a restart**.
-- An invalid edit (typo, out-of-range value, unknown key, a broken
-  `apps_blocklist` regex pattern) is **rejected as a whole**: the daemon
-  keeps running on the last valid configuration (last-good), logs a WARN
-  `config reload rejected`, and the rejection is visible later in
-  `goswitchctl status` (plan 03-06).
-- A missing or empty file at startup is a **start error** — an explicit
-  `-config` must yield a working configuration, never silent defaults.
+- Валидная правка вступает в силу **без перезапуска**.
+- Невалидная правка (опечатка, значение вне диапазона, неизвестный
+  ключ, битый regex-паттерн в `apps_blocklist`) отвергается **целиком**:
+  демон продолжает работу на последней валидной конфигурации
+  (last-good), пишет WARN `config reload rejected`, и отказ позже виден
+  в `goswitchctl status` (план 03-06).
+- Отсутствующий или пустой файл на старте — **стартовая ошибка**:
+  явный `-config` обязан дать рабочую конфигурацию, а не тихие дефолты.
 
-Note on the tap window: a reloaded `timeouts.tap_window_ms` applies to tap
-series started after the reload; an already-armed window timer lives out
-its old value (the FSM's stale-timer invariant).
+Замечание об окне тапов: перезагруженный `timeouts.tap_window_ms`
+применяется к сериям тапов, начатым после перезагрузки; уже взведённый
+таймер окна доживает со старым значением (инвариант stale-таймера FSM).
 
-## Caramba correspondence table (CONF-03, wish-level)
+## Таблица соответствия Caramba (CONF-03, уровень пожелания)
 
-goswitch deliberately does **not** clone Caramba's key names or its
-behavioral model. Caramba's schema is bound to its «switch on the first
-tap» model; goswitch follows ADR-002 — the classic-with-waiting scheme
-where every decision fires at the expiry of the disambiguation window, so
-single/double/triple taps can coexist on one key. This table maps our keys
-to the Caramba settings that serve the same purpose:
+goswitch сознательно **не** клонирует ни имена клавиш Caramba, ни её
+поведенческую модель. Схема Caramba привязана к её модели «переключение
+по первому тапу»; goswitch следует ADR-002 — классической схеме с
+ожиданием, где всякое решение срабатывает при истечении окна
+различения, поэтому одинарный/двойной/тройной тапы уживаются на одной
+клавише. Таблица сопоставляет наши ключи настройкам Caramba того же
+назначения:
 
-| goswitch key | Caramba counterpart (purpose) | Notes |
+| Ключ goswitch | Аналог Caramba (назначение) | Примечания |
 |--------------|-------------------------------|-------|
-| `hotkeys.tap_key` | переключение раскладки / горячая клавиша (their one-tap switch) | ours: one key carries 1/2/3-tap actions at window expiry (ADR-002); theirs: the first tap switches immediately |
-| `hotkeys.word_layout_combo` | «исправить и переключить»-класс комбинаций | ours: correct the word FIRST, then switch (D-36 order, fixed by the SPEC action name) |
-| `hotkeys.mode_switch_chord` | their Super+Space-style direct switch binding | ours: flips the script mode immediately, no window; install hands GNOME's `switch-input-source` binding over to goswitch |
-| `timeouts.tap_window_ms` | their tap/series timing interval | theirs tunes a first-tap switch delay; ours the multi-tap discrimination window (default 300 ms) |
-| `correction.backspace_cap` | (no direct counterpart) | D-27 bound on the destructive Backspace ladder series |
-| `correction.clipboard_rung` | (no direct counterpart) | opt-in selection replacement through the clipboard (D-28) |
-| `correction.flip_after_correction` | «исправить и переключить»-класс поведения (switch after correction) | owner decision 2026-09-27: a successful correction that changed the text flips the script mode (word and phrase paths); the done-without-change outcome never flips |
-| `macr.enabled`, `macr.letters`, `macr.apps`, `macr.alt_modifier` | their macro/app rules | ADR-005 mechanism: Super+letter → Ctrl+letter, per-app lists |
+| `hotkeys.tap_key` | переключение раскладки / горячая клавиша (их переключение по первому тапу) | у нас: одна клавиша несёт действия 1/2/3 тапов при истечении окна (ADR-002); у них: первый тап переключает немедленно |
+| `hotkeys.word_layout_combo` | класс сочетаний «исправить и переключить» | у нас: сначала исправить слово, потом переключить (порядок D-36, закреплён именем действия в SPEC) |
+| `hotkeys.mode_switch_chord` | их прямое переключение в духе Super+Space | у нас: переключает режим скрипта немедленно, без окна; install передаёт биндинг GNOME `switch-input-source` goswitch |
+| `timeouts.tap_window_ms` | их интервал тайминга тапов/серий | у них настраивается задержка переключения по первому тапу; у нас — окно различения multi-tap (дефолт 300 мс) |
+| `correction.backspace_cap` | (прямого аналога нет) | D-27 ограничивает разрушительную серию Backspace |
+| `correction.clipboard_rung` | (прямого аналога нет) | опциональная замена выделения через буфер обмена (D-28) |
+| `correction.flip_after_correction` | класс поведения «исправить и переключить» (смена раскладки после коррекции) | решение владельца 2026-09-27: успешная коррекция, изменившая текст, переключает режим скрипта (пути слова и фразы); исход «done без изменений» раскладку никогда не переключает |
+| `macr.enabled`, `macr.letters`, `macr.apps`, `macr.alt_modifier` | их макросы/правила по приложениям | механизм ADR-005: Super+буква → Ctrl+буква, списки по приложениям |
 
-## Privacy
+## Приватность
 
-The config's contents never enter the logs. The daemon logs the config
-**path**, the applied tap window and validity status — nothing else (the
-`macr.apps` names and letters stay out of every log level).
+Содержимое конфига никогда не попадает в логи. Демон логирует **путь**
+конфига, применённое окно тапов и статус валидности — ничего больше
+(имена `macr.apps` и буквы остаются вне всяких уровней логирования).
 
-Autocorrect is stricter still: the typed word and the corrected word never
-(никогда) enter ANY log level or the `goswitchctl status` — the autocorrect
-surface reports counters and reason slugs only (D-54, stricter than
-D-20/D-21: an autocorrection fires without a user command, so the word may
-be a password).
+Автокоррекция строже: набранное слово и исправленное слово никогда
+(никогда) не попадают ни в один уровень логов и в `goswitchctl status`
+— поверхность автокоррекции сообщает только счётчики и слаги причин
+(D-54, строже D-20/D-21: автокоррекция срабатывает без команды
+пользователя, поэтому словом может быть пароль).
 
-Where the layer stays silent (the same semantics the README's «Where
-autocorrect stays silent» documents, with remedies): an application
-without an accessibility tree — Electron/Chromium without the
-accessibility mode (e.g. ZCode, the Telegram snap) — gives the daemon no
-field role to verify, so nothing is ever corrected there; enable
-`org.gnome.desktop.interface toolkit-accessibility` globally (then
-restart the application) or launch that one application with
-`--force-renderer-accessibility` to fix it. A GTK4 password field
-(password-text, role 40) and a widget with no defined role are never
-touched. A GTK3 password field reports the ambiguous text-box role (61):
-in a known, non-blocklisted application it may still be corrected — an
-AT-SPI limitation accepted by the owner (UAT, 2026-10-05); an unknown
-application identity combined with role 61 stays silent (fail-closed,
-review CR-01).
+Где слой молчит (та же семантика, что в разделе README «Где
+автокоррекция молчит», со способами лечения): приложение без
+accessibility-дерева — Electron/Chromium без режима доступности
+(например ZCode, snap Telegram) — не даёт демону роль поля, нужную для
+сверки, поэтому там никогда ничего не исправляется; лечится включением
+`org.gnome.desktop.interface toolkit-accessibility` глобально (затем
+перезапустите приложение) либо запуском самого приложения с
+`--force-renderer-accessibility`. GTK4-поле пароля (password-text,
+роль 40) и виджет без определённой роли не трогаются никогда. GTK3-поле
+пароля сообщает неоднозначную роль текстового поля (61): в известном,
+не внесённом в чёрный список приложении оно всё же может быть
+исправлено — ограничение AT-SPI, принятое владельцем (UAT, 2026-10-05);
+неизвестная идентичность приложения в сочетании с ролью 61 молчит
+(fail-closed, ревью CR-01).
