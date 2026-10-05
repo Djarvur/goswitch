@@ -1,7 +1,7 @@
 ---
 title: "Skill: конфигурация сервиса как документация для AI"
 created: 2026-10-05
-resolves_phase: ""
+resolves_phase: 8
 ---
 
 # Skill «Конфигурация goswitch» для AI-ассистентов
