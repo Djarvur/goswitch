@@ -836,7 +836,11 @@ func TestA11yActive(t *testing.T) {
 		{name: "zero value is off", a: config.A11y{}, want: false},
 		{name: "enabled with an empty list", a: config.A11y{Enabled: true, Apps: []string{}}, want: false},
 		{name: "enabled with a non-empty list", a: config.A11y{Enabled: true, Apps: []string{a11ySubstr}}, want: true},
-		{name: "disabled with a non-empty list", a: config.A11y{Enabled: false, Apps: []string{a11ySubstr}}, want: false},
+		{
+			name: "disabled with a non-empty list",
+			a:    config.A11y{Enabled: false, Apps: []string{a11ySubstr}},
+			want: false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

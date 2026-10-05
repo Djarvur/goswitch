@@ -464,7 +464,8 @@ func TestLoad_A11yStrictDecodeUnknownKey(t *testing.T) {
 func TestLoad_A11yDecodesEnabledAndApps(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.Load(writeConfig(t, a11yDocYAML("  enabled: true\n  apps: [\"zcode\", \"^org\\\\.gnome\\\\.Terminal$\"]\n")))
+	anchored := "  enabled: true\n  apps: [\"zcode\", \"^org\\\\.gnome\\\\.Terminal$\"]\n"
+	cfg, err := config.Load(writeConfig(t, a11yDocYAML(anchored)))
 	if err != nil {
 		t.Fatalf("Load(a11y enabled): %v", err)
 	}

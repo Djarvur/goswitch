@@ -395,6 +395,102 @@ func TestWatch_BrokenBlocklistPatternKeepsLastGood(t *testing.T) {
 	}
 }
 
+// a11yPatternDocYAML renders the complete document with the given a11y.apps
+// pattern — the broken-a11y-pattern reload corpus's template (the
+// blocklistDocYAML idiom: full document, one value under test).
+func a11yPatternDocYAML(pattern string) string {
+	return `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+  mode_switch_chord: super+space
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: false
+  apps_blocklist: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+a11y:
+  enabled: true
+  apps: ["` + pattern + `"]
+`
+}
+
+// TestWatch_BrokenA11yPatternKeepsLastGood pins the D-32/D-33 propagation
+// to the a11y section WITHOUT any watcher code (T-08-02, the blocklist-case
+// precedent of 07-02): a reload carrying a non-compilable a11y.apps pattern
+// invalidates the WHOLE document (the compile gate runs on Load) — the
+// reload is rejected, the last-good snapshot keeps serving, the WARN
+// "config reload rejected" lands — and the repaired pattern applies without
+// a restart. The REAL parser runs (config.Load), so the property under test
+// is the schema's.
+func TestWatch_BrokenA11yPatternKeepsLastGood(t *testing.T) {
+	buf := captureLogs(t)
+
+	path := filepath.Join(t.TempDir(), "goswitch.yaml")
+	if err := os.WriteFile(path, []byte(a11yPatternDocYAML("zcode")), 0o600); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+
+	fx := newFakeSource()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	w, err := config.NewWatcher(ctx, path,
+		config.WithSource(func() (config.EventSource, error) { return fx, nil }),
+		config.WithLoader(config.Load),
+		config.WithDebounce(10*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+	if got := w.Snapshot().A11y.Apps; len(got) != 1 || got[0] != "zcode" {
+		t.Fatalf("initial snapshot a11y apps = %v, want [zcode]", got)
+	}
+
+	// The broken edit: a non-compilable pattern invalidates the whole file.
+	if err := os.WriteFile(path, []byte(a11yPatternDocYAML(a11yBroken)), 0o600); err != nil {
+		t.Fatalf("write broken config: %v", err)
+	}
+	fx.send(path, fsnotify.Write)
+	if !waitUntil(func() bool { return w.LastError() != nil }) {
+		t.Fatal("LastError never set after a broken a11y edit")
+	}
+	if got := w.Snapshot().A11y.Apps; len(got) != 1 || got[0] != "zcode" {
+		t.Errorf("snapshot a11y apps = %v after the rejection, want the last-good [zcode]", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"config reload rejected"`) {
+		t.Errorf("log %q misses the WARN record config reload rejected", buf.String())
+	}
+
+	// The repair applies without a restart.
+	if err := os.WriteFile(path, []byte(a11yPatternDocYAML("chrom")), 0o600); err != nil {
+		t.Fatalf("write repaired config: %v", err)
+	}
+	fx.send(path, fsnotify.Write)
+	if !waitUntil(func() bool {
+		got := w.Snapshot().A11y.Apps
+
+		return len(got) == 1 && got[0] == "chrom"
+	}) {
+		t.Fatalf("snapshot a11y apps = %v after the repair, want [chrom]", w.Snapshot().A11y.Apps)
+	}
+	if err := w.LastError(); err != nil {
+		t.Errorf("LastError = %v after the repaired reload, want nil", err)
+	}
+}
+
 // TestWatch_IgnoresIrrelevantEvents pins the filters: events for other
 // file names in the watched directory and non-trigger operations on the
 // watched file (Chmod) never cause a re-parse.
