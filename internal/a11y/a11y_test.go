@@ -151,6 +151,121 @@ func waitConverged(t *testing.T, r *Reconciler, want bool) {
 	t.Fatalf("series did not converge to lastApplied=%v within the deadline", want)
 }
 
+// waitProbeWedged polls the runner until the FIRST get probe is recorded —
+// the wedge point: from this moment the series is stalled inside its
+// subprocess (the blockGet hold), so any Apply that lands next is
+// contended against an in-flight series.
+func waitProbeWedged(t *testing.T, f *fakeRunner) {
+	t.Helper()
+	for deadline := time.Now().Add(testDeadline); time.Now().Before(deadline); {
+		if f.total() >= 1 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the series' probe never started within the deadline")
+}
+
+// waitSettledTotal polls until the runner's recorded total reaches want,
+// lets the settle window pass, and pins the total there — the no-further-
+// work proof (the diff-gate settle form): nothing may call the runner
+// behind the counted work.
+func waitSettledTotal(t *testing.T, f *fakeRunner, want int) {
+	t.Helper()
+	for deadline := time.Now().Add(testDeadline); time.Now().Before(deadline); {
+		if f.total() >= want {
+			time.Sleep(testSettleGap)
+			if got := f.total(); got != want {
+				t.Fatalf("runner total drifted after the settle window: got %d, want exactly %d", got, want)
+			}
+
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("runner total never reached %d within the deadline", want)
+}
+
+// TestA11y_ApplyDoesNotWaitForInFlightSeries pins the contended case of
+// the fire-and-forget contract (CR-01): while a FIRST series is wedged
+// inside its get probe, a SECOND Apply must return without waiting for the
+// in-flight series' subprocess. The actor calls Apply synchronously under
+// its own mutex, so any wait here stalls the fold — and with it every
+// keystroke in every application — for the rest of the episode (up to the
+// read and belt timeouts, ~3 s on a wedged desktop).
+func TestA11y_ApplyDoesNotWaitForInFlightSeries(t *testing.T) {
+	release := make(chan struct{})
+	runner := &fakeRunner{value: answerFalse, blockGet: release}
+	r := New(runner.run, (&fakeStatus{}).set)
+
+	r.Apply(true) // the series wedges inside its get probe
+	waitProbeWedged(t, runner)
+
+	applied := make(chan struct{})
+	go func() {
+		r.Apply(false) // lands while the first series holds the serialization
+		close(applied)
+	}()
+	select {
+	case <-applied:
+	case <-time.After(testSettleGap):
+		close(release) // let the wedged series finish before the failure reports
+		t.Fatal("Apply waited for the in-flight series — the fire-and-forget contract is broken (CR-01)")
+	}
+	close(release)
+
+	// the stale episode's own probe+set are all the runner ever saw: the
+	// superseding deactivation touches NOTHING (D-8-4 held under contention)
+	waitSettledTotal(t, runner, 2)
+}
+
+// TestA11y_MidEpisodeDesiredChangeHonoredByFollowUp pins the post-episode
+// desired-state re-check (CR-01): a desired change landing while an
+// activation episode is in flight supersedes it — the stale episode
+// records no convergence — and a LATER re-activation runs a FULL fresh
+// episode (probe + set + belt), not a diff-gate no-op.
+func TestA11y_MidEpisodeDesiredChangeHonoredByFollowUp(t *testing.T) {
+	release := make(chan struct{})
+	runner := &fakeRunner{value: answerFalse, blockGet: release}
+	status := &fakeStatus{}
+	r := New(runner.run, status.set)
+
+	r.Apply(true) // the activation wedges inside its get probe
+	waitProbeWedged(t, runner)
+
+	applied := make(chan struct{})
+	go func() {
+		r.Apply(false) // lands mid-episode — must not wait (the CR-01 contract)
+		close(applied)
+	}()
+	select {
+	case <-applied:
+	case <-time.After(testSettleGap):
+		close(release) // let the wedged series finish before the failure reports
+		t.Fatal("Apply waited for the in-flight series — the fire-and-forget contract is broken (CR-01)")
+	}
+	close(release) // the stale episode finishes; the deactivation supersedes it
+
+	// the stale episode's own probe+set land, then the runner goes quiet
+	// (the superseded series records no convergence, the deactivation adds
+	// nothing) — only then is the re-activation issued
+	waitSettledTotal(t, runner, 2)
+
+	r.Apply(true)
+	waitConverged(t, r, true)
+
+	gets, sets := runner.counts()
+	if gets != 2 {
+		t.Errorf("get calls = %d, want exactly 2 (the re-activation must run a fresh probe)", gets)
+	}
+	if sets != 2 {
+		t.Errorf("set calls = %d, want exactly 2 (the re-activation must run a fresh set)", sets)
+	}
+	if calls := status.total(); calls != 2 {
+		t.Errorf("belt calls = %d, want exactly 2 (the re-activation re-sets the belt)", calls)
+	}
+}
+
 // argvLiterals is the closed vocabulary every recorded argv element must
 // belong to — the argv discipline's test form: the config's app list has
 // no path into this set, hence none into any command (T-08-03-01).
