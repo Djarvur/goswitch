@@ -628,6 +628,40 @@ func TestToggleNilReloadKeepsWrite(t *testing.T) {
 	}
 }
 
+// TestToggleEmptyPathRefused pins the WR-03 guard: without a resolvable
+// config path (the degenerate no-HOME environment loadConfig explicitly
+// supports, main.go's loadConfig) the toggle must REFUSE — no write to the
+// empty path (writeAtomically would land ./config.yaml in the daemon's
+// CWD, a file nothing ever watches or reads), no menu push (the menu would
+// desync from the status forever), no reload — one WARN and the state
+// untouched.
+func TestToggleEmptyPathRefused(t *testing.T) {
+	buf := captureLogs(t)
+	wrote, pushed, reloaded := false, false, false
+	tg := &configToggle{
+		path: "",
+		read: func() bool { return false },
+		write: func(string, bool) error {
+			wrote = true
+
+			return nil
+		},
+		push:   func(bool) { pushed = true },
+		reload: func() { reloaded = true },
+	}
+
+	tg.flip()
+
+	if wrote || pushed || reloaded {
+		t.Errorf("the empty-path toggle continued (write %t, push %t, reload %t) — "+
+			"the degenerate env must refuse, never write ./config.yaml into the CWD (WR-03)",
+			wrote, pushed, reloaded)
+	}
+	if !strings.Contains(buf.String(), "config toggle unavailable") {
+		t.Errorf("the empty path is not WARNed; log:\n%s", buf.String())
+	}
+}
+
 // TestOpenConfigEditorLauncher pins the settings launcher's happy path
 // (plan 07-05, research Q7): the document is ensured first, then xdg-open
 // starts on the pinned path as its ONLY argument with NO piped descriptors
