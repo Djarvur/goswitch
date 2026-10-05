@@ -330,11 +330,18 @@ Plans:
 
 ### Phase 8: a11y-магия приложений, документация и конфиг-skill
 
-**Goal:** Разобранный беклог (3 туды от 2026-10-05; порядок волн = порядок зависимостей). (1) **a11y-магия** — конфиг-секция приложений (имена/паттерны), которым goswitch автоматически включает accessibility-магию (gsettings toolkit-accessibility, snap-оверрайды, флаги запуска — механику исследовать при планировании; прецедент ZCode подтверждён владельцем): демон или установщик применяет её сам. (2) **Документация** — сверка README.ru/README/CONFIG.md/SPEC с фактическим поведением v1.1.0 (меню, тумблеры, звуки, blocklist, adopt+watch, «где молчит»), исправление расхождений; реструктура «русский-первый» (README.ru главная, README — перевод, синхронность поддерживается). (3) **Skill «Конфигурация goswitch» для AI** — SKILL.md (.zcode/skills): все секции config.yaml, команды goswitchctl, трей-меню, юнит — ключи/дефолты/диапазоны синхронно с CONFIG.md, процедуры (включить автокоррекцию, blocklist, хоткеи, звуки, a11y-магия), диагностика (goswitchctl status, журнал, известные ограничения); механизм синхрона с доками — генерация из CONFIG.md или lint-гейт.
-**Requirements**: TBD
+**Goal:** Разобранный беклог (3 todo от 2026-10-05; порядок волн = порядок зависимостей). (1) **a11y-магия** — конфиг-секция приложений (имена/паттерны), которым goswitch автоматически включает accessibility-магию (gsettings toolkit-accessibility, snap-оверрайды, флаги запуска — механику исследовать при планировании; прецедент ZCode подтверждён владельцем): демон или установщик применяет её сам. (2) **Документация** — сверка README.ru/README/CONFIG.md/SPEC с фактическим поведением v1.1.0 (меню, тумблеры, звуки, blocklist, adopt+watch, «где молчит»), исправление расхождений; реструктура «русский-первый» (README.ru главная, README — перевод, синхронность поддерживается). (3) **Skill «Конфигурация goswitch» для AI** — SKILL.md (.zcode/skills): все секции config.yaml, команды goswitchctl, трей-меню, юнит — ключи/дефолты/диапазоны синхронно с CONFIG.md, процедуры (включить автокоррекцию, blocklist, хоткеи, звуки, a11y-магия), диагностика (goswitchctl status, журнал, известные ограничения); механизм синхрона с доками — генерация из CONFIG.md или lint-гейт.
+**Requirements**: backlog-derived (D-8-1..D-8-11 из 08-CONTEXT.md; phase req_ids: null)
 **Depends on:** Phase 7
-**Plans:** 0 plans
+**Plans:** 8 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 8 to break down)
+- [ ] 08-01-PLAN.md — SPEC §4 spec-delta (ревизия 2026-10-05): контракт секции a11y ДО кода (D-55, волна-гейт кодовых планов)
+- [ ] 08-02-PLAN.md — Схема секции a11y (enabled/apps, RE2, потолок 64, Active(), strict decode, hot reload) — D-8-1/D-8-5
+- [ ] 08-03-PLAN.md — Reconciler internal/a11y (read-verify-then-set toolkit-accessibility + пояс org.a11y.Status.IsEnabled, warn-once) — D-8-3/D-8-6
+- [ ] 08-04-PLAN.md — Снапшот ключа в install-state.json + uninstall restore only-if-present — D-8-4
+- [ ] 08-05-PLAN.md — Wiring: A11ySink-фолд актора с дифф-гейтом + сборка reconciler'а в goswitchd — D-8-3
+- [ ] 08-06-PLAN.md — docs/CONFIG.md русский-первый + сверка со схемой/поведением + секция a11y (restart-семантика, рецепт оверрайда) — D-8-8/D-8-9/D-8-6
+- [ ] 08-07-PLAN.md — README русский-первый (README.md = RU полная, README.en.md = EN, README.ru.md удалён), якоря — D-8-7
+- [ ] 08-08-PLAN.md — Skill .zcode/skills/goswitch-config/SKILL.md: генератор cmd/skillgen из CONFIG.md + golden-гейт в mise run test + задача skillgen-regen — D-8-10/D-8-11
