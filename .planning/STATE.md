@@ -4,11 +4,11 @@ milestone: v1.0.0
 current_phase: 8
 current_phase_name: a11y-магия приложений, документация и конфиг-skill
 status: executing
-stopped_at: Completed 08-03-PLAN.md
-last_updated: "2026-10-05T17:27:33.554Z"
+stopped_at: Completed 08-04-PLAN.md
+last_updated: "2026-10-05T17:57:00.673Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 8 execution started
-state_head: 9a80c19d57aee0ab4cc5bbdc30acdd9f545d2eb4
+state_head: bb769c6962aa0e545539b03becd3b0b11bb93b9f
 progress:
   total_phases: 8
   completed_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 8 (a11y-магия приложений, документация и конфиг-skill) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-10-05 — Phase 8 execution started
 
@@ -121,6 +121,7 @@ Progress: [████████░░] 75%
 | Phase 08 P01 | 11 min | 2 tasks | 1 files |
 | Phase 08 P02 | 12 min | 2 tasks | 4 files |
 | Phase 08 P03 | 27 min | 2 tasks | 4 files |
+| Phase 08 P04 | 17 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -265,6 +266,10 @@ Recent decisions affecting current work:
 - [Phase 08]: Потолок a11y.apps=64 безусловен по enabled (DoS-потолок, T-06-04-01); compile-результаты в схеме не кэшируются — потребители компилируют своё
 - [Phase 08]: Тест 2 green-by-design: валидация на Load уже отвергает битый a11y-документ до apply — hot-reload кейс зелёный сразу, RED не фабриковался (прецедент 02-04)
 - [Phase 08]: Секция a11y несёт ровно два ключа (enabled/apps): набор магии фиксирован D-8-6 — strict decode отвергает per-app ключи, тест пинит
+- [Phase 08]: 08-04: a11y-снапшот читается в saveState после чтения чордов, до idempotent-backup раннего возврата — ранний возврат держит первый снапшот нетронутым, TestInstall_SecondInstallKeepsOriginalBackup зелёный без правок
+- [Phase 08]: снапшот вспомогателен: отказ чтения — пустое поле + один WARN (a11y key value not captured), инсталл зелёный, значение никогда не фабрикуется (T-08-04-04)
+- [Phase 08]: 08-04: restoreToolkitAccessibility сохраняет сигнатуру (ctx, lines) ([]string, error) c nolint:unparam — форма restore-шага симметрична restoreSources/restoreSwitchBinding; missing/corrupt → ноль set-вызовов + REPORTED skip (никогда не restore false), отказ set — WARN при зелёном uninstall
+- [Phase 08]: 08-04: точные sequence-пины TestInstall_Sequence/SingleSource и installCallCount 12→13 обновлены под новый снапшот-get — прямое следствие GREEN-действия плана, не правка защищённого поведения
 
 ### Pending Todos
 
@@ -297,6 +302,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T17:27:33.406Z
-Stopped at: Completed 08-03-PLAN.md
+Last session: 2026-10-05T17:56:22.997Z
+Stopped at: Completed 08-04-PLAN.md
 Resume file: None
