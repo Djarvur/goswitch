@@ -274,6 +274,10 @@ type Actor struct {
 	// push stays a silent no-op. The sink degrades itself (the menu
 	// precedent).
 	a11ySink A11ySink
+	// a11yActive is the a11y state last seen in a folded document (plan
+	// 08-05): the diff gate of the sink pushes and the value a late
+	// SetA11ySink self-syncs to (the soundACEvent precedent).
+	a11yActive bool
 	// soundEnabled is the applied sound switch folded from the snapshot
 	// (plan 07-05) — the EffectiveEnabled truth the status token serves.
 	soundEnabled bool
@@ -927,14 +931,22 @@ type A11ySink interface {
 	Apply(active bool)
 }
 
-// SetA11ySink installs the accessibility-magic seam (plan 08-05). nil = no
-// sink: every push stays a silent no-op (the menu nil form — a
-// degradation, never an error).
+// SetA11ySink installs the accessibility-magic seam (plan 08-05) — the
+// SetSoundSink mirror. nil = no sink: every push stays a silent no-op (the
+// menu nil form — a degradation, never an error). A non-nil install
+// self-syncs the last folded a11y state (the SetSoundSink install-push
+// precedent): a sink attached after a fold — the OnConn ordering, where
+// the startup FoldAppliedConfig has already run — still serves the folded
+// truth immediately, so the D-8-3 reconcile-at-start never depends on the
+// install order.
 func (a *Actor) SetA11ySink(s A11ySink) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.a11ySink = s
+	if s != nil && a.a11yActive {
+		s.Apply(true)
+	}
 }
 
 // SyncEngine pulls the daemon under the FACTUAL active engine (05-04,
@@ -1300,7 +1312,30 @@ func (a *Actor) applySnapshot() {
 	// an absent section reads ON, only an explicit enabled: false mutes,
 	// and the next gesture carries the change (the D-32 hot reload).
 	a.opts.SoundEnabled = snap.Sound.EffectiveEnabled()
+	a.pushA11y(snap) // the a11y-magic fold rides the same per-fold push chain (plan 08-05)
 	a.pushMenuSync(snap)
+}
+
+// pushA11y hands the reconciler the folded a11y state (plan 08-05, D-8-3
+// — the pushMenuSync form): the fold reads ONLY snap.A11y.Active() — the
+// single ACTIVE-semantics source (08-02), never recomputed here — and
+// pushes it to the sink only on a CHANGE of that boolean (the
+// refreshACBlocklist diff-gate form): a repeated fold of the same state
+// never touches the sink, so dconf churn and journal noise are impossible
+// at any fold rate. The push rides the same synchronous under-the-mutex
+// discipline as the sound pushes — legal because the sink contract is
+// fire-and-forget (a field write plus its own spawn, 08-03): the
+// subprocess series serializes on the reconciler's OWN mutex, never under
+// the actor's (WR-01) — the actor.mu → sink.mu ordering is one-way (the
+// sink never calls the actor back, the pushMenuSync comment's form).
+// The caller holds the mutex.
+func (a *Actor) pushA11y(snap config.Config) {
+	if active := snap.A11y.Active(); active != a.a11yActive {
+		a.a11yActive = active
+		if a.a11ySink != nil {
+			a.a11ySink.Apply(active)
+		}
+	}
 }
 
 // pushMenuSync hands the menu the applied config truth (plan 07-05): both

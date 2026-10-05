@@ -6453,6 +6453,10 @@ func TestActor_FoldAppliedConfig(t *testing.T) {
 // install self-syncs the last folded state (the SetSoundSink precedent),
 // and a nil sink stays a silent no-op.
 
+// a11yListedApp is the fold corpus's app pattern — the owner's ZCode
+// precedent (D-8-1), one constant for every a11y document feed.
+const a11yListedApp = "zcode"
+
 // fakeA11ySink is the actor's A11ySink double (plan 08-05): every pushed
 // state recorded under a mutex — the fold's diff-gate observability.
 type fakeA11ySink struct {
@@ -6494,7 +6498,7 @@ func a11yDoc(enabled bool, apps []string) config.Config {
 func TestActor_A11yFoldTriggersSinkOnActivation(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	src := &reloadSource{cfg: a11yDoc(true, []string{"zcode"})}
+	src := &reloadSource{cfg: a11yDoc(true, []string{a11yListedApp})}
 	a.AttachConfig(src)
 	a.SetA11ySink(sink)
 
@@ -6513,18 +6517,19 @@ func TestActor_A11yFoldTriggersSinkOnActivation(t *testing.T) {
 func TestActor_A11yFoldDiffGated(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	cfg := a11yDoc(true, []string{"zcode"})
+	cfg := a11yDoc(true, []string{a11yListedApp})
 	src := &reloadSource{cfg: cfg}
 	a.AttachConfig(src)
 	a.SetA11ySink(sink)
 
 	a.FoldAppliedConfig() // the activation — the only push
-	cfg.A11y.Apps = []string{"zcode", "telegram"}
+	cfg.A11y.Apps = []string{a11yListedApp, "telegram"}
 	src.set(cfg)
 	a.FoldAppliedConfig() // a different list, the same Active — silence
 
 	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
-		t.Errorf("a11y pushes after a repeated and a list-changed fold = %v, want exactly [true] — the gate is on the boolean", got)
+		t.Errorf("a11y pushes after a repeated and a list-changed fold = %v, want exactly [true] — "+
+			"the gate is on the boolean", got)
 	}
 }
 
@@ -6535,7 +6540,7 @@ func TestActor_A11yFoldDiffGated(t *testing.T) {
 func TestActor_A11yDeactivatePropagates(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	cfg := a11yDoc(true, []string{"zcode"})
+	cfg := a11yDoc(true, []string{a11yListedApp})
 	src := &reloadSource{cfg: cfg}
 	a.AttachConfig(src)
 	a.SetA11ySink(sink)
@@ -6557,7 +6562,7 @@ func TestActor_A11yDeactivatePropagates(t *testing.T) {
 func TestActor_A11yEnabledEmptyListInactive(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	cfg := a11yDoc(true, []string{"zcode"})
+	cfg := a11yDoc(true, []string{a11yListedApp})
 	src := &reloadSource{cfg: cfg}
 	a.AttachConfig(src)
 	a.SetA11ySink(sink)
@@ -6568,7 +6573,8 @@ func TestActor_A11yEnabledEmptyListInactive(t *testing.T) {
 	a.FoldAppliedConfig()
 
 	if got := sink.pushed(); !slices.Equal(got, []bool{true, false}) {
-		t.Errorf("a11y pushes after activate then enabled-with-empty-list = %v, want exactly [true false] — the fold reads Active(), not enabled", got)
+		t.Errorf("a11y pushes after activate then enabled-with-empty-list = %v, want exactly [true false] — "+
+			"the fold reads Active(), not enabled", got)
 	}
 }
 
@@ -6580,7 +6586,7 @@ func TestActor_A11yEnabledEmptyListInactive(t *testing.T) {
 func TestActor_A11ySinkInstallSelfSyncs(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	src := &reloadSource{cfg: a11yDoc(true, []string{"zcode"})}
+	src := &reloadSource{cfg: a11yDoc(true, []string{a11yListedApp})}
 	a.AttachConfig(src)
 
 	a.FoldAppliedConfig() // the startup fold — no sink installed yet
@@ -6588,7 +6594,8 @@ func TestActor_A11ySinkInstallSelfSyncs(t *testing.T) {
 	a.SetA11ySink(sink) // the late install self-syncs the folded state
 
 	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
-		t.Errorf("a11y pushes after a late install over an active fold = %v, want exactly [true] — the install pushes immediately", got)
+		t.Errorf("a11y pushes after a late install over an active fold = %v, want exactly [true] — "+
+			"the install pushes immediately", got)
 	}
 }
 
@@ -6597,7 +6604,7 @@ func TestActor_A11ySinkInstallSelfSyncs(t *testing.T) {
 // effect, the silent absence of pushes.
 func TestActor_A11yNilSinkNoOp(t *testing.T) {
 	a, _ := wiredActor()
-	src := &reloadSource{cfg: a11yDoc(true, []string{"zcode"})}
+	src := &reloadSource{cfg: a11yDoc(true, []string{a11yListedApp})}
 	a.AttachConfig(src)
 
 	a.FoldAppliedConfig() // active with no sink — silent
@@ -6605,6 +6612,7 @@ func TestActor_A11yNilSinkNoOp(t *testing.T) {
 	a.FoldAppliedConfig() // deactivated with no sink — still silent
 
 	if st := a.StatusSnapshot(); !st.SoundEnabled {
-		t.Errorf("status unreadable after nil-sink folds — the folds must run byte-as-today (the defaults document reads sound ON)")
+		t.Errorf("status unreadable after nil-sink folds — the folds must run byte-as-today " +
+			"(the defaults document reads sound ON)")
 	}
 }
