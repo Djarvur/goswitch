@@ -195,6 +195,12 @@ run = "go run ./test/e2e -case autocorrect-password-silent"
 description = "e2e: 06-07 autocorrect terminal-silent — wezterm (off the a11y bus) never fires: fired=0 + zero correction records under BOTH IME delivery modes (wezterm's IME arming races the injection — corrected live pin), active-layer status, zenity positive control (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case autocorrect-terminal-silent"
 
+# The 07-06 blocklist negative (MACR-ACL): the fixture's OBSERVED bridge
+# identity sits in apps_blocklist and the word survives verbatim.
+[tasks.e2e-autocorrect-blocklist-silent]
+description = "e2e: 07-06 autocorrect blocklist-silent — the fixture's observed bridge-namespace identity in apps_blocklist forbids the correction: field verbatim, fired=0, exactly one ac_skip_app_blocked abstention, zero correction records (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case autocorrect-blocklist-silent"
+
 # Dictionary regeneration (06-02): a dev-only task — it reads the system
 # hunspell dictionaries, which exist on the dev machine only. CI never runs
 # it: CI гоняет только golden-тесты по закоммиченным данным (CORR-08).

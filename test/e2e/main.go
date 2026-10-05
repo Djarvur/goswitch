@@ -112,6 +112,7 @@ func caseListUsage() string {
 		" | macr-per-app | ctl-smoke | switch-spike | two-source-flip | external-flip-sync" +
 		" | flip-keystroke" +
 		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
+		" | autocorrect-blocklist-silent" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -239,42 +240,43 @@ func runCaseWatchdog(
 // built per call (no mutable globals).
 func pickCase(name string) (caseSpec, error) {
 	registry := map[string]caseSpec{
-		"m1-gate":                     {fn: runM1Gate},
-		"ibus-restart":                {fn: runIbusRestart},
-		"kill9-survive":               {fn: runKill9Survive},
-		"d01-probe":                   {fn: runD01Probe},
-		"chromium-smoke":              {fn: runChromiumSmoke},
-		"gte-smoke":                   {fn: runGTESmoke},
-		"gedit-smoke":                 {fn: runGeditSmoke},
-		"x11-smoke":                   {fn: runChromiumX11Smoke},
-		"word-en-ru":                  {fn: runWordENRU},
-		"word-after-space":            {fn: runWordAfterSpace},
-		"word-ru-en":                  {fn: runWordRUEN},
-		"word-mixed":                  {fn: runWordMixed},
-		"phrase-en-ru":                {fn: runPhraseENRU},
-		"phrase-mixed":                {fn: runPhraseMixed},
-		"ladder-chromium":             {fn: runLadderChromium},
-		"reset-escape":                {fn: runResetEscape},
-		"select-smoke":                {fn: runSelectSmoke},
-		"select-correct":              {fn: runSelectCorrect},
-		"select-clipboard":            {fn: runSelectClipboard},
-		"combo-word-layout":           {fn: runComboWordLayout},
-		"layout-single":               {fn: runLayoutSingle},
-		"super-space-alive":           {fn: runSuperSpaceAlive},
-		"macr-probe":                  {fn: runMacrProbe},
-		"macr-super-letter":           {fn: runMacrSuperLetter},
-		"macr-per-app":                {fn: runMacrPerApp},
-		"ctl-smoke":                   {fn: runCtlSmoke},
-		"switch-spike":                {fn: runSwitchSpike, standalone: true},
-		"two-source-flip":             {fn: runTwoSourceFlip, standalone: true},
-		"external-flip-sync":          {fn: runExternalFlipSync, standalone: true},
-		"flip-keystroke":              {fn: runFlipKeystroke, standalone: true},
-		"autocorrect-fires":           {fn: runAutocorrectFires},
-		"autocorrect-password-silent": {fn: runAutocorrectPasswordSilent},
-		"autocorrect-terminal-silent": {fn: runAutocorrectTerminalSilent},
-		"install-cycle":               {fn: runInstallCycle, standalone: true},
-		"perf":                        {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
-		"perf-autocorrect":            {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
+		"m1-gate":                      {fn: runM1Gate},
+		"ibus-restart":                 {fn: runIbusRestart},
+		"kill9-survive":                {fn: runKill9Survive},
+		"d01-probe":                    {fn: runD01Probe},
+		"chromium-smoke":               {fn: runChromiumSmoke},
+		"gte-smoke":                    {fn: runGTESmoke},
+		"gedit-smoke":                  {fn: runGeditSmoke},
+		"x11-smoke":                    {fn: runChromiumX11Smoke},
+		"word-en-ru":                   {fn: runWordENRU},
+		"word-after-space":             {fn: runWordAfterSpace},
+		"word-ru-en":                   {fn: runWordRUEN},
+		"word-mixed":                   {fn: runWordMixed},
+		"phrase-en-ru":                 {fn: runPhraseENRU},
+		"phrase-mixed":                 {fn: runPhraseMixed},
+		"ladder-chromium":              {fn: runLadderChromium},
+		"reset-escape":                 {fn: runResetEscape},
+		"select-smoke":                 {fn: runSelectSmoke},
+		"select-correct":               {fn: runSelectCorrect},
+		"select-clipboard":             {fn: runSelectClipboard},
+		"combo-word-layout":            {fn: runComboWordLayout},
+		"layout-single":                {fn: runLayoutSingle},
+		"super-space-alive":            {fn: runSuperSpaceAlive},
+		"macr-probe":                   {fn: runMacrProbe},
+		"macr-super-letter":            {fn: runMacrSuperLetter},
+		"macr-per-app":                 {fn: runMacrPerApp},
+		"ctl-smoke":                    {fn: runCtlSmoke},
+		"switch-spike":                 {fn: runSwitchSpike, standalone: true},
+		"two-source-flip":              {fn: runTwoSourceFlip, standalone: true},
+		"external-flip-sync":           {fn: runExternalFlipSync, standalone: true},
+		"flip-keystroke":               {fn: runFlipKeystroke, standalone: true},
+		"autocorrect-fires":            {fn: runAutocorrectFires},
+		"autocorrect-password-silent":  {fn: runAutocorrectPasswordSilent},
+		"autocorrect-terminal-silent":  {fn: runAutocorrectTerminalSilent},
+		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
+		"install-cycle":                {fn: runInstallCycle, standalone: true},
+		"perf":                         {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
+		"perf-autocorrect":             {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
 	}
 	spec, ok := registry[name]
 	if !ok {
@@ -285,6 +287,7 @@ func pickCase(name string) (caseSpec, error) {
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
 			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, flip-keystroke,"+
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
+			" autocorrect-blocklist-silent,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 

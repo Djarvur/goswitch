@@ -299,8 +299,9 @@ type matrixCase struct {
 }
 
 // matrixConfigBaseAutocorrect names the autocorrect base document: the
-// ctl-smoke document shape with the layer ON and org.gnome.Zenity (the
-// matrix zenity surface's bridge identity) as the single white-list entry.
+// ctl-smoke document shape with the layer ON and an EMPTY apps_blocklist
+// (plan 07-06, the D-53 revision — the active state is enabled alone:
+// identity is not a gate, unknown passes, nothing is forbidden).
 const matrixConfigBaseAutocorrect = "autocorrect"
 
 // matrixConfigBases is the closed vocabulary of config_base.
@@ -309,9 +310,11 @@ func matrixConfigBases() []string {
 }
 
 // matrixACConfigYAML is the autocorrect base document (complete, the 03-02
-// no-overlay rule): the ctl-smoke shape plus the enabled layer, the zenity
-// white-list entry and the 06-05 corpus thresholds. flip_after_correction
-// pinned false — the rows' oracles count corrections, not mode records.
+// no-overlay rule): the ctl-smoke shape plus the enabled layer, the EMPTY
+// apps_blocklist (plan 07-06 — the layer fires wherever the role/caps/
+// detector conjunction allows; no identity is consulted) and the 06-05
+// corpus thresholds. flip_after_correction pinned false — the rows'
+// oracles count corrections, not mode records.
 func matrixACConfigYAML(windowMs int) string {
 	return fmt.Sprintf(`hotkeys:
   tap_key: shift_r
@@ -330,7 +333,7 @@ macr:
   alt_modifier: ""
 autocorrect:
   enabled: true
-  apps: ["org.gnome.Zenity"]
+  apps_blocklist: []
   min_word_len: 4
   trigram_margin: 2.0
   trigram_floor: 1.0

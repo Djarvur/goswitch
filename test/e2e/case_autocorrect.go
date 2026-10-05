@@ -31,6 +31,10 @@ import (
 //	                            from the a11y bus (06-RESEARCH Q6): counters
 //	                            are the only oracle, the fail-closed
 //	                            no-caps/role mechanisms refuse.
+//	autocorrect-blocklist-silent the OBSERVED fixture identity sits in
+//	                            apps_blocklist and the word survives
+//	                            verbatim (plan 07-06, MACR-ACL): fired=0,
+//	                            one app-blocked abstention, field verbatim.
 //
 // The 07-06 repin: identity is NO LONGER a gate (unknown passes, the
 // blocklist can only forbid what it sees), so the case-side identity
@@ -77,8 +81,8 @@ const (
 
 	// The grep-stable daemon records of the 06-06 contour: the fired INFO
 	// (slog.Info("autocorrect", "reason", "fired")), the abstention INFO
-	// ("autocorrect skipped", reason slug — role-forbidden/app-not-listed
-	// of the actor's closed slug vocabulary) and the settled correction.
+	// ("autocorrect skipped", reason slug — role-forbidden/app-blocked of
+	// the actor's closed slug vocabulary) and the settled correction.
 	acFiredMark      = `"msg":"autocorrect","reason":"fired"`
 	acAbstainFmt     = `"msg":"autocorrect skipped","reason":"%s"`
 	correctionAnyMar = `"msg":"correction"`
@@ -89,6 +93,12 @@ const (
 	// (internal/session actor.go) — the reason the password case's oracle
 	// requires.
 	acReasonRoleForbidden = "role-forbidden"
+
+	// acReasonAppBlocked mirrors the actor's 07-04 abstention slug — the
+	// reason the blocklist negative's oracle requires (the D-53 revision:
+	// a blocklist match FORBIDS, and the refusal is countable from
+	// outside as ac_skip_app_blocked).
+	acReasonAppBlocked = "app-blocked"
 
 	// acFixtureTimeoutSec is the fixture's lifetime argument: long enough
 	// for the whole observation/injection round, short enough that the
@@ -630,6 +640,110 @@ func (s *stand) acSilentInjectionRound(ctx context.Context, caseName string) err
 	if err := s.waitForLog(ctx, fmt.Sprintf(acAbstainFmt, acReasonRoleForbidden), decisionWait); err != nil {
 		return fmt.Errorf("%s: role-forbidden abstention: %w", caseName, err)
 	}
+
+	return nil
+}
+
+// runAutocorrectBlocklistSilent proves the blocklist half of the D-53
+// revision live (plan 07-06, MACR-ACL): the fixture's OBSERVED
+// bridge-namespace identity (never guessed — the macr-per-app discipline,
+// the case-side observer of the white-list era lives exactly here) becomes
+// the config's single apps_blocklist entry, and the injected word must
+// survive VERBATIM. The daemons: a neutral spawn first (the identity must
+// be observed before it can be forbidden), then the blocklist document
+// embedding the exact observed string (the plain substring form — the
+// anchored ^…$ alternative is the document author's explicit choice, this
+// case pins the exact-string form), then the observer-start round (the
+// blocklist fold AND the identity/role source go live at the daemon's
+// first key event — the fixture below must map after that). The oracles:
+// the after-witness holds exactly the typed rune count and the readback
+// the verbatim typed content (witness forms only — the word itself is
+// never printed, D-20/D-21), the abstention record names app-blocked,
+// the counters show fired=0 with exactly one ac_skip_app_blocked, the
+// daemon log holds zero correction records, and the fixture's PLAIN
+// stdout oracle closes the case with the byte-exact field content.
+func runAutocorrectBlocklistSilent(ctx context.Context, s *stand) error {
+	const caseName = "autocorrect-blocklist-silent"
+	if err := startAutocorrectConfigDaemon(ctx, s, autocorrectConfigDoc); err != nil {
+		return err
+	}
+	app, err := observeFixtureApp(ctx, s, caseName)
+	if err != nil {
+		return err
+	}
+	blocklistDoc := strings.Replace(autocorrectConfigDoc,
+		"apps_blocklist: []", "apps_blocklist: [\""+app+"\"]", 1)
+	if err := startAutocorrectConfigDaemon(ctx, s, blocklistDoc); err != nil {
+		return err
+	}
+	ctlBin, err := s.buildCtl(ctx)
+	if err != nil {
+		return err
+	}
+	// The observer-start round: the daemon's lazy per-key-event fold starts
+	// the a11y source here — the fresh fixture's map-focus gain below is
+	// what stores the (sender, path) pair the blocklist match and the live
+	// role query both read.
+	if err := s.acStartObserverRound(ctx); err != nil {
+		return err
+	}
+	if err := s.startPasswordFixture(ctx); err != nil {
+		return err
+	}
+	defer s.reapPasswordFixture()
+	before, err := s.waitFixtureWitness(ctx, acRoleTextWitness, 0, true)
+	if err != nil {
+		return err
+	}
+	if err := s.acTypeAndWaitKeys(ctx); err != nil {
+		return err
+	}
+	if err := s.acBlocklistOracle(ctx, ctlBin, caseName, before); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// acBlocklistOracle runs the blocklist round's oracle set: the app-blocked
+// abstention record, the unchanged-content proofs (the count witness and
+// the verbatim readback — witness forms only, the word itself is never
+// printed), the silence counters, the active-layer status with exactly one
+// ac_skip_app_blocked and the fixture's PLAIN stdout oracle holding the
+// byte-exact field content.
+func (s *stand) acBlocklistOracle(ctx context.Context, ctlBin, caseName, before string) error {
+	if err := s.waitForLog(ctx, fmt.Sprintf(acAbstainFmt, acReasonAppBlocked), decisionWait); err != nil {
+		return fmt.Errorf("%s: app-blocked abstention: %w", caseName, err)
+	}
+	after, err := s.waitFixtureWitness(ctx, acRoleTextWitness, utf8.RuneCountInString(acWord), false)
+	if err != nil {
+		return fmt.Errorf("%s: typed-content witness: %w", caseName, err)
+	}
+	// The readback compares the WORD ALONE (acWordReadback) — this client's
+	// line-granularity answer drops a trailing separator, the same
+	// documented readback class that keeps the fires case's oracles
+	// word-only; the byte-exact verbatim pin rides the PLAIN stdout oracle
+	// below (== acWord, separator included) and the 7-rune count witness
+	// above rules out any extra text.
+	if err := s.waitFixtureText(ctx, acWordReadback); err != nil {
+		return fmt.Errorf("%s: verbatim readback: %w", caseName, err)
+	}
+	if err := s.assertAcSilent(caseName); err != nil {
+		return err
+	}
+	if err := ctlStatusHas(ctx, ctlBin, "autocorrect_enabled=true", "autocorrect_fired=0",
+		"ac_skip_app_blocked=1"); err != nil {
+		return fmt.Errorf("%s: %w", caseName, err)
+	}
+	final, plain, err := s.waitFixtureExit(ctx)
+	if err != nil {
+		return fmt.Errorf("%s: %w", caseName, err)
+	}
+	if err := assertFixtureExitOracles(caseName, final, plain, "", acWord); err != nil {
+		return err
+	}
+	fmt.Printf("%s: blocklist silent — witness %q→%q, field verbatim, fired=0, one app-blocked abstention\n",
+		caseName, before, after)
 
 	return nil
 }
