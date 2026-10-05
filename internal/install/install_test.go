@@ -3,7 +3,9 @@ package install_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -73,6 +75,17 @@ const (
 	// derivedActivation is the engine name the first ('xkb', 'us') tuple of
 	// ownerSources restores to (the fallbackEngine derivation).
 	derivedActivation = "xkb:us::eng"
+	// The a11y magic key (D-8-4, plan 08-04): install snapshots the
+	// pre-install org.gnome.desktop.interface toolkit-accessibility value
+	// into the state file; uninstall restores it only-if-present. The
+	// a11yGet* constants are the exact `gsettings get` reply shapes — the
+	// trailing newline the snapshot trims away.
+	gsettingsSchemaInterface = "org.gnome.desktop.interface"
+	gsettingsKeyA11y         = "toolkit-accessibility"
+	a11yGetTrue              = "true\n"
+	a11yGetFalse             = "false\n"
+	a11yValTrue              = "true"
+	a11yValFalse             = "false"
 )
 
 // instCall is one recorded subprocess invocation: argv plus the env the
@@ -574,6 +587,162 @@ func TestInstall_StateFileOutsideConfigDir(t *testing.T) {
 		t.Error("state found inside ~/.config/goswitch — Pitfall 8 places it in ~/.local/share/goswitch")
 	}
 	assertPerm(t, statePath, 0o600)
+}
+
+// errA11yGetRefused is the corpus's simulated a11y-key read refusal (the
+// sentinel convention).
+var errA11yGetRefused = errors.New("simulated a11y read refusal")
+
+// recordSink is the slog handler double recording every record — the WARN
+// visibility seam of the degradation contracts (the a11y/watch_test
+// slog-capture precedent).
+type recordSink struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+// Enabled accepts every level — the corpus wants all records.
+func (s *recordSink) Enabled(context.Context, slog.Level) bool { return true }
+
+// Handle appends the record to the sink's list.
+func (s *recordSink) Handle(_ context.Context, rec slog.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, rec)
+
+	return nil
+}
+
+// WithAttrs keeps the sink (the corpus reads bare records).
+func (s *recordSink) WithAttrs([]slog.Attr) slog.Handler { return s }
+
+// WithGroup keeps the sink (the corpus reads bare records).
+func (s *recordSink) WithGroup(string) slog.Handler { return s }
+
+// hasWarn reports whether the sink captured a record with the exact message.
+func (s *recordSink) hasWarn(msg string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return slices.ContainsFunc(s.records, func(r slog.Record) bool { return r.Message == msg })
+}
+
+// captureWarns installs the recording slog default and restores the old one
+// at cleanup — the process-global default is the daemon's log door (the
+// watch_test capture precedent).
+func captureWarns(t *testing.T) *recordSink {
+	t.Helper()
+	sink := &recordSink{}
+	old := slog.Default()
+	slog.SetDefault(slog.New(sink))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	return sink
+}
+
+// TestInstall_A11ySnapshotCaptured pins the D-8-4 snapshot half: install
+// reads the pre-install toolkit-accessibility value and stores it VERBATIM
+// in install-state.json — the uninstall restore's material. The daemon
+// applies the key only after install (the canonical install-before-daemon
+// order), so the snapshot is the honest pre-goswitch state; the fake
+// answers the exact `gsettings get` reply shape and the state field carries
+// the trimmed value with no reply-shape artifacts.
+func TestInstall_A11ySnapshotCaptured(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet &&
+			args[1] == gsettingsSchemaInterface && args[2] == gsettingsKeyA11y {
+			return []byte(a11yGetFalse), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	var st struct {
+		ToolkitAccessibility string `json:"toolkit_accessibility"`
+	}
+	if err := json.Unmarshal([]byte(readAll(t, statePath)), &st); err != nil {
+		t.Fatalf("parse install state: %v", err)
+	}
+	if st.ToolkitAccessibility != a11yValFalse {
+		t.Errorf("state toolkit_accessibility = %q, want the pre-install value %q VERBATIM",
+			st.ToolkitAccessibility, a11yValFalse)
+	}
+}
+
+// TestInstall_A11ySnapshotTrueValue pins the honest-snapshot case: a key the
+// owner enabled BY HAND before goswitch ever installed is captured as
+// "true" — the snapshot never assumes goswitch turned the key on, so the
+// uninstall restore can put the owner's own true back (Pitfall 5's other
+// half: the snapshot is verbatim, in both directions).
+func TestInstall_A11ySnapshotTrueValue(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet &&
+			args[1] == gsettingsSchemaInterface && args[2] == gsettingsKeyA11y {
+			return []byte(a11yGetTrue), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	var st struct {
+		ToolkitAccessibility string `json:"toolkit_accessibility"`
+	}
+	if err := json.Unmarshal([]byte(readAll(t, statePath)), &st); err != nil {
+		t.Fatalf("parse install state: %v", err)
+	}
+	if st.ToolkitAccessibility != a11yValTrue {
+		t.Errorf("state toolkit_accessibility = %q, want the pre-install value %q VERBATIM",
+			st.ToolkitAccessibility, a11yValTrue)
+	}
+}
+
+// TestInstall_A11ySnapshotReadFailureLeavesEmpty pins the auxiliary-step
+// degradation (T-08-04-04): a failed a11y-key read NEVER fails the install
+// and NEVER fabricates a value — the state field stays empty and the
+// refusal is one WARN (an old-install-shaped state the uninstall restore
+// must skip, never guess).
+func TestInstall_A11ySnapshotReadFailureLeavesEmpty(t *testing.T) {
+	sink := captureWarns(t)
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet &&
+			args[1] == gsettingsSchemaInterface && args[2] == gsettingsKeyA11y {
+			return nil, errA11yGetRefused
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	var st struct {
+		ToolkitAccessibility string `json:"toolkit_accessibility"`
+	}
+	if err := json.Unmarshal([]byte(readAll(t, statePath)), &st); err != nil {
+		t.Fatalf("parse install state: %v", err)
+	}
+	if st.ToolkitAccessibility != "" {
+		t.Errorf("state toolkit_accessibility = %q, want empty — a failed read must never fabricate a value",
+			st.ToolkitAccessibility)
+	}
+	if !sink.hasWarn("a11y key value not captured") {
+		t.Error("no WARN captured for the failed a11y read — the refusal must be reported, never silent")
+	}
 }
 
 // TestInstall_SecondInstallKeepsOriginalBackup pins the idempotency core:
