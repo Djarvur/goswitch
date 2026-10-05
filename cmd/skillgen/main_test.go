@@ -27,6 +27,7 @@ func TestSkillgen_ParseRealConfigTable(t *testing.T) {
 	for i, row := range rows {
 		if len(row.cells) != keyTableCells {
 			t.Errorf("row %d: %d cells, want %d", i, len(row.cells), keyTableCells)
+
 			continue
 		}
 		key := row.cells[0]
@@ -37,6 +38,7 @@ func TestSkillgen_ParseRealConfigTable(t *testing.T) {
 		for _, prefix := range sections {
 			if strings.HasPrefix(key, "`"+prefix) {
 				qualified = true
+
 				break
 			}
 		}
@@ -157,7 +159,7 @@ func TestSkillgen_RegionSentinelsRequired(t *testing.T) {
 			}
 			updated, err := replaceRegion(path, []byte("новый регион"))
 			if err == nil {
-				t.Fatalf("replaceRegion accepted a file without usable sentinels (%d bytes), want an error", len(updated))
+				t.Fatalf("replaceRegion accepted a sentinel-less file (%d bytes), want an error", len(updated))
 			}
 			if updated != nil {
 				t.Errorf("replaceRegion returned %d bytes of partial content alongside the error", len(updated))
