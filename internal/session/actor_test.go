@@ -6087,6 +6087,13 @@ func (f *fakeSoundSink) flipCount() int {
 	return f.flips
 }
 
+func (f *fakeSoundSink) fireCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.fires
+}
+
 // TestActor_FlipSoundsSink pins the single flip point (plan 07-08): a
 // gesture flip (the Single decision at expiry) and a menu flip
 // (SwitchMode — the SAME flipTo path) each sound exactly one Flip; the
@@ -6153,5 +6160,134 @@ func TestActor_SoundSinkAfterModeRecord(t *testing.T) {
 	want := []string{opSymbolRU, "display:ru", "menu:ru", "sound:flip"}
 	if !slices.Equal(ops, want) {
 		t.Errorf("flip op order = %q, want exactly %q — the tone fires after every observer, D-36 intact", ops, want)
+	}
+}
+
+// The sound-gating corpus of plan 07-08 (task 3): the fired tone, the
+// single gate ahead of the sink, the snapshot fold and the nil-sink
+// degradation.
+
+// soundOn returns the enabled-autocorrect Options with the sound switch ON
+// — the fire-tone cells' configuration (acOptions plus the switch).
+func soundOn() session.Options {
+	opts := acOptions()
+	opts.SoundEnabled = true
+
+	return opts
+}
+
+// TestActor_AutoCorrectFireSoundsSink pins the fired tone (plan 07-08): a
+// fired correction sounds exactly one AutoCorrect from the fired point —
+// the abstentions never reach the sink.
+func TestActor_AutoCorrectFireSoundsSink(t *testing.T) {
+	a, sink := wiredActor()
+	sound := &fakeSoundSink{}
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(soundOn())
+	a.SetSoundSink(sound)
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	if got := sound.fireCount(); got != 1 {
+		t.Errorf("autocorrect tones after a fired correction = %d, want exactly 1", got)
+	}
+}
+
+// TestActor_AutoCorrectAbstainSilent pins the abstention's silence (plan
+// 07-08): an app-blocked boundary refuses before the fired point — zero
+// tones, the fail-closed abstention stays the only trace.
+func TestActor_AutoCorrectAbstainSilent(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &fakeSoundSink{}
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acBlockedOptions()) // the fixture app matches the blocklist
+	a.SetSoundSink(sound)
+
+	typeWord(a, wordEN)
+	a.HandleKey(spaceKey())
+
+	if got := sound.fireCount(); got != 0 {
+		t.Errorf("autocorrect tones after an app-blocked abstention = %d, want 0", got)
+	}
+	if got := a.AutoCorrectCounters().Reasons[acReasonAppBlocked]; got != 1 {
+		t.Errorf("app-blocked abstentions = %d, want 1 — the refusal must remain counted", got)
+	}
+}
+
+// TestActor_SoundDisabledNoSink pins the single gate (plan 07-08): with
+// Options.SoundEnabled off, NO gesture reaches the sink — the gate sits
+// ahead of the sink, so no binary lookup ever runs for a muted daemon.
+func TestActor_SoundDisabledNoSink(t *testing.T) {
+	a, sink := wiredActor()
+	sound := &fakeSoundSink{}
+	a.UseAppid(fakeAppid{app: acListedApp})
+	opts := soundOn()
+	opts.SoundEnabled = false
+	a.SetOptions(opts)
+	a.SetSoundSink(sound)
+
+	flipMode(a)                                 // a live flip — must stay silent
+	fireAutocorrect(t, a, sink, wordEN, wordRU) // a live fire — must stay silent
+
+	if got := sound.flipCount(); got != 0 {
+		t.Errorf("flip tones with the sound off = %d, want 0", got)
+	}
+	if got := sound.fireCount(); got != 0 {
+		t.Errorf("autocorrect tones with the sound off = %d, want 0", got)
+	}
+}
+
+// TestActor_NilSoundSinkNoOp pins the nil degradation (the SetMenuSync nil
+// form): no sink installed — every flip and every fire runs byte-as-today,
+// the tones silently absent.
+func TestActor_NilSoundSinkNoOp(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(soundOn())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+	flipMode(a)
+
+	if got := a.AutoCorrectCounters().Fired; got != 1 {
+		t.Errorf("fired corrections with no sink = %d, want 1 — the correction is unaffected", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"mode","to":"ru"`) {
+		t.Errorf("mode record missing with no sink; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_SoundFoldGatesFromSnapshot pins the fold (plan 07-08): the
+// applied document's sound switch gates the tones — default ON lands as
+// ON, an explicit enabled: false mutes the next flip WITHOUT a restart,
+// and a reload back to ON sounds again (the D-32 hot-reload contour).
+func TestActor_SoundFoldGatesFromSnapshot(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &fakeSoundSink{}
+	cfg := config.Defaults()
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetOptions(soundOn())
+	a.SetSoundSink(sound)
+
+	flipMode(a) // the defaults document reads ON — the tone fires
+	if got := sound.flipCount(); got != 1 {
+		t.Fatalf("flip tones under the default document = %d, want 1 — sound is default ON", got)
+	}
+
+	off := false
+	cfg.Sound.Enabled = &off
+	src.set(cfg)
+	flipMode(a) // the muted document — the fold gates before the sink
+	if got := sound.flipCount(); got != 1 {
+		t.Errorf("flip tones after the muted reload = %d, want still 1 — the gate folds from the snapshot", got)
+	}
+
+	on := true
+	cfg.Sound.Enabled = &on
+	src.set(cfg)
+	flipMode(a) // re-enabled — the tone returns
+	if got := sound.flipCount(); got != 2 {
+		t.Errorf("flip tones after the re-enabled reload = %d, want 2", got)
 	}
 }

@@ -668,3 +668,118 @@ func TestOpenConfigEditorEnsureFailureSkipsLaunch(t *testing.T) {
 		t.Errorf("the ensure failure is not WARNed; log:\n%s", buf.String())
 	}
 }
+
+// The sound-wiring corpus of plan 07-08: the daemon's sound surface — the
+// startup config feeds the gate (default ON), the installed sink hears the
+// flips, and the applied document's switch gates through the snapshot fold
+// without a restart.
+
+// fakeSoundSink is the sound-seam double of the wiring corpus: both tones
+// counted under a mutex.
+type fakeSoundSink struct {
+	mu    sync.Mutex
+	flips int
+	fires int
+}
+
+func (f *fakeSoundSink) Flip() {
+	f.mu.Lock()
+	f.flips++
+	f.mu.Unlock()
+}
+
+func (f *fakeSoundSink) AutoCorrect() {
+	f.mu.Lock()
+	f.fires++
+	f.mu.Unlock()
+}
+
+func (f *fakeSoundSink) flipCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.flips
+}
+
+// foldSource is the snapshot fake of the watcher's Snapshot contract — the
+// reload corpus mutates the document between gestures.
+type foldSource struct {
+	mu  sync.Mutex
+	cfg config.Config
+}
+
+func (s *foldSource) Snapshot() config.Config {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.cfg
+}
+
+func (s *foldSource) set(cfg config.Config) {
+	s.mu.Lock()
+	s.cfg = cfg
+	s.mu.Unlock()
+}
+
+// TestNewActor_SoundGatingFromStartupConfig pins the startup feed (plan
+// 07-08): the daemon's Options carry the document's effective sound switch
+// — the defaults read ON (the owner's verdict), an explicit enabled: false
+// mutes the daemon from the first gesture.
+func TestNewActor_SoundGatingFromStartupConfig(t *testing.T) {
+	t.Run("defaults: sound ON", func(t *testing.T) {
+		actor := newActor(config.Defaults(), nil)
+		sink := &fakeSoundSink{}
+		actor.SetSoundSink(sink)
+
+		actor.ToggleMode()
+
+		if got := sink.flipCount(); got != 1 {
+			t.Errorf("flip tones under the defaults = %d, want 1 — sound is default ON", got)
+		}
+	})
+
+	t.Run("enabled: false mutes", func(t *testing.T) {
+		cfg := config.Defaults()
+		off := false
+		cfg.Sound.Enabled = &off
+		actor := newActor(cfg, nil)
+		sink := &fakeSoundSink{}
+		actor.SetSoundSink(sink)
+
+		actor.ToggleMode()
+
+		if got := sink.flipCount(); got != 0 {
+			t.Errorf("flip tones with sound.enabled=false = %d, want 0", got)
+		}
+	})
+}
+
+// TestNewActor_SoundHotReloadGating pins the D-32 contour (plan 07-08):
+// the applied document's switch gates through the snapshot fold — muting
+// the document silences the next flip WITHOUT a restart, a reload back to
+// ON sounds again.
+func TestNewActor_SoundHotReloadGating(t *testing.T) {
+	cfg := config.Defaults()
+	off := false
+	cfg.Sound.Enabled = &off
+	src := &foldSource{cfg: cfg}
+	actor := newActor(cfg, nil)
+	actor.AttachConfig(src)
+	sink := &fakeSoundSink{}
+	actor.SetSoundSink(sink)
+
+	actor.ExpiryAt(time.Second) // one fold of the muted document
+	actor.ToggleMode()
+	if got := sink.flipCount(); got != 0 {
+		t.Fatalf("flip tones under the muted document = %d, want 0 — the fold gates without a restart", got)
+	}
+
+	on := true
+	cfg.Sound.Enabled = &on
+	src.set(cfg)
+	actor.ExpiryAt(2 * time.Second) // the fold of the re-enabled document
+	actor.ToggleMode()
+	if got := sink.flipCount(); got != 1 {
+		t.Errorf("flip tones after the re-enabled reload = %d, want 1 — hot reload re-arms the tones", got)
+	}
+}

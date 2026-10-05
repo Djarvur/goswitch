@@ -304,6 +304,13 @@ type Options struct {
 	AutoCorrectMinWordLen int
 	AutoCorrectMargin     float64
 	AutoCorrectFloor      float64
+	// SoundEnabled is the acoustic-feedback switch of the owner's «Звуки
+	// при переключении» decision (plan 07-08): DEFAULT ON — only an
+	// explicit enabled: false silences the tones. Fed from the document's
+	// Sound.EffectiveEnabled through applySnapshot (hot reload) or the
+	// startup wiring's SetOptions; the gate sits ahead of the sink, so a
+	// muted daemon never consults it.
+	SoundEnabled bool
 }
 
 // MACRStats are the Super→Ctrl layer's counters (ADR-005 b.2) — the status
