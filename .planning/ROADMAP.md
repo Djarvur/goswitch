@@ -333,7 +333,7 @@ Plans:
 **Goal:** Разобранный беклог (3 todo от 2026-10-05; порядок волн = порядок зависимостей). (1) **a11y-магия** — конфиг-секция приложений (имена/паттерны), которым goswitch автоматически включает accessibility-магию (gsettings toolkit-accessibility, snap-оверрайды, флаги запуска — механику исследовать при планировании; прецедент ZCode подтверждён владельцем): демон или установщик применяет её сам. (2) **Документация** — сверка README.ru/README/CONFIG.md/SPEC с фактическим поведением v1.1.0 (меню, тумблеры, звуки, blocklist, adopt+watch, «где молчит»), исправление расхождений; реструктура «русский-первый» (README.ru главная, README — перевод, синхронность поддерживается). (3) **Skill «Конфигурация goswitch» для AI** — SKILL.md (.zcode/skills): все секции config.yaml, команды goswitchctl, трей-меню, юнит — ключи/дефолты/диапазоны синхронно с CONFIG.md, процедуры (включить автокоррекцию, blocklist, хоткеи, звуки, a11y-магия), диагностика (goswitchctl status, журнал, известные ограничения); механизм синхрона с доками — генерация из CONFIG.md или lint-гейт.
 **Requirements**: backlog-derived (D-8-1..D-8-11 из 08-CONTEXT.md; phase req_ids: null)
 **Depends on:** Phase 7
-**Plans:** 3/8 plans executed
+**Plans:** 5/8 plans executed
 
 Plans:
 **Wave 1**
@@ -344,11 +344,11 @@ Plans:
 
 - [x] 08-02-PLAN.md — Схема секции a11y (enabled/apps, RE2, потолок 64, Active(), strict decode, hot reload) — D-8-1/D-8-5
 - [x] 08-03-PLAN.md — Reconciler internal/a11y (read-verify-then-set toolkit-accessibility + пояс org.a11y.Status.IsEnabled, warn-once) — D-8-3/D-8-6
-- [ ] 08-04-PLAN.md — Снапшот ключа в install-state.json + uninstall restore only-if-present — D-8-4
+- [x] 08-04-PLAN.md — Снапшот ключа в install-state.json + uninstall restore only-if-present — D-8-4
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 08-05-PLAN.md — Wiring: A11ySink-фолд актора с дифф-гейтом + сборка reconciler'а в goswitchd — D-8-3
+- [x] 08-05-PLAN.md — Wiring: A11ySink-фолд актора с дифф-гейтом + сборка reconciler'а в goswitchd — D-8-3
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

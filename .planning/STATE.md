@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 8
 current_phase_name: a11y-магия приложений, документация и конфиг-skill
 status: executing
-stopped_at: Completed 08-04-PLAN.md
-last_updated: "2026-10-05T17:57:00.673Z"
+stopped_at: Completed 08-05-PLAN.md
+last_updated: "2026-10-05T18:21:27.347Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 8 execution started
-state_head: bb769c6962aa0e545539b03becd3b0b11bb93b9f
+state_head: 6014f7ed942df92939bfb9d9dc90469d8d3f76a7
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 59
-  completed_plans: 54
+  completed_plans: 56
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 8 (a11y-магия приложений, документация и конфиг-skill) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-10-05 — Phase 8 execution started
 
@@ -122,6 +122,7 @@ Progress: [████████░░] 75%
 | Phase 08 P02 | 12 min | 2 tasks | 4 files |
 | Phase 08 P03 | 27 min | 2 tasks | 4 files |
 | Phase 08 P04 | 17 min | 2 tasks | 4 files |
+| Phase 08 P05 | 9 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -270,6 +271,8 @@ Recent decisions affecting current work:
 - [Phase 08]: снапшот вспомогателен: отказ чтения — пустое поле + один WARN (a11y key value not captured), инсталл зелёный, значение никогда не фабрикуется (T-08-04-04)
 - [Phase 08]: 08-04: restoreToolkitAccessibility сохраняет сигнатуру (ctx, lines) ([]string, error) c nolint:unparam — форма restore-шага симметрична restoreSources/restoreSwitchBinding; missing/corrupt → ноль set-вызовов + REPORTED skip (никогда не restore false), отказ set — WARN при зелёном uninstall
 - [Phase 08]: 08-04: точные sequence-пины TestInstall_Sequence/SingleSource и installCallCount 12→13 обновлены под новый снапшот-get — прямое следствие GREEN-действия плана, не правка защищённого поведения
+- [Phase 08]: Seam A11ySink в акторе: фолд pushA11y читает только snap.A11y.Active() и пушит ровно на изменение булева (форма refreshACBlocklist); SetA11ySink self-syncs (форма SetSoundSink); nil — тихий no-op — Единственный источник ACTIVE-семантики — метод конфига (08-02); дубль семантики в акторе запрещён греп-гейтом
+- [Phase 08]: Wiring демона: reconciler a11y.New(NewExecRunner, NewDBusStatusSetter) + SetA11ySink одним блоком в OnConn рядом с SetSoundSink; применение только через существующий фолд (старт FoldAppliedConfig + self-sync, reload applySnapshot), ноль новых watcher-веток (D-32) — D-8-3 daemon-reconcile: один источник истины о применении — фолд; wiring ставится один раз
 
 ### Pending Todos
 
@@ -302,6 +305,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T17:56:22.997Z
-Stopped at: Completed 08-04-PLAN.md
+Last session: 2026-10-05T18:21:12.158Z
+Stopped at: Completed 08-05-PLAN.md
 Resume file: None
