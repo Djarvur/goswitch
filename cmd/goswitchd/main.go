@@ -221,7 +221,12 @@ type menuToggles struct {
 // and the store races no dispatch read — WR-01), the synchronous apply
 // rides the reload (nil without a config source — the flip's own guard
 // handles it).
-func newMenuToggles(actor *session.Actor, menu *atomic.Pointer[indicator.Menu], cfgPath string, syncReload func()) menuToggles {
+func newMenuToggles(
+	actor *session.Actor,
+	menu *atomic.Pointer[indicator.Menu],
+	cfgPath string,
+	syncReload func(),
+) menuToggles {
 	return menuToggles{
 		ac: &configToggle{
 			path:  cfgPath,

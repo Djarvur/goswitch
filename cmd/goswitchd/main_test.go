@@ -582,7 +582,7 @@ func TestMenuTogglePushRacesAttachStore(t *testing.T) {
 	toggles.ac.reload = func() {}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
@@ -894,7 +894,8 @@ func TestNewActor_SoundEventHotReload(t *testing.T) {
 	actor.ExpiryAt(2 * time.Second) // the fold of the edited document
 
 	if got := sink.autocorrectEvent(); got != changed {
-		t.Errorf("the sink's autocorrect event after the edit = %q, want %q — the row folds without a restart (WR-02)", got, changed)
+		t.Errorf("the sink's autocorrect event after the edit = %q, want %q —"+
+			" the row folds without a restart (WR-02)", got, changed)
 	}
 
 	// A late install (the OnConn ordering) self-syncs to the folded truth
@@ -902,7 +903,8 @@ func TestNewActor_SoundEventHotReload(t *testing.T) {
 	late := &fakeSoundSink{}
 	actor.SetSoundSink(late)
 	if got := late.autocorrectEvent(); got != changed {
-		t.Errorf("the late-installed sink's event = %q, want %q — the install must self-sync (the SetMenuSync precedent)", got, changed)
+		t.Errorf("the late-installed sink's event = %q, want %q —"+
+			" the install must self-sync (the SetMenuSync precedent)", got, changed)
 	}
 }
 

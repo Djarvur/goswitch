@@ -6157,18 +6157,13 @@ func (f *fakeSoundSink) AutoCorrect() {
 	f.mu.Unlock()
 }
 
-// SetAutocorrectEvent records the folded event push (WR-02).
+// SetAutocorrectEvent records the folded event push (WR-02). The session
+// corpus pins the propagation from the daemon side (main_test's wiring
+// corpus); here the double only satisfies the interface.
 func (f *fakeSoundSink) SetAutocorrectEvent(event string) {
 	f.mu.Lock()
 	f.event = event
 	f.mu.Unlock()
-}
-
-func (f *fakeSoundSink) autocorrectEvent() string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	return f.event
 }
 
 func (f *fakeSoundSink) flipCount() int {

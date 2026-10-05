@@ -153,7 +153,8 @@ func TestPlayer_SetAutocorrectEvent(t *testing.T) {
 		t.Fatalf("runner calls after one autocorrect tone and one flip = %d, want exactly 2", len(calls))
 	}
 	if want := []string{binCanberra, "-i", changed}; !slices.Equal(calls[0], want) {
-		t.Errorf("autocorrect argv after the re-pin = %q, want exactly %q — the re-pinned event rides the next tone", calls[0], want)
+		t.Errorf("autocorrect argv after the re-pin = %q, want exactly %q —"+
+			" the re-pinned event rides the next tone", calls[0], want)
 	}
 	if want := []string{binCanberra, "-i", config.DefaultSoundFlipEvent}; !slices.Equal(calls[1], want) {
 		t.Errorf("flip argv after the re-pin = %q, want exactly %q — the flip tone never moves", calls[1], want)
