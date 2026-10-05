@@ -144,7 +144,20 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			if reload != nil {
 				syncReload = func() { reloadConfig(reload) }
 			}
-			toggles := newMenuToggles(actor, &menu, cfgPath, syncReload)
+			// The toggles' apply is SYNCHRONOUS end to end (the 07-05 pin,
+			// live-pinned by the 07-06 menu-v2 case): the plain reload only
+			// re-stores the watcher snapshot — the fold puts the applied
+			// values in force in the same click, no key event in between.
+			// The «Перечитать конфиг» item and the CLI reload keep the
+			// 03-04 per-event succession (their pinned semantics).
+			toggleReload := syncReload
+			if reload != nil {
+				toggleReload = func() {
+					syncReload()
+					actor.FoldAppliedConfig()
+				}
+			}
+			toggles := newMenuToggles(actor, &menu, cfgPath, toggleReload)
 			cb := indicator.Callbacks{
 				Toggle:            actor.ToggleMode,
 				Status:            func() { notifyStatus(conn, actor) },
