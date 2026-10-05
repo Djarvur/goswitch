@@ -6446,3 +6446,165 @@ func TestActor_FoldAppliedConfig(t *testing.T) {
 		t.Errorf("autocorrect option after a sourceless fold = true, want the SetOptions value false")
 	}
 }
+
+// The a11y-sink corpus of plan 08-05: the accessibility-magic seam — the
+// fold delivers the a11y section's Active() truth to the sink ONLY on a
+// change of that boolean (the refreshACBlocklist diff-gate form), a late
+// install self-syncs the last folded state (the SetSoundSink precedent),
+// and a nil sink stays a silent no-op.
+
+// fakeA11ySink is the actor's A11ySink double (plan 08-05): every pushed
+// state recorded under a mutex — the fold's diff-gate observability.
+type fakeA11ySink struct {
+	mu     sync.Mutex
+	pushes []bool
+}
+
+// Apply records one pushed a11y state.
+func (f *fakeA11ySink) Apply(active bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.pushes = append(f.pushes, active)
+}
+
+// pushed returns the recorded push history.
+func (f *fakeA11ySink) pushed() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return slices.Clone(f.pushes)
+}
+
+// a11yDoc returns the defaults document with the a11y section set to the
+// given state — the fold corpus's feed (a complete valid document, the
+// reloadCfg shape).
+func a11yDoc(enabled bool, apps []string) config.Config {
+	cfg := config.Defaults()
+	cfg.A11y.Enabled = enabled
+	cfg.A11y.Apps = apps
+
+	return cfg
+}
+
+// TestActor_A11yFoldTriggersSinkOnActivation pins the activation push
+// (plan 08-05): a fold of a document with the section enabled over a
+// non-empty list delivers exactly one Apply(true) — the startup fold
+// (newActor's FoldAppliedConfig) reaches the reconciler the same way.
+func TestActor_A11yFoldTriggersSinkOnActivation(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	src := &reloadSource{cfg: a11yDoc(true, []string{"zcode"})}
+	a.AttachConfig(src)
+	a.SetA11ySink(sink)
+
+	a.FoldAppliedConfig()
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("a11y pushes after the active fold = %v, want exactly [true]", got)
+	}
+}
+
+// TestActor_A11yFoldDiffGated pins the diff gate (plan 08-05, the
+// refreshACBlocklist form): a repeated fold of the same document and a
+// fold of a document with a DIFFERENT list but the same Active truth both
+// stay silent — the folded state is a boolean, never the list, so dconf
+// churn and journal noise are impossible at any fold rate.
+func TestActor_A11yFoldDiffGated(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	cfg := a11yDoc(true, []string{"zcode"})
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetA11ySink(sink)
+
+	a.FoldAppliedConfig() // the activation — the only push
+	cfg.A11y.Apps = []string{"zcode", "telegram"}
+	src.set(cfg)
+	a.FoldAppliedConfig() // a different list, the same Active — silence
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("a11y pushes after a repeated and a list-changed fold = %v, want exactly [true] — the gate is on the boolean", got)
+	}
+}
+
+// TestActor_A11yDeactivatePropagates pins the deactivation push (plan
+// 08-05): a fold of a disabled document after an active one delivers
+// Apply(false) — the 08-03 reconciler itself decides that a false touches
+// nothing (D-8-4); the actor's job is only to deliver the change.
+func TestActor_A11yDeactivatePropagates(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	cfg := a11yDoc(true, []string{"zcode"})
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetA11ySink(sink)
+
+	a.FoldAppliedConfig() // active
+	cfg.A11y.Enabled = false
+	src.set(cfg)
+	a.FoldAppliedConfig() // disabled — the change must propagate
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true, false}) {
+		t.Errorf("a11y pushes after activate then disable = %v, want exactly [true false]", got)
+	}
+}
+
+// TestActor_A11yEnabledEmptyListInactive pins the Active() semantics as the
+// fold's ONLY truth source (plan 08-05, the 08-02 single definition): an
+// enabled section with an EMPTY list is not active — the fold pushes
+// Apply(false) where an inline enabled check would stay silent.
+func TestActor_A11yEnabledEmptyListInactive(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	cfg := a11yDoc(true, []string{"zcode"})
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetA11ySink(sink)
+
+	a.FoldAppliedConfig() // active
+	cfg.A11y.Apps = nil   // enabled with an empty list — Active() is false
+	src.set(cfg)
+	a.FoldAppliedConfig()
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true, false}) {
+		t.Errorf("a11y pushes after activate then enabled-with-empty-list = %v, want exactly [true false] — the fold reads Active(), not enabled", got)
+	}
+}
+
+// TestActor_A11ySinkInstallSelfSyncs pins the late install (plan 08-05,
+// the SetSoundSink self-sync form): the startup fold runs with NO sink
+// installed (the OnConn ordering — the wiring attaches later), and the
+// SetA11ySink install pushes the last folded state immediately, so the
+// reconcile-at-start does not depend on the install order.
+func TestActor_A11ySinkInstallSelfSyncs(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	src := &reloadSource{cfg: a11yDoc(true, []string{"zcode"})}
+	a.AttachConfig(src)
+
+	a.FoldAppliedConfig() // the startup fold — no sink installed yet
+
+	a.SetA11ySink(sink) // the late install self-syncs the folded state
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("a11y pushes after a late install over an active fold = %v, want exactly [true] — the install pushes immediately", got)
+	}
+}
+
+// TestActor_A11yNilSinkNoOp pins the nil degradation (the SetMenuSync nil
+// form): folds with no sink installed run byte-as-today — no panic, no
+// effect, the silent absence of pushes.
+func TestActor_A11yNilSinkNoOp(t *testing.T) {
+	a, _ := wiredActor()
+	src := &reloadSource{cfg: a11yDoc(true, []string{"zcode"})}
+	a.AttachConfig(src)
+
+	a.FoldAppliedConfig() // active with no sink — silent
+	src.set(a11yDoc(false, nil))
+	a.FoldAppliedConfig() // deactivated with no sink — still silent
+
+	if st := a.StatusSnapshot(); !st.SoundEnabled {
+		t.Errorf("status unreadable after nil-sink folds — the folds must run byte-as-today (the defaults document reads sound ON)")
+	}
+}

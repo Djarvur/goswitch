@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/session/ -race -count=1 (raw output /tmp/08-05-t1-red-raw.txt; tree = 08-05 Task-1 RED-stub shape per the 06-04/08-02 precedent: actor.go carries the A11ySink interface, the a11ySink field and a SetA11ySink that installs only — no a11yActive field, no fold in applySnapshot, no self-sync)",
+  "exitCode": 1,
+  "targetTest": "TestActor_A11yFoldTriggersSinkOnActivation",
+  "failingTest": "TestActor_A11yFoldTriggersSinkOnActivation",
+  "expected": "A fold of a document with a11y.enabled=true over a non-empty apps list delivers exactly one Apply(true) to the installed sink (and the diff gate keeps repeated/same-Active folds silent, deactivation propagates Apply(false), enabled-with-empty-list folds as inactive via Active(), and a late SetA11ySink self-syncs the last folded state).",
+  "actual": "No push ever reaches the sink: the fold does not exist yet — the RED stub carries the seam shape only (interface + setter + field), so every fold-observability test fails on its push-count assertion (5 target tests: FoldTriggersSinkOnActivation 'pushes = [], want exactly [true]', FoldDiffGated, DeactivatePropagates, EnabledEmptyListInactive, SinkInstallSelfSyncs). TestActor_A11yNilSinkNoOp is green-by-design — a negative assertion (zero pushes, no panic) that is trivially true when no fold exists, honestly recorded per the 08-03 TestA11y_BeltNotCalledOnDeactivation precedent.",
+  "output": "not ok 1 - TestActor_A11yFoldTriggersSinkOnActivation\nnot ok 2 - TestActor_A11yFoldDiffGated\nnot ok 3 - TestActor_A11yDeactivatePropagates\nnot ok 4 - TestActor_A11yEnabledEmptyListInactive\nnot ok 5 - TestActor_A11ySinkInstallSelfSyncs\n# tests 282\n# pass 277\n# fail 5\n"
+}

@@ -269,6 +269,11 @@ type Actor struct {
 	// late SetSoundSink self-syncs to (the SetMenuSync install-push
 	// precedent).
 	soundACEvent string
+	// a11ySink is the accessibility-magic seam (plan 08-05): the A11ySink
+	// the daemon wiring installs via SetA11ySink; nil = no sink, every
+	// push stays a silent no-op. The sink degrades itself (the menu
+	// precedent).
+	a11ySink A11ySink
 	// soundEnabled is the applied sound switch folded from the snapshot
 	// (plan 07-05) — the EffectiveEnabled truth the status token serves.
 	soundEnabled bool
@@ -908,6 +913,28 @@ func (a *Actor) SetSoundSink(s SoundSink) {
 	if s != nil && a.soundACEvent != "" {
 		s.SetAutocorrectEvent(a.soundACEvent)
 	}
+}
+
+// A11ySink is the accessibility-magic seam (plan 08-05, D-8-3): the fold
+// pushes the a11y section's Active() truth to the desktop reconciler.
+// Defined at the point of use; the interface travels with the consumer
+// (the SoundSink precedent). The implementation is fire-and-forget by
+// contract — it must never block the actor's hot path (the apply series
+// runs on the sink's own serialization, outside the actor mutex, WR-01)
+// and must never panic; every failure is the sink's own best-effort
+// episode (one WARN), never an actor error.
+type A11ySink interface {
+	Apply(active bool)
+}
+
+// SetA11ySink installs the accessibility-magic seam (plan 08-05). nil = no
+// sink: every push stays a silent no-op (the menu nil form — a
+// degradation, never an error).
+func (a *Actor) SetA11ySink(s A11ySink) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.a11ySink = s
 }
 
 // SyncEngine pulls the daemon under the FACTUAL active engine (05-04,
