@@ -90,6 +90,12 @@ const (
 	// a failed install (T-08-04-04).
 	gsettingsSchemaInterface = "org.gnome.desktop.interface"
 	gsettingsKeyA11y         = "toolkit-accessibility"
+	// a11yEnabled/a11yDisabled are the ONLY state-file values the restore
+	// trusts — exact boolean literals rendered straight into gsettings argv
+	// (ASVS V5 / T-08-04-01: a forged or corrupt state file must never
+	// steer the restore; there is NO fallback to substitute).
+	a11yEnabled  = "true"
+	a11yDisabled = "false"
 	// The layout-switch keybinding lives in the WINDOW-MANAGER keybindings
 	// schema, not in desktop.input-sources (live finding 2026-09-27: the
 	// desktop.input-sources schema carries no switch key at all — a
@@ -445,6 +451,13 @@ func (i *Installer) Uninstall(ctx context.Context, purge bool) ([]string, error)
 		return nil, err
 	}
 	lines, err = i.restoreSwitchBinding(ctx, lines)
+	if err != nil {
+		return nil, err
+	}
+	// The a11y revert rides the same restore-before-removal discipline as
+	// the sources and the chords: the snapshot is read while the state file
+	// still exists (D-8-4).
+	lines, err = i.restoreToolkitAccessibility(ctx, lines)
 	if err != nil {
 		return nil, err
 	}
@@ -1055,6 +1068,70 @@ func (i *Installer) restoreSwitchBinding(ctx context.Context, lines []string) ([
 	}
 
 	return lines, nil
+}
+
+// restoreToolkitAccessibility puts the saved pre-install a11y magic key
+// back (D-8-4, the uninstall half of saveState's verbatim snapshot), run
+// BEFORE the state file is removed. The saved value is shape-validated
+// BEFORE it reaches gsettings (ASVS V5/T-08-04-01: only the exact boolean
+// literals pass — a corrupt or injected state file must never steer the
+// restore), and unlike the sources and the chords there is NO safe
+// fallback: a missing field (an old install's state, Pitfall 5) and a
+// corrupt value both SKIP with the skip REPORTED — restoring a guessed
+// "false" would reset a key the owner enabled by hand, the one outcome
+// this contract exists to prevent (T-08-04-02). The revert is auxiliary
+// (T-08-04-04): a failed set degrades to one WARN + a report line, never a
+// failed uninstall.
+//
+//nolint:unparam // the restore-step shape keeps the call site symmetric with the other restore steps.
+func (i *Installer) restoreToolkitAccessibility(ctx context.Context, lines []string) ([]string, error) {
+	value, present, trusted := savedA11yState(i.path(stateDirRel, stateFile))
+	if !present {
+		slog.Warn("toolkit-accessibility: nothing to revert")
+
+		return append(lines,
+			"toolkit-accessibility: nothing to revert (no saved pre-install value — the key stays as-is)"), nil
+	}
+	if !trusted {
+		slog.Warn("toolkit-accessibility: shape refused")
+
+		return append(lines,
+			"toolkit-accessibility: corrupt saved value skipped (not a boolean literal) — the key stays as-is"), nil
+	}
+	if _, err := i.call(ctx, binGSettings, "set", gsettingsSchemaInterface, gsettingsKeyA11y, value); err != nil {
+		slog.Warn("toolkit-accessibility: restore failed", "error", err)
+
+		return append(lines,
+			"toolkit-accessibility: restore failed — the key stays as-is ("+err.Error()+")"), nil
+	}
+
+	return append(lines, "toolkit-accessibility: restored "+value), nil
+}
+
+// savedA11yState reads the state file's toolkit-accessibility member and
+// reports it in three states: NOT present (no file, an unparsable file, or
+// an old install's empty/absent field — "nothing to revert", never a
+// guess); present-but-untrusted (a value that is not the exact
+// "true"/"false" literal — shape refused); present-and-trusted (the
+// verbatim pre-install value).
+func savedA11yState(path string) (value string, present, trusted bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false, false
+	}
+	var st installState
+	if err := json.Unmarshal(data, &st); err != nil {
+		return "", false, false
+	}
+	v := strings.TrimSpace(st.ToolkitAccessibility)
+	switch {
+	case v == "":
+		return "", false, false
+	case v != a11yEnabled && v != a11yDisabled:
+		return v, true, false
+	}
+
+	return v, true, true
 }
 
 // savedSwitchBindings reads the state file and returns its switch chord
