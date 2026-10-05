@@ -250,8 +250,9 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 }
 
 // TestInstall_Sequence pins the D-54/D-39/D-40 subprocess order end to end
-// over the fake desktop: sources + switch-binding snapshot (the pair check
-// gates the whole install BEFORE any mutation, D-54) → state save → XML →
+// over the fake desktop: sources + switch-binding + a11y-key snapshot (the
+// pair check gates the whole install BEFORE any mutation, D-54) → state
+// save → XML →
 // env-carrying write-cache → list-engine verification → unit →
 // daemon-reload → enable + restart → ibus restart → live-registration wait →
 // live sources re-read → the COMPUTED two-source wrapper (never a
@@ -274,6 +275,7 @@ func TestInstall_Sequence(t *testing.T) {
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
+		{binGSettings, "get " + gsettingsSchemaInterface + " " + gsettingsKeyA11y},
 		{binIbus, opWriteCache},
 		{binIbus, opRestart},
 		{binIbus, opListEngine},
@@ -365,6 +367,7 @@ func TestInstall_SequenceSingleSource(t *testing.T) {
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
+		{binGSettings, "get " + gsettingsSchemaInterface + " " + gsettingsKeyA11y},
 		{binIbus, opWriteCache},
 		{binIbus, opRestart},
 		{binIbus, opListEngine},
@@ -887,12 +890,12 @@ func TestUninstall_FullRollback(t *testing.T) {
 }
 
 // installCallCount is the subprocess count of one happy-path install (the
-// FullRollback corpus asserts the uninstall suffix of the recording): three
-// gsettings gets (sources + the two switch bindings) at snapshot time, two
-// ibus cache steps, three systemctl steps, list-engine, the takeover's
-// live sources re-read, the wrapper set (ADR-006: no chord writes),
-// engine activation.
-const installCallCount = 12
+// FullRollback corpus asserts the uninstall suffix of the recording): four
+// gsettings gets (sources + the two switch bindings + the a11y key) at
+// snapshot time, two ibus cache steps, three systemctl steps, list-engine,
+// the takeover's live sources re-read, the wrapper set (ADR-006: no chord
+// writes), engine activation.
+const installCallCount = 13
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did

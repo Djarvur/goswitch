@@ -15,6 +15,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,6 +82,14 @@ const (
 
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
+	// The a11y magic key (D-8-4, SPEC §4 revision 2026-10-05): the
+	// pre-install toolkit-accessibility value joins install-state.json —
+	// install snapshots it verbatim, uninstall restores it only-if-present,
+	// never a fabricated "restore false" (Pitfall 5). The snapshot is
+	// AUXILIARY: a failed read degrades to an empty field + one WARN, never
+	// a failed install (T-08-04-04).
+	gsettingsSchemaInterface = "org.gnome.desktop.interface"
+	gsettingsKeyA11y         = "toolkit-accessibility"
 	// The layout-switch keybinding lives in the WINDOW-MANAGER keybindings
 	// schema, not in desktop.input-sources (live finding 2026-09-27: the
 	// desktop.input-sources schema carries no switch key at all — a
@@ -219,6 +228,12 @@ type installState struct {
 	Sources             string `json:"sources"`
 	SwitchInputSource   string `json:"switch_input_source"`
 	SwitchInputSourceBw string `json:"switch_input_source_backward"`
+	// ToolkitAccessibility is the pre-install org.gnome.desktop.interface
+	// toolkit-accessibility value, verbatim (D-8-4). Empty = not captured —
+	// an old install's state file or a failed read; the uninstall restore
+	// treats empty as "nothing to revert", NEVER "restore false" (Pitfall
+	// 5: a manually-enabled key must survive the uninstall).
+	ToolkitAccessibility string `json:"toolkit_accessibility"`
 }
 
 // componentXML is the rendered component document: the wire identity of
@@ -488,13 +503,14 @@ func (i *Installer) readSources(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// saveState reads the current sources AND the current switch bindings and
-// stores them verbatim (the uninstall restore's material — install itself
-// writes nothing to the chords, ADR-006 two-source) — unless a state file
-// already exists, in which case it is LEFT UNTOUCHED: the FIRST install's
-// backup is sacred (an install-over-install must never save the
-// post-takeover goswitch-only desktop — nor any later live binding value —
-// over the owner's original values).
+// saveState reads the current sources AND the current switch bindings AND
+// the current a11y magic key (D-8-4) and stores them verbatim (the
+// uninstall restore's material — install itself writes nothing to the
+// chords, ADR-006 two-source) — unless a state file already exists, in
+// which case it is LEFT UNTOUCHED: the FIRST install's backup is sacred
+// (an install-over-install must never save the post-takeover goswitch-only
+// desktop — nor any later live binding value — over the owner's original
+// values).
 //
 // Before ANY of that is written, the atomic refusal gate proves the
 // desktop's resolved sources wrap into a list goswitch owns ENTIRELY
@@ -528,6 +544,19 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 	}
 	priorSwitchBw := strings.TrimSpace(string(out))
 
+	// The a11y snapshot (D-8-4) is the state's auxiliary member: a failed
+	// read degrades to an empty field + ONE WARN — the install proceeds and
+	// the value is never fabricated (T-08-04-04; the uninstall restore
+	// treats an empty field as "nothing to revert", Pitfall 5). Unlike the
+	// sources and the chords, this value is NOT install-critical.
+	out, err = i.call(ctx, binGSettings, "get", gsettingsSchemaInterface, gsettingsKeyA11y)
+	priorA11y := ""
+	if err != nil {
+		slog.Warn("a11y key value not captured", "error", err)
+	} else {
+		priorA11y = strings.TrimSpace(string(out))
+	}
+
 	path := i.path(stateDirRel, stateFile)
 	if _, err := os.Stat(path); err == nil {
 		return prior, nil // idempotent backup: the original state stays
@@ -535,9 +564,10 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("stat state file: %w", err)
 	}
 	data, err := json.Marshal(installState{
-		Sources:             prior,
-		SwitchInputSource:   priorSwitch,
-		SwitchInputSourceBw: priorSwitchBw,
+		Sources:              prior,
+		SwitchInputSource:    priorSwitch,
+		SwitchInputSourceBw:  priorSwitchBw,
+		ToolkitAccessibility: priorA11y,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal install state: %w", err)
