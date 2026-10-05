@@ -1022,6 +1022,198 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 	}
 }
 
+// errA11ySetRefused is the corpus's simulated a11y-key set refusal (the
+// sentinel convention).
+var errA11ySetRefused = errors.New("simulated a11y set refusal")
+
+// countA11ySets counts the recorded `gsettings set … toolkit-accessibility`
+// calls — with value pinned when non-empty, all of them when empty.
+func countA11ySets(calls []instCall, value string) int {
+	n := 0
+	for _, c := range calls {
+		if c.name == binGSettings && len(c.args) == 4 && c.args[0] == opSet &&
+			c.args[1] == gsettingsSchemaInterface && c.args[2] == gsettingsKeyA11y &&
+			(value == "" || c.args[3] == value) {
+			n++
+		}
+	}
+
+	return n
+}
+
+// plantA11yState overwrites the state file with a sources+a11y document —
+// the restore corpus's planted-state driver.
+func plantA11yState(t *testing.T, statePath, a11yValue string) {
+	t.Helper()
+	plant := `{"sources":"` + ownerSources + `","toolkit_accessibility":"` + a11yValue + `"}`
+	if err := os.WriteFile(statePath, []byte(plant), 0o600); err != nil {
+		t.Fatalf("plant the a11y state: %v", err)
+	}
+}
+
+// TestUninstall_A11yRestoreTrue pins the D-8-4 restore half: a state file
+// whose a11y field says "true" (the owner had the key ON before goswitch)
+// restores EXACTLY true through `gsettings set … toolkit-accessibility true`
+// — and the restore necessarily runs BEFORE the state file dies: the set is
+// recorded at all only because the restore could still read the file. The
+// report names the restored value.
+func TestUninstall_A11yRestoreTrue(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plantA11yState(t, statePath, a11yValTrue)
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the a11y restore inside the green rollback", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), a11yValTrue); n != 1 {
+		t.Errorf("a11y restore issued %d toolkit-accessibility sets of %q, want exactly 1", n, a11yValTrue)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "toolkit-accessibility: restored "+a11yValTrue)
+	}) {
+		t.Errorf("report %v does not name the restored a11y value", report)
+	}
+}
+
+// TestUninstall_A11yRestoreFalse pins the legitimate false case: the owner
+// kept the key OFF before goswitch — restoring the saved "false" is the
+// verbatim pre-install state, NOT the forbidden fabricated "restore false"
+// (that verdict belongs exclusively to a MISSING field, Pitfall 5).
+func TestUninstall_A11yRestoreFalse(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plantA11yState(t, statePath, a11yValFalse)
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the a11y restore inside the green rollback", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), a11yValFalse); n != 1 {
+		t.Errorf("a11y restore issued %d toolkit-accessibility sets of %q, want exactly 1", n, a11yValFalse)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "toolkit-accessibility: restored "+a11yValFalse)
+	}) {
+		t.Errorf("report %v does not name the restored a11y value", report)
+	}
+}
+
+// TestUninstall_A11yMissingFieldSkipsSilently pins the Pitfall-5 guard
+// (T-08-04-02): an OLD install's state without the a11y field means there
+// is NOTHING to revert — ZERO `gsettings set` calls carry
+// toolkit-accessibility, the skip is reported (the "nothing to revert"
+// verdict + one WARN), and the uninstall stays green. A key the owner
+// enabled by hand must survive the uninstall untouched.
+func TestUninstall_A11yMissingFieldSkipsSilently(t *testing.T) {
+	sink := captureWarns(t)
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plant := `{"sources":"` + ownerSources + `"}`
+	if err := os.WriteFile(statePath, []byte(plant), 0o600); err != nil {
+		t.Fatalf("plant the old-install state: %v", err)
+	}
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the missing field to keep the rollback green", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), ""); n != 0 {
+		t.Errorf("old-install uninstall issued %d toolkit-accessibility set calls, want 0 (never \"restore false\")", n)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "nothing to revert")
+	}) {
+		t.Errorf("report %v does not name the nothing-to-revert verdict", report)
+	}
+	if !sink.hasWarn("toolkit-accessibility: nothing to revert") {
+		t.Error("no WARN captured for the missing a11y field — the skip must be reported, never silent")
+	}
+}
+
+// TestUninstall_A11yCorruptValueSkips pins the ASVS V5 shape gate
+// (T-08-04-01): a saved value that is not the exact "true"/"false" literal
+// NEVER reaches gsettings argv — zero set calls, a shape-refused WARN, the
+// uninstall green (a forged or corrupt state file must not steer the
+// restore, and there is NO safe fallback to substitute — unlike the sources
+// and the chords, a wrong a11y guess is a trust defect, not a repair).
+func TestUninstall_A11yCorruptValueSkips(t *testing.T) {
+	sink := captureWarns(t)
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plantA11yState(t, statePath, "garbage")
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the corrupt value to keep the rollback green", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), ""); n != 0 {
+		t.Errorf("corrupt-value uninstall issued %d toolkit-accessibility set calls, want 0 (argv discipline)", n)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "toolkit-accessibility: corrupt saved value skipped")
+	}) {
+		t.Errorf("report %v does not name the corrupt-value skip", report)
+	}
+	if !sink.hasWarn("toolkit-accessibility: shape refused") {
+		t.Error("no WARN captured for the corrupt a11y value — the shape refusal must be reported")
+	}
+}
+
+// TestUninstall_A11yRestoreFailureReported pins the auxiliary degradation
+// (T-08-04-04): a failed a11y set NEVER fails the uninstall — the rollback
+// completes green and the refusal is one WARN + a report line.
+func TestUninstall_A11yRestoreFailureReported(t *testing.T) {
+	sink := captureWarns(t)
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 4 && args[0] == opSet &&
+			args[1] == gsettingsSchemaInterface && args[2] == gsettingsKeyA11y {
+			return nil, errA11ySetRefused
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plantA11yState(t, statePath, a11yValTrue)
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the a11y set failure to degrade, not abort", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), a11yValTrue); n != 1 {
+		t.Errorf("a11y restore attempted %d sets, want exactly 1 (the failure is the set's answer)", n)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "toolkit-accessibility: restore failed")
+	}) {
+		t.Errorf("report %v does not name the failed a11y restore", report)
+	}
+	if !sink.hasWarn("toolkit-accessibility: restore failed") {
+		t.Error("no WARN captured for the failed a11y set — the refusal must be reported")
+	}
+}
+
 // readAll is the corpus's file-content reader.
 func readAll(t *testing.T, path string) string {
 	t.Helper()
