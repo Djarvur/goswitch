@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -560,18 +561,19 @@ func assertToggleFlip(t *testing.T, actor *session.Actor, read func(*session.Act
 }
 
 // TestMenuTogglePushRacesAttachStore pins the WR-01 discipline of the
-// OnConn wiring: the attach-time store of the menu (the wiring's `menu =
-// item.Menu()` after indicator.Attach) and the toggle pushes (the godbus
-// dispatch goroutines' `*menu` reads) run CONCURRENTLY — the pair must be
-// race-free under `go test -race` (the RED shape: a plain pointer write
-// racing the closure read is UB), and a push landing before any store
-// stays a harmless no-op. The store is proxied by the same variable write
-// the wiring performs; the value is irrelevant to the race shape (a nil
-// menu exercises the push's nil guard).
+// OnConn wiring: the attach-time store of the menu (the wiring's
+// `menuSlot.Store(item.Menu())` after indicator.Attach) and the toggle
+// pushes (the godbus dispatch goroutines' slot reads) run CONCURRENTLY —
+// the pair must be race-free under `go test -race` (the RED shape drove
+// the plain-pointer form and the detector flagged the closure read), and a
+// push landing before any store stays a harmless no-op (the Load nil
+// guard). The store here is proxied by a nil store through the same slot;
+// the value is irrelevant to the race shape (a nil menu exercises the
+// push's nil guard).
 func TestMenuTogglePushRacesAttachStore(t *testing.T) {
 	actor := appliedReader(t, "sound", false)
-	var menu *indicator.Menu
-	toggles := newMenuToggles(actor, &menu, "", nil)
+	var menuSlot atomic.Pointer[indicator.Menu]
+	toggles := newMenuToggles(actor, &menuSlot, "", nil)
 	// The writer seams stay off the filesystem and off the watcher: this
 	// corpus is about the menu slot's concurrency, not the composition.
 	toggles.sound.write = func(string, bool) error { return nil }
@@ -584,7 +586,7 @@ func TestMenuTogglePushRacesAttachStore(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			menu = nil // the attach-store proxy (the wiring stores item.Menu())
+			menuSlot.Store(nil) // the attach-store proxy (the wiring stores item.Menu())
 		}()
 		go func() {
 			defer wg.Done()

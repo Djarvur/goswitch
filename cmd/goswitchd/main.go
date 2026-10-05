@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -138,7 +139,13 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 		// dies with the daemon, and the icon self-heals when the shell's
 		// watcher appears late or evicts the item.
 		deps.OnConn = func(connCtx context.Context, conn *dbus.Conn) error {
-			var menu *indicator.Menu
+			// The menu rides an ATOMIC slot (WR-01): Attach exports the menu
+			// object BEFORE `item.Menu()` is stored, so a click's dispatch
+			// goroutine can read the slot in flight with the store — a plain
+			// pointer write raced that read (UB, invisible to the corpus
+			// until TestMenuTogglePushRacesAttachStore). Load() == nil keeps
+			// a pre-store click a harmless no-op.
+			var menuSlot atomic.Pointer[indicator.Menu]
 			editor := &configEditor{ensure: config.EnsureDocument}
 			var syncReload func()
 			if reload != nil {
@@ -157,7 +164,7 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 					actor.FoldAppliedConfig()
 				}
 			}
-			toggles := newMenuToggles(actor, &menu, cfgPath, toggleReload)
+			toggles := newMenuToggles(actor, &menuSlot, cfgPath, toggleReload)
 			cb := indicator.Callbacks{
 				Toggle:            actor.ToggleMode,
 				Status:            func() { notifyStatus(conn, actor) },
@@ -171,7 +178,8 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 				cb.Reload = syncReload
 			}
 			item := indicator.Attach(conn, ctlsvc.BusName, cb)
-			menu = item.Menu()
+			menuSlot.Store(item.Menu())
+			menu := menuSlot.Load()
 			// The initial menu state: version, both toggles, the raw key
 			// names — the menu dedupes later identical pushes from the fold.
 			menu.SetVersion(version)
@@ -207,19 +215,20 @@ type menuToggles struct {
 
 // newMenuToggles wires the compositions: the applied value reads from the
 // actor's status snapshot, the write goes through the 07-03 writer on the
-// FACTUAL config path, the push lands on the menu (nil until Attach — the
-// guard keeps a click before attach a harmless no-op), the synchronous
-// apply rides the reload (nil without a config source — the flip's own
-// guard handles it).
-func newMenuToggles(actor *session.Actor, menu **indicator.Menu, cfgPath string, syncReload func()) menuToggles {
+// FACTUAL config path, the push lands on the menu's ATOMIC slot (nil until
+// Attach — the Load guard keeps a click before the store a harmless no-op,
+// and the store races no dispatch read — WR-01), the synchronous apply
+// rides the reload (nil without a config source — the flip's own guard
+// handles it).
+func newMenuToggles(actor *session.Actor, menu *atomic.Pointer[indicator.Menu], cfgPath string, syncReload func()) menuToggles {
 	return menuToggles{
 		ac: &configToggle{
 			path:  cfgPath,
 			read:  func() bool { return actor.StatusSnapshot().AutoCorrectEnabled },
 			write: config.SetAutocorrectEnabled,
 			push: func(on bool) {
-				if *menu != nil {
-					(*menu).SetAutocorrectEnabled(on)
+				if m := menu.Load(); m != nil {
+					m.SetAutocorrectEnabled(on)
 				}
 			},
 			reload: syncReload,
@@ -229,8 +238,8 @@ func newMenuToggles(actor *session.Actor, menu **indicator.Menu, cfgPath string,
 			read:  func() bool { return actor.StatusSnapshot().SoundEnabled },
 			write: config.SetSoundEnabled,
 			push: func(on bool) {
-				if *menu != nil {
-					(*menu).SetSoundEnabled(on)
+				if m := menu.Load(); m != nil {
+					m.SetSoundEnabled(on)
 				}
 			},
 			reload: syncReload,
