@@ -45,6 +45,7 @@ const (
 const (
 	reasonKeyRead = "key-read-failed"  // the gsettings get probe failed — the set still fires
 	reasonKeySet  = "key-write-failed" // the gsettings set child failed to start
+	reasonBelt    = "belt-set-failed"  // the org.a11y.Status.IsEnabled belt refused
 )
 
 // readTimeout bounds the gsettings get probe (the clipboard cmdTimeout

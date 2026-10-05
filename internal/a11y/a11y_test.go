@@ -3,6 +3,8 @@ package a11y
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"slices"
 	"sync"
 	"testing"
@@ -323,5 +325,210 @@ func TestA11y_SetCmdNoPipesForm(t *testing.T) {
 	want := []string{binGSettings, verbSet, schemaGnomeInterface, keyToolkitAccessibility, valTrue}
 	if !slices.Equal(cmd.Args, want) {
 		t.Errorf("set argv = %v, want %v", cmd.Args, want)
+	}
+}
+
+// errBeltRefused is the belt seam's simulated refusal (the corpus
+// sentinel convention).
+var errBeltRefused = errors.New("simulated belt refusal")
+
+// recordSink is the slog handler double recording every WARN record —
+// the warn-once corpus counts records by reason (the watch_test
+// slog-capture precedent).
+type recordSink struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+// Enabled accepts every level — the corpus wants all warns.
+func (s *recordSink) Enabled(context.Context, slog.Level) bool { return true }
+
+// Handle appends the record to the sink's list.
+func (s *recordSink) Handle(_ context.Context, rec slog.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, rec)
+
+	return nil
+}
+
+// WithAttrs keeps the sink (the corpus reads bare records).
+func (s *recordSink) WithAttrs([]slog.Attr) slog.Handler { return s }
+
+// WithGroup keeps the sink (the corpus reads bare records).
+func (s *recordSink) WithGroup(string) slog.Handler { return s }
+
+// warnsByReason counts the captured records carrying the reason attr.
+func (s *recordSink) warnsByReason(t *testing.T, reason string) int {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, rec := range s.records {
+		rec.Attrs(func(a slog.Attr) bool {
+			if a.Key == "reason" && a.Value.String() == reason {
+				n++
+			}
+
+			return true
+		})
+	}
+
+	return n
+}
+
+// captureWarns installs the recording slog default and restores the old
+// one at cleanup — the process-global default is the daemon's log door
+// (the watch_test capture precedent).
+func captureWarns(t *testing.T) *recordSink {
+	t.Helper()
+	sink := &recordSink{}
+	old := slog.Default()
+	slog.SetDefault(slog.New(sink))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	return sink
+}
+
+// TestA11y_BeltSetOnEveryActivation pins the belt (D-8-6, the research
+// resolution «ship the belt»): org.a11y.Status.IsEnabled rides EVERY
+// activation episode — a re-activation after deactivation re-sets it
+// (session-scoped: a session restart may have reset IsEnabled, research
+// A5), and a key already true is an activation too.
+func TestA11y_BeltSetOnEveryActivation(t *testing.T) {
+	runner := &fakeRunner{value: "false\n"}
+	status := &fakeStatus{}
+	r := New(runner.run, status.set)
+
+	r.Apply(true)
+	waitConverged(t, r, true)
+	if calls := status.total(); calls != 1 {
+		t.Errorf("belt calls after first activation = %d, want exactly 1", calls)
+	}
+
+	r.Apply(false)
+	waitConverged(t, r, false)
+	r.Apply(true)
+	waitConverged(t, r, true)
+	if calls := status.total(); calls != 2 {
+		t.Errorf("belt calls after re-activation = %d, want exactly 2 (every activation re-sets)", calls)
+	}
+
+	already := &fakeRunner{value: "true\n"}
+	r2 := New(already.run, status.set)
+	r2.Apply(true)
+	waitConverged(t, r2, true)
+	if calls := status.total(); calls != 3 {
+		t.Errorf("belt calls after already-true activation = %d, want exactly 3 (already-true is an activation too)", calls)
+	}
+}
+
+// TestA11y_BeltNotCalledOnDeactivation pins the belt's silence on
+// deactivation: Apply(false) records the un-applied state and touches
+// nothing — no probe, no set, no belt (D-8-4).
+func TestA11y_BeltNotCalledOnDeactivation(t *testing.T) {
+	runner := &fakeRunner{value: "false\n"}
+	status := &fakeStatus{}
+	r := New(runner.run, status.set)
+
+	r.Apply(true)
+	waitConverged(t, r, true)
+	before := status.total()
+	r.Apply(false)
+	waitConverged(t, r, false)
+
+	if after := status.total(); after != before {
+		t.Errorf("deactivation changed the belt call count: %d → %d, want unchanged", before, after)
+	}
+}
+
+// TestA11y_BeltFailureWarnOnce pins the belt's degradation: a refusal is
+// ONE WARN with the belt reason per episode, the episode itself does not
+// fail (the key is still set), and a repeated refusal without an
+// intervening success stays quiet — the episode never closed.
+func TestA11y_BeltFailureWarnOnce(t *testing.T) {
+	sink := captureWarns(t)
+	runner := &fakeRunner{value: "false\n"}
+	status := &fakeStatus{err: errBeltRefused}
+	r := New(runner.run, status.set)
+
+	r.Apply(true)
+	waitConverged(t, r, true)
+	if warns := sink.warnsByReason(t, reasonBelt); warns != 1 {
+		t.Errorf("belt-failure warns = %d, want exactly 1", warns)
+	}
+	_, sets := runner.counts()
+	if sets != 1 {
+		t.Errorf("set calls = %d, want 1 — a belt refusal must not fail the episode", sets)
+	}
+
+	r.Apply(false)
+	waitConverged(t, r, false)
+	r.Apply(true)
+	waitConverged(t, r, true)
+	if warns := sink.warnsByReason(t, reasonBelt); warns != 1 {
+		t.Errorf("belt-failure warns after a repeated refusal = %d, want still 1 (warn-once budget)", warns)
+	}
+}
+
+// TestA11y_ReadFailureWarnOnceAndFailsTowardDesired pins the failed-read
+// episode: ONE WARN with the read reason, the set STILL fires (fail
+// toward desired), the belt still rides — a dead gsettings probe must
+// not leave the desired state unapplied.
+func TestA11y_ReadFailureWarnOnceAndFailsTowardDesired(t *testing.T) {
+	sink := captureWarns(t)
+	runner := &fakeRunner{}
+	runner.failReads(errBeltRefused) // the sentinel doubles as any simulated probe failure
+	status := &fakeStatus{}
+	r := New(runner.run, status.set)
+
+	r.Apply(true)
+	waitConverged(t, r, true)
+
+	if warns := sink.warnsByReason(t, reasonKeyRead); warns != 1 {
+		t.Errorf("read-failure warns = %d, want exactly 1", warns)
+	}
+	gets, sets := runner.counts()
+	if gets != 1 {
+		t.Errorf("get calls = %d, want exactly 1 (the failed probe)", gets)
+	}
+	if sets != 1 {
+		t.Errorf("set calls = %d, want 1 — the set fires despite the failed read", sets)
+	}
+	if calls := status.total(); calls != 1 {
+		t.Errorf("belt calls = %d, want 1 — the belt rides despite the failed read", calls)
+	}
+}
+
+// TestA11y_SuccessfulEpisodeReopensBudget pins the episode boundary (the
+// sound.go closeEpisode form): a belt refusal warns once and keeps the
+// episode open; a SUCCESSFUL activation closes it; a refusal after that
+// warns again — the budget reopens with every clean activation.
+func TestA11y_SuccessfulEpisodeReopensBudget(t *testing.T) {
+	sink := captureWarns(t)
+	runner := &fakeRunner{value: "false\n"}
+	status := &fakeStatus{err: errBeltRefused}
+	r := New(runner.run, status.set)
+
+	r.Apply(true)
+	waitConverged(t, r, true)
+	if warns := sink.warnsByReason(t, reasonBelt); warns != 1 {
+		t.Fatalf("belt-failure warns = %d, want exactly 1", warns)
+	}
+
+	status.fail(nil) // a healthy activation proves the stack — the episode closes
+	r.Apply(false)
+	waitConverged(t, r, false)
+	r.Apply(true)
+	waitConverged(t, r, true)
+
+	status.fail(errBeltRefused) // the budget is open again — the refusal warns afresh
+	r.Apply(false)
+	waitConverged(t, r, false)
+	r.Apply(true)
+	waitConverged(t, r, true)
+
+	if warns := sink.warnsByReason(t, reasonBelt); warns != 2 {
+		t.Errorf("belt-failure warns after reopen = %d, want exactly 2 (the successful activation reopened the budget)", warns)
 	}
 }
