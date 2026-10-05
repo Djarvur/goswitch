@@ -14,8 +14,15 @@ import (
 // The corpus' timing constants: the async series converges in
 // milliseconds on fakes, the deadlines only bound a wedged run's report.
 const (
-	testDeadline  = 2 * time.Second          // the convergence deadline — polling, never a sleep-based race
+	testDeadline  = 2 * time.Second        // the convergence deadline — polling, never a sleep-based race
 	testSettleGap = 100 * time.Millisecond // the diff-gate's no-op settle window
+)
+
+// The canned gsettings answers of the recording double — gsettings prints
+// a trailing newline (the readSources trim discipline).
+const (
+	answerFalse = "false\n"
+	answerTrue  = "true\n"
 )
 
 // fakeRunner is the recording double of the Runner seam (the argv is the
@@ -183,7 +190,7 @@ func TestA11yWireLiterals(t *testing.T) {
 // observable shape: exactly one read-verify probe and exactly one set,
 // each with its literal argv (the key was false — the set must fire).
 func TestA11y_ActivateSetsKeyWhenFalse(t *testing.T) {
-	runner := &fakeRunner{value: "false\n"}
+	runner := &fakeRunner{value: answerFalse}
 	r := New(runner.run, (&fakeStatus{}).set)
 
 	r.Apply(true)
@@ -210,7 +217,7 @@ func TestA11y_ActivateSetsKeyWhenFalse(t *testing.T) {
 // 4): the key already true means the probe ran and NO set fired — dconf
 // churn from a reconcile is forbidden.
 func TestA11y_AlreadyTrueNoSet(t *testing.T) {
-	runner := &fakeRunner{value: "true\n"}
+	runner := &fakeRunner{value: answerTrue}
 	r := New(runner.run, (&fakeStatus{}).set)
 
 	r.Apply(true)
@@ -231,7 +238,7 @@ func TestA11y_AlreadyTrueNoSet(t *testing.T) {
 // indistinguishable from a goswitch-enabled one; the only revert is the
 // uninstaller's).
 func TestA11y_DeactivateNeverTouchesKey(t *testing.T) {
-	runner := &fakeRunner{value: "false\n"}
+	runner := &fakeRunner{value: answerFalse}
 	r := New(runner.run, (&fakeStatus{}).set)
 
 	r.Apply(false)
@@ -256,7 +263,7 @@ func TestA11y_DeactivateNeverTouchesKey(t *testing.T) {
 // (T-08-03-01 — the config's app list has no path into argv), and the
 // diff gate keeps a repeated Apply(true) at zero new calls.
 func TestA11y_FixedArgvOnlyLiterals(t *testing.T) {
-	runner := &fakeRunner{value: "false\n"}
+	runner := &fakeRunner{value: answerFalse}
 	r := New(runner.run, (&fakeStatus{}).set)
 
 	r.Apply(true)
@@ -290,7 +297,7 @@ func TestA11y_FixedArgvOnlyLiterals(t *testing.T) {
 // state under -race.
 func TestA11y_ApplyDoesNotBlockAndConverges(t *testing.T) {
 	release := make(chan struct{})
-	runner := &fakeRunner{value: "false\n", blockGet: release}
+	runner := &fakeRunner{value: answerFalse, blockGet: release}
 	r := New(runner.run, (&fakeStatus{}).set)
 
 	applied := make(chan struct{})
@@ -364,8 +371,8 @@ func (s *recordSink) warnsByReason(t *testing.T, reason string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
-	for _, rec := range s.records {
-		rec.Attrs(func(a slog.Attr) bool {
+	for i := range s.records {
+		s.records[i].Attrs(func(a slog.Attr) bool {
 			if a.Key == "reason" && a.Value.String() == reason {
 				n++
 			}
@@ -396,7 +403,7 @@ func captureWarns(t *testing.T) *recordSink {
 // (session-scoped: a session restart may have reset IsEnabled, research
 // A5), and a key already true is an activation too.
 func TestA11y_BeltSetOnEveryActivation(t *testing.T) {
-	runner := &fakeRunner{value: "false\n"}
+	runner := &fakeRunner{value: answerFalse}
 	status := &fakeStatus{}
 	r := New(runner.run, status.set)
 
@@ -414,12 +421,12 @@ func TestA11y_BeltSetOnEveryActivation(t *testing.T) {
 		t.Errorf("belt calls after re-activation = %d, want exactly 2 (every activation re-sets)", calls)
 	}
 
-	already := &fakeRunner{value: "true\n"}
+	already := &fakeRunner{value: answerTrue}
 	r2 := New(already.run, status.set)
 	r2.Apply(true)
 	waitConverged(t, r2, true)
 	if calls := status.total(); calls != 3 {
-		t.Errorf("belt calls after already-true activation = %d, want exactly 3 (already-true is an activation too)", calls)
+		t.Errorf("belt calls after already-true activation = %d, want 3 (already-true is an activation too)", calls)
 	}
 }
 
@@ -427,7 +434,7 @@ func TestA11y_BeltSetOnEveryActivation(t *testing.T) {
 // deactivation: Apply(false) records the un-applied state and touches
 // nothing — no probe, no set, no belt (D-8-4).
 func TestA11y_BeltNotCalledOnDeactivation(t *testing.T) {
-	runner := &fakeRunner{value: "false\n"}
+	runner := &fakeRunner{value: answerFalse}
 	status := &fakeStatus{}
 	r := New(runner.run, status.set)
 
@@ -448,7 +455,7 @@ func TestA11y_BeltNotCalledOnDeactivation(t *testing.T) {
 // intervening success stays quiet — the episode never closed.
 func TestA11y_BeltFailureWarnOnce(t *testing.T) {
 	sink := captureWarns(t)
-	runner := &fakeRunner{value: "false\n"}
+	runner := &fakeRunner{value: answerFalse}
 	status := &fakeStatus{err: errBeltRefused}
 	r := New(runner.run, status.set)
 
@@ -506,7 +513,7 @@ func TestA11y_ReadFailureWarnOnceAndFailsTowardDesired(t *testing.T) {
 // warns again — the budget reopens with every clean activation.
 func TestA11y_SuccessfulEpisodeReopensBudget(t *testing.T) {
 	sink := captureWarns(t)
-	runner := &fakeRunner{value: "false\n"}
+	runner := &fakeRunner{value: answerFalse}
 	status := &fakeStatus{err: errBeltRefused}
 	r := New(runner.run, status.set)
 
@@ -529,6 +536,6 @@ func TestA11y_SuccessfulEpisodeReopensBudget(t *testing.T) {
 	waitConverged(t, r, true)
 
 	if warns := sink.warnsByReason(t, reasonBelt); warns != 2 {
-		t.Errorf("belt-failure warns after reopen = %d, want exactly 2 (the successful activation reopened the budget)", warns)
+		t.Errorf("belt-failure warns after reopen = %d, want 2 (the clean activation reopened the budget)", warns)
 	}
 }

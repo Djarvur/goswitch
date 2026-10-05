@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/godbus/dbus/v5"
 )
 
 // The pinned gsettings coordinates of the global a11y key (D-8-6: the
@@ -51,6 +53,24 @@ const (
 // readTimeout bounds the gsettings get probe (the clipboard cmdTimeout
 // form): a wedged probe must fail the read, not hold the series.
 const readTimeout = 1500 * time.Millisecond
+
+// The belt's wire coordinates: the session bus's org.a11y.Bus object
+// answers the standard Properties.Set for the org.a11y.Status interface's
+// IsEnabled property — the live-verified no-root belt form (08-RESEARCH
+// Code Examples: busctl --user call org.a11y.Bus /org/a11y/bus
+// org.freedesktop.DBus.Properties Set ssv org.a11y.Status.IsEnabled b
+// true; the appid a11yBusName/Path precedents).
+const (
+	beltBusName   = "org.a11y.Bus"
+	beltBusPath   = "/org/a11y/bus"
+	beltSetMethod = "org.freedesktop.DBus.Properties.Set"
+	beltIface     = "org.a11y.Status"
+	beltProperty  = "IsEnabled"
+)
+
+// beltTimeout bounds the belt's bus round trip (the clipboard cmdTimeout
+// form): a wedged session bus must fail the belt, not hold the series.
+const beltTimeout = 1500 * time.Millisecond
 
 // Runner executes one gsettings subprocess: the seam the unit corpus
 // drives with a recording fake (the argv is the observable surface),
@@ -130,10 +150,12 @@ func (r *Reconciler) run() {
 
 // episode is one activation series: read-verify-then-set on the global
 // key (research Pitfall 4 — the key already true means ZERO subprocess
-// writes, no dconf churn), fail-toward-desired on a failed read, and the
-// warn budget closed only by a clean activation. lastApplied lands true
-// whatever the degradation: the desired state is pinned and the next
-// desired change re-runs the series.
+// writes, no dconf churn), fail-toward-desired on a failed read, the
+// session-scoped belt on EVERY activation (a key already true is an
+// activation too — a session restart may have reset IsEnabled, research
+// A5), and the warn budget closed only by a clean activation.
+// lastApplied lands true whatever the degradation: the desired state is
+// pinned and the next desired change re-runs the series.
 func (r *Reconciler) episode() {
 	healthy := true
 
@@ -147,10 +169,31 @@ func (r *Reconciler) episode() {
 			healthy = false
 		}
 	}
+	if !r.belt() { // after the key part; its refusal never fails the episode
+		healthy = false
+	}
 	r.lastApplied = true
 	if healthy {
 		r.closeEpisode() // a clean activation proves the stack — a LATER failure warns again
 	}
+}
+
+// belt sets the session-scoped IsEnabled property through the
+// StatusSetter seam — every activation episode, independently of the
+// key's result (the two levers are independent and verified separately,
+// research Pitfall 2). A refusal is one WARN and a false answer: the
+// belt never fails the episode.
+func (r *Reconciler) belt() bool {
+	if r.status == nil {
+		return true
+	}
+	if err := r.status(context.Background()); err != nil {
+		r.warn(reasonBelt, err)
+
+		return false
+	}
+
+	return true
 }
 
 // read probes the live key through the deadline-bounded Runner and trims
@@ -172,7 +215,8 @@ func (r *Reconciler) read() (string, error) {
 // no-pipes child reaped by its own goroutine (newSetCmd/NewExecRunner). A
 // failed start is one WARN and a false answer: the episode stays open.
 func (r *Reconciler) setKey() bool {
-	if _, err := r.runner(context.Background(), binGSettings, []string{verbSet, schemaGnomeInterface, keyToolkitAccessibility, valTrue}); err != nil {
+	argv := []string{verbSet, schemaGnomeInterface, keyToolkitAccessibility, valTrue}
+	if _, err := r.runner(context.Background(), binGSettings, argv); err != nil {
 		r.warn(reasonKeySet, err)
 
 		return false
@@ -209,7 +253,7 @@ func (r *Reconciler) warn(reason string, err error) {
 // NOTHING attached to Stdin/Stdout/Stderr — the no-pipes fork shape (the
 // wl-copy precedent, the sound.go newPlayProc form): a piped descriptor
 // would make a reaper wait on a fork-shaped grandchild's write-ends.
-func newSetCmd(name string, args ...string) *exec.Cmd { //nolint:ireturn // exec.Cmd is the pinned concrete child type (the newPlayProc precedent)
+func newSetCmd(name string, args ...string) *exec.Cmd {
 	//nolint:noctx // deadline-free by design — Start plus a reaped Wait; nothing kills a set (the sound.go form)
 	return exec.Command(name, args...) // Stdin/Stdout/Stderr stay nil — no pipes
 }
@@ -221,7 +265,7 @@ func newSetCmd(name string, args ...string) *exec.Cmd { //nolint:ireturn // exec
 // into the error — the clipboard execRunner form), writes are the
 // no-pipes child reaped by its own goroutine (the sound.go reaped form —
 // nothing kills a set, and a failed start is the returned error).
-func NewExecRunner() Runner { //nolint:ireturn // the seam hands the runner closure back (the seam-type precedent)
+func NewExecRunner() Runner {
 	return func(ctx context.Context, name string, args []string) ([]byte, error) {
 		if len(args) > 0 && args[0] == verbSet {
 			cmd := newSetCmd(name, args...)
@@ -237,9 +281,43 @@ func NewExecRunner() Runner { //nolint:ireturn // the seam hands the runner clos
 		cmd.Stdout = &out
 		cmd.Stderr = &errOut
 		if err := cmd.Run(); err != nil {
-			return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(errOut.String()))
+			joined := strings.Join(args, " ")
+
+			return nil, fmt.Errorf("%s %s: %w: %s", name, joined, err, strings.TrimSpace(errOut.String()))
 		}
 
 		return out.Bytes(), nil
+	}
+}
+
+// NewDBusStatusSetter returns the production belt adapter (the name is
+// the 08-05 wiring contract — internal/a11y is not expected to change
+// after this plan): one godbus Properties.Set on the session bus's
+// org.a11y.Bus object — org.a11y.Status.IsEnabled = true, the
+// live-verified no-root form (08-RESEARCH Code Examples). The belt is
+// SESSION-SCOPED (research A5): IsEnabled resets at session restart and
+// the next activation episode re-sets it — no snapshot and no revert
+// debt, the gsettings key stays the persistent truth (the two levers are
+// independent, research Pitfall 2). The connection lives for the one
+// call: episodes are user-paced, so a per-episode dial costs nothing and
+// keeps no connection state to supervise.
+func NewDBusStatusSetter() StatusSetter {
+	return func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, beltTimeout)
+		defer cancel()
+
+		conn, err := dbus.ConnectSessionBus()
+		if err != nil {
+			return fmt.Errorf("connect session bus: %w", err)
+		}
+		defer func() { _ = conn.Close() }() // one belt call per connection
+
+		call := conn.Object(beltBusName, dbus.ObjectPath(beltBusPath)).
+			CallWithContext(ctx, beltSetMethod, 0, beltIface, beltProperty, dbus.MakeVariant(true))
+		if err := call.Err; err != nil {
+			return fmt.Errorf("set %s.%s: %w", beltIface, beltProperty, err)
+		}
+
+		return nil
 	}
 }
