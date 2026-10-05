@@ -28,6 +28,8 @@ const (
 	maxAutocorrectBlocklist = 64
 	minAutocorrectWordLen   = 2
 	maxAutocorrectWordLen   = 16
+
+	maxA11yApps = 64
 )
 
 // The documented default values (config_schema): the tap window is
@@ -63,6 +65,10 @@ var (
 	errAutocorrectBlocklistEmpty    = errors.New("must not be empty or blank — an empty pattern matches everything")
 	errAutocorrectMinWordLenRange   = errors.New("must be in [2, 16]")
 	errAutocorrectThresholdRange    = errors.New("must be positive, with trigram_margin >= trigram_floor")
+
+	errA11yAppsOverCeil = errors.New("entries, at most 64 allowed")
+	errA11yAppsRegex    = errors.New("must be a valid regular expression")
+	errA11yAppsEmpty    = errors.New("must not be empty or blank — an empty pattern matches everything")
 )
 
 // altModifierCandidates is the closed set of alternative MACR modifiers
@@ -164,21 +170,32 @@ func (s Sound) EffectiveAutocorrectEvent() string {
 	return s.AutocorrectEvent
 }
 
-// A11y is the accessibility-magic schema section (D-8-1): the list of
-// applications goswitch automatically enables accessibility for. RED stub —
-// the corpus pins the shape; the documented semantics land in GREEN.
+// A11y is the accessibility-magic schema section (D-8-1, opt-in): the list
+// of applications goswitch automatically enables accessibility for — the
+// config-section form of the owner's manual ZCode precedent. Apps carries
+// RE2 regex patterns matched as substrings against the application
+// identity, explicit ^…$ anchoring, order carries no meaning (D-8-5, the
+// D-53 blocklist canon). The magic set itself is FIXED by D-8-6 (the
+// global toolkit-accessibility key plus the IsEnabled belt) — there are no
+// per-app magic keys in the schema, and the strict decoder refuses any.
+// The zero value is the OFF state: a document without the section decodes
+// disabled, never activated (default off everywhere, D-54).
 type A11y struct {
 	Enabled bool     `yaml:"enabled"`
 	Apps    []string `yaml:"apps"`
 }
 
-// Active reports the section's desired state. RED stub.
+// Active reports the section's desired state — the SINGLE definition of
+// the ACTIVE semantics every consumer reads (the actor fold of plan 08-05
+// reads only this): enabled AND a non-empty list. enabled with an empty
+// list is a valid document but never active (nothing to apply); the zero
+// value is off.
 func (a A11y) Active() bool {
-	return false
+	return a.Enabled && len(a.Apps) > 0
 }
 
-// Config is the whole daemon configuration: exactly the six sections
-// hotkeys / timeouts / correction / macr / autocorrect / sound
+// Config is the whole daemon configuration: exactly the seven sections
+// hotkeys / timeouts / correction / macr / autocorrect / sound / a11y
 // (D-31, D-54).
 type Config struct {
 	Hotkeys     Hotkeys     `yaml:"hotkeys"`
@@ -196,9 +213,10 @@ type Config struct {
 // D-27's 50, the clipboard rung off (D-28), MACR off with no
 // alternative modifier (ADR-005 b.3), the post-correction script flip
 // ON (owner decision 2, 2026-09-27: the mode follows a changed
-// correction), the autocorrect layer OFF with a nil blocklist and the
-// sound section ON with the built-in autocorrect event — the zero
-// Autocorrect value is the off state (D-54 default off everywhere).
+// correction), the autocorrect layer OFF with a nil blocklist, the sound
+// section ON with the built-in autocorrect event and the a11y section OFF
+// with a nil list — the zero Autocorrect and A11y values are the off
+// states (D-54 default off everywhere).
 func Defaults() Config {
 	return Config{
 		Hotkeys: Hotkeys{
@@ -238,6 +256,12 @@ func Defaults() Config {
 			Enabled:          boolPtr(true),
 			AutocorrectEvent: DefaultSoundAutocorrectEvent,
 		},
+		// The accessibility magic ships OFF with a nil list (D-54 default
+		// off everywhere): nothing activates on its own.
+		A11y: A11y{
+			Enabled: false,
+			Apps:    nil,
+		},
 	}
 }
 
@@ -268,8 +292,11 @@ func (c Config) Validate() error {
 	if err := c.MACR.validate(); err != nil {
 		return err
 	}
+	if err := c.Autocorrect.validate(); err != nil {
+		return err
+	}
 
-	return c.Autocorrect.validate()
+	return c.A11y.validate()
 }
 
 // validate resolves both bindings through the closed hotkey name tables —
@@ -393,6 +420,33 @@ func (a Autocorrect) validate() error {
 	}
 	if a.TrigramMargin <= 0 || a.TrigramMargin < a.TrigramFloor {
 		return fmt.Errorf("autocorrect.trigram_margin = %v: %w", a.TrigramMargin, errAutocorrectThresholdRange)
+	}
+
+	return nil
+}
+
+// validate enforces the a11y grammar (D-8-1/D-8-5): the app list is capped
+// unconditionally — a giant list is a DoS vector even while the section is
+// dormant (T-08-02-01, the T-06-04-01 precedent) — and every pattern is
+// compiled here, the only place a broken regex is visible before runtime;
+// an empty or blank pattern is refused before the compile attempt (an
+// empty string is a VALID RE2 that matches everything — the silent "magic
+// for every application at once" trap, T-08-02-02). The section carries no
+// other keys to range-check: the magic set is fixed by D-8-6, and Active()
+// owns the enabled semantics. Compile results are NOT cached in the schema
+// — validation is the check; consumers compile their own. Every error
+// names its field and, where one exists, the element index (D-33).
+func (a A11y) validate() error {
+	if len(a.Apps) > maxA11yApps {
+		return fmt.Errorf("a11y.apps has %d %w", len(a.Apps), errA11yAppsOverCeil)
+	}
+	for i, pattern := range a.Apps {
+		if strings.TrimSpace(pattern) == "" {
+			return fmt.Errorf("a11y.apps[%d] %q: %w", i, pattern, errA11yAppsEmpty)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("a11y.apps[%d] = %q: %w", i, pattern, errA11yAppsRegex)
+		}
 	}
 
 	return nil
