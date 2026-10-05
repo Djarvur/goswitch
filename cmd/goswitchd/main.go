@@ -485,6 +485,12 @@ func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 	})
 	if watcher != nil {
 		actor.AttachConfig(watcher)
+		// The startup document is in force AT STARTUP (plan 07-06, the
+		// restart-survival pin): the fold the first key event would run
+		// runs now — the status and the menu report the document truth
+		// from the first read, never a stale off (the 03-04 per-event
+		// succession is unchanged after it).
+		actor.FoldAppliedConfig()
 	}
 
 	return actor

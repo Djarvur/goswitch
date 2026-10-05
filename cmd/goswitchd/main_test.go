@@ -834,7 +834,7 @@ sound:
 	actor := newActor(*cfg, w)
 	st := actor.StatusSnapshot()
 	if !st.AutoCorrectEnabled {
-		t.Errorf("autocorrect option at startup = false, want the document truth true — the apply must not wait for a key event")
+		t.Errorf("autocorrect option at startup = false, want the document truth true — no key-event wait")
 	}
 	if !st.SoundEnabled {
 		t.Errorf("sound option at startup = false, want the document truth true")
