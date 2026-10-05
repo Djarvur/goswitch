@@ -1813,6 +1813,14 @@ func (a *Actor) flipTo(target scriptMode) {
 	if a.menuSync != nil {
 		a.menuSync.SetMode(a.modeSymbol())
 	}
+	// The sound observer fires LAST — after the display and the menu, the
+	// D-36 order with every observer appended (plan 07-08): the tone
+	// confirms a flip that fully happened (the same-target guard above
+	// already silenced the no-ops). The sink is fire-and-forget by
+	// contract; the actor adds no error handling around the call.
+	if s := a.soundSink; s != nil {
+		s.Flip()
+	}
 }
 
 // oppositeMode is the toggle target of the gesture flips (the Single
