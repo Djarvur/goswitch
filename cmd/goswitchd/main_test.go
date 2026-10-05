@@ -714,11 +714,12 @@ func TestOpenConfigEditorEnsureFailureSkipsLaunch(t *testing.T) {
 // without a restart.
 
 // fakeSoundSink is the sound-seam double of the wiring corpus: both tones
-// counted under a mutex.
+// counted under a mutex, the re-pinned autocorrect event recorded (WR-02).
 type fakeSoundSink struct {
 	mu    sync.Mutex
 	flips int
 	fires int
+	event string
 }
 
 func (f *fakeSoundSink) Flip() {
@@ -733,11 +734,24 @@ func (f *fakeSoundSink) AutoCorrect() {
 	f.mu.Unlock()
 }
 
+func (f *fakeSoundSink) SetAutocorrectEvent(event string) {
+	f.mu.Lock()
+	f.event = event
+	f.mu.Unlock()
+}
+
 func (f *fakeSoundSink) flipCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	return f.flips
+}
+
+func (f *fakeSoundSink) autocorrectEvent() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.event
 }
 
 // foldSource is the snapshot fake of the watcher's Snapshot contract — the
@@ -820,6 +834,41 @@ func TestNewActor_SoundHotReloadGating(t *testing.T) {
 	actor.ToggleMode()
 	if got := sink.flipCount(); got != 1 {
 		t.Errorf("flip tones after the re-enabled reload = %d, want 1 — hot reload re-arms the tones", got)
+	}
+}
+
+// TestNewActor_SoundEventHotReload pins the D-32 truthfulness of the
+// sound.autocorrect_event row (WR-02): the effective event FOLDS live — a
+// document edit reaches the installed sink without a restart, and a
+// late-installed sink self-syncs to the folded value (the SetMenuSync
+// install-push precedent). The startup wiring still constructs the sink
+// with the startup document's effective event; the fold keeps it true
+// afterwards.
+func TestNewActor_SoundEventHotReload(t *testing.T) {
+	cfg := config.Defaults() // the effective event is the built-in default
+	src := &foldSource{cfg: cfg}
+	actor := newActor(cfg, nil)
+	actor.AttachConfig(src)
+	sink := &fakeSoundSink{}
+	actor.SetSoundSink(sink)
+
+	actor.ExpiryAt(time.Second) // one fold of the startup document
+
+	changed := "system-message"
+	cfg.Sound.AutocorrectEvent = changed
+	src.set(cfg)
+	actor.ExpiryAt(2 * time.Second) // the fold of the edited document
+
+	if got := sink.autocorrectEvent(); got != changed {
+		t.Errorf("the sink's autocorrect event after the edit = %q, want %q — the row folds without a restart (WR-02)", got, changed)
+	}
+
+	// A late install (the OnConn ordering) self-syncs to the folded truth
+	// instead of waiting for the next fold.
+	late := &fakeSoundSink{}
+	actor.SetSoundSink(late)
+	if got := late.autocorrectEvent(); got != changed {
+		t.Errorf("the late-installed sink's event = %q, want %q — the install must self-sync (the SetMenuSync precedent)", got, changed)
 	}
 }
 
