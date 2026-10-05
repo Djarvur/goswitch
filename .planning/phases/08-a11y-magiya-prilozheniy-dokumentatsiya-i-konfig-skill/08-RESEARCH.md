@@ -19,11 +19,11 @@ Stream-2 facts: README.ru.md (217 lines) is materially stale against README.md (
 
 ### A11y-магия: что решено владельцем дословно
 
-- **D-8-1 (владелец, туда a11y-magic-apps-list, 2026-10-05):** нужен НЕ перечень в
+- **D-8-1 (владелец, todo a11y-magic-apps-list, 2026-10-05):** нужен НЕ перечень в
   документах, а **секция в конфиге** со списком приложений, которым goswitch автоматически
   включает accessibility-магию «как сделали вручную для ZCode» (прецедент подтверждён).
   Форма — «секция типа `a11y.apps` / расширение `autocorrect`» (точное имя — discretion).
-- **D-8-2 (владелец, туда):** механику применения (gsettings toolkit-accessibility,
+- **D-8-2 (владелец, todo a11y-magic-apps-list):** механику применения (gsettings toolkit-accessibility,
   snap-оверрайды, флаги запуска) **исследовать при планировании** — research определяет
   фактические механизмы per-app на GNOME 46 до кода.
 
@@ -53,7 +53,7 @@ Stream-2 facts: README.ru.md (217 lines) is materially stale against README.md (
   **README.md = русский**, английский перевод — README.en.md; синхронность поддерживается.
 - **D-8-8:** README/CONFIG.md/SPEC сверяются с фактическим поведением v1.1.0 (меню,
   тумблеры, звуки, blocklist, adopt+watch, «где молчит»); расхождения в ДОКАХ правятся;
-  если расхождение = дефект поведения — новая туда, код в этой фазе не правится.
+  если расхождение = дефект поведения — новый todo, код в этой фазе не правится.
 - **D-8-9:** CONFIG.md — русский-первый (пользовательский док); ACCEPTANCE.md /
   ci-runner.md / SECURITY.md остаются EN. SPEC.md уже русский.
 
