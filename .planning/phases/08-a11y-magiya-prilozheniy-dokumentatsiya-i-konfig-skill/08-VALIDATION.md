@@ -55,7 +55,7 @@ created: "2026-10-05"
 | 08-07 T1 | 08-07 | 5 | D-8-7/D-8-8 | T-08-07-01 | языковой swap, все разделы, README.ru.md удалён | unit (grep-гейты) | `cd /home/nil/DiskD/W/Djarvur/goswitch && head -40 README.md \| grep -qP "[А-Яа-яЁё]{3,}" && git ls-files -- README.ru.md \| grep -q .; test $? -eq 1 && echo LANG-SWAP-DELETE-OK` | ✅ | ⬜ pending |
 | 08-07 T2 | 08-07 | 5 | D-8-7 | T-08-07-02 | нет stale-ссылок на README.ru.md | unit (grep-гейты) | `cd /home/nil/DiskD/W/Djarvur/goswitch && grep -rn "README\.ru" README.md README.en.md docs/ 2>/dev/null \| grep -q .; test $? -eq 1 && echo NO-STALE-RU` | ✅ | ⬜ pending |
 | 08-08 T1 | 08-08 | 5 | D-8-10 | T-08-08-01/02 | hard errors, детерминизм, сентинелы, -check | unit (golden) | `cd /home/nil/DiskD/W/Djarvur/goswitch && mise exec -- go test ./cmd/skillgen/ -race -count=1` | ❌ → Wave 0 (новый пакет) | ⬜ pending |
-| 08-08 T2 | 08-08 | 5 | D-8-10/D-8-11 | T-08-08-03 | SKILL.md tracked, regen идемпотентен, check зелёный | unit + full | `cd /home/nil/DiskD/W/Djarvur/goswitch && git ls-files -- .zcode/skills/goswitch-config/SKILL.md \| grep -q . && mise run skillgen-regen && mise exec -- go run ./cmd/skillgen -check && echo CHECK-GREEN` | ❌ → создаётся задачей | ⬜ pending |
+| 08-08 T2 | 08-08 | 5 | D-8-10/D-8-11 | T-08-08-03 | SKILL.md tracked, regen идемпотентен, check зелёный | unit + full | `cd /home/nil/DiskD/W/Djarvur/goswitch && git ls-files -- skills/goswitch-config/SKILL.md \| grep -q . && mise run skillgen-regen && mise exec -- go run ./cmd/skillgen -check && echo CHECK-GREEN` | ❌ → создаётся задачей | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
