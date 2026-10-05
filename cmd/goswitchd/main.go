@@ -23,6 +23,7 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/a11y"
 	"github.com/Djarvur/goswitch/internal/activate"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
@@ -188,6 +189,16 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			// live), so no reload branch exists here either (the D-32
 			// contour — the wiring installs once).
 			actor.SetSoundSink(sound.New(config.DefaultSoundFlipEvent, cfg.Sound.EffectiveAutocorrectEvent()))
+			// The a11y-magic reconciler (plan 08-05, D-8-3): assembled on
+			// the production adapters only — the gsettings runner and the
+			// godbus belt setter (the pinned 08-03 constructors). The fold
+			// is the ONE application path — the startup document applied
+			// by newActor's FoldAppliedConfig (the self-sync above fires
+			// the initial Apply after this late install, the OnConn
+			// ordering), every reload by applySnapshot — so no reload
+			// branch exists here either (the D-32 contour: the wiring
+			// installs once).
+			actor.SetA11ySink(a11y.New(a11y.NewExecRunner(), a11y.NewDBusStatusSetter()))
 			actor.SetModeDisplay(item)
 			go item.Supervise(connCtx, conn)
 
