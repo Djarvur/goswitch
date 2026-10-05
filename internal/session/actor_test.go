@@ -6094,6 +6094,12 @@ func (f *fakeSoundSink) fireCount() int {
 	return f.fires
 }
 
+// flipSoundOn returns the bare sound-on Options — the flip-tone corpus
+// configuration (autocorrect stays off; flips are what these cells drive).
+func flipSoundOn() session.Options {
+	return session.Options{SoundEnabled: true}
+}
+
 // TestActor_FlipSoundsSink pins the single flip point (plan 07-08): a
 // gesture flip (the Single decision at expiry) and a menu flip
 // (SwitchMode — the SAME flipTo path) each sound exactly one Flip; the
@@ -6101,6 +6107,7 @@ func (f *fakeSoundSink) fireCount() int {
 func TestActor_FlipSoundsSink(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeSoundSink{}
+	a.SetOptions(flipSoundOn())
 	a.SetSoundSink(sink)
 
 	flipMode(a)        // the Single decision at expiry — EN → RU
@@ -6118,6 +6125,7 @@ func TestActor_FlipSoundsSink(t *testing.T) {
 func TestActor_SameTargetFlipSilent(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeSoundSink{}
+	a.SetOptions(flipSoundOn())
 	a.SetSoundSink(sink)
 
 	a.SwitchMode("en") // already EN — the same-target guard
@@ -6146,6 +6154,7 @@ func TestActor_SoundSinkAfterModeRecord(t *testing.T) {
 	msync.onMode = func(symbol string) { record("menu:" + symbol) }
 	sound := &fakeSoundSink{}
 	sound.onFlip = func() { record("sound:flip") }
+	a.SetOptions(flipSoundOn())
 	a.SetMenuSync(msync)
 	a.SetModeDisplay(disp)
 	a.SetSoundSink(sound)
@@ -6226,8 +6235,8 @@ func TestActor_SoundDisabledNoSink(t *testing.T) {
 	a.SetOptions(opts)
 	a.SetSoundSink(sound)
 
-	flipMode(a)                                 // a live flip — must stay silent
 	fireAutocorrect(t, a, sink, wordEN, wordRU) // a live fire — must stay silent
+	flipMode(a)                                 // a live flip — must stay silent
 
 	if got := sound.flipCount(); got != 0 {
 		t.Errorf("flip tones with the sound off = %d, want 0", got)

@@ -29,6 +29,7 @@ import (
 	"github.com/Djarvur/goswitch/internal/indicator"
 	"github.com/Djarvur/goswitch/internal/logging"
 	"github.com/Djarvur/goswitch/internal/session"
+	"github.com/Djarvur/goswitch/internal/sound"
 )
 
 func main() {
@@ -165,6 +166,12 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			menu.SetSoundEnabled(cfg.Sound.EffectiveEnabled())
 			menu.SetKeys(cfg.Hotkeys.TapKey, cfg.Hotkeys.WordLayoutCombo, cfg.Hotkeys.ModeSwitchChord)
 			actor.SetMenuSync(menu) // the install push covers ordering skew, as SetModeDisplay
+			// The sound sink (plan 07-08): the flip tone rides the schema
+			// constant, the autocorrect tone the startup document's
+			// effective event; the switch itself arrives through the
+			// actor's fold on every reload, so no reload branch exists
+			// here (the D-32 contour — the wiring installs once).
+			actor.SetSoundSink(sound.New(config.DefaultSoundFlipEvent, cfg.Sound.EffectiveAutocorrectEvent()))
 			actor.SetModeDisplay(item)
 			go item.Supervise(connCtx, conn)
 
@@ -457,6 +464,11 @@ func newActor(cfg config.Config, watcher *config.Watcher) *session.Actor {
 		ClipboardRung:       cfg.Correction.ClipboardRung,
 		FlipAfterCorrection: cfg.Correction.FlipAfterCorrection,
 		ModeSwitchChord:     chord,
+		// The sound switch of the startup document (plan 07-08): the
+		// owner's default ON through the Effective truth — an explicit
+		// enabled: false mutes from the first gesture; a attached source
+		// re-folds it live per event (the hot-reload contour).
+		SoundEnabled: cfg.Sound.EffectiveEnabled(),
 	})
 	if watcher != nil {
 		actor.AttachConfig(watcher)

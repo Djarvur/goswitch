@@ -1012,6 +1012,21 @@ func (a *Actor) SwitchMode(target string) {
 	a.flipTo(m)
 }
 
+// soundSinkFor returns the installed sink when the sound switch is ON —
+// the SINGLE gate of both tones (plan 07-08): with the switch off the sink
+// is never even consulted, so no binary lookup and no spawn ever run for a
+// muted daemon. nil (no sink installed, or the switch off) is the silent
+// degradation. The caller holds the mutex.
+//
+//nolint:ireturn // the seam accessor hands the interface back (the emitter() precedent)
+func (a *Actor) soundSinkFor() SoundSink {
+	if !a.opts.SoundEnabled {
+		return nil
+	}
+
+	return a.soundSink
+}
+
 // MenuSync is the tray-menu state seam (plan 07-05): the pushes the menu
 // snapshot needs to mirror the actor — the mode symbol and the applied
 // config truth. Defined at the point of use; the interface travels with
@@ -1214,6 +1229,11 @@ func (a *Actor) applySnapshot() {
 	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
 	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
 	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
+	// The sound switch folds live (plan 07-08, the autocorrect-fold
+	// precedent): the owner's default ON is the EffectiveEnabled truth —
+	// an absent section reads ON, only an explicit enabled: false mutes,
+	// and the next gesture carries the change (the D-32 hot reload).
+	a.opts.SoundEnabled = snap.Sound.EffectiveEnabled()
 	a.pushMenuSync(snap)
 }
 
@@ -1823,9 +1843,10 @@ func (a *Actor) flipTo(target scriptMode) {
 	// The sound observer fires LAST — after the display and the menu, the
 	// D-36 order with every observer appended (plan 07-08): the tone
 	// confirms a flip that fully happened (the same-target guard above
-	// already silenced the no-ops). The sink is fire-and-forget by
-	// contract; the actor adds no error handling around the call.
-	if s := a.soundSink; s != nil {
+	// already silenced the no-ops). The single gate consults the sink only
+	// when the sound switch is on; the sink is fire-and-forget by
+	// contract, and the actor adds no error handling around the call.
+	if s := a.soundSinkFor(); s != nil {
 		s.Flip()
 	}
 }
@@ -2276,6 +2297,13 @@ func (a *Actor) autoConfirm(payload acPayload) {
 		}
 		a.acFired++
 		slog.Info("autocorrect", "reason", "fired")
+		// The fired tone (plan 07-08): the distinct autocorrect event from
+		// the fired point — the abstentions and the off state never reach
+		// it (the single gate ahead of the sink). Fire-and-forget; the
+		// actor adds no error handling around the call.
+		if s := a.soundSinkFor(); s != nil {
+			s.AutoCorrect()
+		}
 		a.startRangeCorrection(payload.rng)
 	default:
 		a.recordACAbstain(acReasonRoleForbidden)
