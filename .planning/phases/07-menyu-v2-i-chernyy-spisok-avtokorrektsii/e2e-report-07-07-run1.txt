@@ -1,0 +1,37 @@
+goswitch e2e matrix — test/e2e/cases/matrix-v4.yaml — 2026-10-05T05:59:07+03:00
+PASS phrase-en-ru
+PASS phrase-ru-en
+FAIL phrase-mixed: entry did not settle to "привет привет" (readback "ghbdtn ghbdtn", witness "zenity:TEXT:chars=13", focused inputs "zenity:TEXT:chars=13")
+PASS phrase-registers
+PASS phrase-after-space
+PASS long-phrase
+PASS phrase-gte
+PASS phrase-chromium
+FAIL word-mixed: entry did not settle to "паипривет" (readback "gfbghbdtn", witness "zenity:TEXT:chars=9", focused inputs "zenity:TEXT:chars=9")
+PASS select-all-zenity
+PASS select-all-gte
+PASS select-all-chromium
+PASS select-partial-gte
+PASS select-reverse-gte
+PASS layout-single
+PASS combo-word-layout
+PASS reload-window
+PASS reload-invalid-last-good
+PASS ctl-status-reload
+FAIL macr-super-letter: step 1 (reload applied [  enabled: true   letters: "x"]): activate goswitch-en via SetGlobalEngine: ibus engine goswitch-en: exit status 1: (process:1826413): IBUS-WARNING **: 05:54:36.399: ibus_bus_call_sync: org.freedesktop.IBus.SetGlobalEngine: GDBus.Error:org.freedesktop.DBus.Error.Failed: Set global engine failed: Operation was cancelled
+Set global engine failed.
+PASS gedit-word-en-ru
+PASS gedit-word-upper
+PASS gedit-word-capital
+PASS gedit-phrase
+PASS gedit-phrase-registers
+PASS gedit-layout-single
+PASS x11-word-en-ru
+PASS x11-word-upper
+PASS x11-word-capital
+PASS x11-phrase
+PASS flip-after-word-correction
+PASS autocorrect-fires
+PASS autocorrect-off
+PASS autocorrect-oov
+summary: 31/34 PASS
