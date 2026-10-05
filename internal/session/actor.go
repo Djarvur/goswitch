@@ -1041,6 +1041,14 @@ type MenuSync interface {
 	SetKeys(tap, combo, chord string)
 }
 
+// FoldAppliedConfig re-reads the attached config source NOW — the menu
+// toggle's synchronous-apply seam (plan 07-06, the 07-05 pin): the
+// toggle's reload re-stores the watcher snapshot and this fold puts the
+// applied values in force without waiting for the next key event. The
+// 03-04 per-event succession is unchanged for every other consumer (the
+// CLI reload, the echo); without a source the fold is a quiet no-op.
+func (a *Actor) FoldAppliedConfig() {}
+
 // emitter returns the attached emitter sink — the snapshot accessor of the
 // atomic slot. Nil before the first mint, exactly like the plain a.eng
 // field it replaced; every former a.eng read takes a local snapshot through

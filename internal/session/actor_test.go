@@ -6300,3 +6300,42 @@ func TestActor_SoundFoldGatesFromSnapshot(t *testing.T) {
 		t.Errorf("flip tones after the re-enabled reload = %d, want 2", got)
 	}
 }
+
+// TestActor_FoldAppliedConfig pins the menu toggle's synchronous-apply
+// seam (plan 07-06, the 07-05 pin live-proven by the menu-v2 case): the
+// toggle's reload re-stores the watcher snapshot, and FoldAppliedConfig
+// puts the applied values in force WITHOUT waiting for the next key event
+// — the fold is the ONE application path (the 03-04 succession), only
+// invoked eagerly. A sourceless actor folds as a quiet no-op.
+func TestActor_FoldAppliedConfig(t *testing.T) {
+	a, _ := wiredActor()
+	cfg := config.Defaults()
+	on := true
+	cfg.Autocorrect.Enabled = false
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	opts := soundOn()
+	opts.AutoCorrectEnabled = false
+	opts.SoundEnabled = false
+	a.SetOptions(opts)
+
+	cfg.Autocorrect.Enabled = true
+	cfg.Sound.Enabled = &on
+	src.set(cfg)
+	a.FoldAppliedConfig() // the toggle's reload fold — no key event in between
+
+	st := a.StatusSnapshot()
+	if !st.AutoCorrectEnabled {
+		t.Errorf("autocorrect option after the eager fold = false, want true — the apply must not wait for a key event")
+	}
+	if !st.SoundEnabled {
+		t.Errorf("sound option after the eager fold = false, want true")
+	}
+
+	bare, _ := wiredActor()
+	bare.SetOptions(opts)
+	bare.FoldAppliedConfig()
+	if st := bare.StatusSnapshot(); st.AutoCorrectEnabled {
+		t.Errorf("autocorrect option after a sourceless fold = true, want the SetOptions value false")
+	}
+}
