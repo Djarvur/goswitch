@@ -112,7 +112,7 @@ func caseListUsage() string {
 		" | macr-per-app | ctl-smoke | switch-spike | two-source-flip | external-flip-sync" +
 		" | flip-keystroke" +
 		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
-		" | autocorrect-blocklist-silent" +
+		" | autocorrect-blocklist-silent | menu-v2" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -274,6 +274,7 @@ func pickCase(name string) (caseSpec, error) {
 		"autocorrect-password-silent":  {fn: runAutocorrectPasswordSilent},
 		"autocorrect-terminal-silent":  {fn: runAutocorrectTerminalSilent},
 		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
+		"menu-v2":                      {fn: runMenuV2},
 		"install-cycle":                {fn: runInstallCycle, standalone: true},
 		"perf":                         {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
 		"perf-autocorrect":             {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
@@ -287,7 +288,7 @@ func pickCase(name string) (caseSpec, error) {
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
 			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, flip-keystroke,"+
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
-			" autocorrect-blocklist-silent,"+
+			" autocorrect-blocklist-silent, menu-v2,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 

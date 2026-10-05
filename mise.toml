@@ -201,6 +201,13 @@ run = "go run ./test/e2e -case autocorrect-terminal-silent"
 description = "e2e: 07-06 autocorrect blocklist-silent — the fixture's observed bridge-namespace identity in apps_blocklist forbids the correction: field verbatim, fired=0, exactly one ac_skip_app_blocked abstention, zero correction records (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case autocorrect-blocklist-silent"
 
+# The 07-06 menu-v2 live proof (SWCH regression carrier): DBusMenu Event
+# clicks — EN/RU mode records, both persisted toggles (file+status in the
+# same click), restart survival of both enabled values. No ydotool.
+[tasks.e2e-menu-v2]
+description = "e2e: 07-06 menu-v2 — the tray menu v2 driven over the DBusMenu Event channel (no ydotool/mouse): EN/RU radio clicks leave journal mode records, the autocorrect and sound toggles persist to config.yaml AND flip goswitchctl status in the same click (synchronous apply), BOTH enabled values survive a daemon restart on the same -config; playback is never asserted (07-08 unit corpus owns the engine invocation) (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case menu-v2"
+
 # Dictionary regeneration (06-02): a dev-only task — it reads the system
 # hunspell dictionaries, which exist on the dev machine only. CI never runs
 # it: CI гоняет только golden-тесты по закоммиченным данным (CORR-08).
