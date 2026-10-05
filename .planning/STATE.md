@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 07
 current_phase_name: Меню v2 и чёрный список автокоррекции
-status: executing
-stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-10-05T02:17:29.392Z"
+status: verifying
+stopped_at: Completed 07-07-PLAN.md
+last_updated: "2026-10-05T03:27:56.435Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 07 execution started
-state_head: 1e96d8e780c2ca3fcdb33310ee8216e119688373
+state_head: 7fbe4ec0ac16b4bce351421d38b3f0f4eb61a9b7
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 51
-  completed_plans: 50
+  completed_plans: 51
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 07 (Меню v2 и чёрный список автокоррекции) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-04 — Phase 07 execution started
 
 Progress: [████████░░] 75%
@@ -116,6 +116,7 @@ Progress: [████████░░] 75%
 | Phase 07 P08 | 36 min | 3 tasks | 6 files |
 | Phase 07 P06 | 86 min | 3 tasks | 11 files |
 | Phase 07 P06 | 86 min | 3 tasks | 11 files |
+| Phase 07 P07 | 55 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -251,6 +252,9 @@ Recent decisions affecting current work:
 - [Phase 07]: Решение «Звуки при переключении» внесено в §11 ревизии 2026-10-04 ДО кода плана 07-08: секция sound — enabled по умолчанию включён + отдельное событие тона автокоррекции; тон на любой флип языка; воспроизведение субпроцессом canberra-gtk-play (paplay-фолбэк); отказ — только WARN; тумблер «Звук» в меню с persist по каноническому макету 287999c — D-55: решение о звуках записано в спеку до кода; зелёная итерация подтверждена mise run ci на docs-only дереве
 - [Phase 07]: [07-05] Menu-side dedupe: the actor pushes per flip/fold, the menu drops identical values — the per-keystroke applySnapshot fold never spams the bus; the click+echo+fold triple application is harmless by construction
 - [Phase 07]: [07-05] The wiring seeds the menu's initial state from the STARTUP config right after Attach (version, both toggles, raw key names) and SetMenuSync's install push shows the current mode — the actor re-folds the same truth per event, idempotently; Item owns its Menu instance so the snapshot survives every supervisor re-attach
+- [Phase 07]: [07-07] Матрица v4 двойка — 31/34 в обеих: 2 дизайн-красные WINDOWS #12 строки (readback байт = актуалу реестра), по 1 мигрирующему средовому транзиенту SetGlobalEngine на прогон (зелёные в соседнем прогоне); красные не перегонялись в фальшивую зелень — класс-строчный вердикт 06-08
+- [Phase 07]: [07-07] Предусловие свежесессии (<=30 мин) честно НЕ выполнено (3477+ мин, записано в RELEASE-READINESS); двойка — по прямому указанию оркестратора и прецеденту 06-08/WINDOWS #13; формальный fresh_session-гейт остаётся машинным инструментом владельца на verify-work
+- [Phase 07]: [07-07] README v1.1.0: канал B переведён @latest (точен до и после тега — не анонсирует несуществующий v1.1.0 и не оставляет пользователей на v1.0.0); RELEASE-READINESS артефакт — доказательства + чек-лист доков 5/5 + реестр 17/17 probe-строк + post-merge шаги владельца (планом не исполняются); статус RELEASE-READY
 
 ### Pending Todos
 
@@ -283,6 +287,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T02:17:29.262Z
-Stopped at: Completed 07-06-PLAN.md
+Last session: 2026-10-05T03:26:44.549Z
+Stopped at: Completed 07-07-PLAN.md
 Resume file: None

@@ -326,4 +326,4 @@ Plans:
 
 **Wave 6** *(blocked on Waves 1-5)*
 
-- [ ] 07-07-PLAN.md — Релизная готовность v1.1.0: README (blocklist, меню v2 со «Звуком», звуки), полный регресс (ci + матрица ×2 + flip-keystroke 24/24 + новые кейсы), RELEASE-READINESS (тег — post-merge действие владельца) — CORR/SWCH (регресс), критерии 4-5
+- [x] 07-07-PLAN.md — Релизная готовность v1.1.0: README (blocklist, меню v2 со «Звуком», звуки), полный регресс (ci + матрица ×2 + flip-keystroke 24/24 + новые кейсы), RELEASE-READINESS (тег — post-merge действие владельца) — CORR/SWCH (регресс), критерии 4-5
