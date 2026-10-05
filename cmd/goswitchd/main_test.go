@@ -17,6 +17,7 @@ import (
 	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/hotkey"
+	"github.com/Djarvur/goswitch/internal/indicator"
 	"github.com/Djarvur/goswitch/internal/session"
 )
 
@@ -556,6 +557,42 @@ func assertToggleFlip(t *testing.T, actor *session.Actor, read func(*session.Act
 	if !slices.Equal(order, want) {
 		t.Errorf("composition order = %q, want exactly %q", order, want)
 	}
+}
+
+// TestMenuTogglePushRacesAttachStore pins the WR-01 discipline of the
+// OnConn wiring: the attach-time store of the menu (the wiring's `menu =
+// item.Menu()` after indicator.Attach) and the toggle pushes (the godbus
+// dispatch goroutines' `*menu` reads) run CONCURRENTLY — the pair must be
+// race-free under `go test -race` (the RED shape: a plain pointer write
+// racing the closure read is UB), and a push landing before any store
+// stays a harmless no-op. The store is proxied by the same variable write
+// the wiring performs; the value is irrelevant to the race shape (a nil
+// menu exercises the push's nil guard).
+func TestMenuTogglePushRacesAttachStore(t *testing.T) {
+	actor := appliedReader(t, "sound", false)
+	var menu *indicator.Menu
+	toggles := newMenuToggles(actor, &menu, "", nil)
+	// The writer seams stay off the filesystem and off the watcher: this
+	// corpus is about the menu slot's concurrency, not the composition.
+	toggles.sound.write = func(string, bool) error { return nil }
+	toggles.sound.reload = func() {}
+	toggles.ac.write = func(string, bool) error { return nil }
+	toggles.ac.reload = func() {}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			menu = nil // the attach-store proxy (the wiring stores item.Menu())
+		}()
+		go func() {
+			defer wg.Done()
+			toggles.sound.flip()
+			toggles.ac.flip()
+		}()
+	}
+	wg.Wait()
 }
 
 // TestToggleNilReloadKeepsWrite pins the degenerate no-source guard (plan
