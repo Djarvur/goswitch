@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 8
 current_phase_name: a11y-магия приложений, документация и конфиг-skill
-status: executing
-stopped_at: Completed 08-07-PLAN.md
-last_updated: "2026-10-05T19:14:14.824Z"
+status: verifying
+stopped_at: Completed 08-08-PLAN.md
+last_updated: "2026-10-05T19:53:25.583Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 8 execution started
-state_head: b65b62f9962e45780adb7d150532ee79f9744e92
+state_head: b204342e6f6bc6ea0a52431c6687225c5da3f143
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 59
-  completed_plans: 58
+  completed_plans: 59
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 8 (a11y-магия приложений, документация и конфиг-skill) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-05 — Phase 8 execution started
 
 Progress: [████████░░] 75%
@@ -125,6 +125,7 @@ Progress: [████████░░] 75%
 | Phase 08 P05 | 9 min | 2 tasks | 4 files |
 | Phase 08 P06 | 18 min | 3 tasks | 2 files |
 | Phase 08 P07 | 11 min | 2 tasks | 4 files |
+| Phase 8 P08 | 16 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -279,6 +280,9 @@ Recent decisions affecting current work:
 - [Phase 08]: SPEC-сверка 2026-10-05: единственное расхождение — install не пишет конфиг (решение 04-02 adopt+watch), исправлено ин-плейс в форме 08-01 — аудит-трейл цел; дефектов поведения не выявлено — новые todo не заводились; §4.4 вне перечня сверки, канон флипа в ADR-006
 - [Phase 08]: README русский-первый (D-8-7): README.md = русская главная v1.1.0 + a11y-раздел, README.en.md = EN-канон, README.ru.md удалён; кириллица в EN-файле — только пример коррекции и литералы русскоязычного меню демона — Дословное решение владельца D-8-7; литералы меню переводить нельзя — код рендерит их по-русски (internal/indicator/menu.go)
 - [Phase 08]: D-8-8 README-сверка: About/Статус в меню — серые информационные строки («goswitch <версия>», «EN · испр. N»), не уведомления (owner UAT 2026-10-05); uninstall упоминает a11y-откат; дефектов поведения нет — todo не заводились — internal/indicator/indicator.go:94 и menu.go:653-676: строки без колбэков, UAT-решение владельца; правка только в документах
+- [Phase 8]: skillgen парсит таблицу docs/CONFIG.md с канон-заголовком как якорем; malformed-строка — hard error (file:line), never silent skip; строки копируются verbatim — дрейф SKILL.md от CONFIG.md невозможен по построению (D-8-10)
+- [Phase 8]: Синхрон-гейт D-8-10 живёт golden-тестом CommittedFileInSync внутри обычного mise run test (research Pattern 5a — ноль правок workflow); dev-only регенерация — mise-задача skillgen-regen; CI только сверяет golden
+- [Phase 8]: RED-фаза 08-08 — shape-стаб по прецеденту 06-04/08-02 (компиляционная ошибка была бы INVALID_RED #3770); CommittedFileInSync при отсутствии файла падает, а не скипается — скип сделал бы CI-гейт слепым к удалению SKILL.md
 
 ### Pending Todos
 
@@ -311,6 +315,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T19:13:59.070Z
-Stopped at: Completed 08-07-PLAN.md
+Last session: 2026-10-05T19:52:57.771Z
+Stopped at: Completed 08-08-PLAN.md
 Resume file: None

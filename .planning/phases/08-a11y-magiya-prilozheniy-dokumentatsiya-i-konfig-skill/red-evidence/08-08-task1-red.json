@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./cmd/skillgen/ -race -count=1 -v (transcribed to node-test TAP per repo precedent, 07-04/08-02; raw output /tmp/08-08-t1-red-raw.txt; tree = cmd/skillgen RED-stub shape: consts + tableRow type + signatures parseKeyTable/renderRegion/replaceRegion returning zero values, 06-04/08-02 RED-stub precedent)",
+  "exitCode": 1,
+  "targetTest": "TestSkillgen_ParseRealConfigTable",
+  "failingTest": "TestSkillgen_ParseRealConfigTable",
+  "expected": "parseKeyTable(\"../../docs/CONFIG.md\") returns at least 21 rows, each with exactly five cells and a section-qualified key (dot + known section prefix) in the first cell; malformed rows (4 cells / empty cell / dot-less key) are hard errors naming file:line with no partial rows; two renders of the same rows are byte-equal and carry title/source/header/verbatim rows; a skill file without usable sentinels (no-begin/no-end/reversed) hard-errors with no partial content.",
+  "actual": "All five target tests fail on the planned behaviors against the zero-value stubs: ParseRealConfigTable 'returned 0 rows, want at least 21'; MalformedRowHardError ×3 'accepted the malformed table (0 rows), want a hard error'; RenderDeterministic 'produced empty output'; RegionSentinelsRequired ×3 'accepted a file without usable sentinels (0 bytes), want an error'; CommittedFileInSync fails on the plan-pinned honest red — 'read committed SKILL.md: open ../../skills/goswitch-config/SKILL.md: no such file or directory' (the artifact is created by task 2).",
+  "output": "not ok 1 - TestSkillgen_ParseRealConfigTable\nnot ok 2 - TestSkillgen_MalformedRowHardError\nnot ok 3 - TestSkillgen_RenderDeterministic\nnot ok 4 - TestSkillgen_RegionSentinelsRequired\nnot ok 5 - TestSkillgen_CommittedFileInSync\n# tests 5\n# pass 0\n# fail 5\n"
+}
