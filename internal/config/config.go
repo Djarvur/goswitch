@@ -164,6 +164,19 @@ func (s Sound) EffectiveAutocorrectEvent() string {
 	return s.AutocorrectEvent
 }
 
+// A11y is the accessibility-magic schema section (D-8-1): the list of
+// applications goswitch automatically enables accessibility for. RED stub —
+// the corpus pins the shape; the documented semantics land in GREEN.
+type A11y struct {
+	Enabled bool     `yaml:"enabled"`
+	Apps    []string `yaml:"apps"`
+}
+
+// Active reports the section's desired state. RED stub.
+func (a A11y) Active() bool {
+	return false
+}
+
 // Config is the whole daemon configuration: exactly the six sections
 // hotkeys / timeouts / correction / macr / autocorrect / sound
 // (D-31, D-54).
@@ -174,6 +187,7 @@ type Config struct {
 	MACR        MACR        `yaml:"macr"`
 	Autocorrect Autocorrect `yaml:"autocorrect"`
 	Sound       Sound       `yaml:"sound"`
+	A11y        A11y        `yaml:"a11y"`
 }
 
 // Defaults returns the documented built-in defaults: the daemon runs on

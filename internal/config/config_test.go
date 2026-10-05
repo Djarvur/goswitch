@@ -31,6 +31,9 @@ const (
 	// fieldAutoCorrectBlocklist is the D-53 revision's blocklist key.
 	fieldAutoCorrectBlocklist = "autocorrect.apps_blocklist"
 
+	// fieldA11yApps is the a11y section's app-list key (D-8-1/D-8-5).
+	fieldA11yApps = "a11y.apps"
+
 	// appGedit is the corpus's bridge-namespace example app.
 	appGedit = "org.gnome.Gedit"
 
@@ -38,6 +41,13 @@ const (
 	// anchor — both legal RE2, both pinned by the compile corpus.
 	acBlockSubstr = "chrom"
 	acBlockAnchor = `^org\.gnome\.`
+
+	// A11y corpus patterns (D-8-5, the blocklist pair's analog): a bare
+	// substring and an explicit anchor — both legal RE2 — plus the
+	// non-compilable broken pattern.
+	a11ySubstr = "zcode"
+	a11yAnchor = `^org\.gnome\.Terminal$`
+	a11yBroken = "["
 )
 
 // validDoc is the complete schema document every Validate case starts from
@@ -68,6 +78,16 @@ func activeAutocorrectDoc() config.Config {
 		TrigramMargin: 2.0,
 		TrigramFloor:  1.0,
 	}
+
+	return cfg
+}
+
+// activeA11yDoc returns the complete document with the a11y section
+// ACTIVE — enabled with a non-empty list — the baseline the a11y corpus
+// mutates (the zero section is the off state, D-54).
+func activeA11yDoc() config.Config {
+	cfg := validDoc()
+	cfg.A11y = config.A11y{Enabled: true, Apps: []string{a11ySubstr}}
 
 	return cfg
 }
@@ -697,6 +717,152 @@ func TestDefaults_SoundOn(t *testing.T) {
 	}
 	if err := config.Defaults().Validate(); err != nil {
 		t.Errorf("Defaults() does not validate with the sound section: %v", err)
+	}
+}
+
+// TestValidate_A11yCeilingUnconditional pins the a11y app-list DoS ceiling
+// (T-08-02-01, the T-06-04-01/maxAutocorrectBlocklist precedent): 65
+// patterns reject the whole config even with the section DORMANT — the
+// ceiling is UNCONDITIONAL, it never keys on enabled — with the field and
+// the 64-entry limit named; 64 validate in both the dormant and the active
+// shape.
+func TestValidate_A11yCeilingUnconditional(t *testing.T) {
+	t.Parallel()
+
+	over := validDoc()
+	over.A11y = config.A11y{Enabled: false, Apps: make([]string, 65)}
+	err := over.Validate()
+	if err == nil {
+		t.Fatal("65 a11y patterns accepted while dormant, want a whole-config rejection")
+	}
+	if !strings.Contains(err.Error(), fieldA11yApps) || !strings.Contains(err.Error(), "64") {
+		t.Errorf("error %q does not name %q and the 64-entry limit", err, fieldA11yApps)
+	}
+
+	atCeilDormant := validDoc()
+	atCeilDormant.A11y = config.A11y{Enabled: false, Apps: slices.Repeat([]string{a11ySubstr}, 64)}
+	if err := atCeilDormant.Validate(); err != nil {
+		t.Errorf("64-entry dormant a11y list rejected: %v", err)
+	}
+
+	atCeilActive := activeA11yDoc()
+	atCeilActive.A11y.Apps = slices.Repeat([]string{a11ySubstr}, 64)
+	if err := atCeilActive.Validate(); err != nil {
+		t.Errorf("64-entry active a11y list rejected: %v", err)
+	}
+}
+
+// TestValidate_A11yBlankPattern pins the empty-pattern trap (T-08-02-02,
+// the T-07-02-03 blocklist precedent): an empty or blank pattern is a VALID
+// RE2 that matches EVERYTHING — silent magic "for every application at
+// once" — so validation refuses it with its own sentinel and the index,
+// before any compile attempt.
+func TestValidate_A11yBlankPattern(t *testing.T) {
+	t.Parallel()
+
+	for _, pattern := range []string{"", "   "} {
+		cfg := activeA11yDoc()
+		cfg.A11y.Apps = []string{a11ySubstr, pattern}
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatalf("blank a11y pattern %q accepted, want a whole-config rejection", pattern)
+		}
+		if !strings.Contains(err.Error(), fieldA11yApps) || !strings.Contains(err.Error(), "[1]") {
+			t.Errorf("error %q does not name %q and the element index [1]", err, fieldA11yApps)
+		}
+		if !strings.Contains(err.Error(), "matches everything") {
+			t.Errorf("error %q does not cite the empty-pattern trap", err)
+		}
+	}
+}
+
+// TestValidate_A11yRegexCompile pins the D-8-5 compile gate: every a11y
+// pattern is compiled by regexp on Load — the only place a broken regex is
+// visible before runtime — and a non-compilable pattern rejects the whole
+// config with the field AND the element index named (D-33). A bare
+// substring and an explicit anchor both compile.
+func TestValidate_A11yRegexCompile(t *testing.T) {
+	t.Parallel()
+
+	broken := activeA11yDoc()
+	broken.A11y.Apps = []string{a11ySubstr, a11yBroken}
+	err := broken.Validate()
+	if err == nil {
+		t.Fatal("broken a11y pattern accepted, want a whole-config rejection")
+	}
+	if !strings.Contains(err.Error(), fieldA11yApps) || !strings.Contains(err.Error(), "[1]") {
+		t.Errorf("error %q does not name %q and the element index [1]", err, fieldA11yApps)
+	}
+
+	valid := activeA11yDoc()
+	valid.A11y.Apps = []string{a11ySubstr, a11yAnchor}
+	if err := valid.Validate(); err != nil {
+		t.Errorf("valid a11y patterns rejected: %v", err)
+	}
+}
+
+// TestValidate_A11yOrderIrrelevant pins the a11y list's set semantics
+// (D-8-5, the D-53 blocklist precedent): the same patterns in a different
+// order validate identically — any match enables, so order carries no
+// meaning.
+func TestValidate_A11yOrderIrrelevant(t *testing.T) {
+	t.Parallel()
+
+	first := activeA11yDoc()
+	first.A11y.Apps = []string{a11ySubstr, appGedit, a11yAnchor}
+	second := activeA11yDoc()
+	second.A11y.Apps = []string{a11yAnchor, a11ySubstr, appGedit}
+
+	if err := first.Validate(); err != nil {
+		t.Errorf("first order rejected: %v", err)
+	}
+	if err := second.Validate(); err != nil {
+		t.Errorf("second order rejected: %v", err)
+	}
+}
+
+// TestA11yActive pins the ACTIVE semantics of the section — the single
+// definition every consumer reads (the actor fold of plan 08-05):
+// enabled AND a non-empty list. enabled with an empty list is a valid
+// document but NOT active (nothing to apply); the zero value is off.
+func TestA11yActive(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		a    config.A11y
+		want bool
+	}{
+		{name: "zero value is off", a: config.A11y{}, want: false},
+		{name: "enabled with an empty list", a: config.A11y{Enabled: true, Apps: []string{}}, want: false},
+		{name: "enabled with a non-empty list", a: config.A11y{Enabled: true, Apps: []string{a11ySubstr}}, want: true},
+		{name: "disabled with a non-empty list", a: config.A11y{Enabled: false, Apps: []string{a11ySubstr}}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tc.a.Active(); got != tc.want {
+				t.Errorf("A11y(%+v).Active() = %v, want %v", tc.a, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDefaults_A11yOff pins the D-54 default-off shape for the a11y
+// section: the magic ships disabled with a nil list — nothing activates on
+// its own — and the defaults still validate as a whole.
+func TestDefaults_A11yOff(t *testing.T) {
+	t.Parallel()
+
+	got := config.Defaults().A11y
+	if got.Enabled {
+		t.Error("Defaults().A11y.Enabled = true, want false (D-54 default off)")
+	}
+	if got.Apps != nil {
+		t.Errorf("Defaults().A11y.Apps = %v, want nil (the off state)", got.Apps)
+	}
+	if err := config.Defaults().Validate(); err != nil {
+		t.Errorf("Defaults() does not validate with the a11y section: %v", err)
 	}
 }
 

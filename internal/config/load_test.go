@@ -416,6 +416,89 @@ func TestSound_ExplicitOffAndCustomEvent(t *testing.T) {
 	}
 }
 
+// TestLoad_A11yAbsentMeansOff pins the a11y section's D-54 decode contract
+// (research Pitfall 7, the autocorrect precedent): a document WITHOUT the
+// section — every shipped user document's shape — loads unchanged into the
+// ZERO value: disabled, nil list, the daemon's behavior untouched.
+func TestLoad_A11yAbsentMeansOff(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, fullDocYAML))
+	if err != nil {
+		t.Fatalf("Load(document without a11y): %v", err)
+	}
+	if cfg.A11y.Enabled {
+		t.Error("a11y.enabled = true for an absent section, want false (zero-value off, D-54)")
+	}
+	if cfg.A11y.Apps != nil {
+		t.Errorf("a11y.apps = %v for an absent section, want nil — Load never overlays defaults", cfg.A11y.Apps)
+	}
+}
+
+// a11yDocYAML renders the complete document with the given a11y section
+// body — the decode corpus's template for the a11y keys (the soundDocYAML
+// idiom: full document, one section under test).
+func a11yDocYAML(body string) string {
+	return strings.Replace(fullDocYAML, "autocorrect:", "a11y:\n"+body+"autocorrect:", 1)
+}
+
+// TestLoad_A11yStrictDecodeUnknownKey pins D-33 propagation to the a11y
+// section (T-08-02-03): an unknown key inside the section invalidates the
+// WHOLE document — the strict decoder covers the new section for free
+// (KnownFields(true)), no new code in load.go.
+func TestLoad_A11yStrictDecodeUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(writeConfig(t, a11yDocYAML("  enabled: true\n  apps: [\"zcode\"]\n  per_app_levels: wat\n")))
+	if err == nil {
+		t.Fatal("unknown a11y key accepted, want a whole-document rejection (D-33)")
+	}
+	if !strings.Contains(err.Error(), "per_app_levels") {
+		t.Errorf("error %q does not name the unknown field per_app_levels", err)
+	}
+}
+
+// TestLoad_A11yDecodesEnabledAndApps pins the decode round-trip of the
+// section's two keys: an enabled document with a pattern list reads back
+// verbatim through the strict decoder.
+func TestLoad_A11yDecodesEnabledAndApps(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, a11yDocYAML("  enabled: true\n  apps: [\"zcode\", \"^org\\\\.gnome\\\\.Terminal$\"]\n")))
+	if err != nil {
+		t.Fatalf("Load(a11y enabled): %v", err)
+	}
+	if !cfg.A11y.Enabled {
+		t.Error("a11y.enabled = false, want true (the document's value)")
+	}
+	if !cfg.A11y.Active() {
+		t.Error("a11y section with a non-empty list is not Active(), want true")
+	}
+
+	// The broken pattern is a LOAD-time refusal: the compile gate runs on
+	// Validate, and Load runs Validate — no broken regex survives to
+	// runtime.
+	broken := a11yDocYAML("  enabled: true\n  apps: [\"[\"]\n")
+	if _, err := config.Load(writeConfig(t, broken)); err == nil {
+		t.Fatal("broken a11y pattern accepted at load, want a compile-gate refusal")
+	}
+}
+
+// TestLoad_A11yBlankPatternRejected pins the blank-pattern refusal
+// at load level: an empty pattern inside a11y.apps invalidates the whole
+// document with the field and the index named.
+func TestLoad_A11yBlankPatternRejected(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(writeConfig(t, a11yDocYAML("  enabled: true\n  apps: [\"zcode\", \"\"]\n")))
+	if err == nil {
+		t.Fatal("blank a11y pattern accepted at load, want a whole-document rejection")
+	}
+	if !strings.Contains(err.Error(), fieldA11yApps) || !strings.Contains(err.Error(), "[1]") {
+		t.Errorf("error %q does not name %q and the element index [1]", err, fieldA11yApps)
+	}
+}
+
 // TestSound_StrictDecodeUnknownKey pins D-33 propagation to the new
 // section: an unknown key inside the sound section invalidates the WHOLE
 // document — the strict decoder covers the section automatically, no new
