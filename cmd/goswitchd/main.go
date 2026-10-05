@@ -336,12 +336,23 @@ type configToggle struct {
 }
 
 // flip executes one click in the pinned order: snapshot → write → menu
-// push → reload. A failed write leaves everything untouched (one WARN —
+// push → reload. The EMPTY-PATH guard (WR-03) comes first: without a
+// resolvable config path (the degenerate no-HOME environment loadConfig
+// explicitly supports) the write would land ./config.yaml in the daemon's
+// working directory — a file nothing ever watches or reads — while the
+// push would show a value no fold can ever confirm; the toggle refuses
+// with one WARN and NOTHING changes (the menu stays consistent with the
+// status). A failed write leaves everything untouched (one WARN —
 // the state did not change); a missing reload keeps the write AND the push
 // (the file is the truth, the status catches up through the next fold) and
 // WARNs the deferred apply. The 200 ms echo reload re-applies the same
 // values harmlessly (the idempotent fold, 07-03).
 func (t *configToggle) flip() {
+	if t.path == "" {
+		slog.Warn("config toggle unavailable", "component", "tray indicator", "reason", "no config path")
+
+		return
+	}
 	on := !t.read()
 	if err := t.write(t.path, on); err != nil {
 		slog.Warn("config toggle write failed", "component", "tray indicator", "error", err)
