@@ -333,7 +333,7 @@ Plans:
 **Goal:** Разобранный беклог (3 todo от 2026-10-05; порядок волн = порядок зависимостей). (1) **a11y-магия** — конфиг-секция приложений (имена/паттерны), которым goswitch автоматически включает accessibility-магию (gsettings toolkit-accessibility, snap-оверрайды, флаги запуска — механику исследовать при планировании; прецедент ZCode подтверждён владельцем): демон или установщик применяет её сам. (2) **Документация** — сверка README.ru/README/CONFIG.md/SPEC с фактическим поведением v1.1.0 (меню, тумблеры, звуки, blocklist, adopt+watch, «где молчит»), исправление расхождений; реструктура «русский-первый» (README.ru главная, README — перевод, синхронность поддерживается). (3) **Skill «Конфигурация goswitch» для AI** — SKILL.md (.zcode/skills): все секции config.yaml, команды goswitchctl, трей-меню, юнит — ключи/дефолты/диапазоны синхронно с CONFIG.md, процедуры (включить автокоррекцию, blocklist, хоткеи, звуки, a11y-магия), диагностика (goswitchctl status, журнал, известные ограничения); механизм синхрона с доками — генерация из CONFIG.md или lint-гейт.
 **Requirements**: backlog-derived (D-8-1..D-8-11 из 08-CONTEXT.md; phase req_ids: null)
 **Depends on:** Phase 7
-**Plans:** 5/8 plans executed
+**Plans:** 6/8 plans executed
 
 Plans:
 **Wave 1**
@@ -352,7 +352,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 08-06-PLAN.md — docs/CONFIG.md русский-первый + сверка со схемой/поведением (CONFIG.md + SPEC в форме 08-01) + секция a11y (restart-семантика, рецепт оверрайда) — D-8-8/D-8-9/D-8-6
+- [x] 08-06-PLAN.md — docs/CONFIG.md русский-первый + сверка со схемой/поведением (CONFIG.md + SPEC в форме 08-01) + секция a11y (restart-семантика, рецепт оверрайда) — D-8-8/D-8-9/D-8-6
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
