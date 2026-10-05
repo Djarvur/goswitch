@@ -1,44 +1,47 @@
 # goswitch
 
-**goswitch** fixes text typed in the wrong keyboard layout (EN ↔ RU) in any
-input field on GNOME Wayland — and switches layouts by hotkey. Type
-`ghbdtn`, press the hotkey, get `привет`.
+[English](README.en.md) · Русский
 
-It runs as an **IBus input method engine** in your user session:
+**goswitch** исправляет текст, набранный не в той раскладке (EN ↔ RU), в
+любом поле ввода GNOME Wayland — и переключает раскладку по горячей
+клавише. Набрали `ghbdtn`, нажали горячую клавишу — получили `привет`.
 
-- corrects the last word, the whole typed phrase, or the current selection;
-- switches the layout on a single hotkey tap; double and triple taps carry
-  their own actions, disambiguated on one key;
-- commits the corrected text directly — it never grabs the keyboard at the
-  evdev layer, so it **coexists with keyd / xremap**;
-- **no root anywhere**: a systemd user unit plus a user-level IBus
-  component, installed and removed with one command.
+Работает как **IBus input method engine** в вашей пользовательской
+сессии:
 
-## Requirements
+- исправляет последнее слово, всю набранную фразу или текущее выделение;
+- переключает раскладку по одиночному нажатию; двойное и тройное нажатие
+  несут свои действия, различаясь на одной и той же клавише;
+- вносит исправленный текст напрямую — клавиатура на уровне evdev не
+  перехватывается, поэтому **сосуществование с keyd / xremap**;
+- **без root везде**: systemd user unit плюс компонент IBus уровня
+  пользователя, устанавливаются и удаляются одной командой.
 
-- Ubuntu 24.04 (or a similar distro) with GNOME on **Wayland** and IBus
-  (the GNOME default input framework);
-- a systemd user session (standard on Ubuntu);
-- linux/amd64 (the release binaries' architecture).
+## Требования
 
-## Install
+- Ubuntu 24.04 (или похожий дистрибутив) с GNOME на **Wayland** и IBus
+  (стандартный ввод GNOME);
+- systemd user-сессия (стандарт для Ubuntu);
+- linux/amd64 (архитектура релизных бинарников).
 
-Everything — the IBus component, the systemd user unit, the input-source
-handover, and engine activation — is one command: `goswitchctl install`.
+## Установка
 
-**Channel A — release archive (recommended):**
+Всё — компонент IBus, systemd user unit, передача источников ввода и
+активация движка — одна команда: `goswitchctl install`.
 
-1. Take `goswitch_<version>_linux_amd64.tar.gz` from the
-   [Releases](https://github.com/Djarvur/goswitch/releases) page — the
-   archive carries both binaries and `checksums.txt`.
-2. Unpack and install:
+**Канал А — релизный архив (рекомендуется):**
+
+1. Возьмите `goswitch_<version>_linux_amd64.tar.gz` на странице
+   [Releases](https://github.com/Djarvur/goswitch/releases) — в архиве
+   оба бинарника и `checksums.txt`.
+2. Распакуйте и установите:
 
    ```sh
    tar -xzf goswitch_*_linux_amd64.tar.gz
    ./goswitchctl install
    ```
 
-**Channel B — go install:**
+**Канал Б — go install:**
 
 ```sh
 go install github.com/Djarvur/goswitch/cmd/goswitchd@latest
@@ -46,365 +49,397 @@ go install github.com/Djarvur/goswitch/cmd/goswitchctl@latest
 goswitchctl install
 ```
 
-Binaries built through `go install` honestly report `dev` as their
-version — only the release archive carries the stamped release version.
+Бинарники, собранные через `go install`, честно показывают версию `dev` —
+прошитая версия релиза есть только в релизном архиве.
 
-`goswitchctl install` is idempotent (safe to re-run), needs no root, and
-records your previous input sources — `uninstall` restores them.
+`goswitchctl install` идемпотентен (безопасно запускать повторно), не
+требует root и запоминает прежние источники ввода — `uninstall` их
+восстанавливает.
 
-### Input-source handover
+### Передача источников ввода
 
-`goswitchctl install` touches ONLY the input-sources key
-(`org.gnome.desktop.input-sources` `sources`): it wraps your source(s)
-into goswitch engines and remembers the previous value verbatim.
-GNOME's own layout-switch chords (`org.gnome.desktop.wm.keybindings`
-`switch-input-source` / `switch-input-source-backward`) are left
-untouched — their values are still snapshotted verbatim for the
-uninstall restore. Switching is goswitch's own job: a single tap of the
-right Shift, or Super + Space (one of goswitch's gestures — see the
-table under Usage).
+`goswitchctl install` трогает ТОЛЬКО ключ источников ввода
+(`org.gnome.desktop.input-sources` `sources`): он заворачивает ваши
+источники в движки goswitch и запоминает прежнее значение дословно.
+Собственные сочетания клавиш переключения GNOME
+(`org.gnome.desktop.wm.keybindings`
+`switch-input-source` / `switch-input-source-backward`) не трогаются —
+их значения тоже снимаются в снапшот дословно для восстановления при
+удалении. Переключение — работа самого goswitch: одиночное нажатие
+правого Shift или Super + Space (один из жестов goswitch — см. таблицу в
+разделе «Использование»).
 
-### Input sources and the mode indicator
+### Источники ввода и индикатор режима
 
-`goswitchctl install` does not hardcode a layout pair: it reads YOUR
-current input sources and wraps at least one `xkb` 'us'/'ru' entry into
-a goswitch engine of the matching layout — a single `('xkb', 'us')`
-source becomes `('ibus', 'goswitch-en')`, a single `('xkb', 'ru')`
-becomes `('ibus', 'goswitch-ru')`, and the classic pair becomes both
-engines. You choose the layouts — the installer only wraps your choice.
+`goswitchctl install` не зашивает пару раскладок: он читает ВАШИ текущие
+источники ввода и заворачивает хотя бы одну запись `xkb` 'us'/'ru' в
+движок goswitch соответствующей раскладки — единственный источник
+`('xkb', 'us')` становится `('ibus', 'goswitch-en')`, единственный
+`('xkb', 'ru')` становится `('ibus', 'goswitch-ru')`, а классическая
+пара становится обоими движками. Раскладки выбираете вы — установщик
+лишь заворачивает ваш выбор.
 
-ONE goswitch source is the recommended shape: GNOME's native panel
-indicator appears only with two or more input sources, so with one it is
-hidden — by design. The mode indicator is goswitch's own tray icon
-(StatusNotifierItem), which follows the daemon's mode immediately. The
-daemon's flip changes the typing at once; like GNOME's own layout
-switching, a flip resets the correction context — text typed before the
-switch is not corrected by a gesture after it.
+Рекомендуемая форма — ОДИН источник goswitch: родной индикатор панели
+GNOME появляется только при двух и более источниках ввода, поэтому с
+одним он скрыт — так задумано. Индикатор режима — собственная иконка
+goswitch в трее (StatusNotifierItem), следующая за режимом демона
+немедленно. Флип демона меняет набор текста сразу; как и собственное
+переключение раскладки GNOME, флип сбрасывает контекст коррекции —
+текст, набранный до переключения, жест после него не исправляет.
 
-The icon is interactive: on GNOME it renders as a menu button, and a
-click opens the v1.1 menu —
+Иконка интерактивна: в GNOME она выглядит кнопкой меню, и щелчок
+открывает меню v1.1 —
 
-- **EN** / **RU** — the two languages as ordinary switcher entries:
-  a click activates that language, the current one carries the mark;
-- **Автокоррекция** — the autocorrect toggle; the click is written
-  back into the config file, so the choice survives restarts;
-- **Звук** — the switch-sounds toggle (on by default), persisted the
-  same way;
-- greyed macro hints with the live key names from the config —
-  `1× <tap> — язык`, `2× — слово`, `3× — фраза`, the
-  correct-and-switch combo (`<combo> — слово и язык`) and the
-  mode-switch chord (`<chord> — смена режима`) — refreshed on every
-  config reload;
-- **Настройки…** — opens `config.yaml` in the system editor;
-- **О программе** — a notification with the version;
-- **Статус** and **Перечитать конфиг** — a status notification and a
-  config re-read.
+- **EN** / **RU** — два языка как обычные пункты переключателя: щелчок
+  активирует язык, у текущего стоит отметка;
+- **Автокоррекция** — тумблер автокоррекции; щелчок записывается обратно
+  в конфиг-файл, так что выбор переживает перезапуск;
+- **Звук** — тумблер звуков переключения (включён по умолчанию),
+  сохраняется так же;
+- серые подсказки жестов с живыми именами клавиш из конфига —
+  `1× <клавиша> — язык`, `2× <клавиша> — слово`, `3× <клавиша> — фраза`,
+  сочетание «исправить и переключить» (`<сочетание> — слово и язык`) и
+  сочетание смены режима (`<сочетание> — смена режима`) — обновляются
+  при каждой перезагрузке конфига;
+- **Настройки…** — открывает `config.yaml` в системном редакторе;
+- серая информационная строка About с идентификатором сборки
+  (`goswitch` и версия);
+- серая живая строка статуса — текущий режим и счётчик выполненных
+  исправлений («EN · испр. 12»);
+- **Перечитать конфиг** — немедленно перечитать конфиг-файл.
 
-The icon also re-registers itself when the shell's tray watcher appears
-late at boot or silently drops the item — no daemon restart needed.
+Иконка также перерегистрируется сама, когда вотчер трея shell появляется
+поздно при загрузке или тихо теряет пункт — перезапуск демона не нужен.
 
-A foreign source beside goswitch engines cannot come from the installer
-(it is refused) and is flagged red by `goswitchctl selfcheck` — the
-daemon sees no keys through a plain `xkb` source. You stay in charge of
-the source list: if you switch to a foreign source yourself, the daemon
-follows the factual engine and never fights the desktop (no correction,
-no hijack). Switch back to a goswitch source to resume correction and
-hotkey switching.
+Чужой источник рядом с движками goswitch не может появиться от
+установщика (он такой источник отвергает) и помечается красным в
+`goswitchctl selfcheck` — через простой источник `xkb` демон клавиш не
+видит. Список источников остаётся за вами: если вы сами переключитесь на
+чужой источник, демон следует фактическому движку и никогда не воюет со
+столом (никакой коррекции, никакого захвата). Вернитесь на источник
+goswitch, чтобы возобновить коррекцию и переключение по горячим клавишам.
 
-Restart behavior: a daemon restart keeps everything (it re-activates the
-engine that owns the current source — the `engine reactivated` journal
-line). An ibus-daemon restart returns the session to the shell's own
-current source; a layout reached through a shell gesture survives it,
-and the daemon follows whichever engine the shell brings back.
+Поведение при перезапуске: перезапуск демона сохраняет всё (он
+реактивирует движок, владеющий текущим источником, — строка
+`engine reactivated` в журнале). Перезапуск ibus-daemon возвращает
+сессию к собственному текущему источнику shell; раскладка, достигнутая
+жестом shell, его переживает, а демон следует за тем движком, который
+shell вернёт.
 
-## Verify
+## Проверка установки
 
-Run the built-in audit:
+Встроенный аудит:
 
 ```sh
 goswitchctl selfcheck
 ```
 
-Six live checks print one verdict line each — daemon version and build,
-IBus component visibility, the user unit's state, live engine
-registration, config validity, input-source ownership. Every red verdict
-names its fix, and if the IBus registry cache has lost the goswitch entry
-(another IBus tool can evict it), selfcheck repairs the cache itself and
-re-checks — no manual steps.
+Шесть живых проверок печатают по строке вердикта — версия и сборка
+демона, видимость компонента в IBus, состояние user unit, живая
+регистрация движка, валидность конфига, владение источниками ввода.
+Каждый красный вердикт называет способ починки, а если реестровый кеш
+IBus потерял запись goswitch (его может вытеснить другой IBus-инструмент),
+selfcheck чинит кеш сам и перепроверяет — без ручных шагов.
 
-## Usage
+## Использование
 
-Default gestures (reconfigurable — see
+Жесты по умолчанию (перенастраиваются — см.
 [docs/CONFIG.md](docs/CONFIG.md)):
 
-| Gesture | Action |
-|---------|--------|
-| single tap of the right Shift | switch layout EN ↔ RU |
-| Super + Space | switch layout EN ↔ RU |
-| double tap | correct the last word (`ghbdtn` → `привет`, letter case preserved) |
-| triple tap | correct the whole typed phrase |
-| double tap with text selected | correct the selected range only |
-| Shift + right Ctrl | correct the last word **and** switch the layout |
+| Жест | Действие |
+|------|----------|
+| одиночное нажатие правого Shift | переключить раскладку EN ↔ RU |
+| Super + Space | переключить раскладку EN ↔ RU |
+| двойное нажатие | исправить последнее слово (`ghbdtn` → `привет`, регистр букв сохраняется) |
+| тройное нажатие | исправить всю набранную фразу |
+| двойное нажатие при выделении | исправить только выделенный диапазон |
+| Shift + правый Ctrl | исправить последнее слово **и** переключить раскладку |
 
-Words already in the target layout and mixed-script words are converted
-point-wise — only the foreign letters change.
+Слова уже в целевой раскладке и смешанные слова конвертируются поточечно —
+меняются только чужие буквы.
 
 CLI:
 
 ```sh
-goswitchctl status    # daemon state and counters (--json for scripts)
-goswitchctl correct   # force a word correction right now
-goswitchctl reload    # re-read the config file immediately
+goswitchctl status    # состояние и счётчики демона (--json для скриптов)
+goswitchctl correct   # принудительно исправить слово прямо сейчас
+goswitchctl reload    # немедленно перечитать конфиг
 ```
 
-## Autocorrect (v1.1, optional — default off)
+## Автокоррекция (v1.1, опционально — по умолчанию выключена)
 
-goswitch can also fix a wrong-layout word **silently, without any hotkey**:
-type `ghbdtn` and then Space (or Enter, or a punctuation key) — by the time
-you move on, the word has become `привет`. The feature ships **default
-off** and never fires until you explicitly enable it. From the tray menu
-it is one click: the **Автокоррекция** toggle (with the **Звук** toggle
-next to it for the switch sounds) — the click persists into the config
-file, and the choice survives restarts.
+goswitch умеет исправлять слово не в той раскладке **молча, без горячей
+клавиши**: набрали `ghbdtn`, затем пробел (или Enter, или клавишу
+пунктуации) — к моменту, когда вы двинулись дальше, слово уже стало
+`привет`. Фича поставляется **выключенной по умолчанию** и не срабатывает
+никогда, пока вы явно её не включите. В трей-меню это один щелчок:
+тумблер **Автокоррекция** (рядом тумблер **Звук** для звуков
+переключения) — щелчок сохраняется в конфиг-файл, и выбор переживает
+перезапуск.
 
-### Enabling
+### Включение
 
-Add an `autocorrect` section to your config file — or just flip the
-**Автокоррекция** menu toggle, which creates and maintains the document
-for you (see Configuration below). The complete key reference is
-[docs/CONFIG.md](docs/CONFIG.md); the section's keys are
-`autocorrect.enabled`, `autocorrect.apps_blocklist`,
-`autocorrect.min_word_len`, `autocorrect.trigram_margin` and
-`autocorrect.trigram_floor`:
+Добавьте секцию `autocorrect` в конфиг-файл — или просто щёлкните
+тумблер **Автокоррекция** в меню: он сам создаст и будет вести документ
+(см. «Конфигурацию» ниже). Полный справочник ключей —
+[docs/CONFIG.md](docs/CONFIG.md); ключи секции: `autocorrect.enabled`,
+`autocorrect.apps_blocklist`, `autocorrect.min_word_len`,
+`autocorrect.trigram_margin` и `autocorrect.trigram_floor`:
 
 ```yaml
 autocorrect:
   enabled: true
-  apps_blocklist: ["^org\\.gnome\\.Terminal"] # regex patterns; empty = nothing forbidden
+  apps_blocklist: ["^org\\.gnome\\.Terminal"] # regex-паттерны; пусто = ничего не запрещено
   min_word_len: 4
   trigram_margin: 2.0
   trigram_floor: 1.0
 ```
 
-`apps_blocklist` is a **black list of regular expressions** matched
-against the focused application's identity (its AT-SPI bridge namespace,
-e.g. `org.gnome.Zenity`). Matching is by **substring** (`chrom` matches
-`org.chromium.Chromium`); anchor with `^…$` when you want an exact name;
-matching is case-sensitive, and the order of patterns carries no meaning —
-a match of **any** pattern forbids. An **empty list forbids nothing**, and
-an application whose identity cannot be observed is **not** forbidden
-either — the safety filter here is the field role below, not the list.
-A config edit applies without a restart (hot reload), and
-`goswitchctl status` shows the layer's state: `autocorrect_enabled`,
-`autocorrect_fired`, `autocorrect_abstained` and per-reason skip counters.
+`apps_blocklist` — **чёрный список регулярных выражений**, сверяемых с
+идентичностью сфокусированного приложения (её AT-SPI bridge-namespace,
+например `org.gnome.Zenity`). Матчинг — **подстрокой** (`chrom` находит
+`org.chromium.Chromium`); точное имя анкеруйте `^…$`; матчинг
+чувствителен к регистру, порядок паттернов незначим — совпадение
+**любого** паттерна запрещает. **Пустой список не запрещает ничего**, и
+приложение, чью идентичность наблюдать не удалось, тоже **не** запрещено
+— предохранитель здесь — роль поля (ниже), а не список. Правка конфига
+применяется без перезапуска (горячая перезагрузка), а `goswitchctl
+status` показывает состояние слоя: `autocorrect_enabled`,
+`autocorrect_fired`, `autocorrect_abstained` и счётчики пропусков по
+причинам.
 
-> **Migrating an old document:** the white-list key `autocorrect.apps`
-> (ранее `apps`, удалено в v1.1.0) no longer loads — the strict decoder
-> rejects the whole file until you rename it. Do not carry the old list
-> over mechanically: the old key meant «correct ONLY in these apps», the
-> block list means «never correct in these apps» — opposite intents.
+> **Миграция старого документа:** белый список `autocorrect.apps`
+> (ранее `apps`, удалён в v1.1.0) больше не загружается — строгий
+> декодер отвергает весь файл, пока вы не переименуете ключ. Не
+> переносите старый список механически: старый ключ означал «исправлять
+> ТОЛЬКО в этих приложениях», чёрный список означает «никогда не
+> исправлять в этих приложениях» — замыслы противоположные.
 
-### When it fires — and when it stays silent
+### Когда срабатывает — а когда молчит
 
-Every condition must hold, and anything unconfirmed means silence: the
-layer is enabled; the focused widget's live AT-SPI role is a text input
-(a password field, a terminal or a canvas is never touched — this role
-gate is the safety filter, and it works with or without the list); the
-application exposes the surrounding text the layer needs to verify the
-replacement; the application does **not** match your `apps_blocklist`;
-the detector is confident the word is a wrong-layout dictionary word (a
-trigram fallback judges unusual words — and declines unless the evidence
-is strong); and the word is at least `autocorrect.min_word_len`
-characters long. Manual gestures — the double tap, the phrase and the
-selection — are **never** restricted by the block list: they are your
-explicit action.
+Должно выполниться каждое условие, и всё неподтверждённое означает
+молчание: слой включён; живая AT-SPI-роль сфокусированного виджета —
+текстовый ввод (поле пароля, терминал или canvas не трогаются никогда —
+этот role-гейт и есть предохранитель, и он работает как со списком, так
+и без него); приложение отдаёт окружающий текст (surrounding text),
+нужный слою для сверки замены; приложение **не** совпало с вашим
+`apps_blocklist`; детектор уверен, что слово — словарное слово другой
+раскладки (триграммный фолбэк судит необычные слова — и отказывается,
+пока доказательства слабы); и слово не короче `autocorrect.min_word_len`
+символов. Ручные жесты — двойное нажатие, фраза и выделение — чёрным
+списком **никогда** не ограничены: это ваше явное действие.
 
-### Where autocorrect stays silent — and how to fix it
+### Где автокоррекция молчит — и как это починить
 
-Beyond the conditions above, two situations keep the layer quiet even
-when it is enabled. The first one is fixable:
+Помимо условий выше, две ситуации держат слой тихим, даже когда он
+включён. Первая исправима:
 
-**Apps without an accessibility tree.** An Electron/Chromium application
-that runs without the accessibility mode exposes no AT-SPI tree, so the
-daemon can read neither the focused field's role nor the surrounding text
-and stays silent (fail-closed — the same rule as every other «cannot
-verify» case). Known examples: ZCode, the Telegram snap. To make
-autocorrect work in such an application, either enable toolkit
-accessibility globally and restart the application afterwards:
+**Приложения без accessibility-дерева.** Приложение Electron/Chromium,
+работающее без режима доступности, не отдаёт AT-SPI-дерево, поэтому
+демон не видит ни роль сфокусированного поля, ни окружающий текст — и
+молчит (fail-closed; то же правило, что во всяком случае «нельзя
+проверить»). Известные примеры: ZCode, snap Telegram. Чтобы
+автокоррекция заработала в таком приложении, включите toolkit
+accessibility глобально и перезапустите приложение:
 
 ```sh
 gsettings set org.gnome.desktop.interface toolkit-accessibility true
 ```
 
-or launch just that one application with its accessibility flag —
-`--force-renderer-accessibility` for Electron/Chromium apps. Once the
-application exposes its accessibility tree, autocorrect starts working
-in it without any further configuration.
+или запустите только это одно приложение с его флагом доступности —
+`--force-renderer-accessibility` для приложений Electron/Chromium. Как
+только приложение отдаёт своё accessibility-дерево, автокоррекция
+зарабатывает в нём без всякой дополнительной настройки. Этот шаг
+автоматизирует секция `a11y` — см. «A11y-магию приложений» ниже.
 
-**Password and role-less fields.** A GTK4 password field reports the
-dedicated password role (40) and is never corrected. A widget that
-exposes no defined role at all stays silent too. The GTK3 generation
-remains the known limitation below.
+**Поля паролей и поля без роли.** GTK4-поле пароля сообщает выделенную
+роль password (40) и не исправляется никогда. Виджет, не сообщающий
+никакой определённой роли, тоже молчит. Поколение GTK3 остаётся
+известным ограничением ниже.
 
-### Switch sounds
+### Звуки переключения
 
-Every layout flip can click: a tone accompanies **any** flip (hotkey or
-menu entry), and a distinct tone marks an autocorrection. The **Звук**
-menu toggle or the `sound` config section controls it — the feature is
-**on by default**. Playback runs through the system's `canberra-gtk-play`
-(with `paplay` on the bundled tones as a fallback); an unavailable or
-failing player is a quiet WARN in the journal and **never** blocks or
-delays the switch. The section's keys are `sound.enabled` and
-`sound.autocorrect_event` — see [docs/CONFIG.md](docs/CONFIG.md).
+Каждая смена раскладки может щёлкать: тон сопровождает **любой** флип
+(горячая клавиша или пункт меню), а отдельный тон отмечает срабатывание
+автокоррекции. Управляет ими тумблер **Звук** в меню или секция `sound`
+конфига — фича **включена по умолчанию**. Воспроизведение идёт через
+системный `canberra-gtk-play` (фолбэк — `paplay` на вшитых тонах);
+недоступный или падающий плеер — тихий WARN в журнале и **никогда** не
+блокирует и не задерживает переключение. Ключи секции: `sound.enabled` и
+`sound.autocorrect_event` — см. [docs/CONFIG.md](docs/CONFIG.md).
 
-### Privacy
+### Приватность
 
-The corrected word itself is **never** written to the logs or to the
-status output — the autocorrect layer's own records carry counters and
-decision reasons only, at every log level. (The separate `-debug` key
-tracer described under Privacy below traces every keystroke of the whole
-session — that is the pre-existing debug mode, not part of this feature.)
+Исправленное слово само **никогда** не попадает ни в логи, ни в вывод
+status — собственные записи слоя автокоррекции несут только счётчики и
+причины решений, на всех уровнях логирования. (Отдельный трассировщик
+клавиш `-debug`, описанный в «Приватности» ниже, трассирует каждое
+нажатие всей сессии — это прежний режим отладки, а не часть этой фичи.)
 
-### Known limitation: GTK3 password fields
+### Известное ограничение: поля паролей GTK3
 
-The role gate cannot recognize password fields of the GTK3 generation
-(for example `zenity --password`): they report the same AT-SPI role as an
-ordinary text box — indistinguishable. The block list is your extra
-filter, not a guarantee: put an anchored `^…$` pattern for any
-application whose password prompts you know into `apps_blocklist`, enable
-the layer only where you fully trust the application, and remember that a
-confident dictionary word is all the detector will ever touch — the
-manual gestures remain the override. The residual risk is owner-accepted
-(UAT, 2026-10-05): a known, non-blocklisted application may still see its
-GTK3 password corrected — an AT-SPI limitation; when the application's
-identity cannot be observed at all, the layer stays silent (fail-closed).
+Role-гейт не может распознать поля паролей поколения GTK3 (например,
+`zenity --password`): они сообщают ту же AT-SPI-роль, что и обычное
+текстовое поле, — неразличимы. Чёрный список — ваш дополнительный
+фильтр, а не гарантия: внесите анкерованный паттерн `^…$` для всякого
+приложения, чьи запросы пароля вам известны, в `apps_blocklist`,
+включайте слой только там, где полностью доверяете приложению, и
+помните: уверенно распознанное словарное слово — единственное, что
+трогает детектор, — ручные жесты остаются главным средством. Остаточный
+риск принят владельцем (UAT, 2026-10-05): известное, не внесённое в
+чёрный список приложение всё же может увидеть исправленным своё
+GTK3-поле пароля — ограничение AT-SPI; когда идентичность приложения
+наблюдать не удаётся вовсе, слой молчит (fail-closed).
 
-### Manual gestures remain the override
+### Ручные жесты остаются главным средством
 
-Every existing gesture works exactly as before, on top of silently
-corrected text: if a silent correction guessed wrong, the double tap (and
-the phrase and selection gestures) still converts the word back or fixes
-it differently.
+Всякий существующий жест работает ровно как прежде, поверх молча
+исправленного текста: если молчаливая коррекция угадала неверно, двойное
+нажатие (как и жесты фразы и выделения) по-прежнему вернёт слово обратно
+или исправит его иначе.
 
-## Configuration
+## A11y-магия приложений
 
-Out of the box the daemon runs on **built-in defaults** — the installer
-does not create a config file. To customize, write a YAML document (every
-key is documented in [docs/CONFIG.md](docs/CONFIG.md); the conventional
-location `~/.config/goswitch/config.yaml` is the file
-`goswitchctl selfcheck` validates when it exists).
+Целый класс приложений — Chromium/Electron (ZCode, snap Telegram) — по
+умолчанию не открывает своё accessibility-дерево, и автокоррекция в них
+молчит (см. «Где автокоррекция молчит» выше). Секция `a11y` в
+config.yaml перечисляет приложения, которым goswitch включает
+доступность сам: при старте демона и на каждой горячей перезагрузке
+конфига он выставляет gsettings-ключ
+`org.gnome.desktop.interface toolkit-accessibility` (ровно тот
+переключатель, что раньше включался вручную) и, как пояс сессии,
+свойство `IsEnabled` шины доступности.
 
-The daemon **adopts the conventional location by itself**: if
-`~/.config/goswitch/config.yaml` exists, it is loaded and watched — no
-flags needed; if it does not exist, the daemon runs on defaults until the
-first menu-toggle click (**Автокоррекция** or **Звук**) creates the
-complete document there, and the daemon watches it from then on. A
-**broken file at that path refuses the start loudly** — the same strict
-decoding as an explicit `-config`, so a bad edit can never sit silently
-ignored.
+Приложения читают ключ при СВОЁМ следующем запуске: уже работающее
+приложение ключ не подхватывает — перезапустите приложение после
+добавления его в список. Удаление приложения из списка ключ не снимает
+(вручную включённое состояние неотличимо от включённого goswitch);
+единственный путь отката — `goswitchctl uninstall`, восстанавливающий
+значение ключа из снапшота, снятого при установке. Полный справочник
+секции — ключи `a11y.enabled` и `a11y.apps` — в
+[docs/CONFIG.md](docs/CONFIG.md).
 
-Attaching an explicit config stays a legal **option** — for a file
-outside the conventional location:
+## Конфигурация
+
+Из коробки демон работает на **вшитых дефолтах** — установщик не создаёт
+конфиг. Для настройки напишите YAML-документ (каждый ключ описан в
+[docs/CONFIG.md](docs/CONFIG.md); стандартное расположение
+`~/.config/goswitch/config.yaml` — именно его проверяет
+`goswitchctl selfcheck`, когда файл существует).
+
+Демон **сам подхватывает стандартное расположение** (adopt+watch): если
+`~/.config/goswitch/config.yaml` существует, он загружается и берётся
+под наблюдение — безо всяких флагов; если файла нет, демон работает на
+дефолтах, пока первый щелчок тумблера меню («Автокоррекция» или «Звук»)
+не создаст там полный документ, — с этого момента демон наблюдает за
+файлом. **Битый файл по этому пути громко отказывает старту** — тот же
+строгий декодер, что у явного `-config`: плохая правка не может тихо
+считаться применённой.
+
+Явное подключение конфига остаётся законной **опцией** — для файла вне
+стандартного расположения:
 
 ```sh
 systemctl --user edit goswitchd
-# in the editor, add:
+# в редакторе добавьте:
 #   [Service]
 #   ExecStart=
 #   ExecStart=/path/to/goswitchd -config /home/you/.config/goswitch/config.yaml
 systemctl --user restart goswitchd
 ```
 
-With a config in force — attached explicitly or adopted from the
-conventional path — valid edits apply **without a restart** (hot reload);
-an invalid edit is rejected as a whole and the daemon keeps the last good
-configuration.
+С действующим конфигом — явным или подхваченным из стандартного пути —
+валидные правки применяются **без перезапуска** (горячая перезагрузка);
+невалидная правка отвергается целиком, и демон продолжает работать на
+последней хорошей конфигурации.
 
-## Performance
+## Производительность
 
-Measured on the reference desktop (Ubuntu 24.04, GNOME 46, Wayland;
-2026-09-16), 40 repeats of one homogeneous hot case — correct the word
-and switch the layout in a single chord:
+Измерено на эталонном столе (Ubuntu 24.04, GNOME 46, Wayland;
+2026-09-16), 40 повторов одного однородного «горячего» случая —
+исправить слово и переключить раскладку одним сочетанием клавиш:
 
-| Metric | Value |
-|--------|-------|
-| p50 latency | 166.9 ms |
-| p95 latency | 184.4 ms |
-| p99 latency | 186.5 ms |
-| peak RSS | 12.4 MB (budget: < 50 MB) |
+| Метрика | Значение |
+|---------|----------|
+| p50 латентности | 166.9 мс |
+| p95 латентности | 184.4 мс |
+| p99 латентности | 186.5 мс |
+| пик RSS | 12.4 МБ (бюджет: < 50 МБ) |
 
-Methodology: the window runs from the test rig's key injection (ydotool →
-uinput) to the corrected text observed over AT-SPI — an honest upper
-bound that includes the rig's own per-chord injection overhead
-(~170 ms with ydotool 0.1.8). The daemon's internal reaction to the chord
-is below 2 ms; the memory budget holds with a wide margin. The table is
-re-measured and refreshed with every release.
+Методика: окно от инжекции клавиш стендом (ydotool → uinput) до
+исправленного текста, наблюдаемого через AT-SPI — честная верхняя
+оценка, включающая собственные накладные инжекции стенда на сочетание
+(~170 мс у ydotool 0.1.8). Внутренняя реакция демона на сочетание —
+менее 2 мс; память держит бюджет с большим запасом. Таблица перемеряется
+и обновляется с каждым релизом.
 
-Budget status: honestly stated, this end-to-end window **exceeds** the
-50 ms hotkey-reaction budget — the excess comes from the measurement
-rig's own injection overhead, not from the daemon (reaction < 2 ms;
-the memory budget is met). v1.0.0 ships with these as-measured numbers.
+Статус бюджета: честно — это окно end-to-end **превышает** бюджет
+реакции 50 мс — превышение даёт собственная инжекция измерительного
+стенда, а не демон (реакция < 2 мс; бюджет памяти соблюдён). v1.0.0
+публикуется с этими числами, как измерены.
 
-## Privacy
+## Приватность
 
-The daemon logs counters and decisions only — never the text you type,
-never your config contents.
+Демон пишет в лог только счётчики и решения — никогда не набранный текст
+и никогда содержимое конфига.
 
-The `-debug` flag enables key tracing: **every** keystroke (keyval,
-keycode, modifiers, press/release) is written to the log at DEBUG level.
+Флаг `-debug` включает трассировку клавиш: **каждое** нажатие (keyval,
+keycode, модификаторы, press/release) пишется в лог уровнем DEBUG.
 
-> **Warning:** debug logs necessarily contain everything typed, including
-> passwords and other secrets — input into password fields is traced too.
-> In the normal mode the daemon's stderr goes to the systemd journal
-> without any key tracing. Do not leave `-debug` enabled permanently;
-> enable it only while debugging, and delete the logs afterwards.
+> **Предупреждение:** debug-логи по необходимости содержат всё набранное,
+> включая пароли и другие секреты — трассируется и ввод в поля паролей.
+> В обычном режиме stderr демона уходит в systemd journal без
+> трассировки клавиш. Не оставляйте `-debug` включённым постоянно;
+> включайте только на время отладки и удаляйте логи после разбора.
 
-## Troubleshooting
+## Устранение неполадок
 
-- **goswitch vanished from the input-source list (the engine is gone).**
-  Run `goswitchctl selfcheck` — it detects a lost IBus registry entry,
-  repairs it, and re-checks by itself.
-- **Gestures do nothing in a GTK4 application** (for example,
-  gnome-text-editor ignores the hotkeys). Known GNOME 46 GTK4-Wayland
-  platform limitation: forwarded key events reach the application, but
-  GTK4 widgets do not act on them. Chromium-family applications apply
-  them normally.
-- **A config edit "does not apply".** An invalid document is rejected as
-  a whole — the daemon keeps running on the last good configuration, and
-  `goswitchctl status` shows the parse reason in `config_error=`.
-- **Correction now survives daemon restarts by itself.** After every
-  (re)registration goswitchd re-activates its engine — as long as goswitch
-  owns the current input source — so a daemon restart
-  (`systemctl --user restart goswitchd`) or an ibus-daemon restart no
-  longer silently disables correction. The journal line
-  `engine reactivated` confirms it.
-- **A non-goswitch source took over and correction stopped, yet the daemon
-  is still alive.** If you switch to a foreign source (say, a plain `xkb`
-  layout), the daemon follows the factual engine and stays out of the way —
-  it never fights the desktop. `goswitchctl selfcheck` is the audit's
-  answer: it flags a goswitch engine sitting beside a foreign source red
-  (the daemon sees no keys through an xkb source). Remedy: switch back to
-  a goswitch source (`ibus engine goswitch-en`), or restart the unit —
-  self-reactivation then re-applies the owned source. Check
-  `journalctl --user -u goswitchd` for the WARN/INFO lines.
+- **goswitch исчез из списка источников ввода (движок пропал).**
+  Запустите `goswitchctl selfcheck` — он сам обнаружит потерянную запись
+  реестра IBus, починит её и перепроверит.
+- **Жесты ничего не делают в GTK4-приложении** (например,
+  gnome-text-editor игнорирует горячие клавиши). Известное платформенное
+  ограничение GNOME 46 GTK4-Wayland: переданные события клавиш доходят
+  до приложения, но GTK4-виджеты на них не реагируют. Приложения
+  семейства Chromium применяют их нормально.
+- **Правка конфига «не применяется».** Невалидный документ отвергается
+  целиком — демон продолжает работать на последней хорошей конфигурации,
+  а `goswitchctl status` показывает причину разбора в `config_error=`.
+- **Коррекция теперь сама переживает перезапуск демона.** После каждой
+  (пере)регистрации goswitchd реактивирует свой движок — пока goswitch
+  владеет текущим источником ввода, — так что перезапуск демона
+  (`systemctl --user restart goswitchd`) или ibus-daemon больше не
+  отключает коррекцию молча. Подтверждение в journal — строка
+  `engine reactivated`.
+- **Чужой источник перехватил ввод, коррекция не работает, а демон
+  жив.** Если вы переключились на чужой источник (скажем, простой
+  `xkb`-раскладку), демон следует фактическому движку и не мешает — он
+  никогда не воюет со столом. Ответ аудита — `goswitchctl selfcheck`: он
+  помечает красным движок goswitch рядом с чужим источником (через
+  источник xkb демон клавиш не видит). Средство: вернитесь на источник
+  goswitch (`ibus engine goswitch-en`) или перезапустите unit —
+  самореактивация тогда вернёт принадлежащий источник. Диагностика по
+  строкам WARN/INFO: `journalctl --user -u goswitchd`.
 
-## Uninstall
+## Удаление
 
 ```sh
 goswitchctl uninstall
 ```
 
-stops and removes the systemd unit and the IBus component, refreshes the
-IBus registry, and **restores your previous input sources**. Your
-`~/.config/goswitch/` directory is kept; remove it too with
-`goswitchctl uninstall --purge`.
+останавливает и удаляет systemd unit и компонент IBus, обновляет
+реестровый кеш IBus и **восстанавливает прежние источники ввода** (и
+значение `toolkit-accessibility`, снятое в снапшот при установке — см.
+«A11y-магию приложений» выше). Каталог `~/.config/goswitch/`
+сохраняется; удалить и его можно командой `goswitchctl uninstall
+--purge`.
 
-## Documentation
+## Документация
 
-- [docs/SPEC.md](docs/SPEC.md) — the full technical specification;
-- [docs/CONFIG.md](docs/CONFIG.md) — the complete configuration reference;
-- [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) — the release acceptance checklist.
+- [docs/SPEC.md](docs/SPEC.md) — полное техническое задание;
+- [docs/CONFIG.md](docs/CONFIG.md) — полный справочник конфигурации;
+- [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) — чек-лист приёмки релиза.
 
-## License
+## Лицензия
 
 [MIT](LICENSE)
