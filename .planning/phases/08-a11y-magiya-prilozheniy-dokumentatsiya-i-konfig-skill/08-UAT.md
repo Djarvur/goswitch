@@ -1,0 +1,59 @@
+---
+status: testing
+phase: 08-a11y-магия-приложений-документация-и-конфиг-skill
+source: [08-VERIFICATION.md]
+started: 2026-10-05T19:45:00Z
+updated: 2026-10-05T19:45:00Z
+---
+
+## Current Test
+
+number: 1
+name: Живой эффект a11y-магии — приложение из списка получает a11y-дерево после своего перезапуска
+expected: |
+  В config.yaml секция a11y включена (enabled: true, apps содержит приложение, например ZCode/chromium).
+  Демон при старте/reload включает org.gnome.desktop.interface toolkit-accessibility и сессионный
+  org.a11y.Status.IsEnabled. После ПЕРЕЗАПУСКА перечисленного приложения у него появляется
+  a11y-дерево — автокоррекция в нём перестаёт молчать (role-unknown уходит).
+awaiting: user response
+
+## Tests
+
+### 1. Живой эффект a11y-магии
+expected: см. выше — включить список с реальным приложением, перезапустить ЕГО, проверить a11y-дерево/автокоррекцию
+result: [pending]
+
+### 2. Живой uninstall-revert
+expected: goswitchctl uninstall возвращает toolkit-accessibility к прежнему значению из снапшота (verbatim);
+          если снапшота нет (старая установка) — ключ НЕ трогается, никакого «восстановить false»
+result: [pending]
+
+### 3. Русская проза и синхронность пары README
+expected: README.md (русский) и README.en.md читаются, разделы совпадают 1-в-1, терминология «сочетание клавиш» и т.п.
+result: [pending]
+
+### 4. Полезность SKILL.md для AI-ассистента
+expected: дать ассистенту skills/goswitch-config/SKILL.md и попросить поменять настройку (например тумблер звука) —
+          он справляется без чтения кода/репо
+result: [pending]
+
+### 5. Решение WR-02: семантика a11y.apps
+expected: не тест, а выбор владельца — (а) честные доки «непустой список = глобальный ключ, паттерны — декларация»
+          или (б) отдельная фаза с пер-апп механизмом (.desktop-оверрайды). Todo: a11y-apps-matching-semantics.md
+result: [pending]
+
+### 6. Прогон CR-01 глазами (рекомендательный)
+expected: с включённой a11y-магией демон живёт нормально: флипы и коррекции не подвисают
+          (фикс разруливает конкуренцию серий — корпус зелёный, живой прогон для уверенности)
+result: [pending]
+
+## Summary
+
+total: 6
+passed: 0
+issues: 0
+pending: 6
+skipped: 0
+blocked: 0
+
+## Gaps
