@@ -8,8 +8,7 @@ updated: 2026-10-05T09:26:31Z
 
 ## Current Test
 
-number: 4
-name: Формальный D-48 fresh-session гейт
+[testing complete]
 expected: |
   Матрица v4 ×2 на сессии ≤30 мин (интерактивные доказательства @a264a54
   предшествуют фиксам b708020..3c315b8 — юнит-часть на tip зелёная)
