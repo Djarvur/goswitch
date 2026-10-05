@@ -4931,7 +4931,16 @@ func spaceKey() engine.EngineEvent {
 // performs, driven asynchronously (the confirm goroutine).
 func fireAutocorrect(t *testing.T, a *session.Actor, sink *fakeSink, token, converted string) {
 	t.Helper()
-	a.UseRole(&fakeRole{role: acRoleAllowed})
+	fireAutocorrectRole(t, a, sink, token, converted, acRoleAllowed)
+}
+
+// fireAutocorrectRole is fireAutocorrect with the confirm's live role
+// verdict chosen by the caller: acRoleAllowed (61 — the ambiguous text box)
+// for the known-identity fire paths, acRoleAllowedEntry (79) where the
+// identity stays UNKNOWN (the CR-01 tightening refuses 61 without one).
+func fireAutocorrectRole(t *testing.T, a *session.Actor, sink *fakeSink, token, converted string, role uint32) {
+	t.Helper()
+	a.UseRole(&fakeRole{role: role})
 	typeWord(a, token)
 	if a.HandleKey(spaceKey()) {
 		t.Fatal("the boundary separator was consumed — the decision never changes consumption at the boundary")
@@ -5380,12 +5389,13 @@ func silenceMatrixCells() []struct {
 			// The 07-04 inversion (locked 07-CONTEXT): an UNKNOWN identity
 			// is NOT a prohibition — the arm gate passes the payload
 			// WITHOUT the app field, the detector runs, and with a healthy
-			// text role the word FIRES.
+			// UNAMBIGUOUS role (entry 79) the word FIRES. The ambiguous 61
+			// with an unknown identity is the CR-01 refusal (its own test).
 			name: "unknown identity is not a prohibition: no source fires", token: wordEN,
 			appid: func(a *session.Actor) {
 				a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
 			},
-			role:  &fakeRole{role: acRoleAllowed},
+			role:  &fakeRole{role: acRoleAllowedEntry},
 			fired: true,
 		},
 		{
@@ -5408,8 +5418,10 @@ func silenceMatrixCells() []struct {
 // error, a role deadline, a missing capability, an unsure verdict, a short
 // word — stays silent (zero correction ops, the word stays in the field)
 // and counts exactly one abstention with its reason slug, while the
-// identity segment's unknown FIRES (the 07-04 inversion: unknown is not a
-// prohibition — the pinned direction).
+// identity segment's unknown FIRES for the unambiguous roles (the 07-04
+// inversion: unknown is not a prohibition — the pinned direction; the
+// ambiguous 61 + unknown cell refuses as role-ambiguous per the CR-01
+// tightening, pinned separately).
 func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 	for _, tc := range silenceMatrixCells() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -5455,17 +5467,18 @@ func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 }
 
 // TestAutoCorrect_UnknownIdentityFires pins the 07-04 arm inversion
-// (locked 07-CONTEXT): with NO identity source at all and a healthy text
-// role, the wrong-layout word IS corrected — the identity is simply
-// omitted from the payload (no app), the detector runs, and the full
-// pipeline fires. The old D-53-unknown silence is gone: an invisible app
-// is not a forbidden app.
+// (locked 07-CONTEXT): with NO identity source at all and a healthy
+// UNAMBIGUOUS text role (entry 79), the wrong-layout word IS corrected —
+// the identity is simply omitted from the payload (no app), the detector
+// runs, and the full pipeline fires. The old D-53-unknown silence is gone:
+// an invisible app is not a forbidden app. The ambiguous role 61 cell is
+// the CR-01 exception — TestAutoConfirm_RoleTextAmbiguity pins it.
 func TestAutoCorrect_UnknownIdentityFires(t *testing.T) {
 	a, sink := wiredActor()
 	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
 	a.SetOptions(acOptions())
 
-	fireAutocorrect(t, a, sink, wordEN, wordRU)
+	fireAutocorrectRole(t, a, sink, wordEN, wordRU, acRoleAllowedEntry)
 
 	deletes := sink.deleteCalls()
 	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
@@ -5807,18 +5820,21 @@ func TestAutoCorrect_ConfirmBlocklistRefuses(t *testing.T) {
 
 // TestAutoCorrect_ConfirmUnknownPasses pins the confirm-side mirror of the
 // arm inversion: an identity that stays UNKNOWN through the whole episode
-// never refuses the confirm — unknown is not a prohibition on either gate
-// (locked 07-CONTEXT). With a healthy role the word fires.
+// never refuses the confirm on the identity alone — unknown is not a
+// prohibition on either gate (locked 07-CONTEXT). The role here is the
+// UNAMBIGUOUS entry (79): the ambiguous 61 with an unknown identity is the
+// CR-01 refusal (TestAutoConfirm_RoleTextAmbiguity). With a healthy role
+// the word fires.
 func TestAutoCorrect_ConfirmUnknownPasses(t *testing.T) {
 	a, sink := wiredActor()
 	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
-	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+	role := &fakeRole{role: acRoleAllowedEntry, started: make(chan struct{}), release: make(chan struct{})}
 	a.UseRole(role)
 	a.SetOptions(acOptions())
 
 	boundaryWord(t, a, wordEN) // unknown at arm — the payload carries no app
 	awaitRoleStart(t, role)
-	close(role.release) // still unknown at confirm — the pass-through
+	close(role.release) // still unknown at confirm — the pass-through (role 79, unambiguous)
 
 	eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
 		"the never-known identity refused the confirm — unknown must pass")

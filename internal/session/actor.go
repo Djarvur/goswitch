@@ -91,8 +91,12 @@ const (
 // closed reasons (internal/detect). Closed and word-free (D-20/D-21,
 // Pitfall 6).
 const (
-	acReasonAppBlocked      = "app-blocked"
-	acReasonNoCaps          = "no-caps"
+	acReasonAppBlocked = "app-blocked"
+	acReasonNoCaps     = "no-caps"
+	// acReasonRoleAmbiguous is the CR-01 tightening (07-REVIEW, the
+	// owner-sanctioned narrow exception to the unknown-passes rule): the
+	// ambiguous role 61 answered while the identity is UNKNOWN.
+	acReasonRoleAmbiguous   = "role-ambiguous"
 	acReasonRoleUnknown     = "role-unknown"
 	acReasonRoleForbidden   = "role-forbidden"
 	acReasonRoleTimeout     = "role-timeout"
@@ -2255,10 +2259,12 @@ func (a *Actor) recordACAbstain(reason string) {
 // the fail-closed direction INVERTED from macrTargetActive's degradation
 // (no rung upward, ADR-007): a role error or the deadline is
 // role-unknown/role-timeout with one WARN per episode, a non-text role
-// (password 40, terminal 60, anything unlisted) is role-forbidden. Only
-// the full conjunction FIRES: the counter moves and the armed range
-// launches THE one correction pipeline (startRangeCorrection — no second
-// replacement mechanism, Pitfall 7). No branch ever logs the word
+// (password 40, terminal 60, anything unlisted) is role-forbidden, and the
+// ambiguous text role 61 with an UNKNOWN identity is role-ambiguous (the
+// CR-01 tightening — a GTK3 password field reports 61 too, ADR-007's live
+// fact). Only the full conjunction FIRES: the counter moves and the armed
+// range launches THE one correction pipeline (startRangeCorrection — no
+// second replacement mechanism, Pitfall 7). No branch ever logs the word
 // (D-20/D-21).
 func (a *Actor) autoConfirm(payload acPayload) {
 	a.mu.Lock()
@@ -2307,8 +2313,10 @@ func (a *Actor) autoConfirm(payload acPayload) {
 		// between the boundary and this verdict must not move the field
 		// out from under the payload, and the current app must not sit on
 		// the blocklist (a focus move lands as payload-stale, or as a
-		// blocklist hit on the new app).
-		if !a.acConfirmRefusals(payload) {
+		// blocklist hit on the new app). The role verdict rides along:
+		// the ambiguous 61 answers only for a KNOWN identity (the CR-01
+		// tightening — role-ambiguous otherwise).
+		if !a.acConfirmRefusals(payload, role) {
 			return
 		}
 		a.acFired++
@@ -2335,28 +2343,45 @@ func (a *Actor) autoConfirm(payload acPayload) {
 // generation guard). The identity check is BLOCKLIST-ONLY on the CURRENT
 // identity (07-04, owner variant 1 — the ADR-007 amendment): a known
 // focused app matching any compiled pattern refuses with app-blocked; an
-// unknown identity passes — the same "unknown is not a prohibition" as the
-// arming gate (the blocklist cannot exclude what it cannot see). The
-// arming/confirm equality of WR-01 (the 06-REVIEW fix) is deliberately
-// REMOVED with this revision: under the live role query it is redundant —
-// the verdict is taken for the object the query answers NOW, and a focus
-// move inside the window surfaces as payload-stale (FocusOut hard-resets
-// the buffer; the replacement pipeline re-verifies the field before any
-// Delete) — while kept conditionally it would break the locked scenario
-// "unknown at arm, learned by confirm" with a phantom mismatch (a payload
-// armed without an app can never equality-match a learned identity).
-// Every refusal counts its closed slug and reports false; the caller holds
-// the mutex.
-func (a *Actor) acConfirmRefusals(payload acPayload) bool {
+// unknown identity passes — with ONE owner-sanctioned narrow exception
+// (the CR-01 tightening): the ambiguous role 61 with an UNKNOWN identity
+// refuses as role-ambiguous. Role 61 is the one value GTK3 password fields
+// report exactly like text boxes (ADR-007's live fact), so with no
+// identity visible the field cannot be told apart from a password and the
+// fail-closed direction wins; the unambiguous allowed roles (79, 94) keep
+// the locked "unknown passes" scenario, and the role-unknown/role-timeout
+// disciplines are untouched (TestAutoConfirm_RoleTextAmbiguity pins the
+// pair). The arming/confirm equality of WR-01 (the 06-REVIEW fix) is
+// deliberately REMOVED with this revision: under the live role query it is
+// redundant — the verdict is taken for the object the query answers NOW,
+// and a focus move inside the window surfaces as payload-stale (FocusOut
+// hard-resets the buffer; the replacement pipeline re-verifies the field
+// before any Delete) — while kept conditionally it would break the locked
+// scenario "unknown at arm, learned by confirm" with a phantom mismatch (a
+// payload armed without an app can never equality-match a learned
+// identity). Every refusal counts its closed slug and reports false; the
+// caller holds the mutex.
+func (a *Actor) acConfirmRefusals(payload acPayload, role uint32) bool {
 	if !slices.Equal(a.buf.Token(), payload.expectToken) ||
 		!slices.Equal(a.buf.Tail(), payload.expectTail) {
 		a.recordACAbstain(acReasonPayloadStale)
 
 		return false
 	}
+	// The identity resolves ONCE for both checks below — the same live
+	// answer the boundary gate reads.
+	app, known := a.acFocusedApp()
+	// The CR-01 tightening: the ambiguous role with an UNKNOWN identity
+	// cannot be told apart from a GTK3 password field — refuse fail-closed.
+	// A KNOWN identity keeps the blocklist verdict (the owner's control).
+	if role == acRoleText && !known {
+		a.recordACAbstain(acReasonRoleAmbiguous)
+
+		return false
+	}
 	// The 07-04 confirm form: the blocklist consults the CURRENT identity;
 	// unknown passes, a matching known app forbids.
-	if app, ok := a.acFocusedApp(); ok {
+	if known {
 		for _, re := range a.acBlocklist {
 			if re.MatchString(app) {
 				a.recordACAbstain(acReasonAppBlocked)
