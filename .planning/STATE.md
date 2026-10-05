@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 8
 current_phase_name: a11y-магия приложений, документация и конфиг-skill
 status: executing
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-10-05T16:30:53.855Z"
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-10-05T16:51:16.338Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 8 execution started
-state_head: de53720cda94b3b5bd8707df9e179f41617772f2
+state_head: c9efe2933d7eca394cd8b41823e37e9726e91d86
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 59
-  completed_plans: 52
+  completed_plans: 53
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 8 (a11y-магия приложений, документация и конфиг-skill) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-10-05 — Phase 8 execution started
 
@@ -119,6 +119,7 @@ Progress: [████████░░] 75%
 | Phase 07 P06 | 86 min | 3 tasks | 11 files |
 | Phase 07 P07 | 55 min | 3 tasks | 4 files |
 | Phase 08 P01 | 11 min | 2 tasks | 1 files |
+| Phase 08 P02 | 12 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -260,6 +261,9 @@ Recent decisions affecting current work:
 - [Phase 07]: [07-07] README v1.1.0: канал B переведён @latest (точен до и после тега — не анонсирует несуществующий v1.1.0 и не оставляет пользователей на v1.0.0); RELEASE-READINESS артефакт — доказательства + чек-лист доков 5/5 + реестр 17/17 probe-строк + post-merge шаги владельца (планом не исполняются); статус RELEASE-READY
 - [Phase 08]: a11y.enabled / a11y.apps зафиксированы как канонические имена секции a11y (discretion по D-8-1) — Точное имя D-8-1 оставила на discretion планировщика; ревизия 08-01 закрепляет канон в SPEC §4
 - [Phase 08]: Ревизия консервативна по A1: демон ставит ОБЕ ручки (ключ + пояс IsEnabled), контракт верен при любой композиции стартовых проверок Chromium/Electron — Live-верифицированное research развязка ключ/IsEnabled; OR-композиция проверок — assumption A1, консервативный контракт снимает риск
+- [Phase 08]: Потолок a11y.apps=64 безусловен по enabled (DoS-потолок, T-06-04-01); compile-результаты в схеме не кэшируются — потребители компилируют своё
+- [Phase 08]: Тест 2 green-by-design: валидация на Load уже отвергает битый a11y-документ до apply — hot-reload кейс зелёный сразу, RED не фабриковался (прецедент 02-04)
+- [Phase 08]: Секция a11y несёт ровно два ключа (enabled/apps): набор магии фиксирован D-8-6 — strict decode отвергает per-app ключи, тест пинит
 
 ### Pending Todos
 
@@ -292,6 +296,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T16:30:23.536Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-10-05T16:50:52.447Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None

@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/config/ -race -count=1 (transcribed to node-test TAP per repo precedent, 07-04; raw output /tmp/08-02-t1-red-raw.txt; tree = 06-04 RED-stub shape: A11y struct + Config field + Active() false-stub, validation not yet wired)",
+  "exitCode": 1,
+  "targetTest": "TestValidate_A11yCeilingUnconditional",
+  "failingTest": "TestValidate_A11yCeilingUnconditional",
+  "expected": "65 a11y.apps patterns reject the whole config EVEN while the section is dormant (enabled:false) — the DoS ceiling is unconditional (T-08-02-01, the T-06-04-01 precedent); the error names a11y.apps and the 64-entry limit; 64 validate in both shapes.",
+  "actual": "65 dormant patterns accepted with nil error — Config.Validate() has no a11y.validate() dispatch yet (the RED stub carries the schema shape only, 06-04 precedent). The blank-pattern, regex-compile and load-level corpora fail the same way (nil error on every invalid shape); TestA11yActive/enabled_with_a_non-empty_list fails 'Active() = false, want true' on the stub; TestLoad_A11yAbsentMeansOff, TestLoad_A11yStrictDecodeUnknownKey, TestValidate_A11yOrderIrrelevant and TestDefaults_A11yOff are green-by-design (zero-value off + free strict decode + no validation to differ).",
+  "output": "not ok 1 - TestValidate_A11yCeilingUnconditional\nnot ok 2 - TestValidate_A11yRegexCompile\nnot ok 3 - TestValidate_A11yBlankPattern\nnot ok 4 - TestLoad_A11yBlankPatternRejected\nnot ok 5 - TestA11yActive/enabled_with_a_non-empty_list\nnot ok 6 - TestLoad_A11yDecodesEnabledAndApps\n# tests 6\n# pass 0\n# fail 6\n"
+}
