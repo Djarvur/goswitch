@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/session/ -race -count=1 -run \"TestActor_AppidStartsForAutocorrect\" -v (transcribed to node-test TAP per repo precedent; raw output /tmp/07-04-t2-red-raw.txt)",
+  "exitCode": 1,
+  "targetTest": "TestActor_AppidStartsForAutocorrect/enabled_autocorrect_starts_the_observer_with_no_lists",
+  "failingTest": "TestActor_AppidStartsForAutocorrect/enabled_autocorrect_starts_the_observer_with_no_lists",
+  "expected": "AutoCorrectEnabled=true with an EMPTY blocklist and no MACR list starts the a11y observer exactly once through the starter seam (the blocklist negatives and the confirm role source need the identity source).",
+  "actual": "starts=0 — the 07-02 ensureAppid condition (non-empty MACR list OR non-empty blocklist) skips the start for enabled autocorrect with no lists. The off-state subtest passes (byte-as-today D-54 pin).",
+  "output": "not ok 1 - TestActor_AppidStartsForAutocorrect/enabled_autocorrect_starts_the_observer_with_no_lists\nok 2 - TestActor_AppidStartsForAutocorrect/off_with_no_lists_never_starts\n# tests 2\n# pass 1\n# fail 1\n"
+}

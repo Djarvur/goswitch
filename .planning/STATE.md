@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 4
 current_phase_name: Поставка и приёмка
 status: planning
-stopped_at: Phase 6 complete, ready to plan Phase 4
-last_updated: "2026-10-04T16:48:39.770Z"
-last_activity: 2026-10-04
-last_activity_desc: Phase 6 complete, transitioned to Phase 4
-state_head: 6f767fd96cbd13b4aeb84aa0778db47a64f84a42
+stopped_at: Phase 7 complete, ready to plan Phase 4
+last_updated: "2026-10-05T09:39:09.422Z"
+last_activity: 2026-10-05
+last_activity_desc: Phase 7 complete, transitioned to Phase 4
+state_head: 471bed46697ff3efe2479a6cb9f504ae7fbec63f
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 1
-  total_plans: 43
-  completed_plans: 43
+  total_plans: 51
+  completed_plans: 51
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 06 — Система автокоррекции
+**Current focus:** Phase 07 — Меню v2 и чёрный список автокоррекции
 
 ## Current Position
 
 Phase: 4 — Поставка и приёмка
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-04 — Phase 6 complete, transitioned to Phase 4
+Last activity: 2026-10-05 — Phase 7 complete, transitioned to Phase 4
 
 Progress: [████████░░] 75%
 
@@ -38,7 +38,7 @@ Progress: [████████░░] 75%
 
 **Velocity:**
 
-- Total plans completed: 29
+- Total plans completed: 37
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -54,6 +54,7 @@ Progress: [████████░░] 75%
 | 2 | 7 | - | - |
 | 3 | 7 | - | - |
 | 6 | 10 | - | - |
+| 7 | 8 | - | - |
 
 **Recent Trend:**
 
@@ -108,6 +109,15 @@ Progress: [████████░░] 75%
 | Phase 06 P08 | 41min | 2 tasks | 7 files |
 | Phase 06 P09 | 25 min | 2 tasks | 5 files |
 | Phase 06 P10 | 16min | 2 tasks | 3 files |
+| Phase 07 P01 | 7 min | 2 tasks | 2 files |
+| Phase 07 P02 | 28 min | 3 tasks | 7 files |
+| Phase 07 P03 | 32 min | 3 tasks | 4 files |
+| Phase 07 P04 | 22 min | 3 tasks | 5 files |
+| Phase 07 P05 | 62 min | 3 tasks | 9 files |
+| Phase 07 P08 | 36 min | 3 tasks | 6 files |
+| Phase 07 P06 | 86 min | 3 tasks | 11 files |
+| Phase 07 P06 | 86 min | 3 tasks | 11 files |
+| Phase 07 P07 | 55 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -115,6 +125,7 @@ Progress: [████████░░] 75%
 
 - Phase 5 added (2026-09-28, owner directive «починить индикацию и интеграцию с gnome»): Интеграция с GNOME — индикация и двухисточниковое переключение (ревизия ADR-001 → ADR-006; решения D-52..D-54 в 05-CONTEXT.md).
 - Phase 6 added (2026-09-28): Система автокоррекции (артефакты переименованы 05→06, ADR 006→007; решения D-51..D-55, research HIGH готов).
+- Phase 7 added (2026-10-04, владелец, при проектировании релиза v1.1.0): Меню v2 (EN/RU, тумблер автокоррекции, макросы, настройки, версия) + чёрный список autocorrect.apps_blocklist (regex) — ревизия D-53: белый список удаляется.
 
 ### Decisions
 
@@ -238,6 +249,13 @@ Recent decisions affecting current work:
 - [Phase 06]: G-6-1 closed by mechanism (b): lock-free AttachEngine (atomic emitter slot) — the deadline-under-mutex pin (05-03) kept and re-confirmed — The factory path must answer CreateEngine during a flip; freeing AttachEngine from a.mu removes the self-deadlock without touching the flip's D-36 record order or the wedge-guard deadline
 - [Phase 06]: G-6-1 live proof landed: e2e case flip-keystroke injects 'd' with NO pause after the daemon flip's mode record — 24/24 letters delivered across 4 consecutive runs (pre-fix probe lost 5/5) — The probe's mechanics raised to a stand oracle; the injection stays immediate, direction expectations pinned (en→ru 'в', ru→en 'd')
 - [Phase 06]: Journal audit post-fix: every switch_engine record INFO-form, zero deadline-abort WARNs in a full run, RTT mode→switch_engine 6.5–9.2 ms (median 8.32, n=8) vs the pre-fix WARN-on-every-flip picture — The 150 ms wedge-guard deadline is silent on a healthy flip — the engine factory answers during the await (06-09 lock-free AttachEngine)
+- [Phase 07]: Ревизия D-53 зафиксирована в спеке ДО кода (D-55, прецедент 06-01): SPEC §11 — третья датированная ревизия (blocklist: fire ⇔ enabled ∧ role-гейт ∧ NOT apps_blocklist; unknown-идентичность НЕ запрет; confirm blocklist-only, payload-stale; default off D-54) + ADR-007 amendment (датированный append, статус Accepted сохранён, слаг app-blocked) — SPEC-DELTA-OK: кодовые планы 07-02..07-07 строят на записанном контракте §11/ADR-007; аудит-трейл §11 цел (оба прежних вердикта + §10 bullet), ноль .go в дифе 07-01
+- [Phase 07]: Решение «Звуки при переключении» внесено в §11 ревизии 2026-10-04 ДО кода плана 07-08: секция sound — enabled по умолчанию включён + отдельное событие тона автокоррекции; тон на любой флип языка; воспроизведение субпроцессом canberra-gtk-play (paplay-фолбэк); отказ — только WARN; тумблер «Звук» в меню с persist по каноническому макету 287999c — D-55: решение о звуках записано в спеку до кода; зелёная итерация подтверждена mise run ci на docs-only дереве
+- [Phase 07]: [07-05] Menu-side dedupe: the actor pushes per flip/fold, the menu drops identical values — the per-keystroke applySnapshot fold never spams the bus; the click+echo+fold triple application is harmless by construction
+- [Phase 07]: [07-05] The wiring seeds the menu's initial state from the STARTUP config right after Attach (version, both toggles, raw key names) and SetMenuSync's install push shows the current mode — the actor re-folds the same truth per event, idempotently; Item owns its Menu instance so the snapshot survives every supervisor re-attach
+- [Phase 07]: [07-07] Матрица v4 двойка — 31/34 в обеих: 2 дизайн-красные WINDOWS #12 строки (readback байт = актуалу реестра), по 1 мигрирующему средовому транзиенту SetGlobalEngine на прогон (зелёные в соседнем прогоне); красные не перегонялись в фальшивую зелень — класс-строчный вердикт 06-08
+- [Phase 07]: [07-07] Предусловие свежесессии (<=30 мин) честно НЕ выполнено (3477+ мин, записано в RELEASE-READINESS); двойка — по прямому указанию оркестратора и прецеденту 06-08/WINDOWS #13; формальный fresh_session-гейт остаётся машинным инструментом владельца на verify-work
+- [Phase 07]: [07-07] README v1.1.0: канал B переведён @latest (точен до и после тега — не анонсирует несуществующий v1.1.0 и не оставляет пользователей на v1.0.0); RELEASE-READINESS артефакт — доказательства + чек-лист доков 5/5 + реестр 17/17 probe-строк + post-merge шаги владельца (планом не исполняются); статус RELEASE-READY
 
 ### Pending Todos
 
@@ -270,6 +288,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-03T19:57:32.314Z
-Stopped at: Phase 6 complete, ready to plan Phase 4
+Last session: 2026-10-05T03:26:44.549Z
+Stopped at: Phase 7 complete, ready to plan Phase 4
 Resume file: None

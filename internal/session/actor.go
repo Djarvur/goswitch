@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -90,16 +91,17 @@ const (
 // closed reasons (internal/detect). Closed and word-free (D-20/D-21,
 // Pitfall 6).
 const (
-	acReasonNoApps          = "no-apps"
-	acReasonNoCaps          = "no-caps"
-	acReasonAppUnknown      = "app-unknown"
-	acReasonAppNotListed    = "app-not-listed"
+	acReasonAppBlocked = "app-blocked"
+	acReasonNoCaps     = "no-caps"
+	// acReasonRoleAmbiguous is the CR-01 tightening (07-REVIEW, the
+	// owner-sanctioned narrow exception to the unknown-passes rule): the
+	// ambiguous role 61 answered while the identity is UNKNOWN.
+	acReasonRoleAmbiguous   = "role-ambiguous"
 	acReasonRoleUnknown     = "role-unknown"
 	acReasonRoleForbidden   = "role-forbidden"
 	acReasonRoleTimeout     = "role-timeout"
 	acReasonRecheckDisabled = "recheck-disabled"
 	acReasonPayloadStale    = "payload-stale"
-	acReasonAppChanged      = "app-changed"
 )
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
@@ -113,6 +115,14 @@ type scriptMode int
 const (
 	modeEN scriptMode = iota
 	modeRU
+)
+
+// The mode symbols the observers receive (owner decision 1): the panel
+// glyph and the menu's radio mark are the same wire-literal — one truth,
+// two consumers (quick plan 260930-pf6, plan 07-05).
+const (
+	symbolEN = "en"
+	symbolRU = "ru"
 )
 
 // emitterSlot wraps the actor's emitter sink for the atomic pointer: Go
@@ -215,6 +225,13 @@ type Actor struct {
 	acRoleWarned bool
 	appid        AppidSource
 	appidStarted bool
+	// acBlocklist is the compiled view of the document's blocklist — the
+	// gate matches the identity against these, never against the raw
+	// strings (one compile per list change, not per boundary). Names is
+	// the raw list the cache was built from, the macrLettersName
+	// parse-cache form: rebuilt only when the document's list changed.
+	acBlocklistNames []string
+	acBlocklist      []*regexp.Regexp
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -238,6 +255,23 @@ type Actor struct {
 	// mode change stays invisible to it. The display degrades itself — the
 	// actor adds no error handling around the call.
 	display ModeDisplay
+	// menuSync is the tray-menu state seam (plan 07-05): the MenuSync the
+	// daemon wiring installs via SetMenuSync; nil = no menu, every push
+	// stays a no-op. The menu degrades itself (the display precedent).
+	menuSync MenuSync
+	// soundSink is the acoustic-feedback seam (plan 07-08): the SoundSink
+	// the daemon wiring installs via SetSoundSink; nil = no sink, every
+	// tone stays a silent no-op. The sink degrades itself (the menu
+	// precedent).
+	soundSink SoundSink
+	// soundACEvent is the autocorrect tone's event last seen in a folded
+	// document (WR-02): the dedupe key of the sink pushes and the value a
+	// late SetSoundSink self-syncs to (the SetMenuSync install-push
+	// precedent).
+	soundACEvent string
+	// soundEnabled is the applied sound switch folded from the snapshot
+	// (plan 07-05) — the EffectiveEnabled truth the status token serves.
+	soundEnabled bool
 }
 
 // Options is the correction-tuning surface of the actor (plan 03-03): the
@@ -269,14 +303,23 @@ type Options struct {
 	MACRAltModifier     string
 	// The autocorrect layer (plan 06-06, D-53/D-54): OFF at the zero value —
 	// the unit corpus and the no-SetOptions path — exactly like MACR above.
-	// The white list matches the focused app's bridge-namespace EXACTLY (no
-	// prefix merging); the thresholds mirror detect.Params and the config
-	// 06-04 defaults (4/2.0/1.0 — change the places together).
+	// AutoCorrectBlocklist carries the D-53 revision's regex patterns: a
+	// SUBSTRING match (RE2 MatchString, ^…$ anchoring explicit) against the
+	// focused app's bridge-namespace identity FORBIDS the correction; an
+	// empty list forbids nothing. The thresholds mirror detect.Params and
+	// the config 06-04 defaults (4/2.0/1.0 — change the places together).
 	AutoCorrectEnabled    bool
-	AutoCorrectApps       []string
+	AutoCorrectBlocklist  []string
 	AutoCorrectMinWordLen int
 	AutoCorrectMargin     float64
 	AutoCorrectFloor      float64
+	// SoundEnabled is the acoustic-feedback switch of the owner's «Звуки
+	// при переключении» decision (plan 07-08): DEFAULT ON — only an
+	// explicit enabled: false silences the tones. Fed from the document's
+	// Sound.EffectiveEnabled through applySnapshot (hot reload) or the
+	// startup wiring's SetOptions; the gate sits ahead of the sink, so a
+	// muted daemon never consults it.
+	SoundEnabled bool
 }
 
 // MACRStats are the Super→Ctrl layer's counters (ADR-005 b.2) — the status
@@ -344,9 +387,11 @@ type correctionRange struct {
 // range snapshot (token+tail+replace) taken under the mutex at the
 // boundary, the detector's direction, the typed word the verdict was about
 // and the arming generation. app is the bridge-namespace identity the
-// white-list verdict was taken for (WR-01 — the confirm re-checks the live
-// identity against it, so the conjunction is evaluated for one object at
-// one instant). expectToken/expectTail snapshot the buffer as
+// blocklist verdict was evaluated for — EMPTY when no identity was visible
+// at arm (the 07-04 inversion: unknown passes without an app; the confirm
+// consults the LIVE identity against the blocklist — the WR-01 equality
+// removal and the
+// confirm rework are plan 07-04). expectToken/expectTail snapshot the buffer as
 // the arming event LEAVES it (the reset branch of feedKey hard-resets
 // between the capture and the launch — CR-01): the confirm's under-the-
 // mutex revalidation compares the live buffer against them, so the
@@ -442,7 +487,10 @@ func (a *Actor) SetOptions(o Options) {
 	defer a.mu.Unlock()
 
 	a.opts = o
-	a.ensureAppid() // a non-empty app list arrives through this surface too
+	a.refreshACBlocklist(o.AutoCorrectBlocklist) // the no-config surface owns the same cache
+	// An enabled autocorrect layer or a non-empty macr list arrives through
+	// this surface too.
+	a.ensureAppid()
 }
 
 // AttachConfig connects the live config source (the 03-02 watcher's
@@ -569,9 +617,14 @@ type Status struct {
 	AutoCorrectFired       int
 	AutoCorrectAbstained   int
 	AutoCorrectSkipReasons map[string]int
-	ConfigPath             string
-	ConfigValid            bool
-	ConfigError            string
+	// SoundEnabled is the applied sound switch (plan 07-05) — the
+	// EffectiveEnabled truth of the applied snapshot (an absent section
+	// reads ON, the owner's default), the `sound_enabled` status token the
+	// menu composition and the e2e oracle read.
+	SoundEnabled bool
+	ConfigPath   string
+	ConfigValid  bool
+	ConfigError  string
 }
 
 // configStatus is the optional status surface of a config source: the
@@ -594,7 +647,7 @@ func (a *Actor) StatusSnapshot() Status {
 
 	st := Status{
 		Version:               a.version,
-		Mode:                  "en",
+		Mode:                  symbolEN,
 		Engine:                engineNameOf(a.mode),
 		CorrectionsDone:       a.corrDone,
 		CorrectionsSkipped:    a.corrSkipped,
@@ -604,12 +657,13 @@ func (a *Actor) StatusSnapshot() Status {
 		AutoCorrectEnabled:    a.opts.AutoCorrectEnabled,
 		AutoCorrectFired:      a.acFired,
 		AutoCorrectAbstained:  a.acAbstained,
+		SoundEnabled:          a.soundEnabled,
 
 		AutoCorrectSkipReasons: maps.Clone(a.acReasons),
 		ConfigValid:            true, // built-in defaults, or a source without a status surface
 	}
 	if a.mode == modeRU {
-		st.Mode = "ru"
+		st.Mode = symbolRU
 	}
 	if cs, ok := a.cfgSrc.(configStatus); ok {
 		st.ConfigPath = cs.ConfigPath()
@@ -806,6 +860,56 @@ func (a *Actor) SetModeDisplay(md ModeDisplay) {
 	}
 }
 
+// SetMenuSync installs the menu seam — the SetModeDisplay mirror (plan
+// 07-05). The menu immediately receives the CURRENT mode and the CURRENT
+// corrections counter (the Status row's truth from the first paint): the
+// startup install shows the initial state, and a late install (after flips,
+// corrections or syncs) self-syncs to the factual state instead of waiting
+// for the next change (the SetSoundSink install-push precedent). The
+// applied config truth reaches the menu through the fold (applySnapshot)
+// and the click composition's direct pushes.
+func (a *Actor) SetMenuSync(ms MenuSync) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.menuSync = ms
+	if ms != nil {
+		ms.SetMode(a.modeSymbol())
+		ms.SetCorrections(a.corrDone)
+	}
+}
+
+// SoundSink is the acoustic-feedback seam (plan 07-08, the owner's «Звуки
+// при переключении»): Flip plays the flip tone, AutoCorrect the distinct
+// autocorrect tone, SetAutocorrectEvent re-pins that tone's document event
+// (WR-02: the key folds live like every other document truth — the D-32
+// contract holds without a restart). Defined at the point of use; the
+// interface travels with the consumer (the AppidSource precedent). The
+// implementation is fire-and-forget by contract — it must never block the
+// actor's hot path and must never panic; every playback failure is the
+// sink's own best-effort episode (one WARN), never an actor error.
+type SoundSink interface {
+	Flip()
+	AutoCorrect()
+	SetAutocorrectEvent(event string)
+}
+
+// SetSoundSink installs the sound seam — the SetMenuSync mirror (plan
+// 07-08). nil = no sink: every tone stays a silent no-op (the menu nil
+// form — a degradation, never an error). A non-nil install self-syncs the
+// last folded autocorrect event (the SetMenuSync install-push precedent,
+// WR-02): a sink attached after a fold — the OnConn ordering — still
+// serves the document truth.
+func (a *Actor) SetSoundSink(s SoundSink) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.soundSink = s
+	if s != nil && a.soundACEvent != "" {
+		s.SetAutocorrectEvent(a.soundACEvent)
+	}
+}
+
 // SyncEngine pulls the daemon under the FACTUAL active engine (05-04,
 // criterion 3): every GlobalEngineChanged on the daemon's ibus connection
 // and every FocusIn lands here with the observed wire name. The enum is
@@ -904,6 +1008,76 @@ func (a *Actor) ToggleMode() {
 	defer a.mu.Unlock()
 
 	a.flipTo(oppositeMode(a.mode))
+}
+
+// SwitchMode flips the script mode to the NAMED target (plan 07-05): the
+// menu's EN/RU radio pair is ONE MORE GESTURE on the single flipTo
+// execution path (ADR-006) — never a second flip mechanism, never a
+// gsettings or SetGlobalEngine shortcut (the SWCH regression guard: the
+// D-36 record order and the flip guard discipline are flipTo's, untouched).
+// The same-target case lands on flipTo's no-op guard — never a duplicated
+// check; an unknown symbol is a silent no-op.
+func (a *Actor) SwitchMode(target string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	var m scriptMode
+	switch target {
+	case symbolRU:
+		m = modeRU
+	case symbolEN:
+		m = modeEN
+	default:
+		return
+	}
+	a.flipTo(m)
+}
+
+// FoldAppliedConfig re-reads the attached config source NOW — the menu
+// toggle's synchronous-apply seam (plan 07-06, the 07-05 pin): the
+// toggle's reload re-stores the watcher snapshot and this fold puts the
+// applied values in force without waiting for the next key event. The
+// 03-04 per-event succession is unchanged for every other consumer (the
+// CLI reload, the echo); without a source the fold is a quiet no-op.
+func (a *Actor) FoldAppliedConfig() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.cfgSrc == nil {
+		return
+	}
+	a.applySnapshot()
+}
+
+// soundSinkFor returns the installed sink when the sound switch is ON —
+// the SINGLE gate of both tones (plan 07-08): with the switch off the sink
+// is never even consulted, so no binary lookup and no spawn ever run for a
+// muted daemon. nil (no sink installed, or the switch off) is the silent
+// degradation. The caller holds the mutex.
+//
+//nolint:ireturn // the seam accessor hands the interface back (the emitter() precedent)
+func (a *Actor) soundSinkFor() SoundSink {
+	if !a.opts.SoundEnabled {
+		return nil
+	}
+
+	return a.soundSink
+}
+
+// MenuSync is the tray-menu state seam (plan 07-05): the pushes the menu
+// snapshot needs to mirror the actor — the mode symbol, the applied config
+// truth and the corrections counter the Status info row renders (owner UAT
+// 2026-10-05). Defined at the point of use; the interface travels with
+// the consumer (the AppidSource precedent). The pushes ride the SAME
+// discipline as ModeDisplay: synchronous under the actor's mutex, the
+// implementation must stay quick (the menu dedupes identical values, so a
+// redundant push is a cheap no-op) and must never panic or block.
+type MenuSync interface {
+	SetMode(symbol string)
+	SetAutocorrectEnabled(on bool)
+	SetSoundEnabled(on bool)
+	SetKeys(tap, combo, chord string)
+	SetCorrections(n int)
 }
 
 // emitter returns the attached emitter sink — the snapshot accessor of the
@@ -1085,12 +1259,53 @@ func (a *Actor) applySnapshot() {
 	// precedent): the D-54 defaults are off, so a document without the
 	// section keeps the boundary byte-as-today; the thresholds mirror
 	// detect.Params (the config 06-04 pair — change the places together).
+	// The blocklist recompiles only when the document's pattern list
+	// changed (one compile per edit, not per boundary).
 	a.opts.AutoCorrectEnabled = snap.Autocorrect.Enabled
-	a.opts.AutoCorrectApps = snap.Autocorrect.Apps
+	a.opts.AutoCorrectBlocklist = snap.Autocorrect.AppsBlocklist
 	a.opts.AutoCorrectMinWordLen = snap.Autocorrect.MinWordLen
 	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
 	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
-	a.ensureAppid() // the per-app list may have appeared with this document
+	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
+	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
+	// The sound switch folds live (plan 07-08, the autocorrect-fold
+	// precedent): the owner's default ON is the EffectiveEnabled truth —
+	// an absent section reads ON, only an explicit enabled: false mutes,
+	// and the next gesture carries the change (the D-32 hot reload).
+	a.opts.SoundEnabled = snap.Sound.EffectiveEnabled()
+	a.pushMenuSync(snap)
+}
+
+// pushMenuSync hands the menu the applied config truth (plan 07-05): both
+// toggles' applied values, the RAW key names and the corrections counter
+// the Status row renders (owner UAT 2026-10-05 — the counter rides the
+// same per-fold push, so the row catches up with the next fold after a
+// correction lands). The sound value is the EffectiveEnabled truth — an
+// absent section reads ON (the owner's default-ON verdict) — and the
+// effective autocorrect event rides the same fold to the sound sink on
+// change (WR-02). The menu dedupes identical pushes, so the per-fold push
+// of unchanged values is cheap. The caller holds the mutex.
+func (a *Actor) pushMenuSync(snap config.Config) {
+	a.soundEnabled = snap.Sound.EffectiveEnabled()
+	// The autocorrect tone's event folds live too (WR-02): every changed
+	// effective value is pushed to the sink — the actor keeps the
+	// last-pushed value as the dedupe key (the menu's dedupe discipline),
+	// so an unchanged document costs one comparison. The push rides the
+	// same synchronous under-the-mutex discipline as the menu pushes; the
+	// sink's setter is a field write behind its own mutex, and the
+	// actor.mu → sink.mu ordering is one-way (the sink never calls back).
+	if event := snap.Sound.EffectiveAutocorrectEvent(); event != a.soundACEvent {
+		a.soundACEvent = event
+		if a.soundSink != nil {
+			a.soundSink.SetAutocorrectEvent(event)
+		}
+	}
+	if a.menuSync != nil {
+		a.menuSync.SetAutocorrectEnabled(snap.Autocorrect.Enabled)
+		a.menuSync.SetSoundEnabled(a.soundEnabled)
+		a.menuSync.SetKeys(snap.Hotkeys.TapKey, snap.Hotkeys.WordLayoutCombo, snap.Hotkeys.ModeSwitchChord)
+		a.menuSync.SetCorrections(a.corrDone)
+	}
 }
 
 // handleSurroundingLocked is the mutex-held core of HandleSurroundingText.
@@ -1501,13 +1716,16 @@ func (a *Actor) warnAppid(err error) {
 }
 
 // ensureAppid lazily starts the per-app identity source: only once a
-// NON-EMPTY app list is in force, only once per actor (ADR-005 a: the
-// a11y bus is connected IFF per-app lists exist). A failed start WARNs
-// and leaves the source nil — the global rule covers the gap for good
-// (one documented degradation, not a retry loop). The caller holds the
-// mutex.
+// NON-EMPTY macr list is in force OR autocorrect is ENABLED (the 07-04
+// condition — the blocklist negatives need an identity to refuse on, and
+// the confirm's live role query needs the observer as its RoleSource), and
+// only once per actor (ADR-005 a: the a11y bus is connected IFF per-app
+// scope or the enabled autocorrect layer can need it). A failed start WARNs
+// and leaves the source nil — the quiet unknown-identity pass-through
+// covers the gap for good (one documented degradation, not a retry loop).
+// The caller holds the mutex.
 func (a *Actor) ensureAppid() {
-	if a.appidStarted || (len(a.opts.MACRApps) == 0 && len(a.opts.AutoCorrectApps) == 0) {
+	if a.appidStarted || (len(a.opts.MACRApps) == 0 && !a.opts.AutoCorrectEnabled) {
 		return
 	}
 	a.appidStarted = true
@@ -1670,6 +1888,22 @@ func (a *Actor) flipTo(target scriptMode) {
 	if a.display != nil {
 		a.display.ModeChanged(a.modeSymbol())
 	}
+	// The menu observer fires with the display — the second appended
+	// observer of the same record (plan 07-05): the radio pair re-marks
+	// itself from the same push the icon uses. The menu dedupes identical
+	// symbols; the actor adds no error handling around the call.
+	if a.menuSync != nil {
+		a.menuSync.SetMode(a.modeSymbol())
+	}
+	// The sound observer fires LAST — after the display and the menu, the
+	// D-36 order with every observer appended (plan 07-08): the tone
+	// confirms a flip that fully happened (the same-target guard above
+	// already silenced the no-ops). The single gate consults the sink only
+	// when the sound switch is on; the sink is fire-and-forget by
+	// contract, and the actor adds no error handling around the call.
+	if s := a.soundSinkFor(); s != nil {
+		s.Flip()
+	}
 }
 
 // oppositeMode is the toggle target of the gesture flips (the Single
@@ -1714,17 +1948,22 @@ func (a *Actor) syncMode(target scriptMode, name string) {
 	if a.display != nil {
 		a.display.ModeChanged(a.modeSymbol())
 	}
+	// The menu observer fires with the display, mirroring flipTo (plan
+	// 07-05): the radio pair follows the FACTUAL engine too.
+	if a.menuSync != nil {
+		a.menuSync.SetMode(a.modeSymbol())
+	}
 }
 
 // modeSymbol returns the panel symbol of the current script mode — the
-// glyph the mode-indicator property carries (owner decision 1). The caller
-// holds the mutex.
+// glyph the mode-indicator property carries and the value both observers
+// receive (owner decision 1; plan 07-05). The caller holds the mutex.
 func (a *Actor) modeSymbol() string {
 	if a.mode == modeRU {
-		return "ru"
+		return symbolRU
 	}
 
-	return "en"
+	return symbolEN
 }
 
 // feedKey decides one press: whether the engine consumes the key and which
@@ -1870,23 +2109,25 @@ func (a *Actor) armAutoCorrect(payload acPayload, armed bool) {
 }
 
 // autoCorrectBoundary decides one word boundary under the CHEAP half of
-// the D-53 conjunction (the caller holds the mutex — feedKey): enabled, a
-// non-empty white list, the surrounding-text capability, the focused app's
-// exact bridge-namespace identity and the detector's CONFIDENT
-// wrong-layout verdict on the finished token. Every refusal counts its
-// reason and refuses the payload; any unknown means SILENCE — the
-// fail-closed direction INVERTED from macrTargetActive's degradation (no
-// rung upward, ADR-007). The expensive half — the live GetRole — never
-// runs here: the armed payload hands the decision outside the mutex (the
-// off-mutex discipline, T-06-06-04). The off state is the zero-behavior
-// invariant: no counter, no record — the boundary is byte-as-today (D-54).
+// the D-53 conjunction (the caller holds the mutex — feedKey): enabled,
+// the surrounding-text capability, the focused app's bridge-namespace
+// identity against the BLOCKLIST (any regex pattern matching the identity
+// FORBIDS the correction; an empty list forbids nothing) and the
+// detector's CONFIDENT wrong-layout verdict on the finished token. The
+// 07-04 revision (locked 07-CONTEXT) inverts EXACTLY ONE segment: an
+// UNKNOWN identity — no source started, or no focus event yet — is NOT a
+// prohibition: the identity is omitted from the payload (no app field),
+// the detector still runs, and the confirm gate plus the payload-stale
+// buffer geometry carry the safety story. A KNOWN identity matching any
+// pattern refuses with app-blocked. Role, caps and the detector stay
+// fail-closed — the pinned direction is
+// TestAutoCorrect_IdentityUnknownNotProhibition. The expensive half — the
+// live GetRole — never runs here: the armed payload hands the decision
+// outside the mutex (the off-mutex discipline, T-06-06-04). The off state
+// is the zero-behavior invariant: no counter, no record — the boundary is
+// byte-as-today (D-54).
 func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 	if !a.opts.AutoCorrectEnabled {
-		return acPayload{}, false
-	}
-	if len(a.opts.AutoCorrectApps) == 0 {
-		a.recordACAbstain(acReasonNoApps)
-
 		return acPayload{}, false
 	}
 	if a.caps&correct.CapSurroundingText == 0 {
@@ -1896,18 +2137,22 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 
 		return acPayload{}, false
 	}
-	app, ok := a.acFocusedApp()
-	if !ok {
-		a.recordACAbstain(acReasonAppUnknown)
+	// The 07-04 inversion: an unknown identity PASSES — only a KNOWN
+	// identity can be forbidden, the payload simply carries no app.
+	app, appKnown := a.acFocusedApp()
+	if appKnown {
+		// The blocklist matches by regex SUBSTRING over the identity (RE2
+		// — linear, no catastrophic backtracking; ^…$ anchoring is the
+		// document's explicit choice) — the compiled cache from
+		// applySnapshot, never the raw strings. Any matching pattern
+		// forbids.
+		for _, re := range a.acBlocklist {
+			if re.MatchString(app) {
+				a.recordACAbstain(acReasonAppBlocked)
 
-		return acPayload{}, false
-	}
-	// The white list is an EXACT bridge-namespace match: no prefix or
-	// suffix merging (org.gnome.ZenityX never matches org.gnome.Zenity).
-	if !slices.Contains(a.opts.AutoCorrectApps, app) {
-		a.recordACAbstain(acReasonAppNotListed)
-
-		return acPayload{}, false
+				return acPayload{}, false
+			}
+		}
 	}
 	tok := a.buf.Token()
 	v := detect.Check(tok, a.modeSymbol(),
@@ -1940,13 +2185,50 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 	}, true
 }
 
-// acFocusedApp resolves the focused app identity for the boundary gate: a
-// missing source is an UNKNOWN (fail-closed — never the MACR degradation),
-// reported with the one-WARN-per-episode discipline of warnAppid. The
+// refreshACBlocklist rebuilds the compiled blocklist cache only when the
+// raw pattern LIST changed (the macrLettersName parse-cache form) — one
+// compile per document edit or SetOptions install, never per boundary.
+// The caller holds the mutex.
+func (a *Actor) refreshACBlocklist(names []string) {
+	if slices.Equal(names, a.acBlocklistNames) {
+		return
+	}
+	a.acBlocklistNames = names
+	a.acBlocklist = compileACBlocklist(names)
+}
+
+// compileACBlocklist compiles the document's blocklist patterns for the
+// boundary gate. A compile failure is impossible from a validated
+// document (config.Validate refuses it at Load, D-33); the defensive
+// branch WARNs once per rebuild and treats the whole list as EMPTY —
+// nothing matches, nothing is forbidden (the failure falls open toward
+// the role gate, never around it).
+func compileACBlocklist(patterns []string) []*regexp.Regexp {
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, pattern := range patterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			slog.Warn("autocorrect blocklist pattern rejected at fold", "error", err)
+
+			return nil
+		}
+		compiled = append(compiled, re)
+	}
+
+	return compiled
+}
+
+// acFocusedApp resolves the focused app identity for the boundary and
+// confirm gates. The 07-04 warn discipline (locked 07-CONTEXT): a WARN
+// fires ONLY on a SOURCE ERROR — the source is installed but its answer
+// broke (the one-per-episode warnAppid form). A MISSING identity — no
+// source started, or no focus event yet — is the quiet norm under the
+// blocklist semantics (nothing is visible to forbid, the unknown passes
+// both gates) and never warns; a debug record is its only trace. The
 // caller holds the mutex.
 func (a *Actor) acFocusedApp() (string, bool) {
 	if a.appid == nil {
-		a.warnACApp(nil)
+		slog.Debug("autocorrect app identity unknown", "reason", "no source started")
 
 		return "", false
 	}
@@ -1956,24 +2238,27 @@ func (a *Actor) acFocusedApp() (string, bool) {
 
 		return "", false
 	}
+	if app == "" {
+		slog.Debug("autocorrect app identity unknown", "reason", "no focus event yet")
+
+		return "", false
+	}
 	a.acAppWarned = false // a healthy answer closes the episode
 
 	return app, true
 }
 
-// warnACApp records one autocorrect identity-source failure: the WARN
-// fires once per degradation episode (the warnAppid form — per boundary
-// would spam the journal of a broken source). The caller holds the mutex.
+// warnACApp records one autocorrect identity-source ERROR — the source is
+// installed but its answer broke: the WARN fires once per degradation
+// episode (the warnAppid form — per boundary would spam the journal of a
+// broken source). A missing identity never reaches here: that is the
+// quiet unknown of acFocusedApp (the 07-04 warn discipline). The caller
+// holds the mutex.
 func (a *Actor) warnACApp(err error) {
 	if a.acAppWarned {
 		return
 	}
 	a.acAppWarned = true
-	if err == nil {
-		slog.Warn("autocorrect app identity unavailable")
-
-		return
-	}
 	slog.Warn("autocorrect app identity unavailable", "error", err)
 }
 
@@ -2000,17 +2285,21 @@ func (a *Actor) recordACAbstain(reason string) {
 // owns the decision); the fired branch additionally revalidates the armed
 // payload against the live buffer (CR-01 — the generation advances only at
 // boundaries, so a non-boundary mutation inside the role-RTT window must
-// be caught by content) and re-checks the focused app identity the
-// white-list verdict was taken for (WR-01 — a focus switch inside the
-// window must not pair one app's verdict with another app's role). Any
+// be caught by content) and consults the blocklist on the CURRENT focused
+// identity (07-04: the confirm gate is blocklist-only, owner variant 1 —
+// the ADR-007 amendment removed the arming/confirm equality; a focus
+// switch inside the window surfaces as payload-stale via the buffer, or as
+// a blocklist hit on the new app). Any
 // unknown means SILENCE with its counted slug —
 // the fail-closed direction INVERTED from macrTargetActive's degradation
 // (no rung upward, ADR-007): a role error or the deadline is
 // role-unknown/role-timeout with one WARN per episode, a non-text role
-// (password 40, terminal 60, anything unlisted) is role-forbidden. Only
-// the full conjunction FIRES: the counter moves and the armed range
-// launches THE one correction pipeline (startRangeCorrection — no second
-// replacement mechanism, Pitfall 7). No branch ever logs the word
+// (password 40, terminal 60, anything unlisted) is role-forbidden, and the
+// ambiguous text role 61 with an UNKNOWN identity is role-ambiguous (the
+// CR-01 tightening — a GTK3 password field reports 61 too, ADR-007's live
+// fact). Only the full conjunction FIRES: the counter moves and the armed
+// range launches THE one correction pipeline (startRangeCorrection — no
+// second replacement mechanism, Pitfall 7). No branch ever logs the word
 // (D-20/D-21).
 func (a *Actor) autoConfirm(payload acPayload) {
 	a.mu.Lock()
@@ -2054,15 +2343,26 @@ func (a *Actor) autoConfirm(payload acPayload) {
 	a.acRoleWarned = false // a healthy answer closes the episode
 	switch role {
 	case acRoleText, acRoleEntry, acRoleDocumentText:
-		// CR-01/WR-01: the fired threshold re-checks the armed payload's
-		// preconditions under the mutex — the window between the boundary
-		// and this verdict must not move the field or the focus out from
-		// under the payload.
-		if !a.acConfirmRefusals(payload) {
+		// CR-01 + the 07-04 confirm form: the fired threshold re-checks the
+		// armed payload's preconditions under the mutex — the window
+		// between the boundary and this verdict must not move the field
+		// out from under the payload, and the current app must not sit on
+		// the blocklist (a focus move lands as payload-stale, or as a
+		// blocklist hit on the new app). The role verdict rides along:
+		// the ambiguous 61 answers only for a KNOWN identity (the CR-01
+		// tightening — role-ambiguous otherwise).
+		if !a.acConfirmRefusals(payload, role) {
 			return
 		}
 		a.acFired++
 		slog.Info("autocorrect", "reason", "fired")
+		// The fired tone (plan 07-08): the distinct autocorrect event from
+		// the fired point — the abstentions and the off state never reach
+		// it (the single gate ahead of the sink). Fire-and-forget; the
+		// actor adds no error handling around the call.
+		if s := a.soundSinkFor(); s != nil {
+			s.AutoCorrect()
+		}
 		a.startRangeCorrection(payload.rng)
 	default:
 		a.recordACAbstain(acReasonRoleForbidden)
@@ -2075,32 +2375,55 @@ func (a *Actor) autoConfirm(payload acPayload) {
 // keystroke, a Backspace, a second reset, a focus loss) means the armed
 // range no longer describes the field, and executing it would delete the
 // wrong runes and corrupt the mirror (T-06-06-06 extended past the
-// generation guard). WR-01: the white-list verdict was taken at arm time —
-// the focused app is re-checked so the conjunction is evaluated for ONE
-// object at ONE instant: a focus switch inside the role-RTT window
-// re-points the live role query at another app's object, and the armed
-// app's verdict must not ride on it (D-53). The identity comparison is the
-// same bridge-namespace equality as the arming gate; a lost identity
-// source is the unknown (fail-closed), a different app is the changed one.
-// Every refusal counts its closed slug and reports false; the caller holds
-// the mutex.
-func (a *Actor) acConfirmRefusals(payload acPayload) bool {
+// generation guard). The identity check is BLOCKLIST-ONLY on the CURRENT
+// identity (07-04, owner variant 1 — the ADR-007 amendment): a known
+// focused app matching any compiled pattern refuses with app-blocked; an
+// unknown identity passes — with ONE owner-sanctioned narrow exception
+// (the CR-01 tightening): the ambiguous role 61 with an UNKNOWN identity
+// refuses as role-ambiguous. Role 61 is the one value GTK3 password fields
+// report exactly like text boxes (ADR-007's live fact), so with no
+// identity visible the field cannot be told apart from a password and the
+// fail-closed direction wins; the unambiguous allowed roles (79, 94) keep
+// the locked "unknown passes" scenario, and the role-unknown/role-timeout
+// disciplines are untouched (TestAutoConfirm_RoleTextAmbiguity pins the
+// pair). The arming/confirm equality of WR-01 (the 06-REVIEW fix) is
+// deliberately REMOVED with this revision: under the live role query it is
+// redundant — the verdict is taken for the object the query answers NOW,
+// and a focus move inside the window surfaces as payload-stale (FocusOut
+// hard-resets the buffer; the replacement pipeline re-verifies the field
+// before any Delete) — while kept conditionally it would break the locked
+// scenario "unknown at arm, learned by confirm" with a phantom mismatch (a
+// payload armed without an app can never equality-match a learned
+// identity). Every refusal counts its closed slug and reports false; the
+// caller holds the mutex.
+func (a *Actor) acConfirmRefusals(payload acPayload, role uint32) bool {
 	if !slices.Equal(a.buf.Token(), payload.expectToken) ||
 		!slices.Equal(a.buf.Tail(), payload.expectTail) {
 		a.recordACAbstain(acReasonPayloadStale)
 
 		return false
 	}
-	app, ok := a.acFocusedApp()
-	if !ok {
-		a.recordACAbstain(acReasonAppUnknown)
+	// The identity resolves ONCE for both checks below — the same live
+	// answer the boundary gate reads.
+	app, known := a.acFocusedApp()
+	// The CR-01 tightening: the ambiguous role with an UNKNOWN identity
+	// cannot be told apart from a GTK3 password field — refuse fail-closed.
+	// A KNOWN identity keeps the blocklist verdict (the owner's control).
+	if role == acRoleText && !known {
+		a.recordACAbstain(acReasonRoleAmbiguous)
 
 		return false
 	}
-	if app != payload.app {
-		a.recordACAbstain(acReasonAppChanged)
+	// The 07-04 confirm form: the blocklist consults the CURRENT identity;
+	// unknown passes, a matching known app forbids.
+	if known {
+		for _, re := range a.acBlocklist {
+			if re.MatchString(app) {
+				a.recordACAbstain(acReasonAppBlocked)
 
-		return false
+				return false
+			}
+		}
 	}
 
 	return true

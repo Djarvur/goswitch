@@ -28,7 +28,7 @@ macr:
   alt_modifier: ""
 autocorrect:
   enabled: false
-  apps: []
+  apps_blocklist: []
   min_word_len: 4
   trigram_margin: 2.0
   trigram_floor: 1.0
@@ -74,8 +74,8 @@ func assertDecodeDefaults(t *testing.T, cfg *config.Config) {
 	if cfg.Autocorrect.Enabled {
 		t.Error("autocorrect.enabled = true, want false")
 	}
-	if len(cfg.Autocorrect.Apps) != 0 {
-		t.Errorf("autocorrect.apps = %v, want empty", cfg.Autocorrect.Apps)
+	if len(cfg.Autocorrect.AppsBlocklist) != 0 {
+		t.Errorf("autocorrect.apps_blocklist = %v, want empty", cfg.Autocorrect.AppsBlocklist)
 	}
 	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
 		t.Errorf(
@@ -219,7 +219,9 @@ func TestLoad_DocumentWithoutSectionDecodesOff(t *testing.T) {
 		t.Fatalf("Load(pre-phase document): %v", err)
 	}
 	got := cfg.Autocorrect
-	if got.Enabled || got.Apps != nil || got.MinWordLen != 0 || got.TrigramMargin != 0 || got.TrigramFloor != 0 {
+	zero := got.Enabled || got.AppsBlocklist != nil ||
+		got.MinWordLen != 0 || got.TrigramMargin != 0 || got.TrigramFloor != 0
+	if zero {
 		t.Errorf(
 			"autocorrect = %+v, want the zero value (no defaults overlay in Load; absent section = off, D-54)",
 			got,
@@ -244,24 +246,24 @@ func TestLoad_StrictDecodeRejectsTypo(t *testing.T) {
 	}
 }
 
-// TestLoad_EmptyAppsEnabledIsValid pins the D-54 kill-switch semantics
-// (T-06-04-03): `enabled: true` with an empty white list is a VALID
-// document — the empty list silences the feature everywhere (the consumer
-// conjunction of plan 06-06 requires a non-empty list), so no combination
-// of absent or empty values can widen the policy.
+// TestLoad_EmptyAppsEnabledIsValid pins the kill-switch shape at load
+// level: `enabled: true` with an empty blocklist and the documented
+// thresholds is a VALID document — under the blocklist semantics (D-53)
+// an empty list forbids nothing, so the layer is ACTIVE wherever the
+// field's role gate lets it through.
 func TestLoad_EmptyAppsEnabledIsValid(t *testing.T) {
 	t.Parallel()
 
 	corpus := strings.Replace(fullDocYAML, "autocorrect:\n  enabled: false", "autocorrect:\n  enabled: true", 1)
 	cfg, err := config.Load(writeConfig(t, corpus))
 	if err != nil {
-		t.Fatalf("Load(enabled, empty list): %v", err)
+		t.Fatalf("Load(enabled, empty blocklist): %v", err)
 	}
 	if !cfg.Autocorrect.Enabled {
 		t.Error("autocorrect.enabled = false, want true (the document's value)")
 	}
-	if len(cfg.Autocorrect.Apps) != 0 {
-		t.Errorf("autocorrect.apps = %v, want empty — the feature fires nowhere", cfg.Autocorrect.Apps)
+	if len(cfg.Autocorrect.AppsBlocklist) != 0 {
+		t.Errorf("autocorrect.apps_blocklist = %v, want empty — nothing is forbidden", cfg.Autocorrect.AppsBlocklist)
 	}
 }
 
@@ -274,8 +276,8 @@ func TestLoad_AutocorrectRangeViolationRejected(t *testing.T) {
 
 	active := strings.Replace(
 		fullDocYAML,
-		"autocorrect:\n  enabled: false\n  apps: []",
-		"autocorrect:\n  enabled: true\n  apps: [\"org.gnome.Gedit\"]",
+		"autocorrect:\n  enabled: false\n  apps_blocklist: []",
+		"autocorrect:\n  enabled: true\n  apps_blocklist: [\"org.gnome.Gedit\"]",
 		1,
 	)
 	broken := strings.Replace(active, "min_word_len: 4", "min_word_len: 1", 1)
@@ -307,5 +309,125 @@ func TestLoad_FlipAfterCorrectionDecode(t *testing.T) {
 	}
 	if !cfg.Correction.FlipAfterCorrection {
 		t.Error("correction.flip_after_correction = false, want true (the document's value)")
+	}
+}
+
+// legacyAppsDocYAML is the PRE-revision document: the autocorrect section
+// carries the white-list key the D-53 revision REMOVED. The strict
+// decoder must reject the whole file (D-33 — the old key gets no silent
+// half-support, and an old white list is never transferred to the
+// blocklist mechanically: the two keys carry opposite intents).
+const legacyAppsDocYAML = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: false
+  apps: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// TestLoad_StrictDecodeRejectsLegacyAppsKey pins the D-33 hard rename
+// (plan 07-02): the white-list key is GONE from the schema — a document
+// carrying it is rejected WHOLE by the strict decoder, loudly, never
+// half-applied or quietly ignored (T-07-02-04).
+func TestLoad_StrictDecodeRejectsLegacyAppsKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(writeConfig(t, legacyAppsDocYAML))
+	if err == nil {
+		t.Fatal("legacy autocorrect.apps key accepted, want a whole-document rejection (D-33)")
+	}
+	if !strings.Contains(err.Error(), "apps") {
+		t.Errorf("error %q does not name the removed field apps", err)
+	}
+}
+
+// soundDocYAML renders the complete document with the given sound section
+// body — the decode corpus's template for the sound keys (the chordDoc
+// idiom: full document, one section under test).
+func soundDocYAML(body string) string {
+	return strings.Replace(fullDocYAML, "autocorrect:", "sound:\n"+body+"autocorrect:", 1)
+}
+
+// TestSound_AbsentSectionMeansOn pins the default-ON contract (owner
+// decision, 07-CONTEXT): a document without the sound section decodes
+// the ZERO value — and the section's effective switch reads ON, because
+// Load never overlays defaults (03-02) and the pointer-bool's nil is the
+// "on" verdict; a plain bool's zero value would have read "off".
+func TestSound_AbsentSectionMeansOn(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, fullDocYAML))
+	if err != nil {
+		t.Fatalf("Load(document without sound): %v", err)
+	}
+	if !cfg.Sound.EffectiveEnabled() {
+		t.Error("Sound.EffectiveEnabled() = false for an absent section, want true (default ON)")
+	}
+	if cfg.Sound.AutocorrectEvent != "" {
+		t.Errorf("Sound.AutocorrectEvent = %q, want empty — Load never overlays defaults", cfg.Sound.AutocorrectEvent)
+	}
+}
+
+// TestSound_ExplicitOffAndCustomEvent pins the decode round-trip of the
+// sound keys: an explicit enabled: false silences the sounds, a custom
+// autocorrect_event reaches the accessor verbatim, and an omitted event
+// name reads as the built-in default event.
+func TestSound_ExplicitOffAndCustomEvent(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, soundDocYAML("  enabled: false\n")))
+	if err != nil {
+		t.Fatalf("Load(sound off): %v", err)
+	}
+	if cfg.Sound.EffectiveEnabled() {
+		t.Error("Sound.EffectiveEnabled() = true for enabled: false, want false (the document's value)")
+	}
+
+	cfg, err = config.Load(writeConfig(t, soundDocYAML("  enabled: true\n  autocorrect_event: custom\n")))
+	if err != nil {
+		t.Fatalf("Load(sound custom event): %v", err)
+	}
+	if got := cfg.Sound.EffectiveAutocorrectEvent(); got != "custom" {
+		t.Errorf("Sound.EffectiveAutocorrectEvent() = %q, want %q (the document's value)", got, "custom")
+	}
+
+	cfg, err = config.Load(writeConfig(t, soundDocYAML("  enabled: true\n")))
+	if err != nil {
+		t.Fatalf("Load(sound default event): %v", err)
+	}
+	want := config.DefaultSoundAutocorrectEvent
+	if got := cfg.Sound.EffectiveAutocorrectEvent(); got != want {
+		t.Errorf("Sound.EffectiveAutocorrectEvent() = %q, want the default %q", got, want)
+	}
+}
+
+// TestSound_StrictDecodeUnknownKey pins D-33 propagation to the new
+// section: an unknown key inside the sound section invalidates the WHOLE
+// document — the strict decoder covers the section automatically, no new
+// code in load.go.
+func TestSound_StrictDecodeUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(writeConfig(t, soundDocYAML("  enabled: true\n  sound_effect: wat\n")))
+	if err == nil {
+		t.Fatal("unknown sound key accepted, want a whole-document rejection (D-33)")
+	}
+	if !strings.Contains(err.Error(), "sound_effect") {
+		t.Errorf("error %q does not name the unknown field sound_effect", err)
 	}
 }

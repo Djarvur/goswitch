@@ -291,3 +291,39 @@ Plans:
 **Wave 8** *(blocked on Wave 7 completion — 06-10 depends_on 06-09)*
 
 - [x] 06-10-PLAN.md — G-6-1: живое доказательство «первая буква после флипа доезжает» — e2e flip-keystroke + журнальный аудит — SWCH-01/SWCH-02 (gap G-6-1; живой оракул гоняется только против исправленного актора 06-09) — выполнен 2026-10-04 (SUMMARY d988560)
+
+### Phase 7: Меню v2 и чёрный список автокоррекции
+
+**Goal:** Довести автокоррекцию до пользовательского качества и выпустить v1.1.0: трей-меню v2 (EN/RU переключение двумя пунктами с отметкой текущего, тумблер автокоррекции с записью в конфиг, живые горячие клавиши из конфига, «Настройки…» = config.yaml в редакторе, версия), чёрный список приложений `autocorrect.apps_blocklist` (regex) с ревизией D-53: белый список `apps` удаляется, автокоррекция стреляет везде, где полевой role-гейт пропускает, кроме совпавших с blocklist; spec-delta §11 + поправка ADR-007 до кода.
+**Requirements**: SPEC §11 (spec-delta), MACR-ACL (blocklist-ревизия), CORR-01..09 (регресс), SWCH-01..04 (регресс)
+**Depends on:** Phase 6
+**Success Criteria** (what must be TRUE):
+
+  1. Меню v2 живьём: EN/RU пункты переключают движок с отметкой текущего; тумблер автокоррекции persist-ит в конфиг (hot reload подхватывает); макросы отображаются актуальными значениями и обновляются на reload; «Настройки…» открывает config.yaml; версия видна.
+  2. Blocklist: `apps_blocklist` (regex, подстрока, анкеровка явная) — совпадение запрещает автокоррекцию при любом остальном; пустой = ничего не запрещено; unknown-идентичность приложения НЕ запрет; hot reload; strict decode; docs/CONFIG.md дополнен.
+  3. Белый список `autocorrect.apps` удалён из схемы, кода, корпуса и документации; D-53-молчание заменено «blocklist + полевой role-гейт» (spec-delta §11, ADR-007 amendment); регресс-корпус и матричные строки перезакреплены на новую семантику.
+  4. Регресс фаз 5-6 зелёный: `mise run ci`, матрица v4 (строки автокоррекции перезакреплены), flip-keystroke 24/24.
+  5. Релиз v1.1.0: тег → goreleaser → ассеты; README/CONFIG.md соответствуют v1.1.0.
+
+**Plans:** 8/8 plans complete
+
+Plans:
+**Wave 1** *(spec-delta до кода, D-55 — блокирует все кодовые планы)*
+
+- [x] 07-01-PLAN.md — SPEC §11 третья ревизия (blocklist, 2026-10-04) + ADR-007 amendment — SPEC §11
+- [x] 07-02-PLAN.md — Схема: apps_blocklist (regex-валидация, пустой паттерн, потолок, ACTIVE-условие) + механическая адаптация актора + docs/CONFIG.md — MACR-ACL
+- [x] 07-03-PLAN.md — Персист: SetAutocorrectEnabled/EnsureDocument/DefaultPath (Node round-trip, temp+rename, 0600) + adopt+watch дефолтного пути — MACR-ACL
+- [x] 07-04-PLAN.md — Гейт: unknown⇒пропуск (только идентичность), confirm blocklist-only, удаление WR-01-равенства, ensureAppid по enabled — MACR-ACL, CORR-01..09 (регресс)
+
+**Wave 4** *(blocked on 07-03 + 07-04)*
+
+- [x] 07-05-PLAN.md — Меню v2: радиопара EN/RU (SwitchMode→flipTo), тумблер с персистом, живые макро-инфопункты, Настройки (xdg-open no-pipes), О программе; ItemsPropertiesUpdated-динамика — SWCH-01..04 (регресс)
+
+**Wave 5** *(blocked on Waves 1-4; 07-06 и 07-08 параллельны — файлы не пересекаются)*
+
+- [x] 07-06-PLAN.md — e2e: упрощение fires/silents, новый autocorrect-blocklist-silent, Event-драйв case_menu (оба тумблера переживают рестарт), матричная config_base, mise-задачи — MACR-ACL, CORR/SWCH (регресс)
+- [x] 07-08-PLAN.md — Звуки переключения: package internal/sound (canberra→paplay no-pipes, комплектные тоны, WARN-best-effort), SoundSink-шов актора (flipTo-флип + fire автокоррекции), gating sound.enabled через hot reload, wiring — SPEC §11 (решение «Звуки при переключении»)
+
+**Wave 6** *(blocked on Waves 1-5)*
+
+- [x] 07-07-PLAN.md — Релизная готовность v1.1.0: README (blocklist, меню v2 со «Звуком», звуки), полный регресс (ci + матрица ×2 + flip-keystroke 24/24 + новые кейсы), RELEASE-READINESS (тег — post-merge действие владельца) — CORR/SWCH (регресс), критерии 4-5

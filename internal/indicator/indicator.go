@@ -86,14 +86,24 @@ var errItemsType = errors.New("unexpected registered-items variant payload")
 
 // Callbacks carries the daemon's interactive surface — small func fields the
 // daemon wiring fills (quick plan 261001-fg3). Reload nil means the daemon
-// runs without -config (the menu serves item 3 disabled); a nil Toggle or
-// Status makes the corresponding gesture a contained no-op. The callbacks
-// run on godbus dispatch goroutines and must carry their own
+// runs without -config (the menu serves the reload item disabled); a nil
+// Toggle makes the corresponding gesture a contained no-op. The menu v2
+// fields (plan 07-05) ride the same nil-safe discipline: Switch is the EN/RU
+// radio pair's target flip (the actor's SwitchMode), the two Toggle* fields
+// the persisted config toggles, Settings the config-editor launcher. The
+// About and Status rows carry NO callbacks — greyed live info rows since the
+// owner UAT (2026-10-05) replaced their notifications with in-menu display.
+// The callbacks run on godbus dispatch goroutines and must carry their own
 // synchronization (the actor's mutex).
 type Callbacks struct {
 	Toggle func()
-	Status func()
 	Reload func()
+	// The menu v2 gestures (plan 07-05) — each a silent no-op without its
+	// callback.
+	Switch            func(target string)
+	ToggleAutocorrect func()
+	ToggleSound       func()
+	Settings          func()
 }
 
 // Watcher probes the org.kde.StatusNotifierWatcher owner, registers the
@@ -201,6 +211,7 @@ type Item struct {
 	menuWarned     bool
 	activateWarned bool
 	cb             Callbacks   // the interactive surface; immutable after attach
+	menu           *Menu       // the DBusMenu object; immutable after attach, snapshot survives re-attach
 	menuPath       string      // the served Menu value: /Menu or the sentinel
 	sup            *supervisor // the lifecycle owner; born with the item
 }
@@ -224,7 +235,8 @@ func attach(w Watcher, em Emitter, exp exporter, service string, cb Callbacks) *
 		emitter:  em,
 		path:     itemPath,
 		cb:       cb,
-		menuPath: menuNoDBusMenu, // icon-only until the menu exports succeed
+		menu:     newMenu(cb, em), // the menu rides the SAME emitter (its own signals)
+		menuPath: menuNoDBusMenu,  // icon-only until the menu exports succeed
 	}
 	if pm, ok := PixmapFor(symbolEN); ok {
 		it.pix = pm // EN at start (ADR-001); the install-push corrects any skew
@@ -258,7 +270,10 @@ func registerItem(w Watcher, exp exporter, it *Item, service string) error {
 		return errNoWatcher
 	}
 
-	menu := &Menu{cb: it.cb}
+	// The EXPORTED menu is the item's own live instance — its snapshot
+	// survives a supervisor re-attach (the re-export is idempotent
+	// replacement; a fresh Menu would reset the state the wiring seeded).
+	menu := it.menu
 	if err := exp.Export(menu, menuPath, menuIface); err != nil {
 		it.menuFailed(fmt.Errorf("export %s: %w", menuIface, err))
 	} else if err := exp.Export(menu, menuPath, propertiesIface); err != nil {
@@ -281,6 +296,14 @@ func registerItem(w Watcher, exp exporter, it *Item, service string) error {
 	}
 
 	return nil
+}
+
+// Menu exposes the item's DBusMenu object — the wiring seeds the version
+// and the initial state on it and installs it as the actor's menu-sync
+// target after Attach. The field is immutable after construction (the cb
+// precedent); the menu carries its own mutex.
+func (it *Item) Menu() *Menu {
+	return it.menu
 }
 
 // ModeChanged implements the actor's ModeDisplay seam (the observer is

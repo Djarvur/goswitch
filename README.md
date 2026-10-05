@@ -41,8 +41,8 @@ handover, and engine activation — is one command: `goswitchctl install`.
 **Channel B — go install:**
 
 ```sh
-go install github.com/Djarvur/goswitch/cmd/goswitchd@v1.0.0
-go install github.com/Djarvur/goswitch/cmd/goswitchctl@v1.0.0
+go install github.com/Djarvur/goswitch/cmd/goswitchd@latest
+go install github.com/Djarvur/goswitch/cmd/goswitchctl@latest
 goswitchctl install
 ```
 
@@ -82,11 +82,26 @@ switching, a flip resets the correction context — text typed before the
 switch is not corrected by a gesture after it.
 
 The icon is interactive: on GNOME it renders as a menu button, and a
-click opens a menu — «Переключить раскладку» toggles the layout,
-«Статус» shows a notification with the current mode and version,
-«Перечитать конфиг» re-reads the YAML (greyed without `-config`). The
-icon also re-registers itself when the shell's tray watcher appears late
-at boot or silently drops the item — no daemon restart needed.
+click opens the v1.1 menu —
+
+- **EN** / **RU** — the two languages as ordinary switcher entries:
+  a click activates that language, the current one carries the mark;
+- **Автокоррекция** — the autocorrect toggle; the click is written
+  back into the config file, so the choice survives restarts;
+- **Звук** — the switch-sounds toggle (on by default), persisted the
+  same way;
+- greyed macro hints with the live key names from the config —
+  `1× <tap> — язык`, `2× — слово`, `3× — фраза`, the
+  correct-and-switch combo (`<combo> — слово и язык`) and the
+  mode-switch chord (`<chord> — смена режима`) — refreshed on every
+  config reload;
+- **Настройки…** — opens `config.yaml` in the system editor;
+- **О программе** — a notification with the version;
+- **Статус** and **Перечитать конфиг** — a status notification and a
+  config re-read.
+
+The icon also re-registers itself when the shell's tray watcher appears
+late at boot or silently drops the item — no daemon restart needed.
 
 A foreign source beside goswitch engines cannot come from the installer
 (it is refused) and is flagged red by `goswitchctl selfcheck` — the
@@ -147,37 +162,100 @@ goswitchctl reload    # re-read the config file immediately
 goswitch can also fix a wrong-layout word **silently, without any hotkey**:
 type `ghbdtn` and then Space (or Enter, or a punctuation key) — by the time
 you move on, the word has become `привет`. The feature ships **default
-off** and never fires until you explicitly enable it.
+off** and never fires until you explicitly enable it. From the tray menu
+it is one click: the **Автокоррекция** toggle (with the **Звук** toggle
+next to it for the switch sounds) — the click persists into the config
+file, and the choice survives restarts.
 
 ### Enabling
 
-Add an `autocorrect` section to your config file (the complete key
-reference is [docs/CONFIG.md](docs/CONFIG.md); how to attach a config file
-is described under Configuration below):
+Add an `autocorrect` section to your config file — or just flip the
+**Автокоррекция** menu toggle, which creates and maintains the document
+for you (see Configuration below). The complete key reference is
+[docs/CONFIG.md](docs/CONFIG.md); the section's keys are
+`autocorrect.enabled`, `autocorrect.apps_blocklist`,
+`autocorrect.min_word_len`, `autocorrect.trigram_margin` and
+`autocorrect.trigram_floor`:
 
 ```yaml
 autocorrect:
   enabled: true
-  apps: ["org.gnome.Zenity"] # exact application names, one per trusted app
+  apps_blocklist: ["^org\\.gnome\\.Terminal"] # regex patterns; empty = nothing forbidden
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
 ```
 
-The `apps` list is a **white list of exact application names** (the app's
-AT-SPI bridge namespace). An application that is not in the list is **never
-corrected** — there is no global "on". A config edit applies without a
-restart (hot reload), and `goswitchctl status` shows the layer's state:
-`autocorrect_enabled`, `autocorrect_fired`, `autocorrect_abstained` and
-per-reason skip counters.
+`apps_blocklist` is a **black list of regular expressions** matched
+against the focused application's identity (its AT-SPI bridge namespace,
+e.g. `org.gnome.Zenity`). Matching is by **substring** (`chrom` matches
+`org.chromium.Chromium`); anchor with `^…$` when you want an exact name;
+matching is case-sensitive, and the order of patterns carries no meaning —
+a match of **any** pattern forbids. An **empty list forbids nothing**, and
+an application whose identity cannot be observed is **not** forbidden
+either — the safety filter here is the field role below, not the list.
+A config edit applies without a restart (hot reload), and
+`goswitchctl status` shows the layer's state: `autocorrect_enabled`,
+`autocorrect_fired`, `autocorrect_abstained` and per-reason skip counters.
+
+> **Migrating an old document:** the white-list key `autocorrect.apps`
+> (ранее `apps`, удалено в v1.1.0) no longer loads — the strict decoder
+> rejects the whole file until you rename it. Do not carry the old list
+> over mechanically: the old key meant «correct ONLY in these apps», the
+> block list means «never correct in these apps» — opposite intents.
 
 ### When it fires — and when it stays silent
 
-Every condition must hold, and anything unconfirmed means silence:
-the application is in your white list; the focused widget's live AT-SPI
-role is a text input (a password field, a terminal or a canvas is never
-touched); the application exposes the surrounding text the layer needs to
-verify the replacement; the detector is confident the word is a
-wrong-layout dictionary word (a trigram fallback judges unusual words —
-and declines unless the evidence is strong); and the word is at least 4
-characters long.
+Every condition must hold, and anything unconfirmed means silence: the
+layer is enabled; the focused widget's live AT-SPI role is a text input
+(a password field, a terminal or a canvas is never touched — this role
+gate is the safety filter, and it works with or without the list); the
+application exposes the surrounding text the layer needs to verify the
+replacement; the application does **not** match your `apps_blocklist`;
+the detector is confident the word is a wrong-layout dictionary word (a
+trigram fallback judges unusual words — and declines unless the evidence
+is strong); and the word is at least `autocorrect.min_word_len`
+characters long. Manual gestures — the double tap, the phrase and the
+selection — are **never** restricted by the block list: they are your
+explicit action.
+
+### Where autocorrect stays silent — and how to fix it
+
+Beyond the conditions above, two situations keep the layer quiet even
+when it is enabled. The first one is fixable:
+
+**Apps without an accessibility tree.** An Electron/Chromium application
+that runs without the accessibility mode exposes no AT-SPI tree, so the
+daemon can read neither the focused field's role nor the surrounding text
+and stays silent (fail-closed — the same rule as every other «cannot
+verify» case). Known examples: ZCode, the Telegram snap. To make
+autocorrect work in such an application, either enable toolkit
+accessibility globally and restart the application afterwards:
+
+```sh
+gsettings set org.gnome.desktop.interface toolkit-accessibility true
+```
+
+or launch just that one application with its accessibility flag —
+`--force-renderer-accessibility` for Electron/Chromium apps. Once the
+application exposes its accessibility tree, autocorrect starts working
+in it without any further configuration.
+
+**Password and role-less fields.** A GTK4 password field reports the
+dedicated password role (40) and is never corrected. A widget that
+exposes no defined role at all stays silent too. The GTK3 generation
+remains the known limitation below.
+
+### Switch sounds
+
+Every layout flip can click: a tone accompanies **any** flip (hotkey or
+menu entry), and a distinct tone marks an autocorrection. The **Звук**
+menu toggle or the `sound` config section controls it — the feature is
+**on by default**. Playback runs through the system's `canberra-gtk-play`
+(with `paplay` on the bundled tones as a fallback); an unavailable or
+failing player is a quiet WARN in the journal and **never** blocks or
+delays the switch. The section's keys are `sound.enabled` and
+`sound.autocorrect_event` — see [docs/CONFIG.md](docs/CONFIG.md).
 
 ### Privacy
 
@@ -191,9 +269,15 @@ session — that is the pre-existing debug mode, not part of this feature.)
 
 The role gate cannot recognize password fields of the GTK3 generation
 (for example `zenity --password`): they report the same AT-SPI role as an
-ordinary text box — indistinguishable. Your protection here is the white
-list itself, so **do not add applications you do not fully trust** — and
-never add password prompts or terminals.
+ordinary text box — indistinguishable. The block list is your extra
+filter, not a guarantee: put an anchored `^…$` pattern for any
+application whose password prompts you know into `apps_blocklist`, enable
+the layer only where you fully trust the application, and remember that a
+confident dictionary word is all the detector will ever touch — the
+manual gestures remain the override. The residual risk is owner-accepted
+(UAT, 2026-10-05): a known, non-blocklisted application may still see its
+GTK3 password corrected — an AT-SPI limitation; when the application's
+identity cannot be observed at all, the layer stays silent (fail-closed).
 
 ### Manual gestures remain the override
 
@@ -208,8 +292,19 @@ Out of the box the daemon runs on **built-in defaults** — the installer
 does not create a config file. To customize, write a YAML document (every
 key is documented in [docs/CONFIG.md](docs/CONFIG.md); the conventional
 location `~/.config/goswitch/config.yaml` is the file
-`goswitchctl selfcheck` validates when it exists) and attach it to the
-service:
+`goswitchctl selfcheck` validates when it exists).
+
+The daemon **adopts the conventional location by itself**: if
+`~/.config/goswitch/config.yaml` exists, it is loaded and watched — no
+flags needed; if it does not exist, the daemon runs on defaults until the
+first menu-toggle click (**Автокоррекция** or **Звук**) creates the
+complete document there, and the daemon watches it from then on. A
+**broken file at that path refuses the start loudly** — the same strict
+decoding as an explicit `-config`, so a bad edit can never sit silently
+ignored.
+
+Attaching an explicit config stays a legal **option** — for a file
+outside the conventional location:
 
 ```sh
 systemctl --user edit goswitchd
@@ -220,9 +315,10 @@ systemctl --user edit goswitchd
 systemctl --user restart goswitchd
 ```
 
-With a config attached, valid edits apply **without a restart** (hot
-reload); an invalid edit is rejected as a whole and the daemon keeps the
-last good configuration.
+With a config in force — attached explicitly or adopted from the
+conventional path — valid edits apply **without a restart** (hot reload);
+an invalid edit is rejected as a whole and the daemon keeps the last good
+configuration.
 
 ## Performance
 

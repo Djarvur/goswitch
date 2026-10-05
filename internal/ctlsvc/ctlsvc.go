@@ -156,10 +156,13 @@ func renderStatus(st session.Status) string {
 		// The autocorrect block (plan 06-06, D-54): the state and counters
 		// as fixed tokens, then the dash-flattened abstention slugs, sorted
 		// — the skip_-token form. It sits BEFORE the config block;
-		// config_error stays the LAST token of the line.
+		// config_error stays the LAST token of the line. The sound switch
+		// (plan 07-05) rides the same block in the same state-token form —
+		// the menu composition's value and the e2e oracle's reading.
 		"autocorrect_enabled="+strconv.FormatBool(st.AutoCorrectEnabled),
 		"autocorrect_fired="+strconv.Itoa(st.AutoCorrectFired),
 		"autocorrect_abstained="+strconv.Itoa(st.AutoCorrectAbstained),
+		"sound_enabled="+strconv.FormatBool(st.SoundEnabled),
 	)
 	for _, reason := range slices.Sorted(maps.Keys(st.AutoCorrectSkipReasons)) {
 		tokens = append(tokens, "ac_skip_"+strings.ReplaceAll(reason, "-", "_")+

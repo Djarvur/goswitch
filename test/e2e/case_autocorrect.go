@@ -16,9 +16,9 @@ import (
 	"github.com/Djarvur/goswitch/internal/appid"
 )
 
-// The autocorrect live proofs (plan 06-07, criterion 5, MACR-ACL, criterion
-// 2's unknown→silence): three cases driving the 06-06 actor contour on the
-// real desktop —
+// The autocorrect live proofs (plan 06-07 criterion 5; repinned to the
+// D-53-revision blocklist semantics by plan 07-06): three cases driving the
+// actor contour on the real desktop —
 //
 //	autocorrect-fires           the word corrects WITHOUT any hotkey in the
 //	                            fixture's TEXT field (counter + readback +
@@ -29,13 +29,28 @@ import (
 //	                            proven by three independent oracles;
 //	autocorrect-terminal-silent the terminal negative rides wezterm's ABSENCE
 //	                            from the a11y bus (06-RESEARCH Q6): counters
-//	                            are the only oracle, the app gate refuses.
+//	                            are the only oracle, the fail-closed
+//	                            no-caps/role mechanisms refuse.
+//	autocorrect-blocklist-silent the OBSERVED fixture identity sits in
+//	                            apps_blocklist and the word survives
+//	                            verbatim (plan 07-06, MACR-ACL): fired=0,
+//	                            one app-blocked abstention, field verbatim.
 //
-// The white-list half of the conjunction uses the OBSERVED bridge-namespace
-// identity (the macr-per-app discipline — never guessed): a case-side
-// appid.Observer reads the identity of the fixture's fresh map-focus event
-// and that exact string becomes the config's apps entry. The GTK4 fixture
-// pins its own prgname, so the identity is deterministic
+// The 07-06 repin: identity is NO LONGER a gate (unknown passes, the
+// blocklist can only forbid what it sees), so the case-side identity
+// observation (observeFixtureApp feeding the config's white-list entry) is
+// gone from the firing and role cases — the config is the ACTIVE section
+// alone (enabled + empty apps_blocklist + thresholds, the 07-02 schema).
+// The observer-START round (acStartObserverRound) stays in every case that
+// arms the layer: the LIVE GetRole at the confirm reads the a11y
+// observer's stored (sender, path) focus pair, so the injection surface
+// must map only after the daemon's lazy observer is live (LIVE finding of
+// the first repinned fires run: without the round the role query is
+// unknown and the layer abstains — role-unknown, never fired). The
+// observation helper itself stays for the blocklist negative
+// (runAutocorrectBlocklistSilent): the observed bridge-namespace identity
+// is that case's TARGET — the exact string the config must forbid. The
+// GTK4 fixture pins its own prgname, so the identity is deterministic
 // (org.gtk.application.gs_e2e_password) and NEVER the generic python3
 // namespace. Chromium's <input type=password> was pinned LIVE (2026-10-01,
 // research A2): google-chrome 153 exposes it as AT-SPI PASSWORD_TEXT (40)
@@ -66,8 +81,8 @@ const (
 
 	// The grep-stable daemon records of the 06-06 contour: the fired INFO
 	// (slog.Info("autocorrect", "reason", "fired")), the abstention INFO
-	// ("autocorrect skipped", reason slug — role-forbidden/app-not-listed
-	// of the actor's closed slug vocabulary) and the settled correction.
+	// ("autocorrect skipped", reason slug — role-forbidden/app-blocked of
+	// the actor's closed slug vocabulary) and the settled correction.
 	acFiredMark      = `"msg":"autocorrect","reason":"fired"`
 	acAbstainFmt     = `"msg":"autocorrect skipped","reason":"%s"`
 	correctionAnyMar = `"msg":"correction"`
@@ -79,6 +94,12 @@ const (
 	// requires.
 	acReasonRoleForbidden = "role-forbidden"
 
+	// acReasonAppBlocked mirrors the actor's 07-04 abstention slug — the
+	// reason the blocklist negative's oracle requires (the D-53 revision:
+	// a blocklist match FORBIDS, and the refusal is countable from
+	// outside as ac_skip_app_blocked).
+	acReasonAppBlocked = "app-blocked"
+
 	// acFixtureTimeoutSec is the fixture's lifetime argument: long enough
 	// for the whole observation/injection round, short enough that the
 	// natural (non-killed) exit prints the FINAL:/PLAIN: oracle lines
@@ -86,12 +107,6 @@ const (
 	// past the timeout before the exit is declared lost.
 	acFixtureTimeoutSec = 25
 	acFixtureExitGrace  = 10 * time.Second
-
-	// acTerminalGuardApp is the terminal case's white-list entry: a
-	// sentinel bridge namespace nothing on the desktop can report — the
-	// layer demonstrably runs against an ACTIVE (non-empty) list while the
-	// desktop state stays out of the oracle.
-	acTerminalGuardApp = "org.gnome.GoswitchE2eAbsent"
 
 	// acTerminalSettle is the bounded wait after the terminal injection:
 	// an IM-routed key event reaches the daemon log within milliseconds
@@ -118,14 +133,15 @@ var (
 	errFixtureOracle = errors.New("password fixture stdout carries no FINAL:/PLAIN: oracle lines")
 )
 
-// autocorrectConfigTmpl is the cases' complete config document (the 03-02
-// no-overlay rule): all five sections explicit, the layer ON with the
-// observed bridge identity as the single white-list entry, the 06-05 corpus
-// thresholds and flip_after_correction pinned false — the manual-double
-// regression round of the fires case needs the mode kept at EN (a
-// post-correction flip would make the corrected word dictionary-valid in
-// the flipped mode and the manual gesture a no-op).
-const autocorrectConfigTmpl = `hotkeys:
+// autocorrectConfigDoc is the firing/role cases' complete config document
+// (the 03-02 no-overlay rule) under the 07-06 blocklist schema: all six
+// sections explicit, the layer ON with an EMPTY apps_blocklist (the active
+// state is enabled alone — unknown identities pass, nothing is forbidden),
+// the 06-05 corpus thresholds and flip_after_correction pinned false — the
+// manual-double regression round of the fires case needs the mode kept at
+// EN (a post-correction flip would make the corrected word dictionary-valid
+// in the flipped mode and the manual gesture a no-op).
+const autocorrectConfigDoc = `hotkeys:
   tap_key: shift_r
   word_layout_combo: shift+ctrl_r
 timeouts:
@@ -142,23 +158,23 @@ macr:
   alt_modifier: ""
 autocorrect:
   enabled: true
-  apps: ["%s"]
+  apps_blocklist: []
   min_word_len: 4
   trigram_margin: 2.0
   trigram_floor: 1.0
 `
 
-// startAutocorrectConfigDaemon writes the case's config document (the
-// observed identity as the white-list entry), restarts the daemon on it and
-// re-activates the engine — the -config spawn ladder of the config cases
-// (startMacrConfigDaemon form) extended with the ctl readiness mark the
-// status oracles need.
-func startAutocorrectConfigDaemon(ctx context.Context, s *stand, app string) error {
+// startAutocorrectConfigDaemon writes the case's ready-made config document
+// (plan 07-06: the CASE owns the document — the blocklist negative embeds
+// the observed identity, the firing cases the empty list), restarts the
+// daemon on it and re-activates the engine — the -config spawn ladder of
+// the config cases (startMacrConfigDaemon form) extended with the ctl
+// readiness mark the status oracles need.
+func startAutocorrectConfigDaemon(ctx context.Context, s *stand, doc string) error {
 	if err := s.activateGoswitch(ctx); err != nil {
 		return err
 	}
 	cfgPath := filepath.Join(s.tmpDir, "autocorrect.yaml")
-	doc := fmt.Sprintf(autocorrectConfigTmpl, app)
 	if err := os.WriteFile(cfgPath, []byte(doc), configFilePerm); err != nil {
 		return fmt.Errorf("autocorrect: write temp config: %w", err)
 	}
@@ -443,34 +459,36 @@ func assertFixtureExitOracles(caseName, final, plain, wantFinal, wantPlain strin
 }
 
 // runAutocorrectFires proves the automatic pipeline end to end on a live
-// desktop (criterion 5): with the layer enabled and the fixture's observed
-// identity whitelisted, injecting the wrong-layout word plus its separator
-// into the fixture's TEXT field corrects the word WITHOUT any hotkey. The
-// fired record and the D-54 counters prove the decision; the AT-SPI
-// readback and the fixture's PLAIN stdout oracle prove the delivery; the
-// manual Double Right Shift still converts the corrected word back — the
-// CORR-01 hotkey regression on the same surface.
+// desktop (criterion 5): with the layer enabled and an EMPTY blocklist
+// (07-06 repin — identity is not a gate, unknown passes), injecting the
+// wrong-layout word plus its separator into the fixture's TEXT field
+// corrects the word WITHOUT any hotkey and without any identity
+// observation (the case-side appid.Observer of the white-list era is
+// gone). The fired record and the D-54 counters prove the decision; the
+// AT-SPI readback and the fixture's PLAIN stdout oracle prove the
+// delivery; the manual Double Right Shift still converts the corrected
+// word back — the CORR-01 hotkey regression on the same surface.
 func runAutocorrectFires(ctx context.Context, s *stand) error {
 	const caseName = "autocorrect-fires"
-	app, err := observeFixtureApp(ctx, s, caseName)
-	if err != nil {
-		return err
-	}
-	if err := startAutocorrectConfigDaemon(ctx, s, app); err != nil {
+	if err := startAutocorrectConfigDaemon(ctx, s, autocorrectConfigDoc); err != nil {
 		return err
 	}
 	ctlBin, err := s.buildCtl(ctx)
 	if err != nil {
 		return err
 	}
-	// The observer-start round must precede the injection surface: the
-	// daemon's lazy observer starts at its first key event, and the fresh
-	// fixture map is the gain it learns from.
+	// The observer-start round stays (07-06 live finding): NOT an identity
+	// gate any more — the LIVE GetRole at the confirm reads the observer's
+	// stored (sender, path) focus pair, and a fixture that mapped before
+	// the daemon's lazy observer started leaves the pair empty
+	// (role-unknown abstention — the first repinned run proved it). The
+	// round starts the observer on a throwaway zenity keystroke; the fresh
+	// fixture's map-focus gain below is then what stores the pair.
 	if err := s.acStartObserverRound(ctx); err != nil {
 		return err
 	}
 	// The injection surface: a FRESH fixture instance — its map-focus gain
-	// postdates the observer start and is what feeds the daemon's cache.
+	// postdates the observer start and is what the role query addresses.
 	if err := s.startPasswordFixture(ctx); err != nil {
 		return err
 	}
@@ -526,31 +544,29 @@ func (s *stand) acManualDoubleRound(ctx context.Context, caseName string) error 
 }
 
 // runAutocorrectPasswordSilent proves the role half of the D-53
-// conjunction live (criterion 2): the same enabled layer and white-listed
-// app, the injection aimed at the fixture's GtkPasswordEntry (a Tab moves
-// the GTK focus; the fresh gain also re-points the daemon's (sender, path)
-// pair, so the live GetRole at the boundary queries the PASSWORD node).
-// Three independent proofs (T-06-07-01): the pid-keyed witness holds
-// PASSWORD_TEXT with an UNCHANGED observed char count across the
-// injection, the fixture's FINAL stdout oracle holds the injected content
-// verbatim, and the counters show fired=0 with exactly one
-// role-forbidden abstention. A missing focus/role witness is a FAIL, not
-// a skip.
+// conjunction live (criterion 2): the same enabled layer with an EMPTY
+// blocklist (07-06 repin — the role decides, never a list), the injection
+// aimed at the fixture's GtkPasswordEntry (a Tab moves the GTK focus; the
+// fresh gain re-points the observer's (sender, path) pair, so the live
+// GetRole at the boundary queries the PASSWORD node). Three independent
+// proofs (T-06-07-01): the pid-keyed witness holds PASSWORD_TEXT with an
+// UNCHANGED observed char count across the injection, the fixture's FINAL
+// stdout oracle holds the injected content verbatim, and the counters show
+// fired=0 with exactly one role-forbidden abstention. A missing focus/role
+// witness is a FAIL, not a skip.
 func runAutocorrectPasswordSilent(ctx context.Context, s *stand) error {
 	const caseName = "autocorrect-password-silent"
-	app, err := observeFixtureApp(ctx, s, caseName)
-	if err != nil {
-		return err
-	}
-	if err := startAutocorrectConfigDaemon(ctx, s, app); err != nil {
+	if err := startAutocorrectConfigDaemon(ctx, s, autocorrectConfigDoc); err != nil {
 		return err
 	}
 	ctlBin, err := s.buildCtl(ctx)
 	if err != nil {
 		return err
 	}
-	// Same observer-start discipline as the fires case: the fixture below
-	// maps only after the daemon's observer is live.
+	// Same observer-start discipline as the fires case (07-06 live
+	// finding): the live role query rides the observer's stored
+	// (sender, path) pair — the fixture below maps only after the
+	// observer is live.
 	if err := s.acStartObserverRound(ctx); err != nil {
 		return err
 	}
@@ -628,6 +644,110 @@ func (s *stand) acSilentInjectionRound(ctx context.Context, caseName string) err
 	return nil
 }
 
+// runAutocorrectBlocklistSilent proves the blocklist half of the D-53
+// revision live (plan 07-06, MACR-ACL): the fixture's OBSERVED
+// bridge-namespace identity (never guessed — the macr-per-app discipline,
+// the case-side observer of the white-list era lives exactly here) becomes
+// the config's single apps_blocklist entry, and the injected word must
+// survive VERBATIM. The daemons: a neutral spawn first (the identity must
+// be observed before it can be forbidden), then the blocklist document
+// embedding the exact observed string (the plain substring form — the
+// anchored ^…$ alternative is the document author's explicit choice, this
+// case pins the exact-string form), then the observer-start round (the
+// blocklist fold AND the identity/role source go live at the daemon's
+// first key event — the fixture below must map after that). The oracles:
+// the after-witness holds exactly the typed rune count and the readback
+// the verbatim typed content (witness forms only — the word itself is
+// never printed, D-20/D-21), the abstention record names app-blocked,
+// the counters show fired=0 with exactly one ac_skip_app_blocked, the
+// daemon log holds zero correction records, and the fixture's PLAIN
+// stdout oracle closes the case with the byte-exact field content.
+func runAutocorrectBlocklistSilent(ctx context.Context, s *stand) error {
+	const caseName = "autocorrect-blocklist-silent"
+	if err := startAutocorrectConfigDaemon(ctx, s, autocorrectConfigDoc); err != nil {
+		return err
+	}
+	app, err := observeFixtureApp(ctx, s, caseName)
+	if err != nil {
+		return err
+	}
+	blocklistDoc := strings.Replace(autocorrectConfigDoc,
+		"apps_blocklist: []", "apps_blocklist: [\""+app+"\"]", 1)
+	if err := startAutocorrectConfigDaemon(ctx, s, blocklistDoc); err != nil {
+		return err
+	}
+	ctlBin, err := s.buildCtl(ctx)
+	if err != nil {
+		return err
+	}
+	// The observer-start round: the daemon's lazy per-key-event fold starts
+	// the a11y source here — the fresh fixture's map-focus gain below is
+	// what stores the (sender, path) pair the blocklist match and the live
+	// role query both read.
+	if err := s.acStartObserverRound(ctx); err != nil {
+		return err
+	}
+	if err := s.startPasswordFixture(ctx); err != nil {
+		return err
+	}
+	defer s.reapPasswordFixture()
+	before, err := s.waitFixtureWitness(ctx, acRoleTextWitness, 0, true)
+	if err != nil {
+		return err
+	}
+	if err := s.acTypeAndWaitKeys(ctx); err != nil {
+		return err
+	}
+	if err := s.acBlocklistOracle(ctx, ctlBin, caseName, before); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// acBlocklistOracle runs the blocklist round's oracle set: the app-blocked
+// abstention record, the unchanged-content proofs (the count witness and
+// the verbatim readback — witness forms only, the word itself is never
+// printed), the silence counters, the active-layer status with exactly one
+// ac_skip_app_blocked and the fixture's PLAIN stdout oracle holding the
+// byte-exact field content.
+func (s *stand) acBlocklistOracle(ctx context.Context, ctlBin, caseName, before string) error {
+	if err := s.waitForLog(ctx, fmt.Sprintf(acAbstainFmt, acReasonAppBlocked), decisionWait); err != nil {
+		return fmt.Errorf("%s: app-blocked abstention: %w", caseName, err)
+	}
+	after, err := s.waitFixtureWitness(ctx, acRoleTextWitness, utf8.RuneCountInString(acWord), false)
+	if err != nil {
+		return fmt.Errorf("%s: typed-content witness: %w", caseName, err)
+	}
+	// The readback compares the WORD ALONE (acWordReadback) — this client's
+	// line-granularity answer drops a trailing separator, the same
+	// documented readback class that keeps the fires case's oracles
+	// word-only; the byte-exact verbatim pin rides the PLAIN stdout oracle
+	// below (== acWord, separator included) and the 7-rune count witness
+	// above rules out any extra text.
+	if err := s.waitFixtureText(ctx, acWordReadback); err != nil {
+		return fmt.Errorf("%s: verbatim readback: %w", caseName, err)
+	}
+	if err := s.assertAcSilent(caseName); err != nil {
+		return err
+	}
+	if err := ctlStatusHas(ctx, ctlBin, "autocorrect_enabled=true", "autocorrect_fired=0",
+		"ac_skip_app_blocked=1"); err != nil {
+		return fmt.Errorf("%s: %w", caseName, err)
+	}
+	final, plain, err := s.waitFixtureExit(ctx)
+	if err != nil {
+		return fmt.Errorf("%s: %w", caseName, err)
+	}
+	if err := assertFixtureExitOracles(caseName, final, plain, "", acWord); err != nil {
+		return err
+	}
+	fmt.Printf("%s: blocklist silent — witness %q→%q, field verbatim, fired=0, one app-blocked abstention\n",
+		caseName, before, after)
+
+	return nil
+}
+
 // startWezterm spawns a fresh terminal window (--always-new-process: never
 // delegate to an owner instance — the chromium-profile isolation lesson).
 // The window takes focus on map like any fresh surface and is invisible to
@@ -656,10 +776,14 @@ func (s *stand) closeWezterm() {
 }
 
 // runAutocorrectTerminalSilent proves the terminal negative (criterion 2's
-// unknown→silence) on the only oracle a terminal offers — counters
-// (06-RESEARCH Q6). CORRECTED LIVE FINDING (2026-10-02, this case's runs):
-// the first pin ("terminal typing produces ZERO engine events") held only
-// in some runs — wezterm DOES register an IBus input context when focused
+// fail-closed refusals) on the only oracle a terminal offers — counters
+// (06-RESEARCH Q6). The 07-06 repin: the config is the same ACTIVE
+// document as the firing case (enabled + empty blocklist — the sentinel
+// white-list guard is meaningless under the blocklist semantics); the
+// silence rides the untouched fail-closed mechanisms (no-caps, absent
+// role). CORRECTED LIVE FINDING (2026-10-02, this case's runs): the first
+// pin ("terminal typing produces ZERO engine events") held only in some
+// runs — wezterm DOES register an IBus input context when focused
 // (caps 0x9, no surrounding-text bit) and its typing RACES the IME arming:
 // one run delivered all 7 keystrokes + the boundary through the daemon's
 // key trace, another delivered zero records. BOTH shapes are safe by the
@@ -678,12 +802,10 @@ func (s *stand) closeWezterm() {
 //	         the closed slug vocabulary, unit-pinned in internal/session).
 //
 // The status closes the case: autocorrect_enabled=true (the negative runs
-// against an ACTIVE layer) and autocorrect_fired=0. The stale-cache shape
-// (a whitelisted app focused BEFORE the terminal) is a different scenario
-// and deliberately out of this case's scope.
+// against an ACTIVE layer) and autocorrect_fired=0.
 func runAutocorrectTerminalSilent(ctx context.Context, s *stand) error {
 	const caseName = "autocorrect-terminal-silent"
-	if err := startAutocorrectConfigDaemon(ctx, s, acTerminalGuardApp); err != nil {
+	if err := startAutocorrectConfigDaemon(ctx, s, autocorrectConfigDoc); err != nil {
 		return err
 	}
 	ctlBin, err := s.buildCtl(ctx)

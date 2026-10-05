@@ -9,6 +9,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -24,9 +25,9 @@ const (
 	maxBackspaceCap = 500
 	maxMACRApps     = 64
 
-	maxAutocorrectApps    = 64
-	minAutocorrectWordLen = 2
-	maxAutocorrectWordLen = 16
+	maxAutocorrectBlocklist = 64
+	minAutocorrectWordLen   = 2
+	maxAutocorrectWordLen   = 16
 )
 
 // The documented default values (config_schema): the tap window is
@@ -57,9 +58,11 @@ var (
 	errMACRAppsOverCeil   = errors.New("entries, at most 64 allowed")
 	errMACRAltModifierSet = errors.New("must be ctrl_l, ctrl_r or empty (empty = not introduced)")
 
-	errAutocorrectAppsOverCeil    = errors.New("entries, at most 64 allowed")
-	errAutocorrectMinWordLenRange = errors.New("must be in [2, 16]")
-	errAutocorrectThresholdRange  = errors.New("must be positive, with trigram_margin >= trigram_floor")
+	errAutocorrectBlocklistOverCeil = errors.New("entries, at most 64 allowed")
+	errAutocorrectBlocklistRegex    = errors.New("must be a valid regular expression")
+	errAutocorrectBlocklistEmpty    = errors.New("must not be empty or blank — an empty pattern matches everything")
+	errAutocorrectMinWordLenRange   = errors.New("must be in [2, 16]")
+	errAutocorrectThresholdRange    = errors.New("must be positive, with trigram_margin >= trigram_floor")
 )
 
 // altModifierCandidates is the closed set of alternative MACR modifiers
@@ -105,27 +108,72 @@ type MACR struct {
 }
 
 // Autocorrect is the automatic wrong-layout correction layer's schema
-// section (D-54, opt-in): the global switch, the per-app white list of
-// bridge-namespace names — exact string matches, order carries no
-// meaning — and the detector thresholds. The zero value is the OFF
+// section (D-54, opt-in): the global switch, the per-app blocklist of
+// regex patterns (the D-53 revision — a match FORBIDS the correction;
+// substring RE2 matching, explicit ^…$ anchoring, order carries no
+// meaning) and the detector thresholds. The zero value is the OFF
 // state: a document without the section decodes disabled, never
 // activated (default off everywhere, D-54).
 type Autocorrect struct {
 	Enabled       bool     `yaml:"enabled"`
-	Apps          []string `yaml:"apps"`
+	AppsBlocklist []string `yaml:"apps_blocklist"`
 	MinWordLen    int      `yaml:"min_word_len"`
 	TrigramMargin float64  `yaml:"trigram_margin"`
 	TrigramFloor  float64  `yaml:"trigram_floor"`
 }
 
-// Config is the whole daemon configuration: exactly the five sections
-// hotkeys / timeouts / correction / macr / autocorrect (D-31, D-54).
+// The sound-theme event names of the built-in defaults (owner decision
+// «Звуки при переключении», 2026-10-04): the flip tone and the
+// autocorrect tone both play through the desktop's sound theme — both
+// names verified present in this desktop's Yaru theme. The flip tone is
+// NOT configurable — the owner asked for the switch and the distinct
+// autocorrect event only.
+const (
+	DefaultSoundFlipEvent        = "bell"
+	DefaultSoundAutocorrectEvent = "message"
+)
+
+// Sound is the acoustic-feedback schema section (owner decision «Звуки
+// при переключении», 2026-10-04): the master switch and the distinct
+// autocorrect tone's sound-theme event name. Enabled is a POINTER on
+// purpose: Load never overlays defaults (the complete-document contract,
+// 03-02), so an absent section decodes nil — and nil must read "on" (the
+// owner's default-ON verdict), which a plain bool's zero value could not
+// express. An empty AutocorrectEvent reads as the built-in default
+// event. No validation: both keys are optional, and an event name is
+// only checkable against the runtime desktop's sound theme.
+type Sound struct {
+	Enabled          *bool  `yaml:"enabled"`
+	AutocorrectEvent string `yaml:"autocorrect_event"`
+}
+
+// EffectiveEnabled reports the section's effective switch: nil (the
+// absent key or the whole absent section) means ON — the owner's
+// default — so only an explicit enabled: false silences the sounds.
+func (s Sound) EffectiveEnabled() bool {
+	return s.Enabled == nil || *s.Enabled
+}
+
+// EffectiveAutocorrectEvent resolves the autocorrect tone's event name:
+// an empty document value reads as the built-in default event.
+func (s Sound) EffectiveAutocorrectEvent() string {
+	if s.AutocorrectEvent == "" {
+		return DefaultSoundAutocorrectEvent
+	}
+
+	return s.AutocorrectEvent
+}
+
+// Config is the whole daemon configuration: exactly the six sections
+// hotkeys / timeouts / correction / macr / autocorrect / sound
+// (D-31, D-54).
 type Config struct {
 	Hotkeys     Hotkeys     `yaml:"hotkeys"`
 	Timeouts    Timeouts    `yaml:"timeouts"`
 	Correction  Correction  `yaml:"correction"`
 	MACR        MACR        `yaml:"macr"`
 	Autocorrect Autocorrect `yaml:"autocorrect"`
+	Sound       Sound       `yaml:"sound"`
 }
 
 // Defaults returns the documented built-in defaults: the daemon runs on
@@ -134,8 +182,9 @@ type Config struct {
 // D-27's 50, the clipboard rung off (D-28), MACR off with no
 // alternative modifier (ADR-005 b.3), the post-correction script flip
 // ON (owner decision 2, 2026-09-27: the mode follows a changed
-// correction) and the autocorrect layer OFF with an empty white list —
-// the zero value is the off state (D-54 default off everywhere).
+// correction), the autocorrect layer OFF with a nil blocklist and the
+// sound section ON with the built-in autocorrect event — the zero
+// Autocorrect value is the off state (D-54 default off everywhere).
 func Defaults() Config {
 	return Config{
 		Hotkeys: Hotkeys{
@@ -163,13 +212,24 @@ func Defaults() Config {
 		// and detect.Params TOGETHER, never one side.
 		Autocorrect: Autocorrect{
 			Enabled:       false,
-			Apps:          nil,
+			AppsBlocklist: nil,
 			MinWordLen:    defaultMinWordLen,
 			TrigramMargin: defaultTrigramMargin,
 			TrigramFloor:  defaultTrigramFloor,
 		},
+		// The sounds ship ON (the owner's default-ON verdict) with the
+		// built-in autocorrect event name — an absent document section
+		// reads the same through the Effective* accessors.
+		Sound: Sound{
+			Enabled:          boolPtr(true),
+			AutocorrectEvent: DefaultSoundAutocorrectEvent,
+		},
 	}
 }
+
+// boolPtr returns a pointer to v — the Sound section's pointer-bool
+// default needs an addressable literal.
+func boolPtr(v bool) *bool { return &v }
 
 // The documented default binding names (shared with the corpus).
 const (
@@ -280,19 +340,35 @@ func (m MACR) validate() error {
 	return nil
 }
 
-// validate enforces the autocorrect grammar (D-54): the white list is
+// validate enforces the autocorrect grammar (D-54/D-53): the blocklist is
 // capped unconditionally — a giant list is a DoS vector even while the
-// layer is dormant (T-06-04-01, the maxMACRApps precedent). The threshold
-// ranges bite only on an ACTIVE section — enabled with a non-empty white
-// list, the only shape that can ever fire (T-06-04-03) — so the zero
-// value stays valid and documents without the section (or with the
-// feature switched off) decode off, never defaulted on (default off
-// everywhere, D-54). Every error names its field (D-33).
+// layer is dormant (T-06-04-01, the maxMACRApps precedent) — and every
+// pattern is compiled here, the only place a broken regex is visible
+// before runtime; an empty or blank pattern is refused before the compile
+// attempt (an empty string is a VALID RE2 that matches everything — the
+// silent "block everywhere" trap, T-07-02-03). The threshold ranges bite
+// on every ENABLED section (the ACTIVE condition, plan 07-02 Q4c): an
+// empty blocklist no longer silences the layer — it forbids nothing — so
+// enabled with zero thresholds would fire the detector degenerately and
+// is refused loudly instead; a dormant (disabled) section keeps the zero
+// value valid (default off everywhere, D-54). Every error names its field
+// and, where one exists, the element index (D-33).
 func (a Autocorrect) validate() error {
-	if len(a.Apps) > maxAutocorrectApps {
-		return fmt.Errorf("autocorrect.apps has %d %w", len(a.Apps), errAutocorrectAppsOverCeil)
+	if len(a.AppsBlocklist) > maxAutocorrectBlocklist {
+		return fmt.Errorf(
+			"autocorrect.apps_blocklist has %d %w",
+			len(a.AppsBlocklist), errAutocorrectBlocklistOverCeil,
+		)
 	}
-	if !a.Enabled || len(a.Apps) == 0 {
+	for i, pattern := range a.AppsBlocklist {
+		if strings.TrimSpace(pattern) == "" {
+			return fmt.Errorf("autocorrect.apps_blocklist[%d] %q: %w", i, pattern, errAutocorrectBlocklistEmpty)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("autocorrect.apps_blocklist[%d] = %q: %w", i, pattern, errAutocorrectBlocklistRegex)
+		}
+	}
+	if !a.Enabled {
 		return nil
 	}
 	if a.MinWordLen < minAutocorrectWordLen || a.MinWordLen > maxAutocorrectWordLen {

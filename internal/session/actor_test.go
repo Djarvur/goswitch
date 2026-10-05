@@ -4620,12 +4620,273 @@ func TestActor_SyncDriftInvokesDisplay(t *testing.T) {
 	}
 }
 
-// The autocorrect corpus of plan 06-06 (D-53/D-54): the word boundary of
-// feedKey, the cheap-gate arming and the fail-closed silence. The listed
-// app is a bridge-namespace literal distinct from the MACR corpus names.
+// The menu-sync corpus of plan 07-05: the tray-menu state seam — SwitchMode
+// (the radio pair's flip through the SAME flipTo path) and the observer
+// pushes (the mode on every flip/sync observer-last; the applied config
+// truth on every snapshot fold).
 
-// acListedApp is the autocorrect white-list entry of the corpus.
+// fakeMenuSync is the actor's MenuSync double (plan 07-05): every push
+// recorded under a mutex, with an op-log hook the order pins interleave
+// against the display's.
+type fakeMenuSync struct {
+	mu          sync.Mutex
+	modes       []string
+	ac          []bool
+	sound       []bool
+	keys        []string
+	corrections []int
+	onMode      func(symbol string)
+}
+
+// SetMode records the mode push.
+func (f *fakeMenuSync) SetMode(symbol string) {
+	f.mu.Lock()
+	f.modes = append(f.modes, symbol)
+	hook := f.onMode
+	f.mu.Unlock()
+	if hook != nil {
+		hook(symbol)
+	}
+}
+
+// SetAutocorrectEnabled records the applied autocorrect push.
+func (f *fakeMenuSync) SetAutocorrectEnabled(on bool) {
+	f.mu.Lock()
+	f.ac = append(f.ac, on)
+	f.mu.Unlock()
+}
+
+// SetSoundEnabled records the applied sound push.
+func (f *fakeMenuSync) SetSoundEnabled(on bool) {
+	f.mu.Lock()
+	f.sound = append(f.sound, on)
+	f.mu.Unlock()
+}
+
+// SetKeys records the raw key names push.
+func (f *fakeMenuSync) SetKeys(tap, combo, chord string) {
+	f.mu.Lock()
+	f.keys = append(f.keys, tap+"|"+combo+"|"+chord)
+	f.mu.Unlock()
+}
+
+// SetCorrections records the corrections-counter push (owner UAT
+// 2026-10-05: the Status info row renders the live count).
+func (f *fakeMenuSync) SetCorrections(n int) {
+	f.mu.Lock()
+	f.corrections = append(f.corrections, n)
+	f.mu.Unlock()
+}
+
+// menuModes snapshots the recorded mode pushes.
+func (f *fakeMenuSync) menuModes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.modes...)
+}
+
+// menuAC snapshots the recorded autocorrect pushes.
+func (f *fakeMenuSync) menuAC() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]bool(nil), f.ac...)
+}
+
+// menuSound snapshots the recorded sound pushes.
+func (f *fakeMenuSync) menuSound() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]bool(nil), f.sound...)
+}
+
+// menuKeys snapshots the recorded key-name pushes.
+func (f *fakeMenuSync) menuKeys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.keys...)
+}
+
+// menuCorrections snapshots the recorded corrections-counter pushes.
+func (f *fakeMenuSync) menuCorrections() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]int(nil), f.corrections...)
+}
+
+// TestActor_SwitchModeFlipsToTarget pins the radio pair's gesture (plan
+// 07-05): SwitchMode drives the SAME flipTo execution path — the target
+// mode's switch, the byte-stable mode record, one panel symbol — and the
+// same-target case lands on flipTo's no-op guard: zero extra records, zero
+// extra switch calls.
+func TestActor_SwitchModeFlipsToTarget(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	a.SwitchMode("ru")
+	a.SwitchMode("ru") // the same-target no-op
+
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("switch targets = %q, want exactly [%s] — one flip to the named target", got, engine.NameRU)
+	}
+	logged := buf.String()
+	if strings.Count(logged, `"msg":"mode","to":"ru"`) != 1 {
+		t.Errorf("mode records = %q, want exactly one to=ru (the same-target click is a no-op)", logged)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru]", got)
+	}
+}
+
+// TestActor_MenuSyncSetModeOnFlip pins the mode push of the menu seam: the
+// install receives the CURRENT mode (the SetModeDisplay mirror), every flip
+// and every sync drift pushes the new symbol observer-last — after the
+// display, exactly as ModeChanged (the D-36 order with both observers
+// appended).
+func TestActor_MenuSyncSetModeOnFlip(t *testing.T) {
+	a, _ := wiredActor()
+	var opMu sync.Mutex
+	var ops []string
+	record := func(op string) {
+		opMu.Lock()
+		ops = append(ops, op)
+		opMu.Unlock()
+	}
+	msync := &fakeMenuSync{}
+	msync.onMode = func(symbol string) { record("menu:" + symbol) }
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) { record("display:" + symbol) }
+
+	// The install self-syncs: the menu receives the CURRENT mode, exactly
+	// like the display (the SetModeDisplay mirror).
+	a.SetMenuSync(msync)
+	a.SetModeDisplay(disp)
+	if got := msync.menuModes(); !slices.Equal(got, []string{"en"}) {
+		t.Errorf("install mode pushes = %q, want exactly [en] — the current mode", got)
+	}
+
+	opMu.Lock()
+	ops = nil // the install pushes are pinned above; only the change order matters
+	opMu.Unlock()
+
+	a.ToggleMode()              // EN → RU
+	a.SyncEngine(engine.NameEN) // a drift back: RU → EN
+
+	if got := msync.menuModes(); !slices.Equal(got, []string{"en", "ru", "en"}) {
+		t.Errorf("menu mode pushes = %q, want [en ru en] — the install plus one per flip and per drift", got)
+	}
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{opDisplayRU, "menu:ru", opDisplayEN, "menu:en"}
+	if !slices.Equal(ops, want) {
+		t.Errorf("menu op order = %q, want exactly %q — the menu fires AFTER the display, observer-last", ops, want)
+	}
+}
+
+// TestActor_MenuSyncApplySnapshotPushes pins the fold push: applySnapshot
+// hands the menu the APPLIED config truth — the autocorrect switch, the
+// raw key names and the corrections counter (the Status row's live value,
+// owner UAT 2026-10-05) — once per fold, whatever the document says.
+func TestActor_MenuSyncApplySnapshotPushes(t *testing.T) {
+	a, _ := wiredActor()
+	cfg := config.Defaults()
+	cfg.Autocorrect.Enabled = true
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	msync := &fakeMenuSync{}
+	a.SetMenuSync(msync)
+
+	a.ExpiryAt(expiryAfterWindow) // one applySnapshot fold
+
+	if got := msync.menuAC(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("autocorrect pushes = %v, want exactly [true]", got)
+	}
+	if got := msync.menuKeys(); !slices.Equal(got, []string{"shift_r|shift+ctrl_r|super+space"}) {
+		t.Errorf("key pushes = %q, want the raw config names of the defaults document", got)
+	}
+	if got := msync.menuCorrections(); !slices.Equal(got, []int{0, 0}) {
+		t.Errorf("corrections pushes = %v, want the install push then the fold push, both 0", got)
+	}
+
+	// The document flips the switch off: the next fold pushes the applied
+	// false (the actor hands CONFIG truth, never a cache).
+	cfg.Autocorrect.Enabled = false
+	src.set(cfg)
+	a.ExpiryAt(expiryAfterWindow)
+	if got := msync.menuAC(); !slices.Equal(got, []bool{true, false}) {
+		t.Errorf("autocorrect pushes after the flip = %v, want exactly [true false]", got)
+	}
+}
+
+// TestActor_MenuSyncApplySnapshotPushesSound pins the sound push (plan
+// 07-05, the owner's default-ON verdict): a document WITHOUT the sound
+// section pushes true (the EffectiveEnabled reading), an explicit
+// enabled:false pushes false, and the status snapshot carries the same
+// truth for the `sound_enabled` token.
+func TestActor_MenuSyncApplySnapshotPushesSound(t *testing.T) {
+	a, _ := wiredActor()
+	cfg := config.Defaults()
+	cfg.Sound = config.Sound{} // the absent section: decodes as enabled (default ON)
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	msync := &fakeMenuSync{}
+	a.SetMenuSync(msync)
+
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := msync.menuSound(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("sound pushes = %v, want exactly [true] — the absent section reads enabled", got)
+	}
+	if st := a.StatusSnapshot(); !st.SoundEnabled {
+		t.Error("status snapshot SoundEnabled = false after the fold, want true")
+	}
+
+	off := false
+	cfg.Sound = config.Sound{Enabled: &off}
+	src.set(cfg)
+	a.ExpiryAt(expiryAfterWindow)
+	if got := msync.menuSound(); !slices.Equal(got, []bool{true, false}) {
+		t.Errorf("sound pushes after the explicit off = %v, want exactly [true false]", got)
+	}
+	if st := a.StatusSnapshot(); st.SoundEnabled {
+		t.Error("status snapshot SoundEnabled = true after the explicit off, want false")
+	}
+}
+
+// TestActor_NilMenuSyncNoOp pins the nil-seam degradation: without
+// SetMenuSync every gesture works and every push point is a no-op — zero
+// panics, zero behavior drift.
+func TestActor_NilMenuSyncNoOp(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.AttachConfig(&reloadSource{cfg: config.Defaults()})
+
+	a.ToggleMode()
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"msg":"mode","to":"ru"`) {
+		t.Errorf("the flip did not happen without a menu sync; log:\n%s", buf.String())
+	}
+}
+
+// The autocorrect corpus of plan 06-06 (blocklist re-pinned by 07-02):
+// the word boundary of feedKey, the cheap-gate arming and the fail-closed
+// silence. The fixture app is a bridge-namespace literal distinct from
+// the MACR corpus names.
+
+// acListedApp is the fixture app identity of the autocorrect corpus.
 const acListedApp = "org.gnome.gedit"
+
+// acBlockMiss is the corpus's blocklist pattern: an ANCHORED prefix that
+// never matches acListedApp — the fire paths' Options (a blocklist entry
+// that forbids nothing on this corpus).
+const acBlockMiss = `^com\.google\.Chrome`
 
 // The detector thresholds of the corpus — the config 06-04 defaults (the
 // detect.DefaultParams mirror: change the places together).
@@ -4640,15 +4901,26 @@ const (
 // timeout.
 const acPollBudget = 2 * time.Second
 
-// acOptions is the enabled autocorrect Options of the corpus.
+// acOptions is the enabled autocorrect Options of the corpus: a blocklist
+// pattern that does NOT match the fixture app, so every fire path fires.
 func acOptions() session.Options {
 	return session.Options{
 		AutoCorrectEnabled:    true,
-		AutoCorrectApps:       []string{acListedApp},
+		AutoCorrectBlocklist:  []string{acBlockMiss},
 		AutoCorrectMinWordLen: acMinWordLen,
 		AutoCorrectMargin:     acTrigramMargin,
 		AutoCorrectFloor:      acTrigramFloor,
 	}
+}
+
+// acBlockedOptions is the blocklist-match cell's configuration: the
+// pattern is a bare SUBSTRING of the fixture identity (no anchors — the
+// MatchString substring semantics pinned at the actor level).
+func acBlockedOptions() session.Options {
+	opts := acOptions()
+	opts.AutoCorrectBlocklist = []string{"gedit"}
+
+	return opts
 }
 
 // eventually polls cond until it holds or the budget lapses — the poll-
@@ -4680,7 +4952,16 @@ func spaceKey() engine.EngineEvent {
 // performs, driven asynchronously (the confirm goroutine).
 func fireAutocorrect(t *testing.T, a *session.Actor, sink *fakeSink, token, converted string) {
 	t.Helper()
-	a.UseRole(&fakeRole{role: acRoleAllowed})
+	fireAutocorrectRole(t, a, sink, token, converted, acRoleAllowed)
+}
+
+// fireAutocorrectRole is fireAutocorrect with the confirm's live role
+// verdict chosen by the caller: acRoleAllowed (61 — the ambiguous text box)
+// for the known-identity fire paths, acRoleAllowedEntry (79) where the
+// identity stays UNKNOWN (the CR-01 tightening refuses 61 without one).
+func fireAutocorrectRole(t *testing.T, a *session.Actor, sink *fakeSink, token, converted string, role uint32) {
+	t.Helper()
+	a.UseRole(&fakeRole{role: role})
 	typeWord(a, token)
 	if a.HandleKey(spaceKey()) {
 		t.Fatal("the boundary separator was consumed — the decision never changes consumption at the boundary")
@@ -4939,11 +5220,21 @@ const (
 )
 
 // acReasonFired is the fired record's reason literal (the INFO log class
-// of the fired decision); acReasonRoleForbidden is the shared matrix slug.
+// of the fired decision); acReasonRoleForbidden is the shared matrix slug;
+// acReasonAppBlocked is the 07-02 blocklist slug (pinned by the e2e oracle
+// name ac_skip_app_blocked); acReasonNoCaps and acReasonTrigramUnsure are
+// the security-cell slugs the inverted corpus reuses across tables.
 const (
 	acReasonFired         = "fired"
 	acReasonRoleForbidden = "role-forbidden"
+	acReasonAppBlocked    = "app-blocked"
+	acReasonNoCaps        = "no-caps"
+	acReasonTrigramUnsure = "trigram-unsure"
 )
+
+// acUnsureWord is the corpus's OOV token ("москва" typed in EN): a
+// both-dictionary miss the detector answers unsure with.
+const acUnsureWord = "vjcrdf"
 
 // boundaryWord types one wrong-layout token and lands its separator — the
 // raw boundary of the counter/warn corpora (no verify dance: the cells
@@ -5070,27 +5361,34 @@ func TestAutoCorrect_FiresThroughPipeline(t *testing.T) {
 	}
 }
 
-// silenceMatrixCells is the plan-06-06 silence matrix (D-53): every
-// unknown cell of the conjunction with its expected reason slug. The role
-// cells conclude on their own goroutine (async); the cheap-gate cells
+// silenceMatrixCells is the D-53 conjunction matrix (plan 06-06, inverted
+// by 07-04 per the locked 07-CONTEXT semantics): every refusal cell with
+// its expected reason slug, plus the one FIRE cell — an UNKNOWN app
+// identity is NOT a prohibition (the identity is the only conjunction
+// segment whose unknown passes; role/caps/detector stay fail-closed). The
+// role cells conclude on their own goroutine (async); the cheap-gate cells
 // abstain synchronously.
 func silenceMatrixCells() []struct {
-	name   string
-	token  string
-	caps   uint32
-	appid  func(a *session.Actor)
-	role   *fakeRole
-	reason string
-	async  bool
+	name    string
+	token   string
+	caps    uint32
+	appid   func(a *session.Actor)
+	role    *fakeRole
+	options func() session.Options
+	reason  string
+	async   bool
+	fired   bool
 } {
 	return []struct {
-		name   string
-		token  string
-		caps   uint32
-		appid  func(a *session.Actor)
-		role   *fakeRole
-		reason string
-		async  bool
+		name    string
+		token   string
+		caps    uint32
+		appid   func(a *session.Actor)
+		role    *fakeRole
+		options func() session.Options
+		reason  string
+		async   bool
+		fired   bool
 	}{
 		{
 			name: "role 40 password text is forbidden", token: wordEN,
@@ -5109,34 +5407,47 @@ func silenceMatrixCells() []struct {
 			role: &fakeRole{role: acRoleAllowed, release: make(chan struct{})}, reason: "role-timeout", async: true,
 		},
 		{
-			name: "missing identity source is unknown", token: wordEN,
+			// The 07-04 inversion (locked 07-CONTEXT): an UNKNOWN identity
+			// is NOT a prohibition — the arm gate passes the payload
+			// WITHOUT the app field, the detector runs, and with a healthy
+			// UNAMBIGUOUS role (entry 79) the word FIRES. The ambiguous 61
+			// with an unknown identity is the CR-01 refusal (its own test).
+			name: "unknown identity is not a prohibition: no source fires", token: wordEN,
 			appid: func(a *session.Actor) {
 				a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
 			},
-			reason: "app-unknown",
+			role:  &fakeRole{role: acRoleAllowedEntry},
+			fired: true,
 		},
 		{
-			name: "unlisted app is not corrected", token: wordEN,
-			appid:  func(a *session.Actor) { a.UseAppid(fakeAppid{app: macrZenityApp}) },
-			reason: "app-not-listed",
+			// The 07-02 blocklist polarity: a KNOWN identity matching a
+			// pattern forbids the correction (app-blocked) — replacing the
+			// white-list "unlisted app" cell.
+			name: "blocklist match forbids a known app", token: wordEN,
+			appid:   func(a *session.Actor) { a.UseAppid(fakeAppid{app: acListedApp}) },
+			options: acBlockedOptions,
+			reason:  acReasonAppBlocked,
 		},
-		{name: "no surrounding-text cap", token: wordEN, caps: 0, reason: "no-caps"},
-		{name: "detector unsure on a both-dictionary miss", token: "vjcrdf", reason: "trigram-unsure"},
+		{name: "no surrounding-text cap", token: wordEN, caps: 0, reason: acReasonNoCaps},
+		{name: "detector unsure on a both-dictionary miss", token: acUnsureWord, reason: acReasonTrigramUnsure},
 		{name: "short word abstains", token: "ok", reason: "abstain-short"},
 	}
 }
 
-// TestAutoCorrect_SilenceMatrix pins the fail-closed conjunction cell by
-// cell: EVERY unknown — a forbidden role (password 40, terminal 60), a
-// role error, a role deadline, a missing identity source, an unlisted
-// app, a missing capability, an unsure verdict, a short word — stays
-// silent (zero correction ops, the word stays in the field) and counts
-// exactly one abstention with its reason slug.
+// TestAutoCorrect_SilenceMatrix pins the conjunction cell by cell: every
+// SECURITY segment — a forbidden role (password 40, terminal 60), a role
+// error, a role deadline, a missing capability, an unsure verdict, a short
+// word — stays silent (zero correction ops, the word stays in the field)
+// and counts exactly one abstention with its reason slug, while the
+// identity segment's unknown FIRES for the unambiguous roles (the 07-04
+// inversion: unknown is not a prohibition — the pinned direction; the
+// ambiguous 61 + unknown cell refuses as role-ambiguous per the CR-01
+// tightening, pinned separately).
 func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 	for _, tc := range silenceMatrixCells() {
 		t.Run(tc.name, func(t *testing.T) {
 			caps := tc.caps
-			if caps == 0 && tc.reason != "no-caps" {
+			if caps == 0 && tc.reason != acReasonNoCaps {
 				caps = engine.CapSurroundingText
 			}
 			a, sink := wiredActorCaps(caps)
@@ -5145,6 +5456,124 @@ func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 			} else {
 				a.UseAppid(fakeAppid{app: acListedApp})
 			}
+			if tc.role != nil {
+				a.UseRole(tc.role)
+			}
+			if tc.options != nil {
+				a.SetOptions(tc.options())
+			} else {
+				a.SetOptions(acOptions())
+			}
+
+			boundaryWord(t, a, tc.token)
+			if tc.fired {
+				eventually(t, func() bool {
+					c := a.AutoCorrectCounters()
+
+					return c.Fired == 1 && c.Abstained == 0
+				}, "the unknown identity never fired — unknown is not a prohibition (07-CONTEXT locked)")
+				if got := a.AutoCorrectCounters(); got.Fired != 1 {
+					t.Errorf("fired = %d, want exactly 1", got.Fired)
+				}
+
+				return
+			}
+			if tc.async {
+				eventually(t, func() bool { return a.AutoCorrectCounters().Abstained >= 1 },
+					"the confirm never concluded")
+			}
+			assertSilence(t, a, sink, tc.reason)
+		})
+	}
+}
+
+// TestAutoCorrect_UnknownIdentityFires pins the 07-04 arm inversion
+// (locked 07-CONTEXT): with NO identity source at all and a healthy
+// UNAMBIGUOUS text role (entry 79), the wrong-layout word IS corrected —
+// the identity is simply omitted from the payload (no app), the detector
+// runs, and the full pipeline fires. The old D-53-unknown silence is gone:
+// an invisible app is not a forbidden app. The ambiguous role 61 cell is
+// the CR-01 exception — TestAutoConfirm_RoleTextAmbiguity pins it.
+func TestAutoCorrect_UnknownIdentityFires(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+	a.SetOptions(acOptions())
+
+	fireAutocorrectRole(t, a, sink, wordEN, wordRU, acRoleAllowedEntry)
+
+	deletes := sink.deleteCalls()
+	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
+		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the correction ran without any identity", deletes)
+	}
+	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
+		t.Fatalf("commits = %q, want [%q] — the conversion plus the tail", commits, wordRU+" ")
+	}
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Errorf("counters = %+v, want {Fired:1 Abstained:0} — the unknown identity never refused", got)
+	}
+}
+
+// TestAutoCorrect_KnownNotBlockedFires pins the positive blocklist cell
+// (07-04, the mirror of the match refusal): a KNOWN identity that matches
+// NO pattern leaves every gate green — the word fires exactly as before
+// the blocklist existed. Green-by-design continuity pin against the 07-02
+// corpus (the fire paths never depended on the list).
+func TestAutoCorrect_KnownNotBlockedFires(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acOptions())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	if got := a.AutoCorrectCounters(); got.Fired != 1 || got.Abstained != 0 {
+		t.Errorf("counters = %+v, want {Fired:1 Abstained:0} — a non-blocked app fires", got)
+	}
+	if got := len(sink.deleteCalls()); got != 1 {
+		t.Errorf("deletes = %d, want 1 — the known-not-blocked path runs the ladder", got)
+	}
+}
+
+// TestAutoCorrect_IdentityUnknownNotProhibition pins the DIRECTION of the
+// 07-04 inversion: ONLY the app-identity segment softened. With the
+// identity unknown, every other unknown of the conjunction keeps its
+// fail-closed refusal — a role error is role-unknown, a role deadline is
+// role-timeout, a missing surrounding-text capability is no-caps, an
+// unsure detector verdict is trigram-unsure. The inversion must never
+// creep into the safety segments (T-07-04-02).
+func TestAutoCorrect_IdentityUnknownNotProhibition(t *testing.T) {
+	cases := []struct {
+		name   string
+		caps   uint32
+		role   *fakeRole
+		token  string
+		reason string
+		async  bool
+	}{
+		{
+			name: "role error stays role-unknown", token: wordEN,
+			role: &fakeRole{err: errAppidBusDead}, reason: "role-unknown", async: true,
+		},
+		{
+			name: "role deadline stays role-timeout", token: wordEN,
+			role: &fakeRole{role: acRoleAllowed, release: make(chan struct{})}, reason: "role-timeout", async: true,
+		},
+		{
+			name: "missing caps stays no-caps", token: wordEN,
+			caps: 0, reason: acReasonNoCaps,
+		},
+		{
+			name: "unsure detector stays trigram-unsure", token: acUnsureWord,
+			reason: acReasonTrigramUnsure,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			caps := tc.caps
+			if caps == 0 && tc.reason != acReasonNoCaps {
+				caps = engine.CapSurroundingText
+			}
+			a, sink := wiredActorCaps(caps)
+			a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
 			if tc.role != nil {
 				a.UseRole(tc.role)
 			}
@@ -5158,19 +5587,6 @@ func TestAutoCorrect_SilenceMatrix(t *testing.T) {
 			assertSilence(t, a, sink, tc.reason)
 		})
 	}
-}
-
-// TestAutoCorrect_FailClosedNoFailOpen pins the DIRECTION inversion
-// (ADR-007): a missing identity source means TOTAL silence — the global
-// MACR degradation rung is never copied, the word survives untouched.
-func TestAutoCorrect_FailClosedNoFailOpen(t *testing.T) {
-	a, sink := wiredActor()
-	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
-	a.SetOptions(acOptions())
-
-	boundaryWord(t, a, wordEN)
-
-	assertSilence(t, a, sink, "app-unknown")
 }
 
 // TestAutoCorrect_WarnOncePerEpisode pins the warn discipline (the
@@ -5274,12 +5690,17 @@ func TestAutoCorrect_ReEntryRechecks(t *testing.T) {
 	}
 }
 
-// The review-fix corpus of 06-REVIEW (CR-01/CR-02/WR-01): the async confirm
-// must never execute against state that moved on inside the role-RTT
-// window. Every test drives the interleaving deterministically — arm the
-// payload, block the live role call on the double's release channel, mutate
-// the interleaved state, then let the confirm conclude — no sleeps: the
-// gating is the double's own channels (the awaitRoleStart precedent).
+// The review-fix corpus of 06-REVIEW (CR-01/CR-02) with the 07-04
+// confirm-gate rework on top: the async confirm must never execute against
+// state that moved on inside the role-RTT window (CR-01/CR-02), and the
+// confirm's identity check is BLOCKLIST-ONLY on the CURRENT identity
+// (owner variant 1 — the arming/confirm equality of WR-01 is deliberately
+// REMOVED: a focus move inside the window is caught by the buffer's own
+// payload-stale geometry, FocusOut hard-resets the buffer). Every test
+// drives the interleaving deterministically — arm the payload, block the
+// live role call on the double's release channel, mutate the interleaved
+// state, then let the confirm conclude — no sleeps: the gating is the
+// double's own channels (the awaitRoleStart precedent).
 
 // TestAutoConfirm_RevalidatesArmedPayload pins the CR-01 fix: a
 // token-capable keystroke inside the role-RTT window moves the buffer off
@@ -5384,28 +5805,27 @@ func TestAutoConfirm_ResetBoundaryAlwaysVerifies(t *testing.T) {
 	}
 }
 
-// TestAutoConfirm_RechecksFocusedApp pins the WR-01 fix: the D-53
-// conjunction must be evaluated for ONE object at ONE instant — the
-// white-list app identity checked at arm time is re-checked under the mutex
-// at confirm time. A focus switch inside the role-RTT window re-points the
-// live role query at a different app's object: without the re-check the
-// confirm pairs the armed app's white-list verdict with the new app's role
-// and fires. The mismatch refuses fail-closed: silence + the app-changed
-// counter, zero field edits.
-func TestAutoConfirm_RechecksFocusedApp(t *testing.T) {
+// TestAutoCorrect_ConfirmBlocklistRefuses pins the 07-04 confirm form
+// (owner variant 1, locked 07-CONTEXT): the payload was armed while the
+// identity was UNKNOWN, and by confirm time the identity has appeared AND
+// matches the blocklist. The confirm evaluates the CURRENT identity — the
+// refusal is app-blocked, the field is untouched. The removed arming/
+// confirm equality would have produced a phantom mismatch here instead
+// (the armed payload carries no app): the locked scenario "unknown at
+// arm, learned by confirm" requires its absence.
+func TestAutoCorrect_ConfirmBlocklistRefuses(t *testing.T) {
 	a, sink := wiredActor()
-	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
 	role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
 	a.UseRole(role)
-	a.SetOptions(acOptions())
+	a.SetOptions(acBlockedOptions())
 
-	boundaryWord(t, a, wordEN)
+	boundaryWord(t, a, wordEN) // armed at UNKNOWN identity — the blocklist sees nothing yet
 	awaitRoleStart(t, role)
 
-	// The focus moves to an unlisted app inside the window: the live role
-	// call now answers for the NEW object (allowed — a text field of the
-	// other app). The armed app's white-list verdict must not ride on it.
-	a.UseAppid(fakeAppid{app: macrZenityApp})
+	// The identity is learned inside the role-RTT window and MATCHES the
+	// list: the current identity is exactly what the confirm must consult.
+	a.UseAppid(fakeAppid{app: acListedApp})
 	close(role.release)
 
 	eventually(t, func() bool {
@@ -5414,9 +5834,105 @@ func TestAutoConfirm_RechecksFocusedApp(t *testing.T) {
 		return c.Abstained >= 1 || c.Fired >= 1
 	}, "the confirm never concluded")
 	if c := a.AutoCorrectCounters(); c.Fired != 0 {
-		t.Fatalf("fired = %d — the white-list verdict must be re-checked at confirm (WR-01)", c.Fired)
+		t.Fatalf("fired = %d — a blocklisted app must never fire at confirm", c.Fired)
 	}
-	assertSilence(t, a, sink, "app-changed")
+	assertSilence(t, a, sink, acReasonAppBlocked)
+}
+
+// TestAutoCorrect_ConfirmUnknownPasses pins the confirm-side mirror of the
+// arm inversion: an identity that stays UNKNOWN through the whole episode
+// never refuses the confirm on the identity alone — unknown is not a
+// prohibition on either gate (locked 07-CONTEXT). The role here is the
+// UNAMBIGUOUS entry (79): the ambiguous 61 with an unknown identity is the
+// CR-01 refusal (TestAutoConfirm_RoleTextAmbiguity). With a healthy role
+// the word fires.
+func TestAutoCorrect_ConfirmUnknownPasses(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+	role := &fakeRole{role: acRoleAllowedEntry, started: make(chan struct{}), release: make(chan struct{})}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN) // unknown at arm — the payload carries no app
+	awaitRoleStart(t, role)
+	close(role.release) // still unknown at confirm — the pass-through (role 79, unambiguous)
+
+	eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
+		"the never-known identity refused the confirm — unknown must pass")
+	if c := a.AutoCorrectCounters(); c.Abstained != 0 {
+		t.Errorf("abstained = %d, want 0 — the unknown identity never refuses", c.Abstained)
+	}
+
+	// The fired confirm launches THE pipeline: settle its pre-correction
+	// verify with the field's post-boundary state — the confirmed word
+	// runs the ladder exactly like any other fired round.
+	eventually(t, func() bool { return sink.requireCount() >= 1 },
+		"the pipeline never armed after the confirm")
+	tokenEnd := uint32(len([]rune(wordEN)) + 1)
+	a.HandleSurroundingText(wordEN+" ", tokenEnd, tokenEnd)
+
+	if got := len(sink.deleteCalls()); got != 1 {
+		t.Errorf("deletes = %d, want 1 — the confirmed word runs the ladder", got)
+	}
+}
+
+// acRoleAllowedEntry is the ENTRY role (79) of the ambiguity pair corpus:
+// an allowed role that is NOT the ambiguous one — the "unknown passes"
+// direction keeps firing on it under the CR-01 tightening.
+const acRoleAllowedEntry uint32 = 79
+
+// TestAutoConfirm_RoleTextAmbiguity pins the CR-01 tightening (07-REVIEW,
+// owner-sanctioned narrow exception to the "unknown is not a prohibition"
+// rule): role 61 is the AMBIGUOUS role — GTK3 password fields report it
+// exactly like text boxes (ADR-007's live fact) — so a confirm resolving
+// role 61 while the identity is UNKNOWN refuses fail-closed with the
+// role-ambiguous slug. A KNOWN identity keeps the locked semantics: role 61
+// fires and the blocklist decides.
+func TestAutoConfirm_RoleTextAmbiguity(t *testing.T) {
+	t.Run("unknown identity with role 61 refuses", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+		role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+		a.UseRole(role)
+		a.SetOptions(acOptions())
+
+		boundaryWord(t, a, wordEN) // armed at the UNKNOWN identity
+		awaitRoleStart(t, role)
+		close(role.release) // the live role answers 61 — the identity never became known
+
+		eventually(t, func() bool { return a.AutoCorrectCounters().Abstained >= 1 },
+			"the confirm never concluded")
+		if c := a.AutoCorrectCounters(); c.Fired != 0 {
+			t.Fatalf("fired = %d — the ambiguous role 61 with an UNKNOWN identity must refuse (CR-01)", c.Fired)
+		}
+		assertSilence(t, a, sink, "role-ambiguous")
+		logged := buf.String()
+		for _, word := range []string{wordEN, wordRU} {
+			if strings.Contains(logged, word) {
+				t.Errorf("the log leaked %q (D-20/D-21); log:\n%s", word, logged)
+			}
+		}
+	})
+
+	t.Run("known identity with role 61 fires", func(t *testing.T) {
+		a, sink := wiredActor()
+		a.UseAppid(fakeAppid{app: acListedApp})
+		role := &fakeRole{role: acRoleAllowed, started: make(chan struct{}), release: make(chan struct{})}
+		a.UseRole(role)
+		a.SetOptions(acOptions())
+
+		boundaryWord(t, a, wordEN)
+		awaitRoleStart(t, role)
+		close(role.release)
+
+		eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
+			"role 61 with a KNOWN identity refused — the blocklist decides, the ambiguity must not")
+		eventually(t, func() bool { return sink.requireCount() >= 1 },
+			"the pipeline never armed after the fired confirm")
+		tokenEnd := uint32(len([]rune(wordEN)) + 1)
+		a.HandleSurroundingText(wordEN+" ", tokenEnd, tokenEnd)
+	})
 }
 
 // TestAutoCorrect_CountersAndReasons pins the counter surface over a mixed
@@ -5443,7 +5959,7 @@ func TestAutoCorrect_CountersAndReasons(t *testing.T) {
 		"the forbidden-role boundary never counted")
 
 	counters := a.AutoCorrectCounters()
-	want := map[string]int{"abstain-short": 1, "trigram-unsure": 1, acReasonRoleForbidden: 1}
+	want := map[string]int{"abstain-short": 1, acReasonTrigramUnsure: 1, acReasonRoleForbidden: 1}
 	if counters.Fired != 1 || counters.Abstained != 3 || !maps.Equal(counters.Reasons, want) {
 		t.Errorf("counters = {Fired:%d Abstained:%d Reasons:%v}, want {Fired:1 Abstained:3 Reasons:%v}",
 			counters.Fired, counters.Abstained, counters.Reasons, want)
@@ -5461,15 +5977,16 @@ func TestAutoCorrect_CountersAndReasons(t *testing.T) {
 // live through applySnapshot, and the ctl line carries the new tokens.
 
 // acEnabledCfg is a defaults-based document with the autocorrect section
-// ACTIVE on the corpus white list. The post-correction flip is pinned OFF
-// here: the fold corpus asserts counters, not the owner's mode rule, and
-// a mid-test script flip would retarget the detector's mode side.
+// ACTIVE on a blocklist pattern that never matches the fixture app (the
+// fire paths). The post-correction flip is pinned OFF here: the fold
+// corpus asserts counters, not the owner's mode rule, and a mid-test
+// script flip would retarget the detector's mode side.
 func acEnabledCfg() config.Config {
 	cfg := config.Defaults()
 	cfg.Correction.FlipAfterCorrection = false
 	cfg.Autocorrect = config.Autocorrect{
 		Enabled:       true,
-		Apps:          []string{acListedApp},
+		AppsBlocklist: []string{acBlockMiss},
 		MinWordLen:    acMinWordLen,
 		TrigramMargin: acTrigramMargin,
 		TrigramFloor:  acTrigramFloor,
@@ -5515,11 +6032,50 @@ func TestStatus_AutocorrectFields(t *testing.T) {
 	}
 }
 
+// TestActor_AppidStartsForAutocorrect pins the 07-04 observer start
+// condition: autocorrect ENABLED starts the a11y observer even with an
+// EMPTY blocklist and no MACR list — the blocklist negatives need the
+// identity to refuse on, and the confirm's live role query needs the
+// observer as its RoleSource. With the layer off and no lists the start
+// count stays zero (the off state is byte-as-today, D-54).
+func TestActor_AppidStartsForAutocorrect(t *testing.T) {
+	t.Run("enabled autocorrect starts the observer with no lists", func(t *testing.T) {
+		a, _ := wiredActor()
+		starts := 0
+		a.UseAppidStarter(func() (session.AppidSource, error) {
+			starts++
+
+			return fakeAppid{app: acListedApp}, nil
+		})
+
+		a.SetOptions(session.Options{AutoCorrectEnabled: true})
+
+		if starts != 1 {
+			t.Fatalf("observer starts = %d, want exactly 1 — enabled autocorrect needs the identity source", starts)
+		}
+	})
+	t.Run("off with no lists never starts", func(t *testing.T) {
+		a, _ := wiredActor()
+		starts := 0
+		a.UseAppidStarter(func() (session.AppidSource, error) {
+			starts++
+
+			return fakeAppid{app: acListedApp}, nil
+		})
+
+		a.SetOptions(session.Options{})
+
+		if starts != 0 {
+			t.Fatalf("observer starts = %d, want 0 — the off state is byte-as-today (D-54)", starts)
+		}
+	})
+}
+
 // TestApplySnapshot_AutocorrectFold pins the live fold (the MACR-fold
 // precedent): the attached document's autocorrect section governs the
 // boundary gates — the feature appears and disappears LIVE on reload, the
-// folded MinWordLen gates the detector, and the white list starts the
-// identity observer.
+// folded MinWordLen gates the detector, and the blocklist starts the
+// identity observer (and recompiles its pattern cache per edit).
 func TestApplySnapshot_AutocorrectFold(t *testing.T) {
 	a, sink := wiredActor()
 	starts := 0
@@ -5534,7 +6090,7 @@ func TestApplySnapshot_AutocorrectFold(t *testing.T) {
 
 	fireAutocorrect(t, a, sink, wordEN, wordRU)
 	if starts != 1 {
-		t.Errorf("the folded white list started the observer %d times, want exactly 1", starts)
+		t.Errorf("the folded blocklist started the observer %d times, want exactly 1", starts)
 	}
 	if got := a.AutoCorrectCounters(); got.Fired != 1 {
 		t.Fatalf("counters after the enabled fold = %+v, want Fired 1", got)
@@ -5583,5 +6139,310 @@ func TestCtlStatus_EndToEnd(t *testing.T) {
 		if !strings.Contains(reply, want) {
 			t.Errorf("Status reply %q missing %q", reply, want)
 		}
+	}
+}
+
+// The sound-sink corpus of plan 07-08: the acoustic-feedback seam — ONE
+// Flip per flipTo execution path (the single flip point: the Single
+// decision, SwitchMode, settleCombo, settleCorrectionFlip all land here),
+// one AutoCorrect per fired correction, and the D-36 order pin (the tone
+// fires after the mode record's observers).
+
+// fakeSoundSink is the actor's SoundSink double (plan 07-08): both tones
+// counted under a mutex, the re-pinned autocorrect event recorded (WR-02),
+// with an optional flip hook the order pins interleave against the
+// display/menu hooks.
+type fakeSoundSink struct {
+	mu     sync.Mutex
+	flips  int
+	fires  int
+	event  string
+	onFlip func()
+}
+
+// Flip records one flip tone and plays the hook.
+func (f *fakeSoundSink) Flip() {
+	f.mu.Lock()
+	f.flips++
+	hook := f.onFlip
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+}
+
+// AutoCorrect records one autocorrect tone.
+func (f *fakeSoundSink) AutoCorrect() {
+	f.mu.Lock()
+	f.fires++
+	f.mu.Unlock()
+}
+
+// SetAutocorrectEvent records the folded event push (WR-02). The session
+// corpus pins the propagation from the daemon side (main_test's wiring
+// corpus); here the double only satisfies the interface.
+func (f *fakeSoundSink) SetAutocorrectEvent(event string) {
+	f.mu.Lock()
+	f.event = event
+	f.mu.Unlock()
+}
+
+func (f *fakeSoundSink) flipCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.flips
+}
+
+func (f *fakeSoundSink) fireCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.fires
+}
+
+// flipSoundOn returns the bare sound-on Options — the flip-tone corpus
+// configuration (autocorrect stays off; flips are what these cells drive).
+func flipSoundOn() session.Options {
+	return session.Options{SoundEnabled: true}
+}
+
+// TestActor_FlipSoundsSink pins the single flip point (plan 07-08): a
+// gesture flip (the Single decision at expiry) and a menu flip
+// (SwitchMode — the SAME flipTo path) each sound exactly one Flip; the
+// same-target click lands on flipTo's no-op guard and stays silent.
+func TestActor_FlipSoundsSink(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeSoundSink{}
+	a.SetOptions(flipSoundOn())
+	a.SetSoundSink(sink)
+
+	flipMode(a)        // the Single decision at expiry — EN → RU
+	a.SwitchMode("en") // the menu's radio pair — the same flipTo path
+	a.SwitchMode("en") // the same-target no-op — silence
+
+	if got := sink.flipCount(); got != 2 {
+		t.Errorf("flip tones after a gesture flip + a menu flip + a same-target no-op = %d, want exactly 2", got)
+	}
+}
+
+// TestActor_SameTargetFlipSilent pins the guard's silence: a flipTo to the
+// CURRENT mode is a no-op — no record, no tone (the owner's rule: a no-op
+// flip does not sound).
+func TestActor_SameTargetFlipSilent(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeSoundSink{}
+	a.SetOptions(flipSoundOn())
+	a.SetSoundSink(sink)
+
+	a.SwitchMode("en") // already EN — the same-target guard
+
+	if got := sink.flipCount(); got != 0 {
+		t.Errorf("flip tones after a same-target flip = %d, want exactly 0", got)
+	}
+}
+
+// TestActor_SoundSinkAfterModeRecord extends the D-36 order pin (plan
+// 07-08): the tone fires LAST — after the mode record's panel symbol, the
+// display and the menu observers — on the same synchronous push chain.
+func TestActor_SoundSinkAfterModeRecord(t *testing.T) {
+	a, sink := wiredActor()
+	var opMu sync.Mutex
+	var ops []string
+	record := func(op string) {
+		opMu.Lock()
+		ops = append(ops, op)
+		opMu.Unlock()
+	}
+	sink.modeHook = func(symbol string) { record("symbol:" + symbol) }
+	disp := &fakeDisplay{}
+	disp.onCall = func(symbol string) { record("display:" + symbol) }
+	msync := &fakeMenuSync{}
+	msync.onMode = func(symbol string) { record("menu:" + symbol) }
+	sound := &fakeSoundSink{}
+	sound.onFlip = func() { record("sound:flip") }
+	a.SetOptions(flipSoundOn())
+	a.SetMenuSync(msync)
+	a.SetModeDisplay(disp)
+	a.SetSoundSink(sound)
+	opMu.Lock()
+	ops = nil // the install pushes are pinned elsewhere; only the flip order matters here
+	opMu.Unlock()
+
+	flipMode(a) // EN → RU
+
+	opMu.Lock()
+	defer opMu.Unlock()
+	want := []string{opSymbolRU, "display:ru", "menu:ru", "sound:flip"}
+	if !slices.Equal(ops, want) {
+		t.Errorf("flip op order = %q, want exactly %q — the tone fires after every observer, D-36 intact", ops, want)
+	}
+}
+
+// The sound-gating corpus of plan 07-08 (task 3): the fired tone, the
+// single gate ahead of the sink, the snapshot fold and the nil-sink
+// degradation.
+
+// soundOn returns the enabled-autocorrect Options with the sound switch ON
+// — the fire-tone cells' configuration (acOptions plus the switch).
+func soundOn() session.Options {
+	opts := acOptions()
+	opts.SoundEnabled = true
+
+	return opts
+}
+
+// TestActor_AutoCorrectFireSoundsSink pins the fired tone (plan 07-08): a
+// fired correction sounds exactly one AutoCorrect from the fired point —
+// the abstentions never reach the sink.
+func TestActor_AutoCorrectFireSoundsSink(t *testing.T) {
+	a, sink := wiredActor()
+	sound := &fakeSoundSink{}
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(soundOn())
+	a.SetSoundSink(sound)
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+
+	if got := sound.fireCount(); got != 1 {
+		t.Errorf("autocorrect tones after a fired correction = %d, want exactly 1", got)
+	}
+}
+
+// TestActor_AutoCorrectAbstainSilent pins the abstention's silence (plan
+// 07-08): an app-blocked boundary refuses before the fired point — zero
+// tones, the fail-closed abstention stays the only trace.
+func TestActor_AutoCorrectAbstainSilent(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &fakeSoundSink{}
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(acBlockedOptions()) // the fixture app matches the blocklist
+	a.SetSoundSink(sound)
+
+	typeWord(a, wordEN)
+	a.HandleKey(spaceKey())
+
+	if got := sound.fireCount(); got != 0 {
+		t.Errorf("autocorrect tones after an app-blocked abstention = %d, want 0", got)
+	}
+	if got := a.AutoCorrectCounters().Reasons[acReasonAppBlocked]; got != 1 {
+		t.Errorf("app-blocked abstentions = %d, want 1 — the refusal must remain counted", got)
+	}
+}
+
+// TestActor_SoundDisabledNoSink pins the single gate (plan 07-08): with
+// Options.SoundEnabled off, NO gesture reaches the sink — the gate sits
+// ahead of the sink, so no binary lookup ever runs for a muted daemon.
+func TestActor_SoundDisabledNoSink(t *testing.T) {
+	a, sink := wiredActor()
+	sound := &fakeSoundSink{}
+	a.UseAppid(fakeAppid{app: acListedApp})
+	opts := soundOn()
+	opts.SoundEnabled = false
+	a.SetOptions(opts)
+	a.SetSoundSink(sound)
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU) // a live fire — must stay silent
+	flipMode(a)                                 // a live flip — must stay silent
+
+	if got := sound.flipCount(); got != 0 {
+		t.Errorf("flip tones with the sound off = %d, want 0", got)
+	}
+	if got := sound.fireCount(); got != 0 {
+		t.Errorf("autocorrect tones with the sound off = %d, want 0", got)
+	}
+}
+
+// TestActor_NilSoundSinkNoOp pins the nil degradation (the SetMenuSync nil
+// form): no sink installed — every flip and every fire runs byte-as-today,
+// the tones silently absent.
+func TestActor_NilSoundSinkNoOp(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.SetOptions(soundOn())
+
+	fireAutocorrect(t, a, sink, wordEN, wordRU)
+	flipMode(a)
+
+	if got := a.AutoCorrectCounters().Fired; got != 1 {
+		t.Errorf("fired corrections with no sink = %d, want 1 — the correction is unaffected", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"mode","to":"ru"`) {
+		t.Errorf("mode record missing with no sink; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_SoundFoldGatesFromSnapshot pins the fold (plan 07-08): the
+// applied document's sound switch gates the tones — default ON lands as
+// ON, an explicit enabled: false mutes the next flip WITHOUT a restart,
+// and a reload back to ON sounds again (the D-32 hot-reload contour).
+func TestActor_SoundFoldGatesFromSnapshot(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &fakeSoundSink{}
+	cfg := config.Defaults()
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetOptions(soundOn())
+	a.SetSoundSink(sound)
+
+	flipMode(a) // the defaults document reads ON — the tone fires
+	if got := sound.flipCount(); got != 1 {
+		t.Fatalf("flip tones under the default document = %d, want 1 — sound is default ON", got)
+	}
+
+	off := false
+	cfg.Sound.Enabled = &off
+	src.set(cfg)
+	flipMode(a) // the muted document — the fold gates before the sink
+	if got := sound.flipCount(); got != 1 {
+		t.Errorf("flip tones after the muted reload = %d, want still 1 — the gate folds from the snapshot", got)
+	}
+
+	on := true
+	cfg.Sound.Enabled = &on
+	src.set(cfg)
+	flipMode(a) // re-enabled — the tone returns
+	if got := sound.flipCount(); got != 2 {
+		t.Errorf("flip tones after the re-enabled reload = %d, want 2", got)
+	}
+}
+
+// TestActor_FoldAppliedConfig pins the menu toggle's synchronous-apply
+// seam (plan 07-06, the 07-05 pin live-proven by the menu-v2 case): the
+// toggle's reload re-stores the watcher snapshot, and FoldAppliedConfig
+// puts the applied values in force WITHOUT waiting for the next key event
+// — the fold is the ONE application path (the 03-04 succession), only
+// invoked eagerly. A sourceless actor folds as a quiet no-op.
+func TestActor_FoldAppliedConfig(t *testing.T) {
+	a, _ := wiredActor()
+	cfg := config.Defaults()
+	on := true
+	cfg.Autocorrect.Enabled = false
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	opts := soundOn()
+	opts.AutoCorrectEnabled = false
+	opts.SoundEnabled = false
+	a.SetOptions(opts)
+
+	cfg.Autocorrect.Enabled = true
+	cfg.Sound.Enabled = &on
+	src.set(cfg)
+	a.FoldAppliedConfig() // the toggle's reload fold — no key event in between
+
+	st := a.StatusSnapshot()
+	if !st.AutoCorrectEnabled {
+		t.Errorf("autocorrect option after the eager fold = false, want true — the apply must not wait for a key event")
+	}
+	if !st.SoundEnabled {
+		t.Errorf("sound option after the eager fold = false, want true")
+	}
+
+	bare, _ := wiredActor()
+	bare.SetOptions(opts)
+	bare.FoldAppliedConfig()
+	if st := bare.StatusSnapshot(); st.AutoCorrectEnabled {
+		t.Errorf("autocorrect option after a sourceless fold = true, want the SetOptions value false")
 	}
 }

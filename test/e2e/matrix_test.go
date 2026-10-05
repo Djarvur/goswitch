@@ -585,9 +585,10 @@ func TestMatrixCaseBaseConfig(t *testing.T) {
 
 	ac := matrixCaseBaseConfig(matrixConfigBaseAutocorrect)
 	if !strings.Contains(ac, "autocorrect:") ||
-		!strings.Contains(ac, `apps: ["org.gnome.Zenity"]`) ||
+		!strings.Contains(ac, "apps_blocklist: []") ||
+		strings.Contains(ac, `apps: ["`) ||
 		!strings.Contains(ac, "enabled: true") {
-		t.Errorf("autocorrect base document %q lacks the enabled layer or the zenity white-list entry", ac)
+		t.Errorf("autocorrect base document %q lacks the enabled layer or the empty blocklist entry", ac)
 	}
 	def := matrixCaseBaseConfig("")
 	if strings.Contains(def, "autocorrect:") {
