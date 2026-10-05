@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 8
 current_phase_name: a11y-магия приложений, документация и конфиг-skill
 status: executing
-stopped_at: Completed 08-06-PLAN.md
-last_updated: "2026-10-05T18:51:35.661Z"
+stopped_at: Completed 08-07-PLAN.md
+last_updated: "2026-10-05T19:14:14.824Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 8 execution started
-state_head: ca30cbee0c234fc9a2eb096b6f1e432ec4c0af88
+state_head: b65b62f9962e45780adb7d150532ee79f9744e92
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 59
-  completed_plans: 57
+  completed_plans: 58
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 8 (a11y-магия приложений, документация и конфиг-skill) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-10-05 — Phase 8 execution started
 
@@ -124,6 +124,7 @@ Progress: [████████░░] 75%
 | Phase 08 P04 | 17 min | 2 tasks | 4 files |
 | Phase 08 P05 | 9 min | 2 tasks | 4 files |
 | Phase 08 P06 | 18 min | 3 tasks | 2 files |
+| Phase 08 P07 | 11 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -276,6 +277,8 @@ Recent decisions affecting current work:
 - [Phase 08]: Wiring демона: reconciler a11y.New(NewExecRunner, NewDBusStatusSetter) + SetA11ySink одним блоком в OnConn рядом с SetSoundSink; применение только через существующий фолд (старт FoldAppliedConfig + self-sync, reload applySnapshot), ноль новых watcher-веток (D-32) — D-8-3 daemon-reconcile: один источник истины о применении — фолд; wiring ставится один раз
 - [Phase 08]: a11y-доки: пример-литералы плана (zcode→org.zdev.Zed) заменены регистр- и подстрок-корректными (chromium→org.chromium.Chromium) — Rule 1: пример плана противоречил чувствительности к регистру и подстрочности, пиннутым той же строкой того же плана; форма «анкерованный + голый substring» сохранена
 - [Phase 08]: SPEC-сверка 2026-10-05: единственное расхождение — install не пишет конфиг (решение 04-02 adopt+watch), исправлено ин-плейс в форме 08-01 — аудит-трейл цел; дефектов поведения не выявлено — новые todo не заводились; §4.4 вне перечня сверки, канон флипа в ADR-006
+- [Phase 08]: README русский-первый (D-8-7): README.md = русская главная v1.1.0 + a11y-раздел, README.en.md = EN-канон, README.ru.md удалён; кириллица в EN-файле — только пример коррекции и литералы русскоязычного меню демона — Дословное решение владельца D-8-7; литералы меню переводить нельзя — код рендерит их по-русски (internal/indicator/menu.go)
+- [Phase 08]: D-8-8 README-сверка: About/Статус в меню — серые информационные строки («goswitch <версия>», «EN · испр. N»), не уведомления (owner UAT 2026-10-05); uninstall упоминает a11y-откат; дефектов поведения нет — todo не заводились — internal/indicator/indicator.go:94 и menu.go:653-676: строки без колбэков, UAT-решение владельца; правка только в документах
 
 ### Pending Todos
 
@@ -308,6 +311,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T18:51:26.092Z
-Stopped at: Completed 08-06-PLAN.md
+Last session: 2026-10-05T19:13:59.070Z
+Stopped at: Completed 08-07-PLAN.md
 Resume file: None
