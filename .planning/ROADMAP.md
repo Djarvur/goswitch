@@ -305,7 +305,7 @@ Plans:
   4. Регресс фаз 5-6 зелёный: `mise run ci`, матрица v4 (строки автокоррекции перезакреплены), flip-keystroke 24/24.
   5. Релиз v1.1.0: тег → goreleaser → ассеты; README/CONFIG.md соответствуют v1.1.0.
 
-**Plans:** 8/8 planned
+**Plans:** 8/8 plans complete
 
 Plans:
 **Wave 1** *(spec-delta до кода, D-55 — блокирует все кодовые планы)*
