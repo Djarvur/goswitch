@@ -26,8 +26,8 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/activate"
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // Timing knobs: every value is a behavioral constant, named once. cmdTimeout

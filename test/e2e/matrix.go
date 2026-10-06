@@ -29,7 +29,7 @@ import (
 	"github.com/godbus/dbus/v5"
 	"gopkg.in/yaml.v3"
 
-	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // signalProbe is the POSIX liveness probe (signal 0 delivers nothing).

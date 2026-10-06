@@ -13,7 +13,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // wOK is the POSIX W_OK access mode for syscall.Access (x/sys is outside

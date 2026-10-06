@@ -10,7 +10,7 @@ import (
 
 	"github.com/Djarvur/goswitch/internal/correct"
 	"github.com/Djarvur/goswitch/internal/detect"
-	"github.com/Djarvur/goswitch/layouts"
+	"github.com/Djarvur/goswitch/internal/layouts"
 )
 
 // The test modes — the actor's mode record is a string (D-34), and Check

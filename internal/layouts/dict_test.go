@@ -6,7 +6,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/Djarvur/goswitch/layouts"
+	"github.com/Djarvur/goswitch/internal/layouts"
 )
 
 // maxTrigramsPerLang is the generator ceiling pinned here INDEPENDENTLY of

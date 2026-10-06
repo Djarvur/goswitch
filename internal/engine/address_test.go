@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // writeBusFile creates one fake IBus bus file with the given address and

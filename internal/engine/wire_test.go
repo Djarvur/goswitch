@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // assertFieldOrder fails the test unless typ's exported field sequence

@@ -3,7 +3,7 @@ package layouts_test
 import (
 	"testing"
 
-	"github.com/Djarvur/goswitch/layouts"
+	"github.com/Djarvur/goswitch/internal/layouts"
 )
 
 // translateStrict maps every rune of s through table; a rune missing from the

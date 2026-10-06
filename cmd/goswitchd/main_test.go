@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/config"
+	"github.com/Djarvur/goswitch/internal/engine"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/indicator"
 	"github.com/Djarvur/goswitch/internal/session"

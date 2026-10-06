@@ -99,7 +99,7 @@ linters:
       for-loops: true
 
   exclusions:
-    # Generated code (plan 01-02 layouts/tables.go carries a DO-NOT-EDIT marker
+    # Generated code (plan 01-02 internal/layouts/tables.go carries a DO-NOT-EDIT marker
     # as its first line before `package`) is skipped automatically — no
     # per-path exclusions for generatedata are introduced.
     generated: strict
@@ -136,12 +136,12 @@ linters:
         text: ".*(fmt\\.Println|os\\.Exit|log\\.Fatal)"
       # Reconnect-backoff jitter is timing, not a secret — math/rand/v2 is correct here
       - linters: [gosec]
-        path: "engine/conn\\.go"
+        path: "internal/engine/conn\\.go"
         text: "G404"
       # Address files are enumerated by os.ReadDir from the fixed IBus config
       # dir — not attacker-controlled user input
       - linters: [gosec]
-        path: "engine/address\\.go"
+        path: "internal/engine/address\\.go"
         text: "G703"
       # t.Setenv (address tests) and the process-global slog default
       # (logging / recover tests) forbid t.Parallel there

@@ -22,11 +22,11 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/a11y"
 	"github.com/Djarvur/goswitch/internal/activate"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
+	"github.com/Djarvur/goswitch/internal/engine"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/indicator"
 	"github.com/Djarvur/goswitch/internal/logging"

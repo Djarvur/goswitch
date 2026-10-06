@@ -3,7 +3,7 @@ package correct
 import (
 	"unicode"
 
-	"github.com/Djarvur/goswitch/layouts"
+	"github.com/Djarvur/goswitch/internal/layouts"
 )
 
 // scriptKind classifies a rune for the script scan of a correction range:
