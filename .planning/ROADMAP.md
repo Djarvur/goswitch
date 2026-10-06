@@ -333,7 +333,7 @@ Plans:
 **Goal:** Разобранный беклог (3 todo от 2026-10-05; порядок волн = порядок зависимостей). (1) **a11y-магия** — конфиг-секция приложений (имена/паттерны), которым goswitch автоматически включает accessibility-магию (gsettings toolkit-accessibility, snap-оверрайды, флаги запуска — механику исследовать при планировании; прецедент ZCode подтверждён владельцем): демон или установщик применяет её сам. (2) **Документация** — сверка README.ru/README/CONFIG.md/SPEC с фактическим поведением v1.1.0 (меню, тумблеры, звуки, blocklist, adopt+watch, «где молчит»), исправление расхождений; реструктура «русский-первый» (README.ru главная, README — перевод, синхронность поддерживается). (3) **Skill «Конфигурация goswitch» для AI** — SKILL.md (skills/): все секции config.yaml, команды goswitchctl, трей-меню, юнит — ключи/дефолты/диапазоны синхронно с CONFIG.md, процедуры (включить автокоррекцию, blocklist, хоткеи, звуки, a11y-магия), диагностика (goswitchctl status, журнал, известные ограничения); механизм синхрона с доками — генерация из CONFIG.md или lint-гейт.
 **Requirements**: backlog-derived (D-8-1..D-8-11 из 08-CONTEXT.md; phase req_ids: null)
 **Depends on:** Phase 7
-**Plans:** 10/10 plans executed (8/8 executed; 08-09 delta added 2026-10-06)
+**Plans:** 10/10 plans complete
 
 Plans:
 **Wave 1**
