@@ -6151,13 +6151,15 @@ func TestCtlStatus_EndToEnd(t *testing.T) {
 // fakeSoundSink is the actor's SoundSink double (plan 07-08): both tones
 // counted under a mutex, the re-pinned autocorrect event recorded (WR-02),
 // with an optional flip hook the order pins interleave against the
-// display/menu hooks.
+// display/menu hooks. It also carries the SoundStopper capability (the
+// 261006-squ mute lifecycle) — the stop counter is the fold pins' oracle.
 type fakeSoundSink struct {
 	mu     sync.Mutex
 	flips  int
 	fires  int
 	event  string
 	onFlip func()
+	stops  int
 }
 
 // Flip records one flip tone and plays the hook.
@@ -6187,6 +6189,15 @@ func (f *fakeSoundSink) SetAutocorrectEvent(event string) {
 	f.mu.Unlock()
 }
 
+// Stop records the mute lifecycle's close — the fold's ON→OFF transition
+// is the close trigger (requirement 3: muted means NO sound-server
+// connection).
+func (f *fakeSoundSink) Stop() {
+	f.mu.Lock()
+	f.stops++
+	f.mu.Unlock()
+}
+
 func (f *fakeSoundSink) flipCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -6199,6 +6210,13 @@ func (f *fakeSoundSink) fireCount() int {
 	defer f.mu.Unlock()
 
 	return f.fires
+}
+
+func (f *fakeSoundSink) stopCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.stops
 }
 
 // flipSoundOn returns the bare sound-on Options — the flip-tone corpus
@@ -6405,6 +6423,126 @@ func TestActor_SoundFoldGatesFromSnapshot(t *testing.T) {
 	flipMode(a) // re-enabled — the tone returns
 	if got := sound.flipCount(); got != 2 {
 		t.Errorf("flip tones after the re-enabled reload = %d, want 2", got)
+	}
+}
+
+// TestActor_SoundFoldOffStopsSink pins the mute lifecycle's close half
+// (261006-squ, requirement 3): a fold that transitions the sound switch
+// ON→OFF calls the installed sink's stop EXACTLY ONCE — muted sound means
+// NO sound-server connection, the lazy redial rides the next tone.
+func TestActor_SoundFoldOffStopsSink(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &fakeSoundSink{}
+	cfg := config.Defaults()
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetOptions(soundOn())
+	a.SetSoundSink(sound)
+
+	flipMode(a) // ON — the fold has no transition to close
+	if got := sound.stopCount(); got != 0 {
+		t.Fatalf("stops after an ON fold = %d, want 0", got)
+	}
+
+	off := false
+	cfg.Sound.Enabled = &off
+	src.set(cfg)
+	flipMode(a) // the ON→OFF transition — the close trigger
+	if got := sound.stopCount(); got != 1 {
+		t.Errorf("stops after the ON→OFF fold = %d, want exactly 1 — the connection must close", got)
+	}
+
+	flipMode(a) // still OFF — no further transition
+	if got := sound.stopCount(); got != 1 {
+		t.Errorf("stops after a second muted fold = %d, want still 1 — only the transition closes", got)
+	}
+}
+
+// TestActor_SoundFoldStaysOffStopsNothingExtra pins the OFF→OFF fold: a
+// document that arrives already muted stops nothing — the close is the
+// TRANSITION's, never the state's.
+func TestActor_SoundFoldStaysOffStopsNothingExtra(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &fakeSoundSink{}
+	cfg := config.Defaults()
+	off := false
+	cfg.Sound.Enabled = &off
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	opts := soundOn()
+	opts.SoundEnabled = false
+	a.SetOptions(opts)
+	a.SetSoundSink(sound)
+
+	flipMode(a) // OFF→OFF — nothing to close
+	if got := sound.stopCount(); got != 0 {
+		t.Errorf("stops after an OFF→OFF fold = %d, want 0", got)
+	}
+
+	on := true
+	cfg.Sound.Enabled = &on
+	src.set(cfg)
+	flipMode(a) // OFF→ON — the lazy redial rides the next tone, not a stop
+	if got := sound.stopCount(); got != 0 {
+		t.Errorf("stops after the OFF→ON fold = %d, want 0 — enable never stops", got)
+	}
+}
+
+// TestActor_SinkWithoutStopCapabilityFoldsSilently pins the optional
+// capability: a sink that only satisfies SoundSink (type-assertion miss
+// on SoundStopper) folds silently — the mute close degrades to a no-op,
+// byte-as-today for every pre-existing sink.
+type bareSoundSink struct {
+	mu    sync.Mutex
+	flips int
+}
+
+func (b *bareSoundSink) Flip() {
+	b.mu.Lock()
+	b.flips++
+	b.mu.Unlock()
+}
+
+func (*bareSoundSink) AutoCorrect() {}
+
+func (*bareSoundSink) SetAutocorrectEvent(string) {}
+
+func TestActor_SinkWithoutStopCapabilityFoldsSilently(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &bareSoundSink{}
+	cfg := config.Defaults()
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetOptions(soundOn())
+	a.SetSoundSink(sound)
+
+	off := false
+	cfg.Sound.Enabled = &off
+	src.set(cfg)
+	flipMode(a) // the ON→OFF transition against a stop-less sink — no panic, the fold proceeds
+
+	if got := sound.flips; got != 0 {
+		t.Errorf("flip tones after the muted fold = %d, want 0 — the gate held", got)
+	}
+}
+
+// TestActor_NilSinkFoldSilent pins the nil degradation through the mute
+// fold: no sink installed — the ON→OFF transition folds byte-as-today,
+// silently.
+func TestActor_NilSinkFoldSilent(t *testing.T) {
+	a, _ := wiredActor()
+	cfg := config.Defaults()
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetOptions(soundOn())
+
+	off := false
+	cfg.Sound.Enabled = &off
+	src.set(cfg)
+	flipMode(a) // the ON→OFF transition with no sink — no panic
+
+	if got := a.StatusSnapshot().SoundEnabled; got {
+		t.Errorf("sound option after the muted fold = true, want false — the fold applied")
 	}
 }
 
