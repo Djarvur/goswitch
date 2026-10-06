@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"io"
 	"math"
 	"os"
 	"strings"

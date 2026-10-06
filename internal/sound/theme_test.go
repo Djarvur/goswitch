@@ -213,7 +213,7 @@ func TestResolver_InheritsCycleTerminatesAtFallback(t *testing.T) {
 func TestResolver_EmptyDirectoriesYieldsNothing(t *testing.T) {
 	fs := fakeThemeFS{
 		rootData + "/hollow/index.theme": "[Sound Theme]\nInherits=yaru\n",
-		rootData + "/bare/index.theme":   "[Sound Theme]\nDirectories=\n",
+		rootData + "/bare/index.theme":   "[Sound Theme]\nDirectories=\nInherits=yaru\n",
 		rootData + "/yaru/index.theme":   yaruIndex,
 		rootData + "/yaru/stereo/" + fsEventBell + ".oga": "YARU",
 	}
