@@ -159,6 +159,13 @@ type Player struct {
 	// worker and the setter read).
 	currentTheme atomic.Value // string
 
+	// muted is the PD-1 effective-play gate (system event-sounds off): the
+	// watcher sets it from both read paths, the worker drops tones WITHOUT
+	// a redial while it holds; the next true clears it and the lazy redial
+	// rides the next tone. The config arm of the mute needs no flag — the
+	// actor's gate blocks those tones before they enqueue.
+	muted atomic.Bool
+
 	toneCh       chan toneRequest // buffered 1 — the drop-if-busy enqueue
 	control      chan struct{}    // buffered 1 — the mute lifecycle's stop signal
 	startOnce    sync.Once
@@ -274,8 +281,14 @@ func (p *Player) decodeThemeEvent(theme, event string) (*pcm, error) {
 }
 
 // enqueue hands one tone to the worker — drop-if-busy: a busy worker
-// drops the tone, the gesture never waits (the T-07-08-02 pin).
+// drops the tone, the gesture never waits (the T-07-08-02 pin). The PD-1
+// muted gate's early arm: a muted player does not even queue (the
+// worker's foldTone re-checks — the enqueue read is best-effort against
+// a racing unmute).
 func (p *Player) enqueue(req toneRequest) {
+	if p.muted.Load() {
+		return
+	}
 	select {
 	case p.toneCh <- req:
 	default:
@@ -328,8 +341,14 @@ func (p *Player) work() {
 
 // foldTone plays one enqueued tone: a cache hit streams the decoded theme
 // PCM at its own format, a miss synthesizes at the stream's — never a
-// wait for a decode or a settings read (requirement 2).
+// wait for a decode or a settings read (requirement 2). The PD-1 muted
+// gate answers first: a tone arriving while the system event-sounds key
+// is off drops WITHOUT a redial — muted sound holds NO sound-server
+// connection.
 func (p *Player) foldTone(pb *playback, req toneRequest) {
+	if p.muted.Load() {
+		return
+	}
 	theme, _ := p.currentTheme.Load().(string)
 	if decoded, ok := p.cache.lookup(theme, req.event); ok {
 		p.playPCM(pb, decoded)
@@ -465,15 +484,36 @@ func (p *Player) reread() {
 	if err != nil {
 		p.warn(reasonThemeUnavailable, err)
 	}
-	if !on {
-		p.Stop() // the startup state simply begins muted — no transition INFO
+	p.setEventSounds(on, false) // the startup state simply begins muted — no transition INFO
+}
+
+// setEventSounds applies the PD-1 effective-play gate from one event-
+// sounds observation: off mutes the worker's tone path (a tone arriving
+// while the config switch is still on drops WITHOUT a redial — the muted
+// state ends only when the key turns true again) and closes the live
+// connection (muted means NO sound-server connection); on clears the
+// gate — the lazy redial rides the next tone. observed marks a monitor
+// line (a user-observed transition: ONE INFO, never a state re-read).
+func (p *Player) setEventSounds(on, observed bool) {
+	if on {
+		p.muted.Store(false)
+
+		return
 	}
+	wasMuted := p.muted.Swap(true)
+	if observed && !wasMuted {
+		// PD-1: system event sounds off is the master mute's twin — an
+		// observed preference, one INFO per transition, never per re-read.
+		slog.Info(eventSoundsDisabled)
+	}
+	p.Stop()
 }
 
 // scanMonitor consumes one monitor process's lines until it exits: a
 // theme line triggers the async rebuild + atomic swap (the next tone's
-// theme moves without any synchronous wait); an event-sounds=false line
-// applies PD-1. The caller's loop restarts with the full re-read.
+// theme moves without any synchronous wait); an event-sounds line applies
+// the PD-1 gate from both arms. The caller's loop restarts with the full
+// re-read.
 func (p *Player) scanMonitor(stdout io.ReadCloser, wait func() error) {
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
@@ -483,12 +523,8 @@ func (p *Player) scanMonitor(stdout io.ReadCloser, wait func() error) {
 
 			continue
 		}
-		if on, ok := parseEventSoundsLine(line); ok && !on {
-			// PD-1: system event sounds off is the master mute's twin —
-			// an observed preference, one INFO, the connection closes,
-			// re-enable redials lazily.
-			slog.Info(eventSoundsDisabled)
-			p.Stop()
+		if on, ok := parseEventSoundsLine(line); ok {
+			p.setEventSounds(on, true)
 		}
 	}
 	_ = stdout.Close()

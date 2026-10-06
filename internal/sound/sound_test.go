@@ -732,8 +732,13 @@ func TestPlayer_EventSoundsMuteDropsTonesWithoutRedial(t *testing.T) {
 	staysFalse(t, "a played tone under the system mute", func() bool { return d.lastWriteCount() != 1 })
 
 	mon.emit("event-sounds: true") // the muted state ends
+	if !poll(func() bool { return !p.muted.Load() }) {
+		t.Fatal("the unmute line never cleared the gate — the corpus fence")
+	}
 	p.Flip()
-	if !poll(func() bool { return d.dialCount() == 2 && d.lastWriteCount() == 2 }) {
+	// The muted conn stays retired: the tone dials a FRESH connection
+	// (count 2) and is its first write.
+	if !poll(func() bool { return d.dialCount() == 2 && d.lastWriteCount() == 1 }) {
 		t.Fatal("the post-unmute tone never dialed and played — the lazy reconnect is broken")
 	}
 }
@@ -755,6 +760,9 @@ func TestPlayer_EventSoundsMutedAtStartDialsNothing(t *testing.T) {
 	staysFalse(t, "a played tone under the startup system mute", func() bool { return d.lastWriteCount() != 0 })
 
 	r.monitor().emit("event-sounds: true")
+	if !poll(func() bool { return !p.muted.Load() }) {
+		t.Fatal("the unmute line never cleared the gate — the corpus fence")
+	}
 	p.Flip()
 	if !poll(func() bool { return d.dialCount() == 1 && d.lastWriteCount() == 1 }) {
 		t.Fatal("the post-unmute tone never dialed and played")
