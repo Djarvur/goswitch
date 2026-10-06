@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 8
 current_phase_name: a11y-магия приложений, документация и конфиг-skill
 status: verifying
-stopped_at: Completed 08-08-PLAN.md
-last_updated: "2026-10-05T19:53:25.583Z"
+stopped_at: Completed 08-09-PLAN.md (owner delta revision — a11y bool default ON)
+last_updated: "2026-10-06T01:38:41.382Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 8 execution started
-state_head: b204342e6f6bc6ea0a52431c6687225c5da3f143
+state_head: 1e1cc6b9042c769260fdfd250224631d5c63fe7f
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 59
-  completed_plans: 59
+  total_plans: 60
+  completed_plans: 60
 ---
 
 # Project State
@@ -126,6 +126,7 @@ Progress: [████████░░] 75%
 | Phase 08 P06 | 18 min | 3 tasks | 2 files |
 | Phase 08 P07 | 11 min | 2 tasks | 4 files |
 | Phase 8 P08 | 16 min | 2 tasks | 5 files |
+| Phase 08 P09 | 34min | 4 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -283,6 +284,9 @@ Recent decisions affecting current work:
 - [Phase 8]: skillgen парсит таблицу docs/CONFIG.md с канон-заголовком как якорем; malformed-строка — hard error (file:line), never silent skip; строки копируются verbatim — дрейф SKILL.md от CONFIG.md невозможен по построению (D-8-10)
 - [Phase 8]: Синхрон-гейт D-8-10 живёт golden-тестом CommittedFileInSync внутри обычного mise run test (research Pattern 5a — ноль правок workflow); dev-only регенерация — mise-задача skillgen-regen; CI только сверяет golden
 - [Phase 8]: RED-фаза 08-08 — shape-стаб по прецеденту 06-04/08-02 (компиляционная ошибка была бы INVALID_RED #3770); CommittedFileInSync при отсутствии файла падает, а не скипается — скип сделал бы CI-гейт слепым к удалению SKILL.md
+- [Phase 08]: Default-ON a11y mechanism = the Sound pointer-bool precedent (Enabled *bool + EffectiveEnabled, nil = ON); no custom UnmarshalYAML, no Defaults() overlay in Load — load.go/watch.go untouched
+- [Phase 08]: Loud migration (D-33): a config carrying the removed a11y.apps key is rejected WHOLE by strict decode with the field named — pinned by a test that passes only while the field is gone (08-09)
+- [Phase 08]: T2 compile bridge: pushA11y switched to EffectiveEnabled inside the schema GREEN commit; the session corpus rewrite rides task 3 (plan-pinned structural red between T2 and T3, full ci stands at T3/T4)
 
 ### Pending Todos
 
@@ -315,6 +319,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T19:52:57.771Z
-Stopped at: Completed 08-08-PLAN.md
+Last session: 2026-10-06T01:38:41.199Z
+Stopped at: Completed 08-09-PLAN.md (owner delta revision — a11y bool default ON)
 Resume file: None

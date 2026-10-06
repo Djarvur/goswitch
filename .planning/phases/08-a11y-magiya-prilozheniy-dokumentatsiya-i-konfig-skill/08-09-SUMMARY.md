@@ -217,3 +217,9 @@ None — no external service configuration required.
 ---
 *Phase: 08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill*
 *Completed: 2026-10-06*
+
+## Self-Check: PASSED
+
+- All 9 key files verified on disk (`[ -f ]`); all 7 commits (d9c2909, d71bbf6, 48c5311, cea26b2, 87c815c, 3af05f3, 1e1cc6b) present in git log; working tree clean of tracked modifications after the SUMMARY commit
+- Commit count re-measured from the ledger: `git rev-list --count gsd-plan-head-before-08-09..HEAD` = 6 task commits + 1 SUMMARY commit
+- All task acceptance criteria re-run before each commit; final plan gates (`mise run ci`, `go run ./cmd/skillgen -check`, FINAL-REV-OK, AUDIT-TRAIL-STILL-OK) green on the committed tree
