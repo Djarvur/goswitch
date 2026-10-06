@@ -371,8 +371,8 @@ type selectionState struct {
 	anchor uint32
 }
 
-// correctionRange parameterizes the correction pipeline by its range (D-23 —
-// one pipeline, different ranges): the word path (Double) supplies the token,
+// correctionRange parameterizes the correction pipeline by its range (one
+// pipeline, different ranges): the word path (Double) supplies the token,
 // its boundary tail and ReplaceToken; the phrase path (Triple) supplies the
 // whole phrase since the last hard reset, no tail and ReplacePhrase (D-25).
 // The selection path (03-03) supplies the client-reported selection — the
@@ -2608,7 +2608,7 @@ func (a *Actor) activeSelection() (selectionSpec, []rune, bool) {
 
 // startSelectionCorrection launches the SELECTION correction (CORR-03,
 // D-30): the range is the client-reported selection, converted by the same
-// run pipeline as the word and the phrase (D-23 — ConvertRuns over the
+// run pipeline as the word and the phrase (the same ConvertRuns over the
 // range), with the same refusal vocabulary and the same two-phase
 // verification; the pre-check is range-anchored (VerifyRangeAt — the
 // selection may sit on either side of the cursor, Pitfall 6), and the
@@ -2625,9 +2625,8 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 		return
 	}
 	if !changed {
-		// D-24: every letter of the range is already in the anchor layout —
-		// a SUCCESSFUL operation without changes; nothing to replace,
-		// nothing to verify.
+		// D-24: the success-without-changes outcome — a SUCCESSFUL
+		// operation without changes; nothing to replace, nothing to verify.
 		a.countCorrectionDone()
 		slog.Info("correction", "outcome", "done")
 		a.settleCombo()
@@ -2673,9 +2672,9 @@ func (a *Actor) startPhraseCorrection() {
 }
 
 // startRangeCorrection is the ONE correction pipeline of the daemon,
-// parameterized by its range (D-23): convert the range run-wise through
-// ConvertRuns (homogeneous wholesale, mixed by the last-letter anchor —
-// D-22/D-23), choose the ladder level by the caps bit, then verify against
+// parameterized by its range: convert the range through ConvertRuns
+// (homogeneous wholesale, mixed by per-character inversion — spec-delta
+// 2026-10-06), choose the ladder level by the caps bit, then verify against
 // the freshest surrounding text (ADR-004 — the verification covers the
 // whole range, token+tail, exactly what the ladder deletes). Every refusal
 // logs its D-20 reason at INFO — without the range's contents — and touches
@@ -2708,9 +2707,9 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 		return
 	}
 	if !changed {
-		// D-24: every letter of the range is already in the anchor layout —
-		// a SUCCESSFUL operation without changes (the owner's choice over a
-		// refusal and over a WARN); nothing to replace, nothing to verify.
+		// D-24: the success-without-changes outcome — a SUCCESSFUL
+		// operation without changes (the owner's choice over a refusal and
+		// over a WARN); nothing to replace, nothing to verify.
 		a.countCorrectionDone()
 		slog.Info("correction", "outcome", "done")
 		a.settleCombo()
@@ -2932,7 +2931,7 @@ func concatRunes(head, tail []rune) []rune {
 }
 
 // refusalReason labels a ConvertRuns refusal for the D-20 skip log: a range
-// without Latin or Cyrillic letters has nothing to anchor on; anything else
+// without Latin or Cyrillic letters has nothing to convert; anything else
 // failed on a letter missing from the layout tables. A diagnostic label
 // only — the refusal decision itself belongs to correct.ConvertRuns and is
 // not duplicated here.

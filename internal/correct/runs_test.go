@@ -6,6 +6,10 @@ import (
 	"github.com/Djarvur/goswitch/internal/correct"
 )
 
+// whyNeutral names the spec-delta's neutral-rule clause for the corpus
+// cases that pin it (goconst: one literal, named like the word fixtures).
+const whyNeutral = "spec-delta 2026-10-06: the neutral rule"
+
 // The golden mixed-text corpus (spec-delta 2026-10-06; owner verdict, UAT
 // of phase 6, 2026-10-03, commit 7dd46e9): mixed text corrects by
 // PER-CHARACTER layout inversion — every Latin letter maps through ENToRU,
@@ -15,7 +19,6 @@ import (
 // below carry the preserved behavior.
 func TestConvertRuns_MixedInvertsPerChar(t *testing.T) {
 	t.Parallel()
-
 	cases := []struct {
 		name string
 		in   string
@@ -30,14 +33,9 @@ func TestConvertRuns_MixedInvertsPerChar(t *testing.T) {
 			want: wordRU + wordEN,
 			why:  "spec-delta 2026-10-06 (supersedes D-22/D-23)",
 		},
-		{
-			// The owner-verdict case: gfb→паи AND привет→ghbdtn in one
-			// pass — each letter through its own script's table.
-			name: "short latin run, both scripts invert",
-			in:   "gfb" + wordRU,
-			want: "паиghbdtn",
-			why:  "spec-delta 2026-10-06",
-		},
+		// The owner-verdict case: gfb→паи AND привет→ghbdtn in one pass —
+		// each letter through its own script's table.
+		{name: "short latin run inverts", in: "gfb" + wordRU, want: "паиghbdtn", why: "spec-delta 2026-10-06"},
 		{
 			// Mirror direction: the Cyrillic head inverts to Latin, the
 			// Latin tail to Cyrillic — no anchor on the last letter.
@@ -52,33 +50,17 @@ func TestConvertRuns_MixedInvertsPerChar(t *testing.T) {
 			name: "digits ride, letters all invert",
 			in:   wordEN + "2026" + wordRU,
 			want: wordRU + "2026" + wordEN,
-			why:  "spec-delta 2026-10-06: the neutral rule",
+			why:  whyNeutral,
 		},
-		{
-			// Owner decision 1 (260927-vu8): '[' has no per-character
-			// direction — in a MIXED range it rides as typed; only a
-			// wholesale single-script range converts it.
-			name: "allow-set bracket rides in a mixed range",
-			in:   "gfb" + wordRU + "[",
-			want: "паиghbdtn[",
-			why:  "spec-delta 2026-10-06: the neutral rule",
-		},
-		{
-			// Register is preserved per rune through the generated tables
-			// (CORR-05): G→П, f→а, b→и, and привет→ghbdtn back.
-			name: "register per rune through the inversion",
-			in:   "Gfb" + wordRU,
-			want: "Паиghbdtn",
-			why:  "CORR-05 under spec-delta 2026-10-06",
-		},
-		{
-			// Space has no key position — its inversion is itself; the
-			// letters on both sides still invert.
-			name: "space rides, letters on both sides invert",
-			in:   "gfb " + wordRU,
-			want: "паи ghbdtn",
-			why:  "spec-delta 2026-10-06: the neutral rule",
-		},
+		// Owner decision 1 (260927-vu8): '[' has no per-character direction
+		// — in a MIXED range it rides as typed; only wholesale converts it.
+		{name: "bracket rides in a mixed range", in: "gfb" + wordRU + "[", want: "паиghbdtn[", why: whyNeutral},
+		// Register is preserved per rune through the generated tables
+		// (CORR-05): G→П, f→а, b→и, and привет→ghbdtn back.
+		{name: "register per rune", in: "Gfb" + wordRU, want: "Паиghbdtn", why: "CORR-05"},
+		// Space has no key position — its inversion is itself; the letters
+		// on both sides still invert.
+		{name: "space rides, letters invert", in: "gfb " + wordRU, want: "паи ghbdtn", why: whyNeutral},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,7 +70,7 @@ func TestConvertRuns_MixedInvertsPerChar(t *testing.T) {
 				t.Fatalf("ConvertRuns(%q) ok = false, want true (%s)", tc.in, tc.why)
 			}
 			if !changed {
-				t.Fatalf("ConvertRuns(%q) changed = false, want true — a mixed range always converts (%s)", tc.in, tc.why)
+				t.Fatalf("ConvertRuns(%q) changed = false, want true — a mixed range inverts (%s)", tc.in, tc.why)
 			}
 			if got := string(out); got != tc.want {
 				t.Errorf("ConvertRuns(%q) = %q, want %q (%s)", tc.in, got, tc.want, tc.why)

@@ -1789,7 +1789,7 @@ func TestActor_SelectionMixedConverts(t *testing.T) {
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != "паиghbdtn" {
-		t.Fatalf("commits = %q, want exactly one [%s] — per-character inversion inside the selection", texts, "паиghbdtn")
+		t.Fatalf("commits = %q, want exactly one [%s] — the selection inverts per character", texts, "паиghbdtn")
 	}
 }
 
