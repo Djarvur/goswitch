@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 8
 current_phase_name: a11y-магия приложений, документация и конфиг-skill
 status: verifying
-stopped_at: Completed 08-09-PLAN.md (owner delta revision — a11y bool default ON)
-last_updated: "2026-10-06T01:38:41.382Z"
+stopped_at: Completed 08-10-PLAN.md (gap closure — README a11y sections onto bool contract)
+last_updated: "2026-10-06T05:44:29.643Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 8 execution started
-state_head: 1e1cc6b9042c769260fdfd250224631d5c63fe7f
+state_head: 917410953bbaa7bdf0ce466bfb9d058119e0c246
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 60
-  completed_plans: 60
+  total_plans: 61
+  completed_plans: 61
 ---
 
 # Project State
@@ -127,6 +127,7 @@ Progress: [████████░░] 75%
 | Phase 08 P07 | 11 min | 2 tasks | 4 files |
 | Phase 8 P08 | 16 min | 2 tasks | 5 files |
 | Phase 08 P09 | 34min | 4 tasks | 13 files |
+| Phase 08 P10 | 12 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -287,6 +288,8 @@ Recent decisions affecting current work:
 - [Phase 08]: Default-ON a11y mechanism = the Sound pointer-bool precedent (Enabled *bool + EffectiveEnabled, nil = ON); no custom UnmarshalYAML, no Defaults() overlay in Load — load.go/watch.go untouched
 - [Phase 08]: Loud migration (D-33): a config carrying the removed a11y.apps key is rejected WHOLE by strict decode with the field named — pinned by a test that passes only while the field is gone (08-09)
 - [Phase 08]: T2 compile bridge: pushA11y switched to EffectiveEnabled inside the schema GREEN commit; the session corpus rewrite rides task 3 (plan-pinned structural red between T2 and T3, full ci stands at T3/T4)
+- [Phase 08]: README a11y sections mirror docs/CONFIG.md canon fact-order; no synonym paraphrase (D-8-8) — Mirrors the canonical section wording; canonical wording is self-evidently authoritative per D-8-8 (docs discrepancies are fixed in docs)
+- [Phase 08]: Constant a11y.apps grep gate for future README edits lives in plan 08-10 gates; CI workflow extraction is out of gap-plan scope — files_modified of the gap plan exclude CI files; gates T1/T2/T3 already re-runnable from 08-VALIDATION.md
 
 ### Pending Todos
 
@@ -319,6 +322,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T01:38:41.199Z
-Stopped at: Completed 08-09-PLAN.md (owner delta revision — a11y bool default ON)
+Last session: 2026-10-06T05:43:37.608Z
+Stopped at: Completed 08-10-PLAN.md (gap closure — README a11y sections onto bool contract)
 Resume file: None
