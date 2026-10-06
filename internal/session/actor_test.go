@@ -1393,15 +1393,15 @@ func TestActor_ScriptTrueBuffer(t *testing.T) {
 	}
 }
 
-// TestActor_MixedWordConvertsForeignRuns pins the D-16→D-23 succession
-// (plan 03-01 task 2): a mixed word assembled the way the desktop produces
-// it — "gfb" typed in EN (transit), then the flip, then the rest typed in
-// RU (committed Cyrillic runes) — is no longer refused wholesale; the
-// run-wise conversion converts ONLY the foreign Latin run: the whole token
-// range is deleted (-9,9) and "паипривет" is committed, the Cyrillic run
-// re-committed unchanged. The Phase 2 refusal pin (TestActor_MixedWord-
-// Untouched, D-16) is superseded by this contract.
-func TestActor_MixedWordConvertsForeignRuns(t *testing.T) {
+// TestActor_MixedWordInvertsPerChar pins the per-character inversion of the
+// mixed word (spec-delta 2026-10-06; owner verdict, UAT of phase 6,
+// 2026-10-03, commit 7dd46e9 — supersedes the D-16→D-23 foreign-run
+// succession of plan 03-01): a mixed word assembled the way the desktop
+// produces it — "gfb" typed in EN (transit), then the flip, then the rest
+// typed in RU (committed Cyrillic runes) — inverts EVERY letter through
+// its own script's table: the whole token range is deleted (-9,9) and
+// "паиghbdtn" is committed, every letter flipped to the other layout.
+func TestActor_MixedWordInvertsPerChar(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
 
@@ -1427,7 +1427,7 @@ func TestActor_MixedWordConvertsForeignRuns(t *testing.T) {
 	}
 
 	// The verification sees the whole mixed token — exactly what the ladder
-	// deletes — and the settle commits the run-converted replacement.
+	// deletes — and the settle commits the per-character inversion.
 	field := "gfb" + wordRU
 	a.HandleSurroundingText(field, runeLen(field), runeLen(field))
 
@@ -1436,20 +1436,20 @@ func TestActor_MixedWordConvertsForeignRuns(t *testing.T) {
 		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole mixed token range", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 7 || texts[6] != "паи"+wordRU {
-		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, "паи"+wordRU)
+	if len(texts) != 7 || texts[6] != "паиghbdtn" {
+		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, "паиghbdtn")
 	}
 	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
 		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
 	}
 }
 
-// TestActor_PhraseMixedCorrects pins D-26 on the sink: a phrase with words
-// in different layouts — "ghbdtn" typed in EN, the flip, " привет"
-// committed in RU — corrects through the SAME run semantics as the mixed
-// word (anchor = last letter of the phrase, foreign runs converted, own
-// runs untouched); there is no separate phrase-level script semantics. The
-// triple tap deletes the whole phrase (-13,13) and commits "привет привет".
+// TestActor_PhraseMixedCorrects pins D-26 on the sink (under the
+// spec-delta of 2026-10-06): a phrase with words in different layouts —
+// "ghbdtn" typed in EN, the flip, " привет" committed in RU — corrects
+// through the SAME per-character inversion as the mixed word; there is no
+// separate phrase-level script semantics. The triple tap deletes the whole
+// phrase (-13,13) and commits "привет ghbdtn" — every letter flipped.
 func TestActor_PhraseMixedCorrects(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
@@ -1476,8 +1476,8 @@ func TestActor_PhraseMixedCorrects(t *testing.T) {
 		t.Fatalf("deletions = %+v, want exactly one (-13,13) — the whole mixed phrase range", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 7 || texts[6] != wordRU+" "+wordRU {
-		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, wordRU+" "+wordRU)
+	if len(texts) != 7 || texts[6] != wordRU+" "+wordEN {
+		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, wordRU+" "+wordEN)
 	}
 	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
 		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
@@ -1770,10 +1770,10 @@ func TestActor_NoSelectionStillWord(t *testing.T) {
 	}
 }
 
-// TestActor_SelectionMixedConverts pins D-23 on the selection range: the
-// selected mixed text "gfbпривет" converts by the last-letter anchor — the
-// foreign Latin run gfb→паи, the Cyrillic run recommitted unchanged —
-// through the SAME ConvertRuns the word and phrase paths use.
+// TestActor_SelectionMixedConverts pins the mixed selection under the
+// spec-delta of 2026-10-06: the selected mixed text "gfbпривет" inverts
+// per character — gfb→паи, привет→ghbdtn — through the SAME ConvertRuns
+// the word and phrase paths use.
 func TestActor_SelectionMixedConverts(t *testing.T) {
 	a, sink := wiredActor()
 
@@ -1788,8 +1788,8 @@ func TestActor_SelectionMixedConverts(t *testing.T) {
 		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 1 || texts[0] != "паи"+wordRU {
-		t.Fatalf("commits = %q, want exactly one [%s] — run conversion inside the selection", texts, "паи"+wordRU)
+	if len(texts) != 1 || texts[0] != "паиghbdtn" {
+		t.Fatalf("commits = %q, want exactly one [%s] — per-character inversion inside the selection", texts, "паиghbdtn")
 	}
 }
 
