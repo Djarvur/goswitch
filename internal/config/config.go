@@ -181,7 +181,7 @@ func (s Sound) EffectiveAutocorrectEvent() string {
 // The zero value is the OFF state: a document without the section decodes
 // disabled, never activated (default off everywhere, D-54).
 type A11y struct {
-	Enabled bool     `yaml:"enabled"`
+	Enabled *bool    `yaml:"enabled"`
 	Apps    []string `yaml:"apps"`
 }
 
@@ -191,7 +191,15 @@ type A11y struct {
 // list is a valid document but never active (nothing to apply); the zero
 // value is off.
 func (a A11y) Active() bool {
-	return a.Enabled && len(a.Apps) > 0
+	return a.Enabled != nil && *a.Enabled && len(a.Apps) > 0
+}
+
+// EffectiveEnabled reports the section's effective switch — the plan 08-09
+// RED stub: it keeps the pre-revision gating (the Active() truth) so the
+// rewritten corpus fails on the planned default-ON assertions; the GREEN
+// commit lands the real pointer-bool semantics (the Sound precedent).
+func (a A11y) EffectiveEnabled() bool {
+	return a.Active()
 }
 
 // Config is the whole daemon configuration: exactly the seven sections
@@ -259,7 +267,7 @@ func Defaults() Config {
 		// The accessibility magic ships OFF with a nil list (D-54 default
 		// off everywhere): nothing activates on its own.
 		A11y: A11y{
-			Enabled: false,
+			Enabled: boolPtr(false),
 			Apps:    nil,
 		},
 	}
