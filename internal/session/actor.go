@@ -1330,7 +1330,7 @@ func (a *Actor) applySnapshot() {
 // sink never calls the actor back, the pushMenuSync comment's form).
 // The caller holds the mutex.
 func (a *Actor) pushA11y(snap config.Config) {
-	if active := snap.A11y.Active(); active != a.a11yActive {
+	if active := snap.A11y.EffectiveEnabled(); active != a.a11yActive {
 		a.a11yActive = active
 		if a.a11ySink != nil {
 			a.a11ySink.Apply(active)

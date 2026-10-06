@@ -448,7 +448,8 @@ func TestWatch_A11yUnknownKeyKeepsLastGood(t *testing.T) {
 	}
 	fx.send(path, fsnotify.Write)
 	if !waitUntil(func() bool { return !w.Snapshot().A11y.EffectiveEnabled() }) {
-		t.Fatalf("snapshot a11y effective switch = %v after the repair, want false", w.Snapshot().A11y.EffectiveEnabled())
+		t.Fatalf("snapshot a11y effective switch = %v after the repair, want false",
+			w.Snapshot().A11y.EffectiveEnabled())
 	}
 	if err := w.LastError(); err != nil {
 		t.Errorf("LastError = %v after the repaired reload, want nil", err)

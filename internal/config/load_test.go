@@ -433,7 +433,7 @@ func TestLoad_A11yAbsentSectionMeansDefaultOn(t *testing.T) {
 		t.Errorf("a11y.Enabled = %v for an absent section, want nil — Load never overlays defaults", cfg.A11y.Enabled)
 	}
 	if !cfg.A11y.EffectiveEnabled() {
-		t.Error("a11y.EffectiveEnabled() = false for an absent section, want true (default ON — owner decision 2026-10-06)")
+		t.Error("a11y.EffectiveEnabled() = false for an absent section, want true (default ON, 2026-10-06)")
 	}
 }
 
@@ -515,8 +515,8 @@ func TestLoad_A11yRemovedListKeyRejectedWhole(t *testing.T) {
 	if err == nil {
 		t.Fatal("removed a11y app-list key accepted, want a whole-document rejection (D-33 loud migration)")
 	}
-	if !strings.Contains(err.Error(), "a11y.apps") {
-		t.Errorf("error %q does not name the removed field a11y.apps", err)
+	if !strings.Contains(err.Error(), "apps") || !strings.Contains(err.Error(), "config.A11y") {
+		t.Errorf("error %q does not name the removed field apps of the a11y section", err)
 	}
 }
 

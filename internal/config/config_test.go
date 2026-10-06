@@ -709,7 +709,7 @@ func TestDefaults_A11yDefaultOn(t *testing.T) {
 
 	got := config.Defaults().A11y
 	if got.Enabled == nil || !*got.Enabled {
-		t.Errorf("Defaults().A11y.Enabled = %v, want a pointer to true (default ON — owner decision 2026-10-06)", got.Enabled)
+		t.Errorf("Defaults().A11y.Enabled = %v, want a pointer to true (default ON, 2026-10-06)", got.Enabled)
 	}
 	if !got.EffectiveEnabled() {
 		t.Error("Defaults().A11y.EffectiveEnabled() = false, want true (default ON)")
