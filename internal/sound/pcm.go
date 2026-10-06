@@ -29,6 +29,10 @@ var errSynthFormat = errors.New("synthesized tone needs a concrete stream format
 // positive rate and channel count cannot follow the PCM rule.
 var errDecodeFormat = errors.New("decoded theme stream carries no usable format")
 
+// pcmBytesPerSample is the wire width of one 16-bit sample — the byte
+// stride of every int16-LE conversion below.
+const pcmBytesPerSample = 2
+
 // putInt16LE writes one int16 sample's little-endian wire form — the
 // shared conversion of the decoder and the synth.
 func putInt16LE(dst []byte, v int16) {

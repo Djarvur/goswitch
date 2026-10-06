@@ -206,6 +206,14 @@ func (s *fakeStream) writeCount() int {
 	return len(s.writes)
 }
 
+// allWrites snapshots every recorded write in order.
+func (s *fakeStream) allWrites() [][]byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return append([][]byte(nil), s.writes...)
+}
+
 func (s *fakeStream) closeCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -236,8 +244,11 @@ func (d *fakeDialer) dial() (audioConn, error) {
 	if len(d.errs) > 0 {
 		err := d.errs[0]
 		d.errs = d.errs[1:]
-
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+		// A nil entry programs a SUCCESSFUL dial — fall through to the
+		// fresh connection.
 	}
 	c := &fakeConn{streamErr: d.streamErr}
 	d.conns = append(d.conns, c)
@@ -260,6 +271,21 @@ func (d *fakeDialer) lastConn() *fakeConn {
 	}
 
 	return d.conns[len(d.conns)-1]
+}
+
+// lastWriteCount is the last conn's last stream's write count (0 before
+// anything dialed) — the poll closures read it without nil chains.
+func (d *fakeDialer) lastWriteCount() int {
+	c := d.lastConn()
+	if c == nil {
+		return 0
+	}
+	s := c.lastStream()
+	if s == nil {
+		return 0
+	}
+
+	return s.writeCount()
 }
 
 // fakeMonitor is one supervised monitor process: the watcher reads its
@@ -294,8 +320,6 @@ func (m *fakeMonitor) exit() {
 
 // reader is the monitor's stdout — lines drained through a pipe-shaped
 // reader, EOF at exit.
-//
-//nolint:ireturn // the fake hands a stdout pipe back (the runner seam's shape)
 func (m *fakeMonitor) reader() io.ReadCloser {
 	return &chanReader{lines: m.lines}
 }
@@ -331,7 +355,8 @@ func (r *chanReader) Read(p []byte) (int, error) {
 func (r *chanReader) Close() error { return nil }
 
 // fakeRunner is the gsettings seam: a programmed get answer per key, a
-// queue of monitor processes per stream call.
+// queue of monitor processes per stream call (idle monitors beyond the
+// queue — every cell that never touches the monitor still supervises one).
 type fakeRunner struct {
 	mu        sync.Mutex
 	gets      [][]string
@@ -340,6 +365,7 @@ type fakeRunner struct {
 	sounds    string
 	monitors  []*fakeMonitor
 	streamErr error
+	active    *fakeMonitor // the monitor the watcher is currently consuming
 }
 
 func (r *fakeRunner) output(argv []string) (string, error) {
@@ -360,8 +386,6 @@ func (r *fakeRunner) output(argv []string) (string, error) {
 	return "", errSimulatedGet
 }
 
-//
-//nolint:ireturn // the fake hands a stdout pipe back (the runner seam's shape)
 func (r *fakeRunner) stream(argv []string) (io.ReadCloser, func() error, error) {
 	r.mu.Lock()
 	r.gets = append(r.gets, argv)
@@ -371,20 +395,28 @@ func (r *fakeRunner) stream(argv []string) (io.ReadCloser, func() error, error) 
 
 		return nil, nil, err
 	}
-	if len(r.monitors) == 0 {
-		r.mu.Unlock()
+	var m *fakeMonitor
+	if len(r.monitors) > 0 {
+		m = r.monitors[0]
+		r.monitors = r.monitors[1:]
+	} else {
 		// No programmed monitor left: run forever silent — the idle
 		// supervision of every cell that never touches the monitor.
-		m := newFakeMonitor()
-		r.monitors = append(r.monitors, m)
-
-		return m.reader(), m.wait, nil
+		m = newFakeMonitor()
 	}
-	m := r.monitors[0]
-	r.monitors = r.monitors[1:]
+	r.active = m
 	r.mu.Unlock()
 
 	return m.reader(), m.wait, nil
+}
+
+// monitor hands the watcher's active monitor to the corpus — the emit/
+// exit handle of whichever process stream() started last.
+func (r *fakeRunner) monitor() *fakeMonitor {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.active
 }
 
 func (r *fakeRunner) getCount() int {
@@ -392,6 +424,15 @@ func (r *fakeRunner) getCount() int {
 	defer r.mu.Unlock()
 
 	return len(r.gets)
+}
+
+// awaitMonitor waits until the watcher's supervision reached the given
+// monitor process — every emit/exit assertion must hold this fence.
+func awaitMonitor(t *testing.T, r *fakeRunner, m *fakeMonitor) {
+	t.Helper()
+	if !poll(func() bool { return r.monitor() == m }) {
+		t.Fatal("the watcher never reached the programmed monitor")
+	}
 }
 
 // newSoundTestPlayer builds one player over the corpus seams: a failing
@@ -431,13 +472,12 @@ func TestPlayer_LazyConnectDialsOncePerConnectedPeriod(t *testing.T) {
 	}
 
 	p.AutoCorrect()
+	if !poll(func() bool { return d.lastWriteCount() == 2 }) {
+		t.Fatal("the second tone never played")
+	}
 	p.Flip()
-	if !poll(func() bool {
-		c := d.lastConn()
-
-		return c != nil && c.lastStream().writeCount() == 3
-	}) {
-		t.Fatal("the burst's tones never played")
+	if !poll(func() bool { return d.lastWriteCount() == 3 }) {
+		t.Fatal("the third tone never played")
 	}
 	if got := d.dialCount(); got != 1 {
 		t.Errorf("dials after a three-tone burst = %d, want exactly 1 — the client is reused", got)
@@ -508,16 +548,17 @@ func TestPlayer_StopMuteLifecycle(t *testing.T) {
 // surfaces an error to the caller.
 func TestPlayer_ConnectFailedWarnOnceThenReopen(t *testing.T) {
 	buf := captureSoundLogs(t)
-	p, d, _ := newSoundTestPlayer()
-	p.dial = (&fakeDialer{errs: []error{errSimulatedDial, errSimulatedDial, nil, errSimulatedDial}}).dial
+	p, _, _ := newSoundTestPlayer()
+	fd := &fakeDialer{errs: []error{errSimulatedDial, errSimulatedDial, nil, errSimulatedDial}}
+	p.dial = fd.dial
 	p.Start()
 
 	p.Flip()
-	if !poll(func() bool { return d.dialCount() == 1 }) {
+	if !poll(func() bool { return fd.dialCount() == 1 }) {
 		t.Fatal("the first failed dial never happened")
 	}
 	p.Flip()
-	if !poll(func() bool { return d.dialCount() == 2 }) {
+	if !poll(func() bool { return fd.dialCount() == 2 }) {
 		t.Fatal("the second tone never attempted its dial — a failed episode degrades, never disables")
 	}
 	if got := strings.Count(buf.String(), "sound unavailable"); got != 1 {
@@ -525,16 +566,20 @@ func TestPlayer_ConnectFailedWarnOnceThenReopen(t *testing.T) {
 	}
 
 	p.Flip() // the successful tone closes the episode
-	if !poll(func() bool {
-		c := d.lastConn()
-
-		return d.dialCount() == 3 && c != nil && c.lastStream().writeCount() == 1
-	}) {
+	if !poll(func() bool { return fd.dialCount() == 3 && fd.lastWriteCount() == 1 }) {
 		t.Fatal("the successful tone never played")
 	}
 
-	p.Flip() // a later failure warns again
-	if !poll(func() bool { return d.dialCount() == 4 }) {
+	// A later failure warns AGAIN — the episode reopened. The healthy
+	// connection first goes away the way it does in production (the mute
+	// close), so the next tone is a fresh dial into the programmed
+	// failure.
+	p.Stop()
+	if !poll(func() bool { return fd.lastConn().closeCount() == 1 }) {
+		t.Fatal("the mute close never retired the healthy connection")
+	}
+	p.Flip()
+	if !poll(func() bool { return fd.dialCount() == 4 }) {
 		t.Fatal("the post-episode failure never attempted its dial")
 	}
 	if got := strings.Count(buf.String(), "sound unavailable"); got != 2 {
@@ -601,6 +646,7 @@ func TestPlayer_WatcherThemeCatchUp(t *testing.T) {
 	}) {
 		t.Fatal("Start never loaded the watched theme — the initial get is missing")
 	}
+	awaitMonitor(t, r, first)
 
 	first.emit("theme-name: '" + changedTheme + "'")
 	if !poll(func() bool {
@@ -617,6 +663,7 @@ func TestPlayer_WatcherThemeCatchUp(t *testing.T) {
 	if !poll(func() bool { return r.getCount() >= gets+2 }) {
 		t.Fatal("the monitor restart never performed the full two-key re-read (PD-2 catch-up)")
 	}
+	awaitMonitor(t, r, idle) // the restart supervises the next process
 }
 
 // TestPlayer_WatcherEventSoundsMute pins PD-1: an event-sounds=false
@@ -635,8 +682,12 @@ func TestPlayer_WatcherEventSoundsMute(t *testing.T) {
 		t.Fatal("the pre-mute tone never played")
 	}
 	c := d.lastConn()
+	if !poll(func() bool { return r.monitor() != nil }) {
+		t.Fatal("the watcher never started the monitor")
+	}
+	mon := r.monitor()
 
-	r.monitors[0].emit("event-sounds: false")
+	mon.emit("event-sounds: false")
 	if !poll(func() bool { return c.closeCount() == 1 }) {
 		t.Fatal("the event-sounds=false transition never closed the connection (PD-1)")
 	}
@@ -644,7 +695,7 @@ func TestPlayer_WatcherEventSoundsMute(t *testing.T) {
 		t.Errorf("event-sounds INFO lines = %d, want exactly 1", got)
 	}
 
-	r.monitors[0].emit("event-sounds: true")
+	mon.emit("event-sounds: true")
 	staysFalse(t, "an eager redial on re-enable", func() bool { return d.dialCount() != 1 })
 
 	p.Flip()
@@ -729,33 +780,37 @@ func TestPlayer_SetAutocorrectEventPrefetch(t *testing.T) {
 	}
 }
 
-// TestPlayer_FlipSeamKeepsSchemaConstant pins the seam's event routing
-// after the rewrite: the flip tone rides the schema constant, the
-// autocorrect tone the document's effective event — the event re-pin
-// test carried over to the cache-lookup shape (the pair the worker asks
-// the cache for).
-func TestPlayer_FlipSeamKeepsSchemaConstant(t *testing.T) {
-	var mu sync.Mutex
-	lookups := make(map[string]int)
-	decode := func(theme, event string) (*pcm, error) {
-		mu.Lock()
-		lookups[theme+"/"+event]++
-		mu.Unlock()
-
-		return nil, errDecodeRefused
-	}
-	p, _, _ := newSoundTestPlayer()
-	p.cache = newPCMCache(decode)
+// TestPlayer_EventRePinReroutesTheTone pins the seam's event routing
+// after the rewrite (the old SetAutocorrectEvent argv pin carried over):
+// the flip tone rides the schema constant's pitch, and a re-pinned
+// autocorrect event changes the NEXT tone — the cache misses on the new
+// event, so the synthesized fallback's audibly distinct pitch carries it.
+func TestPlayer_EventRePinReroutesTheTone(t *testing.T) {
+	p, d, _ := newSoundTestPlayer()
 	p.Start()
 
-	p.AutoCorrect()
 	p.Flip()
-	if !poll(func() bool {
-		mu.Lock()
-		defer mu.Unlock()
+	if !poll(func() bool { return d.lastWriteCount() == 1 }) {
+		t.Fatal("the flip tone never played")
+	}
+	wantFlip, err := synthTone(freqFlip, streamFormat{Rate: int(toneRate), Channels: synthChannels})
+	if err != nil {
+		t.Fatalf("synth reference tone: %v", err)
+	}
+	if got := d.lastConn().lastStream().allWrites()[0]; !bytes.Equal(got, wantFlip) {
+		t.Error("the flip tone is not the flip pitch — the seam routing broke")
+	}
 
-		return lookups[watchedTheme+"/"+fsEventBell] > 0 && lookups[watchedTheme+"/"+fsEventMessage] > 0
-	}) {
-		t.Fatal("the tones never asked the cache for their events — the seam routing broke")
+	p.SetAutocorrectEvent(rePinnedEvent)
+	p.AutoCorrect()
+	if !poll(func() bool { return d.lastWriteCount() == 2 }) {
+		t.Fatal("the re-pinned autocorrect tone never played")
+	}
+	wantAC, err := synthTone(freqAutoCorrect, streamFormat{Rate: int(toneRate), Channels: synthChannels})
+	if err != nil {
+		t.Fatalf("synth reference tone: %v", err)
+	}
+	if got := d.lastConn().lastStream().allWrites()[1]; !bytes.Equal(got, wantAC) {
+		t.Error("the autocorrect tone is not the autocorrect pitch — the re-pin never rerouted")
 	}
 }

@@ -57,8 +57,9 @@ func TestToneReader_SilenceWithoutPending(t *testing.T) {
 }
 
 // TestToneReader_ServesPendingTone pins the tone path: a fed tone's bytes
-// come out whole and in order, then the reader falls back to silence —
-// no truncation, no duplication.
+// come out whole and in order (a short read at the tone's end is legal
+// io.Reader form), then the reader falls back to silence — no truncation,
+// no duplication.
 func TestToneReader_ServesPendingTone(t *testing.T) {
 	r := newToneReader()
 	tone := toneOf(100, -200, 300, -400, 500, -600)
@@ -76,9 +77,16 @@ func TestToneReader_ServesPendingTone(t *testing.T) {
 	if !ok {
 		t.Fatal("the reader never served the tone's remainder")
 	}
-	wantRest := append(append([]byte{}, tone[4:]...), make([]byte, silenceChunk-2)...)
-	if !bytes.Equal(second, wantRest) {
-		t.Errorf("second read mismatches the remainder plus silence — got %d bytes", len(second))
+	if !bytes.Equal(second, tone[4:]) {
+		t.Errorf("second read = %v, want the tone's remainder %v", second, tone[4:])
+	}
+
+	third, ok := readWithBudget(t, r, silenceChunk)
+	if !ok {
+		t.Fatal("the reader never fell back to silence after the tone")
+	}
+	if !bytes.Equal(third, make([]byte, silenceChunk)) {
+		t.Error("the post-tone read is not silence")
 	}
 }
 
