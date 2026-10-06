@@ -1,8 +1,8 @@
 ---
 phase: 08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill
-verified: 2026-10-06T01:55:43Z
-status: gaps_found
-score: 43/44 must-haves verified
+verified: 2026-10-06T05:53:08Z
+status: passed
+score: 44/44 must-haves verified
 covered_files:
   - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-01-PLAN.md
   - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-01-SUMMARY.md
@@ -22,6 +22,8 @@ covered_files:
   - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-08-SUMMARY.md
   - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-09-PLAN.md
   - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-09-SUMMARY.md
+  - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-10-PLAN.md
+  - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-10-SUMMARY.md
   - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-CONTEXT.md
   - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-UAT.md
   - .planning/phases/08-a11y-magiya-prilozheniy-dokumentatsiya-i-konfig-skill/08-VALIDATION.md
@@ -45,61 +47,50 @@ covered_files:
   - internal/session/actor_test.go
   - mise.toml
   - skills/goswitch-config/SKILL.md
-covered_digest: "v1:sha256:4541f3105d7668dbcb99266671249f893e123adf7cbb848c8d03c4f43d39a971"
+covered_digest: "v1:sha256:73560cca1bbb9c8f144cfe94556ac91d905516e5c6da9781fe9213892f474342"
 behavior_unverified: 0
 overrides_applied: 0
 coincidental_reliance_items: []
 re_verification:
-  previous_status: human_needed
-  previous_score: 44/46
+  previous_status: gaps_found
+  previous_score: 43/44
   gaps_closed:
-    - "WR-02 (docs advertised a11y.apps matching the runtime never did) — RESOLVED by the owner decision 2026-10-06 (D-8-1/REV, recorded verbatim in 08-CONTEXT and SPEC §4 revision 2026-10-06): matching annulled; CONFIG.md/SKILL.md/SPEC revised honest; todo a11y-apps-matching-semantics.md closed"
-    - "Human item 1 (live a11y-magic effect) — owner-accepted on evidence (08-UAT verdict 2026-10-06, WINDOWS #5 precedent; rationale recorded: unit corpus proves the contract through Runner/StatusSetter seams, key mechanics live-verified by research on this desktop)"
-    - "Human item 2 (live uninstall-revert) — owner-accepted on evidence (same UAT verdict)"
-    - "Human item 3 (Russian prose / README pair sync) — owner-accepted on evidence; detailed reading reserved by the owner at leisure"
-    - "Human item 4 (SKILL.md usefulness for an AI assistant) — owner-accepted on evidence"
-    - "Human item 6 (human pass over CR-01 fix) — owner-accepted on evidence (regression corpus reproduced the freeze on the old code; both tests green under -race)"
-    - "Superseded truths (a11y.apps machinery: 08-01 #2, 08-02 #1/#2/#3/#5, 08-05 #1, 08-06 #4) — superseded-and-honored by the owner revision via plan 08-09; each replacement verified in the delta (see Superseded Truths section)"
-  gaps_remaining:
-    - "README.md / README.en.md a11y sections still describe the annulled a11y.apps contract — a NEW docs↔schema discrepancy introduced by the 08-09 delta itself (READMEs were outside its files_modified); unacknowledged in 08-09-SUMMARY, todos, or deferred-items"
-  regressions:
-    - "08-07 truth 4 (README a11y section documents the section honestly — restart semantics + uninstall revert, no schema contradiction) — FAILED post-delta (was ✓ in the 44/46 report)"
-gaps:
-  - truth: "README a11y section documents the a11y config section honestly per the revised contract (08-07 truth 4; phase goal stream 2 «документация — сверка», D-8-8: расхождения в ДОКАХ правятся)"
-    status: failed
-    reason: "The 08-09 delta propagated the owner revision (a11y.apps removed, single bool key default ON) into SPEC/CONFIG.md/SKILL.md but not into the READMEs. README.md:303–320 and README.en.md:300–313 still describe the removed apps list («перечисляет приложения…», «после добавления его в список», «Удаление приложения из списка ключ не снимает» / «lists the applications», «adding it to the list», «Removing an application from the list») and both reference the removed key: README.md:319 / README.en.md:313 «ключи a11y.enabled и a11y.apps». A user following the README adds a11y.apps to config.yaml — and the whole config file is now REJECTED by strict decode (the loud D-33 migration). The docs actively instruct a config-bricking action; this is the same defect class as WR-02, reintroduced in the primary user doc (both languages). No owner decision records leaving the READMEs stale — the revision's recorded intent is docs honesty; this is a delta propagation omission, not a supersession."
-    artifacts:
-      - path: README.md
-        issue: "Lines 303–316: a11y section describes per-application list semantics that no longer exist; line 319: references removed key `a11y.apps` as part of the section's key reference"
-      - path: README.en.md
-        issue: "Lines 300–309: same list semantics in English; line 313: references removed key `a11y.apps`"
-    missing:
-      - "Rewrite the a11y section in README.md and README.en.md to the revised contract: global switch a11y.enabled (bool, default ON — absent section/key reads ON, explicit enabled: false is the only OFF), no matching / no per-app behavior, restart semantics (apps read the key at their next start) preserved, uninstall-revert preserved"
-      - "Remove both references to the `a11y.apps` key (README.md:319, README.en.md:313) — the section now has exactly one key"
-      - "Keep the README↔README.en.md section parity (22/22 headers) after the edit"
-      - "Optional hardening: extend a stale-key grep gate (a11y.apps) to README.md/README.en.md so future section revisions cannot repeat this propagation miss"
+    - "08-07 #4 (README.md:303–320 / README.en.md:300–313 documented the annulled a11y.apps contract) — RESOLVED by gap plan 08-10 (commits d1e44a4 RU, 8df7162 EN, 9174109 gates+VALIDATION; SUMMARY 3ea1731): both a11y sections rewritten to the bool contract (single key a11y.enabled, default ON, global mechanism, restart semantics, uninstall-revert, loud migration); zero a11y.apps references in either README (verifier grep); wording mirrors docs/CONFIG.md:227–262; parity 22/22 (verifier-counted); diff confined to the old section bounds (RU 306–319 ⊂ 301–320, EN 301–313 ⊂ 296–314, verifier awk-gate on BASE 9660977); skillgen -check exit 0 and mise run ci exit 0 (both verifier runs)"
+  gaps_remaining: []
+  regressions: []
 deferred: []
 advisory:
-  - finding: "Housekeeping — the three folded source todos (a11y-magic-apps-list.md, config-skill-for-ai.md, docs-accuracy-and-russian-first.md) remain in .planning/todos/pending/ although 08-CONTEXT records them as folded into this phase (a11y-apps-matching-semantics.md, by contrast, is gone as the UAT records). Not a phase artifact; no effect on the verdict."
+  - finding: "Housekeeping — the three folded source todos (a11y-magic-apps-list.md, config-skill-for-ai.md, docs-accuracy-and-russian-first.md) remain in .planning/todos/pending/ although 08-CONTEXT records them as folded into this phase (a11y-apps-matching-semantics.md is gone as the UAT records). Not a phase artifact; no effect on the verdict."
     category: other
     reason: "Process hygiene only; flagged so the todo board matches the phase records."
-    evidence_status: "ls .planning/todos/pending/"
+    evidence_status: "ls .planning/todos/pending/ (re-checked 2026-10-06T05:53Z — still present)"
 ---
 
-# Phase 8: a11y-магия приложений, документация и конфиг-skill — Verification Report (POST-DELTA RE-VERIFICATION)
+# Phase 8: a11y-магия приложений, документация и конфиг-skill — Verification Report (FINAL — гэп закрыт, фаза пройдена)
 
 **Phase Goal:** Разобранный беклог (3 todo от 2026-10-05), ПЕРЕСМОТРЕННЫЙ решением владельца 2026-10-06 (D-8-1/REV, вербатим: «раз настройка глобальная, то список не нужен, а нужен bool параметр, по дефолту настройка включен»): (1) a11y-магия — конфиг-секция с ЕДИНСТВЕННЫМ ключом `a11y.enabled` (bool, **default ON**); демон применяет сам (reconcile старт/reload; uninstall-revert; список приложений и сопоставление АННУЛИРОВАНЫ — D-8-5/REV). (2) Документация — сверка + русский-первый. (3) Skill для AI — SKILL.md генерируется из docs/CONFIG.md.
-**Verified:** 2026-10-06T01:55:43Z
-**Status:** gaps_found
-**Re-verification:** Yes — after plan 08-09 (owner revision delta) + recorded UAT verdicts
+**Verified:** 2026-10-06T05:53:08Z
+**Status:** passed
+**Re-verification:** Yes — третий проход: после гэп-плана 08-10 (README a11y-разделы → bool-контракт); история: 44/46 human_needed (2026-10-05T23:55Z) → 43/44 gaps_found (2026-10-06T01:55:43Z, commit cbe4160) → **44/44 passed** (этот отчёт)
+
+## Gap Resolution (2026-10-06)
+
+Единственный гэп пост-дельта реверификации (README.md:303–320 / README.en.md:300–313 — аннулированный контракт `a11y.apps`) **закрыт в дереве и верифицирован прогонами этого верификатора**, не по CLAIM'ам SUMMARY:
+
+- **Ноль `a11y.apps`** в README.md и README.en.md (`grep -c` = 0 в обоих; заодно ноль прозы списка: «перечисляет приложения», «добавления его в список», «adding it to the list», «Removing an application» — единственный матч «из списка» в README.md:412 относится к чапту troubleshooting «исчез из списка источников ввода» и к a11y не относится).
+- **Bool-контракт в обоих разделах:** README.md:301–335 и README.en.md:296–331 — единственный глобальный переключатель `a11y.enabled` (bool, default ON: отсутствующая секция/ключ читаются ВКЛ; явное `enabled: false` — единственный OFF, D-8-4); глобальность обоснована общим для стола `toolkit-accessibility` («сопоставлений приложений в секции нет»); идемпотентный reconcile при старте и на каждой горячей перезагрузке (ключ, уже равный `true`, не переписывается — ноль записей в dconf); restart-семантика («при СВОЁМ следующем запуске» / «at their next start»); запрет снятия демоном; uninstall-revert из снапшота установки (`goswitchctl uninstall`); громкая миграция строки списка (конфиг целиком отвергается — удалите её).
+- **Зеркало docs/CONFIG.md:227–262** по порядку фактов и дословным формулировкам («отсутствующая секция или ключ читаются включёнными, явное `enabled: false` — единственный способ выключить», «конфиг целиком отвергается при загрузке (строгий декодер называет ключ ошибкой)», «ключ, уже равный `true`, не переписывается — ноль записей в dconf», «Снятие ключа демоном не предусматривается», «единственный путь отката — `goswitchctl uninstall`»); завершающая ссылка обоих языков называет «единственный ключ `a11y.enabled`» и ведёт в docs/CONFIG.md.
+- **Паритет и кросс-ссылки целы:** 22/22 заголовка в обоих файлах (посчитано верификатором), структура уровней идентична; README.md:3 `[English](README.en.md)`, README.en.md:3 `[Russian](README.md)`.
+- **Скоуп без дрейфа:** `git diff d9c2909..HEAD -- README.md README.en.md` — хунки только внутри прежних границ a11y-разделов (RU старые 306..311 и 314..319 ⊂ 301–320; EN старый 301..313 ⊂ 296–314; awk-гейт верификатора на BASE=gsd-plan-head-before-08-10=9660977: RU-SCOPE-OK, EN-SCOPE-OK). С момента верификации 43/44 (cbe4160) менялись ТОЛЬКО README.md, README.en.md и planning-метаданные (ROADMAP, STATE, 08-10-PLAN/SUMMARY, 08-VALIDATION) — `git diff --name-only cbe4160..HEAD`; изменения internal/ в диапазоне d9c2909..HEAD — это коммиты TDD 08-09 (d71bbf6→87c815c), ПРЕДШЕСТВУЮЩИЕ cbe4160 и верифицированные предыдущим отчётом.
+- **Гейты зелёные в прогоне верификатора:** `go run ./cmd/skillgen -check` exit 0; `mise run ci` exit 0 (build + vet + golangci-lint + test -race, все пакеты ok); строки 08-10 T1..T3 присутствуют в Per-Task Verification Map 08-VALIDATION.md (:63–65).
+
+UAT-вердикты владельца (08-UAT.md, 2026-10-06) подтверждены на месте — все 6 human-пунктов остаются разрешёнными (раздел «UAT Dispositions»), новых human-пунктов не возникло.
 
 ## Goal Achievement
 
-The 08-09 delta is **fully implemented and verified in the tree**: SPEC revision 2026-10-06 (add-only, verbatim owner quote), pointer-bool schema with EffectiveEnabled nil=ON pinned by the rewritten corpus, loud strict-decode migration of the legacy list key, fold on EffectiveEnabled, reconciler/install untouched, skillgen byte-sync green, `mise run ci` exit 0 (run by this verifier, not trusted from SUMMARY). The previous human_needed items are **owner-disposed** (08-UAT verdicts, accepted-on-evidence; item 5 resolved by the revision itself). The former WR-02 docs dishonesty is resolved in CONFIG.md/SKILL.md/SPEC.
+Дельта 08-09 (ревизия владельца) верифицирована в дереве предыдущим проходом; её единственный недочёт — непропаганированная правка README — устранён гэп-планом 08-10 и верифицирован этим проходом. Спека add-only с дословной цитатой, pointer-bool nil=ON по прецеденту Sound, громкая миграция запинена тестом, фолд на EffectiveEnabled, reconciler (comments-only diff) и installer нетронуты, skillgen синхронен и идемпотентен, `mise run ci` зелёный, README-пара честна в обоих языках.
 
-**One new gap:** the delta did not propagate into README.md / README.en.md — both still document the annulled `a11y.apps` contract, instructing users into config-file rejection. Docs stream (goal 2, D-8-8) is therefore not closed on this tree.
-
-**Score:** 43/44 in-force truths verified (7 former truths superseded-and-honored by the revision — recorded below, excluded from the denominator; 1 FAILED: 08-07 #4 README staleness; 0 behavior-unverified — the 2 live-desktop truths are owner-disposed via UAT).
+**Score:** 44/44 in-force truths verified (7 former truths superseded-and-honored by the revision — recorded below, excluded from the denominator; 0 FAILED; 0 behavior-unverified — все human-пункты разрешены UAT-вердиктами владельца).
 
 ### Observable Truths
 
@@ -170,10 +161,10 @@ The 08-09 delta is **fully implemented and verified in the tree**: SPEC revision
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | README.md — русская главная + a11y-раздел | ✓ VERIFIED | Файл не менялся дельтой; русский; но содержимое a11y-раздела см. #4 — FAILED |
-| 2 | README.en.md — английский канон, паритет 22/22 | ✓ VERIFIED | Файл не менялся дельтой; паритет заголовков сохраняется |
+| 1 | README.md — русская главная + a11y-раздел | ✓ VERIFIED | Русский; a11y-раздел переписан гэп-планом 08-10 (d1e44a4, README.md:301–335) на bool-контракт — см. #4 ✓ |
+| 2 | README.en.md — английский канон, паритет 22/22 | ✓ VERIFIED | Английское зеркало раздела (8df7162, README.en.md:296–331); паритет заголовков 22/22 — ПОСЧИТАН верификатором после правки |
 | 3 | README.ru.md удалён, дублей/stale-ссылок нет | ✓ VERIFIED | git ls-files пуст; grep README\.ru — ноль |
-| 4 | a11y-раздел в README с restart-семантикой и uninstall-откатом, без дубля справочника | ✗ FAILED | Раздел описывает АННУЛИРОВАННЫЙ контракт: README.md:303–316 «перечисляет приложения…», «добавления его в список», «из списка» (то же в README.en.md:300–309) и обе ссылки на удалённый ключ `a11y.apps` (README.md:319, README.en.md:313). Пользователь по README добавит ключ → весь конфиг отвергается strict decode. См. Gaps. |
+| 4 | a11y-раздел в README с restart-семантикой и uninstall-откатом, без дубля справочника | ✓ VERIFIED (RESOLVED 2026-10-06 планом 08-10) | Раздел описывает действующий контракт ревизии 2026-10-06: единственный ключ `a11y.enabled` (bool, default ON — отсутствующая секция/ключ = ВКЛ, явное `enabled: false` = единственный OFF, D-8-4), глобальная механика (toolkit-accessibility + пояс IsEnabled, «сопоставлений приложений в секции нет»), идемпотентный reconcile старт/reload, restart-семантика, uninstall-revert, громкая миграция (README.md:331–333 / README.en.md:327–329). Ноль `a11y.apps` в обоих файлах (grep верификатора); зеркало docs/CONFIG.md:227–262 по порядку фактов; паритет 22/22; кросс-ссылки шапок целы. Прежний провал (аннулированный контракт + config-bricking инструкция) устранён; см. Gap Resolution |
 | 5 | Входящие ссылки перепoint'нуты | ✓ VERIFIED | docs/ACCEPTANCE.md ссылки целы (файл не менялся дельтой) |
 
 #### Plan 08-08 — Skill goswitch-config (6 truths)
@@ -182,7 +173,7 @@ The 08-09 delta is **fully implemented and verified in the tree**: SPEC revision
 |---|-------|--------|----------|
 | 1 | SKILL.md frontmatter + RU description + ручной каркас | ✓ VERIFIED | Frontmatter name goswitch-config, RU description; каркас переехал в bool-семантику (:77–100) |
 | 2 | Single source: генератор парсит таблицу, verbatim, hard errors | ✓ VERIFIED | cmd/skillgen/main.go не менялся; TestSkillgen_MalformedRowHardError PASS |
-| 3 | Синхрон-гейт: -check байт-в-байт + golden-тест | ✓ VERIFIED | `go run ./cmd/skillgen -check` → CHECK-EXIT-0 (прогон верификатора) |
+| 3 | Синхрон-гейт: -check байт-в-байт + golden-тест | ✓ VERIFIED | `go run ./cmd/skillgen -check` → CHECK-EXIT-0 (прогон верификатора, повторён 2026-10-06T05:53Z) |
 | 4 | Dev-only mise-задача skillgen-regen; CI не перегенерирует | ✓ VERIFIED | mise.toml не менялся дельтой |
 | 5 | TRACKING-гейт: SKILL.md в git-индексе | ✓ VERIFIED | git ls-files непуст |
 | 6 | Регенерация идемпотентна | ✓ VERIFIED | regen → файл байт-идентичен (REGEN-IDEMPOTENT, проверено верификатором cmp) |
@@ -196,8 +187,16 @@ The 08-09 delta is **fully implemented and verified in the tree**: SPEC revision
 | 3 | Default ON запинен (pointer-bool по прецеденту Sound; НЕ D-54); Load НИКОГДА не накладывает Defaults | ✓ VERIFIED | config.go:189–202 (doc-коммент называет D-8-6/REV и Sound-прецедент); TestLoad_A11yAbsentSectionMeansDefaultOn / AbsentKeyMeansDefaultOn / ExplicitFalseDisables / TestDefaults_A11yDefaultOn — PASS; UnmarshalYAML = 0; load.go/watch.go вне дифа |
 | 4 | Миграция громкая (D-33): прежний ключ-список отвергается ЦЕЛИКОМ с именем ключа; миграционная заметка в CONFIG.md | ✓ VERIFIED | TestLoad_A11yRemovedListKeyRejectedWhole — PASS (проходит только при отсутствии поля); CONFIG.md:245–251 («конфиг целиком отвергается… Удалите ключ») |
 | 5 | Фолд на EffectiveEnabled (defaults → TRUE, явное false → false); контракты reconciler 08-03 не меняются; снапшот/revert 08-04 не тронут | ✓ VERIFIED | actor.go:1335; корпус фолда PASS (defaults-документ → [true], явное false → false, дифф-гейт сохранён); A11Y-COMMENTS-ONLY гейт; install вне дифа |
-| 6 | Доки/skill согласованы (без ключа-списка, строка default true, regen идемпотентен, golden 20) | ✓ VERIFIED ДЛЯ CONFIG.md/SKILL.md | grep a11y\.apps в CONFIG.md/SKILL.md = 0; ровно одна строка `| \`a11y.enabled\| bool \| \`true\``; -check exit 0; regen идемпотентен; golden-граница 20 (main_test.go:24). **ОДНАКО** согласованность доков в объёме ФАЗЫ нарушена README — см. Gaps (08-07 #4) |
-| 7 | mise run ci зелёный | ✓ VERIFIED | Прогон верификатора: exit 0 — build + vet + golangci-lint (0 issues) + test -race, 22 пакета ok |
+| 6 | Доки/skill согласованы (без ключа-списка, строка default true, regen идемпотентен, golden 20) | ✓ VERIFIED | grep a11y\.apps в CONFIG.md/SKILL.md/README.md/README.en.md = 0 (README дотянут планом 08-10); ровно одна строка `| \`a11y.enabled\| bool \| \`true\``; -check exit 0; regen идемпотентен; golden-граница 20 (main_test.go:24). Согласованность доков теперь в объёме ВСЕЙ фазы |
+| 7 | mise run ci зелёный | ✓ VERIFIED | Прогон верификатора: exit 0 — build + vet + golangci-lint (0 issues) + test -race, 22 пакета ok (повторён финально 2026-10-06T05:53Z, ci-exit=0) |
+
+#### Plan 08-10 — Гэп-закрытие README (3 truths)
+
+| # | Truth | Status | Evidence |
+|---|-------|--------|----------|
+| 1 (D1) | README.md a11y-раздел на bool-контракте ревизии 2026-10-06 (зеркало CONFIG.md), ноль ключа-списка и прозы сопоставления | ✓ VERIFIED | Прочитано в дереве: README.md:301–335; grep-гейты верификатора (негатив + якоря a11y.enabled/toolkit-accessibility/IsEnabled/enabled: false/goswitchctl uninstall/следующ(ем\|его) запуск/«единственный ключ») — PASS |
+| 2 (D2) | README.en.md — тот же контракт по-английски, секция-в-секцию параллельно; паритет 22/22; кросс-ссылки целы | ✓ VERIFIED | README.en.md:296–331 — те же четыре блока в том же порядке; 22/22 заголовка в обоих (grep -cE '^##+ '); README.md:3 / README.en.md:3 кросс-ссылки — PASS |
+| 3 (D3) | Скоуп-дифф внутри прежних границ разделов; skillgen -check exit 0; mise run ci зелёная; VALIDATION-строки 08-10 T1..T3 | ✓ VERIFIED | awk-гейт верификатора (BASE=9660977): RU-SCOPE-OK, EN-SCOPE-OK; skillgen -check exit 0; mise run ci exit 0 (прогон верификатора); 08-VALIDATION.md:63–65 строки на месте |
 
 ### Superseded-and-Honored Truths (плановая цепочка)
 
@@ -213,20 +212,20 @@ The 08-09 delta is **fully implemented and verified in the tree**: SPEC revision
 | 08-05 #1: фолд через Active() | Фолд через EffectiveEnabled, дифф-гейт сохранён | ✓ (08-09 #5) |
 | 08-06 #4: ровно 2 a11y-строки | Ровно 1 a11y-строка (bool/true) | ✓ (08-09 #6) |
 
-### UAT Dispositions (owner verdicts 2026-10-06 — human_needed items disposed)
+### UAT Dispositions (owner verdicts 2026-10-06 — human_needed items disposed; подтверждены на месте 2026-10-06T05:53Z)
 
-Все 6 human-пунктов прежней верификации разрешены записанными вердиктами владельца (08-UAT.md, 2026-10-06) — повторно НЕ поднимаются:
+Все 6 human-пунктов прежних верификаций разрешены записанными вердиктами владельца (08-UAT.md, 2026-10-06 — Summary total: 6, passed: 6, pending: 0; раздел «Gaps» с вербатимом решения) — повторно НЕ поднимаются:
 
 | # | Item | Verdict | Basis recorded |
 |---|------|---------|----------------|
-| 1 | Живой эффект a11y-магии | ACCEPTED ON EVIDENCE | Прецедент WINDOWS #5; корпуса/гейты зелёные (44/46), механика ключей live-проверена research на этом столе; остаточный риск (gsettings из контекста демона) осознанно принят |
+| 1 | Живой эффект a11y-магии | ACCEPTED ON EVIDENCE | Прецедент WINDOWS #5; корпуса/гейты зелёные, механика ключей live-проверена research на этом столе; остаточный риск (gsettings из контекста демона) осознанно принят |
 | 2 | Живой uninstall-revert | ACCEPTED ON EVIDENCE | Тот же вердикт |
 | 3 | Русская проза / пара README | ACCEPTED ON EVIDENCE | Детальное чтение — за владельцем на досуге |
 | 4 | SKILL.md для AI | ACCEPTED ON EVIDENCE | Живое демо возможно в любой момент |
 | 5 | WR-02 (семантика a11y.apps) | RESOLVED BY OWNER | Дословное решение D-8-1/REV → дельта-план 08-09 (исполнен и верифицирован) |
 | 6 | Человеческий проход CR-01 | ACCEPTED ON EVIDENCE | Регресс-корпус воспроизводил заморозку на старом коде; оба теста зелёные под -race |
 
-Пункты 1 и 2 (бывшие behavior_unverified) сняты с учёта: human-верификация завершена вердиктом владельца. behavior_unverified: 0.
+behavior_unverified: 0 — human-верификация завершена вердиктами владельца; новых human-пунктов третий проход не породил (README-правка — контентная истина, верифицированная чтением дерева и grep-гейтами).
 
 ### Review-Fix Carryover (08-REVIEW → 08-REVIEW-FIX)
 
@@ -246,7 +245,7 @@ The 08-09 delta is **fully implemented and verified in the tree**: SPEC revision
 | cmd/goswitchd/main.go | internal/a11y production-адаптеры | a11y.New(NewExecRunner, NewDBusStatusSetter) | ✓ WIRED | main.go:201 (вне дифа, цело) |
 | internal/install restoreToolkitAccessibility | install-state.json | toolkit_accessibility | ✓ WIRED | install вне дифа 08-09 — контракты 08-04 целы |
 | docs/CONFIG.md таблица | cmd/skillgen → SKILL.md | parseKeyTable + regen | ✓ WIRED | 20 строк; -check exit 0; regen идемпотентен |
-| docs/SPEC.md ревизия 2026-10-06 | README.md/README.en.md a11y-раздел | doc-сверка D-8-8 | ✗ NOT_WIRED | README не переведён на ревизию — см. Gaps |
+| docs/SPEC.md ревизия 2026-10-06 | README.md/README.en.md a11y-раздел | doc-сверка D-8-8 | ✓ WIRED (RESOLVED 2026-10-06) | Оба README переведены на ревизию планом 08-10 — контент сверен с CONFIG.md/SPEC чтением дерева (см. Gap Resolution) |
 
 ### Data-Flow Trace (Level 4)
 
@@ -262,10 +261,13 @@ The 08-09 delta is **fully implemented and verified in the tree**: SPEC revision
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Полная зелёная итерация | `mise run ci` (build+vet+lint+test -race) | exit 0; golangci-lint 0 issues; 22 пакета ok (включая internal/config, session, a11y, install, skillgen) | ✓ PASS |
-| Skillgen байт-синхрон | `go run ./cmd/skillgen -check` | CHECK-EXIT-0 | ✓ PASS |
-| Regen идемпотентность | `mise run skillgen-regen` + cmp | REGEN-IDEMPOTENT (байт-идентично) | ✓ PASS |
-| Пины default-ON/громкой миграции/фолда | `go test ./internal/{config,session,a11y,install}/ -race -run A11y` | 4 пакета ok | ✓ PASS |
+| Полная зелёная итерация (финал) | `mise run ci` (build+vet+lint+test -race) | exit 0, прогон верификатора 2026-10-06T05:53Z; все пакеты ok | ✓ PASS |
+| Skillgen байт-синхрон (финал) | `go run ./cmd/skillgen -check` | CHECK-EXIT-0, прогон верификатора | ✓ PASS |
+| Ноль ключа-списка/стейл-прозы в README | `grep -n -iE "перечисляет приложения\|добавления его в список\|adding it to the list\|Removing an application\|a11y\.apps" README.md README.en.md` | единственный матч README.md:412 — troubleshooting «исчез из списка источников ввода» (не a11y); a11y-стейла ноль | ✓ PASS |
+| Позитивные якоря bool-контракта в README | grep a11y.enabled/toolkit-accessibility/IsEnabled/enabled: false/goswitchctl uninstall/следующ(ем\|его) запуск/next start/«единственный ключ» | все якоря присутствуют в обоих языках (×3/×4/×1/×1/×3/…) | ✓ PASS |
+| Паритет заголовков | `grep -cE '^##+ '` + diff уровней | 22/22 в обоих файлах; структура уровней идентична | ✓ PASS |
+| Скоуп-гейт хунков | `git diff -U0 9660977..HEAD` + awk | RU-SCOPE-OK (306..311, 314..319 ⊂ 301–320); EN-SCOPE-OK (301..313 ⊂ 296–314) | ✓ PASS |
+| Отсутствие дрейфа с 43/44 | `git diff --name-only cbe4160..HEAD` | только README.md, README.en.md + planning-метаданные; ноль Go/CI/CONFIG/SKILL файлов | ✓ PASS |
 | Существование пинов (enumeration) | `go test -list` | 7 config-пинов + 5 session-кейсов присутствуют (TestLoad_A11yAbsentSectionMeansDefaultOn, …RemovedListKeyRejectedWhole, …, TestActor_A11yDefaultsDocumentPushesTrue, …) | ✓ PASS |
 
 ### Probe Execution
@@ -284,36 +286,34 @@ The 08-09 delta is **fully implemented and verified in the tree**: SPEC revision
 | D-8-4 | 08-03/04 | Откат только uninstall; снятие запрещено | ✓ SATISFIED (unit + UAT-accepted) | Apply(false) ноль-касаний; install вне дифа; живой revert принят владельцем |
 | D-8-5 → D-8-5/REV | 08-02 → 08-09 | Regex-подстрока RE2 — АННУЛИРОВАНА владельцем | ✓ SUPERSEDED-AND-HONORED | Машинерия удалена из схемы; ревизия 2026-10-06 фиксирует аннулирование |
 | D-8-6 → D-8-6/REV | 08-01/03/09 | Минимальный набор магии + default ON (осознанное решение) | ✓ SATISFIED | toolkit-accessibility + IsEnabled-пояс нетронуты; pointer-bool default ON запинен |
-| D-8-7 | 08-07 | README.ru как главная, README как перевод | ✓ SATISFIED | Структура README.md(RU)/README.en.md(EN) цела |
-| D-8-8 | 08-06/07 | Сверка доков с поведением; расхождения в ДОКАХ правятся | ✗ PARTIAL | Сверка-ревизия SPEC/CONFIG/SKILL честны (WR-02 закрыт), НО дельта ввела новое расхождение в README (a11y.apps остался) — gap |
+| D-8-7 | 08-07 | README.ru как главная, README как перевод | ✓ SATISFIED | Структура README.md(RU)/README.en.md(EN) цела; паритет 22/22 подтверждён после правки 08-10 |
+| D-8-8 | 08-06/07/10 | Сверка доков с поведением; расхождения в ДОКАХ правятся | ✓ SATISFIED (RESOLVED 2026-10-06) | SPEC/CONFIG/SKILL честны (WR-02 закрыт); README-пара переведена на ревизию планом 08-10 и сверена с CONFIG.md чтением дерева — дельта-недочёт устранён |
 | D-8-9 | 08-06 | CONFIG.md русский-первый | ✓ SATISFIED | CONFIG.md по-русски |
 | D-8-10 | 08-08 | Single source: генерация из CONFIG.md | ✓ SATISFIED | skillgen + golden 20 + -check зелёный |
 | D-8-11 | 08-08 | skills/goswitch-config/ (не .zcode/) | ✓ SATISFIED | git-tracked |
 
-Orphaned requirements: нет (REQUIREMENTS.md не маппит фазу 8). Отложенных к поздним фазам нет — фаза 8 последняя в milestone, гэп README не покрывается никакой иной фазой.
+Orphaned requirements: нет (REQUIREMENTS.md не маппит фазу 8). Отложенных к поздним фазам нет — фаза 8 последняя в milestone.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| README.md | 303–320 | Доки рекламируют удалённый контракт (a11y.apps-список) и ключ, добавление которого ломает весь конфиг | 🛑 Blocker (docs-accuracy stream) | Пользователь по README получает отвергнутый конфиг; см. Gaps |
-| README.en.md | 300–313 | То же в EN-каноне | 🛑 Blocker (docs-accuracy stream) | То же |
-| — | — | TBD/FIXME/XXX/HACK/PLACEHOLDER в дельта-файлах (config.go, actor.go, a11y.go, main_test.go, CONFIG.md, SKILL.md) | none | Скан чист |
+| README.md | 301–335 | (прежний 🛑 Blocker: аннулированный контракт) — РЕШЁН планом 08-10 (d1e44a4): раздел на bool-контракте, ноль a11y.apps | resolved | Пользователь по README получает валидный конфиг |
+| README.en.md | 296–331 | (прежний 🛑 Blocker, EN) — РЕШЁН планом 08-10 (8df7162) | resolved | То же |
+| — | — | TBD/FIXME/XXX/HACK/PLACEHOLDER в дельта-файлах (config.go, actor.go, a11y.go, main_test.go, CONFIG.md, SKILL.md, README×2) | none | Скан чист |
 | — | — | Стабы/empty-implementation в новом коде | none | Нет |
 | .planning/todos/pending/ | — | Три свёрнутых в фазу todo не перемещены из pending (housekeeping) | ℹ️ Info | Не артефакт фазы; см. advisory |
 
 ### Human Verification Required
 
-Нет — все прежние human-пункты разрешены записанными вердиктами владельца (08-UAT.md, 2026-10-06; раздел «UAT Dispositions»). Остаточный риск, осознанно принятый владельцем (gsettings из контекста демона не проверен живьём), зафиксирован в вердикте и не reopened.
+Нет — все прежние human-пункты разрешены записанными вердиктами владельца (08-UAT.md, 2026-10-06; раздел «UAT Dispositions»), подтверждены на месте при этом проходе. Остаточный риск, осознанно принятый владельцем (gsettings из контекста демона не проверен живьём), зафиксирован в вердикте и не reopened.
 
-### Gaps Summary
+### Final Verdict
 
-Один гэп, и он — регрессия самой дельты, а не унаследованная недоделка. План 08-09 исполнил решение владельца технически безупречно: спека add-only с цитатой, pointer-bool nil=ON по прецеденту Sound, громкая миграция запинена тестом, проходящим только при отсутствии поля, фолд на EffectiveEnabled с сохранённым дифф-гейтом, reconciler (comments-only diff) и installer (вне дифа) нетронуты, skillgen синхронен и идемпотентен, `mise run ci` зелёный в прогоне верификатора. Все 5 запретов-прогибов (prohibitions) выверены. Бывшие human_needed пункты закрыты вердиктами владельца; WR-02 решён.
-
-Но ревизия распространена по докам не полностью: README.md и README.en.md — первичные пользовательские документы — продолжают описывать список приложений и ссылаться на ключ `a11y.apps`, которого больше нет и добавление которого теперь отвергает весь конфиг пользователя. Это тот же класс дефекта, что WR-02 (доки рекламируют несуществующее), только теперь с активным вредом (config rejection), и он нарушает поток 2 фазы («документация — сверка», D-8-8: расхождения в ДОКАХ правятся). Никакое решение владельца не оставляло README устаревшими — files_modified плана 08-09 просто их не включил, и ни один гейт (включая FINAL-REV-OK) их не проверял. Гэп закрывается правкой двух разделов README (bool-семантика, без ключа-списка, с сохранением паритета) — код трогать не нужно.
+44/44 in-force истин верифицированы; 7 superseded-and-honored исключены из знаменателя с верифицированными заменами; 0 behavior-unverified; 0 гэпов; 0 блокеров. Единственный гэп предыдущего прохода (README-пара на аннулированном контракте) закрыт гэп-планом 08-10, скоуп правок подтверждён конфайндом хунков, дрейфа с 43/44 нет, все гейты (`mise run ci`, `skillgen -check`, grep-гейты, паритет 22/22) зелёные в прогоне верификатора. Цель фазы достигнута во всех трёх потоках: a11y-секция (bool-контракт ревизии владельца), документация (сверка честна во всех пользовательских доках, русский-первый), конфиг-skill (генерация из CONFIG.md байт-синхронна). Фаза 8 — последняя в milestone — готова к ship.
 
 ---
 
-_Verified: 2026-10-06T01:55:43Z_
+_Verified: 2026-10-06T05:53:08Z_
 _Verifier: Claude (gsd-verifier)_
-_Previous report: 44/46, human_needed (2026-10-05T23:55:00Z) — superseded by this post-delta re-verification; preserved in git history (commit d61f26e)._
+_History: 44/46 human_needed (2026-10-05T23:55:00Z, commit d61f26e) → 43/44 gaps_found (2026-10-06T01:55:43Z, commit cbe4160) → 44/44 passed (этот отчёт). Предыдущие отчёты preserved in git history._
