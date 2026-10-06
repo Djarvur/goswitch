@@ -23,6 +23,7 @@ const (
 	channelsStereo = 2
 )
 
+//nolint:gochecknoglobals // shared fixture formats (the detect_test corpus precedent)
 var (
 	formatMono      = streamFormat{Rate: rate22050, Channels: channelsMono}
 	formatStereo    = streamFormat{Rate: rate44100, Channels: channelsStereo}
@@ -186,7 +187,7 @@ func TestSynthTone_HalfAmplitude(t *testing.T) {
 	if err != nil {
 		t.Fatalf("synth flip tone: %v", err)
 	}
-	ceiling := toneAmplitude * maxSample + 1
+	ceiling := toneAmplitude*maxSample + 1
 	for i := 0; i+1 < len(data); i += 2 {
 		v := int16(binary.LittleEndian.Uint16(data[i:]))
 		if math.Abs(float64(v)) > ceiling {
@@ -223,7 +224,7 @@ func TestDecodeOggVorbis_RealThemeFile(t *testing.T) {
 	if err != nil {
 		t.Skipf("no system theme file here (%s) — CI runs the synth corpus only", yaruBellPath)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	decoded, err := decodeOggVorbis(file)
 	if err != nil {

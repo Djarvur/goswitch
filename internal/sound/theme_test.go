@@ -9,15 +9,25 @@ import (
 	"testing"
 )
 
-// The corpus's fixture vocabulary: two ordered XDG roots and the event
-// names the daemon plays (the schema constant flip event and the config
-// autocorrect event default).
+// The corpus's fixture vocabulary: two ordered XDG roots, the event names
+// the daemon plays (the schema constant flip event and the config
+// autocorrect event default), the theme-directory names of the index
+// cells, and the distinguishable file contents the order cells read back.
 const (
 	rootHome = "/home/u/.local/share/sounds"
 	rootData = "/usr/share/sounds"
 
 	fsEventBell    = "bell"
 	fsEventMessage = "message"
+
+	fsDirStereo   = "stereo"
+	fsDirSurround = "surround"
+
+	fsFileHomeCopy     = "HOME"
+	fsFileDataDirsCopy = "DATA-DIRS"
+	fsFileInherited    = "INHERITED"
+	fsFileFallback     = "FALLBACK"
+	fsFileYaru         = "YARU"
 )
 
 // errFakeFsMissing is the opener double's miss — the "no such file" of the
@@ -30,8 +40,6 @@ type fakeThemeFS map[string]string
 
 // open is the resolver's opener double: a mapped path answers a reader
 // over its content, everything else the miss.
-//
-//nolint:ireturn // the fake hands the opened-reader interface back (the production seam's shape)
 func (fs fakeThemeFS) open(path string) (io.ReadCloser, error) {
 	if data, ok := fs[path]; ok {
 		return io.NopCloser(strings.NewReader(data)), nil
@@ -63,10 +71,10 @@ const yaruIndex = "[Sound Theme]\nDirectories=stereo\n"
 // — when both roots carry the same theme file, the data-home copy wins.
 func TestResolver_DataHomeBeatsDataDirs(t *testing.T) {
 	fs := fakeThemeFS{
-		rootHome + "/yaru/index.theme":                  yaruIndex,
-		rootHome + "/yaru/stereo/" + fsEventBell + ".oga": "HOME",
-		rootData + "/yaru/index.theme":                  yaruIndex,
-		rootData + "/yaru/stereo/" + fsEventBell + ".oga": "DATA-DIRS",
+		rootHome + "/yaru/index.theme":                    yaruIndex,
+		rootHome + "/yaru/stereo/" + fsEventBell + ".oga": fsFileHomeCopy,
+		rootData + "/yaru/index.theme":                    yaruIndex,
+		rootData + "/yaru/stereo/" + fsEventBell + ".oga": fsFileDataDirsCopy,
 	}
 	r := newThemeResolver(fs.open, []string{rootHome, rootData})
 
@@ -74,7 +82,7 @@ func TestResolver_DataHomeBeatsDataDirs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve yaru/bell: %v", err)
 	}
-	if got := drainThemeFile(t, rc); got != "HOME" {
+	if got := drainThemeFile(t, rc); got != fsFileHomeCopy {
 		t.Errorf("resolved content = %q, want the data-home copy —"+
 			" $XDG_DATA_HOME/sounds must be searched before $XDG_DATA_DIRS/sounds", got)
 	}
@@ -85,8 +93,8 @@ func TestResolver_DataHomeBeatsDataDirs(t *testing.T) {
 // still resolves.
 func TestResolver_FallsThroughToDataDirs(t *testing.T) {
 	fs := fakeThemeFS{
-		rootData + "/yaru/index.theme":                  yaruIndex,
-		rootData + "/yaru/stereo/" + fsEventBell + ".oga": "DATA-DIRS",
+		rootData + "/yaru/index.theme":                    yaruIndex,
+		rootData + "/yaru/stereo/" + fsEventBell + ".oga": fsFileDataDirsCopy,
 	}
 	r := newThemeResolver(fs.open, []string{rootHome, rootData})
 
@@ -94,7 +102,7 @@ func TestResolver_FallsThroughToDataDirs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve yaru/bell: %v", err)
 	}
-	if got := drainThemeFile(t, rc); got != "DATA-DIRS" {
+	if got := drainThemeFile(t, rc); got != fsFileDataDirsCopy {
 		t.Errorf("resolved content = %q, want the data-dirs copy", got)
 	}
 }
@@ -151,10 +159,10 @@ func TestResolver_InheritsChainFirstHitWins(t *testing.T) {
 
 	t.Run("own file beats the inherited one", func(t *testing.T) {
 		fs := fakeThemeFS{
-			rootData + "/custom/index.theme":                  customIndex,
+			rootData + "/custom/index.theme":                    customIndex,
 			rootData + "/custom/stereo/" + fsEventBell + ".oga": "CUSTOM",
-			rootData + "/yaru/index.theme":                    yaruIndex,
-			rootData + "/yaru/stereo/" + fsEventBell + ".oga": "INHERITED",
+			rootData + "/yaru/index.theme":                      yaruIndex,
+			rootData + "/yaru/stereo/" + fsEventBell + ".oga":   fsFileInherited,
 		}
 		r := newThemeResolver(fs.open, []string{rootData})
 
@@ -171,7 +179,7 @@ func TestResolver_InheritsChainFirstHitWins(t *testing.T) {
 		fs := fakeThemeFS{
 			rootData + "/custom/index.theme":                  customIndex,
 			rootData + "/yaru/index.theme":                    yaruIndex,
-			rootData + "/yaru/stereo/" + fsEventBell + ".oga": "INHERITED",
+			rootData + "/yaru/stereo/" + fsEventBell + ".oga": fsFileInherited,
 		}
 		r := newThemeResolver(fs.open, []string{rootData})
 
@@ -179,7 +187,7 @@ func TestResolver_InheritsChainFirstHitWins(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve custom/bell: %v", err)
 		}
-		if got := drainThemeFile(t, rc); got != "INHERITED" {
+		if got := drainThemeFile(t, rc); got != fsFileInherited {
 			t.Errorf("resolved content = %q, want the inherited file", got)
 		}
 	})
@@ -190,11 +198,13 @@ func TestResolver_InheritsChainFirstHitWins(t *testing.T) {
 // the walk still reaches the spec's fallback theme — a hostile index.theme
 // must never hang the resolver (T-SQU-01).
 func TestResolver_InheritsCycleTerminatesAtFallback(t *testing.T) {
+	indexA := "[Sound Theme]\nDirectories=" + fsDirStereo + "\nInherits=b\n"
+	indexB := "[Sound Theme]\nDirectories=" + fsDirStereo + "\nInherits=a\n"
 	fs := fakeThemeFS{
-		rootData + "/a/index.theme": "[Sound Theme]\nDirectories=stereo\nInherits=b\n",
-		rootData + "/b/index.theme": "[Sound Theme]\nDirectories=stereo\nInherits=a\n",
-		rootData + "/" + fallbackTheme + "/index.theme": yaruIndex,
-		rootData + "/" + fallbackTheme + "/stereo/" + fsEventBell + ".ogg": "FALLBACK",
+		rootData + "/a/index.theme":                                        indexA,
+		rootData + "/b/index.theme":                                        indexB,
+		rootData + "/" + fallbackTheme + "/index.theme":                    yaruIndex,
+		rootData + "/" + fallbackTheme + "/stereo/" + fsEventBell + ".ogg": fsFileFallback,
 	}
 	r := newThemeResolver(fs.open, []string{rootData})
 
@@ -202,7 +212,7 @@ func TestResolver_InheritsCycleTerminatesAtFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve a/bell through the cycle: %v", err)
 	}
-	if got := drainThemeFile(t, rc); got != "FALLBACK" {
+	if got := drainThemeFile(t, rc); got != fsFileFallback {
 		t.Errorf("resolved content = %q, want the fallback theme's file", got)
 	}
 }
@@ -212,10 +222,10 @@ func TestResolver_InheritsCycleTerminatesAtFallback(t *testing.T) {
 // the search (the walk moves on down the chain) and never panics.
 func TestResolver_EmptyDirectoriesYieldsNothing(t *testing.T) {
 	fs := fakeThemeFS{
-		rootData + "/hollow/index.theme": "[Sound Theme]\nInherits=yaru\n",
-		rootData + "/bare/index.theme":   "[Sound Theme]\nDirectories=\nInherits=yaru\n",
-		rootData + "/yaru/index.theme":   yaruIndex,
-		rootData + "/yaru/stereo/" + fsEventBell + ".oga": "YARU",
+		rootData + "/hollow/index.theme":                  "[Sound Theme]\nInherits=yaru\n",
+		rootData + "/bare/index.theme":                    "[Sound Theme]\nDirectories=\nInherits=yaru\n",
+		rootData + "/yaru/index.theme":                    yaruIndex,
+		rootData + "/yaru/stereo/" + fsEventBell + ".oga": fsFileYaru,
 	}
 	r := newThemeResolver(fs.open, []string{rootData})
 
@@ -224,7 +234,7 @@ func TestResolver_EmptyDirectoriesYieldsNothing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve %s/bell: %v", theme, err)
 		}
-		if got := drainThemeFile(t, rc); got != "YARU" {
+		if got := drainThemeFile(t, rc); got != fsFileYaru {
 			t.Errorf("%s: resolved content = %q, want the chain's answering theme", theme, got)
 		}
 	}
@@ -236,7 +246,7 @@ func TestResolver_EmptyDirectoriesYieldsNothing(t *testing.T) {
 func TestResolver_TotalMissIsAnError(t *testing.T) {
 	r := newThemeResolver(fakeThemeFS{}.open, []string{rootData})
 
-	if _, err := r.resolve("yaru", fsEventBell); !errors.Is(err, errThemeEventMissing) {
+	if _, err := r.resolve("yaru", fsEventMessage); !errors.Is(err, errThemeEventMissing) {
 		t.Fatalf("total miss err = %v, want errThemeEventMissing", err)
 	}
 }
@@ -254,22 +264,22 @@ func TestParseSoundThemeIndex(t *testing.T) {
 		{
 			name: "yaru single-entry form",
 			doc:  yaruIndex,
-			want: soundThemeIndex{directories: []string{"stereo"}},
+			want: soundThemeIndex{directories: []string{fsDirStereo}},
 		},
 		{
 			name: "comma-separated list",
 			doc:  "[Sound Theme]\nDirectories=stereo,surround\n",
-			want: soundThemeIndex{directories: []string{"stereo", "surround"}},
+			want: soundThemeIndex{directories: []string{fsDirStereo, fsDirSurround}},
 		},
 		{
 			name: "semicolon-separated list",
 			doc:  "[Sound Theme]\nDirectories=stereo;surround;4.0\n",
-			want: soundThemeIndex{directories: []string{"stereo", "surround", "4.0"}},
+			want: soundThemeIndex{directories: []string{fsDirStereo, fsDirSurround, "4.0"}},
 		},
 		{
 			name: "mixed separators with spaces and a trailing separator",
 			doc:  "[Sound Theme]\nDirectories=stereo, surround;\n",
-			want: soundThemeIndex{directories: []string{"stereo", "surround"}},
+			want: soundThemeIndex{directories: []string{fsDirStereo, fsDirSurround}},
 		},
 		{
 			name: "inherits chain",

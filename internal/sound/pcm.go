@@ -6,6 +6,7 @@
 // sine at the stream's own rate and channels. The play path NEVER waits
 // for a decode: lookups are lock-free against the atomic snapshot and a
 // missing pair is a miss, not a load.
+
 package sound
 
 import (
@@ -64,10 +65,10 @@ func decodeOggVorbis(r io.Reader) (*pcm, error) {
 	if format.Channels <= 0 || format.SampleRate <= 0 {
 		return nil, fmt.Errorf("decode theme ogg vorbis: %w", errDecodeFormat)
 	}
-	out := make([]byte, 2*len(samples))
+	out := make([]byte, pcmBytesPerSample*len(samples))
 	for i, s := range samples {
 		v := int16(min(max(float64(s), -1), 1) * maxSample)
-		putInt16LE(out[2*i:], v)
+		putInt16LE(out[pcmBytesPerSample*i:], v)
 	}
 
 	return &pcm{
@@ -87,11 +88,11 @@ func synthTone(freq float64, format streamFormat) ([]byte, error) {
 		return nil, fmt.Errorf("synth tone %.0f Hz: %w", freq, errSynthFormat)
 	}
 	frames := int(toneSeconds * float64(format.Rate))
-	out := make([]byte, 2*frames*format.Channels)
+	out := make([]byte, pcmBytesPerSample*frames*format.Channels)
 	for i := range frames {
 		v := int16(math.Sin(twoPi*freq*float64(i)/float64(format.Rate)) * toneAmplitude * maxSample)
 		for ch := range format.Channels {
-			putInt16LE(out[2*(i*format.Channels+ch):], v)
+			putInt16LE(out[pcmBytesPerSample*(i*format.Channels+ch):], v)
 		}
 	}
 
@@ -112,7 +113,9 @@ type pcmSnapshot struct {
 // one atomic swap.
 type pcmCache struct {
 	snap   atomic.Pointer[pcmSnapshot]
-	decode func(theme, event string) (*pcm, error) // the corpus seam; production composes the resolver with decodeOggVorbis
+	decode func(theme, event string) (*pcm, error)
+	// decode is the corpus seam: production composes the theme resolver
+	// with decodeOggVorbis, the unit corpus counts decodes through it.
 }
 
 // newPCMCache builds one cache over the given decode seam — the corpus

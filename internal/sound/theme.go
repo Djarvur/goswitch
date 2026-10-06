@@ -7,6 +7,7 @@
 // index.theme resolves to a miss, never a panic (T-SQU-01); the argv-free,
 // shell-free opener carries pinned paths derived from XDG constants and
 // schema event names only (T-SQU-04).
+
 package sound
 
 import (
@@ -32,7 +33,13 @@ type opener func(path string) (io.ReadCloser, error)
 
 // themeExtensions is the locked extension priority of the event lookup
 // within a theme's directory.
+//
+//nolint:gochecknoglobals // an immutable fixed-size table — the constant form Go refuses for arrays
 var themeExtensions = [3]string{".oga", ".ogg", ".wav"}
+
+// xdgRootsCapacity is the usual root-list size (home + the two default
+// data dirs) — the slice's allocation hint.
+const xdgRootsCapacity = 3
 
 // themeResolver resolves (theme, event) pairs against an ordered list of
 // XDG sound roots through the opener seam.
@@ -52,7 +59,7 @@ func newThemeResolver(open opener, roots []string) *themeResolver {
 // entries (default /usr/local/share:/usr/share) — the XDG Sound Theme
 // spec's discovery order.
 func xdgSoundRoots(dataHome, dataDirs, home string) []string {
-	roots := make([]string, 0, 3)
+	roots := make([]string, 0, xdgRootsCapacity)
 	if dataHome != "" {
 		roots = append(roots, filepath.Join(dataHome, "sounds"))
 	} else if home != "" {
@@ -77,8 +84,6 @@ func xdgSoundRoots(dataHome, dataDirs, home string) []string {
 // The first hit across the whole chain wins; a total miss is the
 // errThemeEventMissing sentinel — the caller synthesizes instead of
 // waiting.
-//
-//nolint:ireturn // the seam hands an opened theme file back (the emitter() precedent)
 func (r *themeResolver) resolve(theme, event string) (io.ReadCloser, error) {
 	visited := make(map[string]bool)
 	queue := []string{theme}
@@ -133,8 +138,6 @@ func (r *themeResolver) loadIndex(theme string) (soundThemeIndex, bool) {
 // probe returns the first event file answering within one theme's
 // directories — the locked extension priority per directory, roots in
 // discovery order; nil when the theme carries no such event.
-//
-//nolint:ireturn // the seam hands an opened theme file back (the emitter() precedent)
 func (r *themeResolver) probe(theme string, directories []string, event string) io.ReadCloser {
 	for _, dir := range directories {
 		for _, root := range r.roots {
