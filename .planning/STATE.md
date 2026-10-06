@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 Phase: 4 — Поставка и приёмка
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-06 — Completed quick task 261006-vqw: mixed text per-character layout inversion (backlog todo mixed-text-inversion)
+Last activity: 2026-10-07 — Completed quick task 261007-0yg: engine/ and layouts/ moved under internal/ (SPEC §8 revision)
 
 Progress: [████████░░] 75%
 
@@ -314,6 +314,7 @@ None yet.
 | 261001-fg3 | feat: interactive tray — supervisor re-attaches on watcher appearance (NameOwnerChanged) + ~30 s health check (owner-requested silent-eviction self-heal, proven live twice), DBusMenu (com.canonical.dbusmenu, toggle-first/status/reload), SNI Activate; interface-name gap caught in live leg and fixed with a literal wire-name pin; owner confirmed the menu | 2026-10-01 | e8dae38 | Verified | [261001-fg3-feat-interactive-tray-daemon-re-attaches](./quick/261001-fg3-feat-interactive-tray-daemon-re-attaches/) |
 | 261006-squ | feat: sound — persistent PulseAudio stream (jfreymuth/pulse v0.1.3 + oggvorbis v1.0.5, vorbis v1.0.2 via oggvorbis) + GNOME sound-theme playback with XDG resolver and PCM cache replaces canberra subprocess (~150 ms → ~30 ms tone); spec-delta SPEC §5/§11 BEFORE code (D-55); mute = zero server connections incl. event-sounds arm (verifier gap found and fixed); synthesized tone stays as never-wait fallback; SoundSink seam unchanged; owner by-ear check pending | 2026-10-06 | efe6cd3 | Needs Review | [261006-squ-sound-persistent-pulseaudio-stream-gnome](./quick/261006-squ-sound-persistent-pulseaudio-stream-gnome/) |
 | 261006-vqw | feat(correct): per-character layout inversion as THE mixed-text semantics (owner verdict, UAT phase 6; D-22/D-23 revised; WINDOWS-12 freeze rejected) — spec-delta SPEC §4.2 before code (D-55, a24afa9), golden corpus re-pinned RED (3c7f564), invertPerChar in the run pipeline (4da90d8), 13 matrix rows v1..v4 re-pinned + case_word.go oracle (f9ed497); refusals/homogeneous byte-identical; owner live-matrix + gedit check pending | 2026-10-06 | f9ed497 | Needs Review | [261006-vqw-mixed-text-per-character-layout-inversio](./quick/261006-vqw-mixed-text-per-character-layout-inversio/) |
+| 261007-0yg | refactor: move engine/ and layouts/ under internal/ (owner decision 2026-10-07, SPEC §8 rev; D-55 spec-delta 649c00f before the move 5427d7a — 42 files, renames R98-R100, zero logic edits); .golangci.yml/mise.toml/LICENSE-data.md re-pointed, generator parity byte-identical; verifier reproduced a PRE-EXISTING flaky test (TestRun_OnConnHookCalledOnce read-once race) — stabilized with deadline-polled waits incl. the same-class sound test (08b598a), 9× green -race series; verification passed 5/5 | 2026-10-07 | 08b598a | Verified | [261007-0yg-move-engine-and-layouts-under-internal-o](./quick/261007-0yg-move-engine-and-layouts-under-internal-o/) |
 
 ## Deferred Items
 
