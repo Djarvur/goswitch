@@ -603,6 +603,27 @@ func waitHookContext(t *testing.T, ch <-chan context.Context) context.Context {
 	}
 }
 
+// waitHookCalls polls the hook's call counter until it reaches want or the
+// deadline lapses — a wait-for-condition poll, never a fixed sleep. Name
+// ownership (waitCtlOwner) carries no happens-before edge to the hook's
+// invocation: under cross-package -race load the hook can still be in
+// flight when the owner is already visible.
+func waitHookCalls(t *testing.T, calls func() int, want int) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := calls()
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("OnConn called %d times, want exactly %d", got, want)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 // TestRun_OnConnHookCalledOnce pins the happy path of the post-export
 // connection hook (quick plan 260930-pf6): Run calls OnConn exactly once
 // after the bus name and the ctl object are live, and serving continues.
@@ -640,12 +661,12 @@ func TestRun_OnConnHookCalledOnce(t *testing.T) {
 		if err := waitCtlOwner(t, 5*time.Second); err != nil {
 			t.Fatalf("Run never owned the name: %v", err)
 		}
-		mu.Lock()
-		got := calls
-		mu.Unlock()
-		if got != 1 {
-			t.Fatalf("OnConn called %d times, want exactly 1", got)
-		}
+		waitHookCalls(t, func() int {
+			mu.Lock()
+			defer mu.Unlock()
+
+			return calls
+		}, 1)
 		waitHookContext(t, hookCtxs)
 
 		// Serving continues after the hook: a plain client call answers.

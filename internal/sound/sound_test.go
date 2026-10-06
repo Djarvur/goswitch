@@ -561,8 +561,12 @@ func TestPlayer_ConnectFailedWarnOnceThenReopen(t *testing.T) {
 	if !poll(func() bool { return fd.dialCount() == 2 }) {
 		t.Fatal("the second tone never attempted its dial — a failed episode degrades, never disables")
 	}
-	if got := strings.Count(buf.String(), "sound unavailable"); got != 1 {
-		t.Errorf("connect-failed WARNs = %d, want exactly 1 per episode", got)
+	// The WARN rides the dial's completion (logged after dial() returns) —
+	// the dial counter carries no happens-before edge to the log write, so
+	// the count is polled, never read once (the OnConn-hook flake class).
+	if !poll(func() bool { return strings.Count(buf.String(), "sound unavailable") == 1 }) {
+		t.Errorf("connect-failed WARNs = %d, want exactly 1 per episode",
+			strings.Count(buf.String(), "sound unavailable"))
 	}
 
 	p.Flip() // the successful tone closes the episode
@@ -582,11 +586,14 @@ func TestPlayer_ConnectFailedWarnOnceThenReopen(t *testing.T) {
 	if !poll(func() bool { return fd.dialCount() == 4 }) {
 		t.Fatal("the post-episode failure never attempted its dial")
 	}
-	if got := strings.Count(buf.String(), "sound unavailable"); got != 2 {
-		t.Errorf("WARNs after the episode reopened = %d, want exactly 2", got)
-	}
-	if got := strings.Count(buf.String(), reasonConnectFailed); got != 2 {
-		t.Errorf("connect-failed reasons in the log = %d, want 2", got)
+	// Same poll discipline: the reopened episode's WARN lands after the
+	// dial returns — both log counts are awaited, never read once.
+	if !poll(func() bool {
+		return strings.Count(buf.String(), "sound unavailable") == 2 &&
+			strings.Count(buf.String(), reasonConnectFailed) == 2
+	}) {
+		t.Errorf("WARNs after the episode reopened = %d (reason lines %d), want exactly 2 of each",
+			strings.Count(buf.String(), "sound unavailable"), strings.Count(buf.String(), reasonConnectFailed))
 	}
 }
 
