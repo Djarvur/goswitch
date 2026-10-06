@@ -9,10 +9,11 @@ import (
 )
 
 // TestSkillgen_ParseRealConfigTable pins the generator to the real
-// docs/CONFIG.md key table (the D-8-10 single source): at least the 21
-// documented rows parse, every row carries exactly five cells, and every
-// key name is section-qualified — a dot in the first cell, with a prefix
-// from the closed section set.
+// docs/CONFIG.md key table (the D-8-10 single source): at least the 20
+// documented rows parse (the 2026-10-06 owner revision dropped the a11y
+// app-list row — the golden boundary rides the data source), every row
+// carries exactly five cells, and every key name is section-qualified — a
+// dot in the first cell, with a prefix from the closed section set.
 func TestSkillgen_ParseRealConfigTable(t *testing.T) {
 	t.Parallel()
 
@@ -20,8 +21,8 @@ func TestSkillgen_ParseRealConfigTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseKeyTable: %v", err)
 	}
-	if len(rows) < 21 {
-		t.Fatalf("parseKeyTable returned %d rows, want at least 21", len(rows))
+	if len(rows) < 20 {
+		t.Fatalf("parseKeyTable returned %d rows, want at least 20", len(rows))
 	}
 	sections := []string{"hotkeys.", "timeouts.", "correction.", "macr.", "autocorrect.", "sound.", "a11y."}
 	for i, row := range rows {
