@@ -298,19 +298,36 @@ it differently.
 A whole class of applications — Chromium/Electron (ZCode, the Telegram
 snap) — exposes no accessibility tree by default, and autocorrect stays
 silent in them (see Where autocorrect stays silent above). The `a11y`
-section of `config.yaml` lists the applications goswitch enables
-accessibility for: at daemon start and on every config hot reload it
-sets the `org.gnome.desktop.interface toolkit-accessibility` gsettings
-key (exactly the switch that used to be flipped by hand) and, as a
-session belt, the accessibility bus `IsEnabled` property.
+section of `config.yaml` governs accessibility magic with a single
+global switch `a11y.enabled` (bool, on by default). The setting is
+global because the
+`org.gnome.desktop.interface toolkit-accessibility` key belongs to the
+whole desktop — there is no application matching in the section. While
+the section is active, the daemon at start and on every config hot
+reload idempotently brings two environment handles to `true`: the
+gsettings key
+`org.gnome.desktop.interface toolkit-accessibility` (exactly the switch
+that used to be flipped by hand) and, as a session belt, the
+`org.a11y.Status.IsEnabled` property of the accessibility bus; a key
+already equal to `true` is not rewritten — zero writes to dconf.
 
-Applications read the key at their NEXT start: a running application does
-not pick it up — restart the application after adding it to the list.
-Removing an application from the list does not unset the key (a
-manually-enabled state is indistinguishable from a goswitch-enabled one);
-the only way back is `goswitchctl uninstall`, which restores the key's
-pre-install value from the snapshot taken at install. The full section
-reference — the two keys `a11y.enabled` and `a11y.apps` — lives in
+The section is active exactly when `a11y.enabled` is on — explicitly or
+by default: an absent section or key reads as ON, an explicit
+`enabled: false` is the only way to turn it off, and the daemon then
+leaves the key untouched (D-8-4).
+
+Applications read the key at their next start: a running application
+does not pick it up — restart the application for the accessibility
+tree to appear (this is the semantics of the mechanism, not a goswitch
+limitation). The daemon never unsets the key — a manually-enabled state
+is indistinguishable from a goswitch-enabled one; the only way back is
+`goswitchctl uninstall`, which restores the key's pre-install value
+from the snapshot taken at install.
+
+If a leftover application-list line from earlier versions remains
+inside the `a11y` section, the whole config is rejected at load (the
+strict decoder names the key as the error): remove it. The full section
+reference — the single key `a11y.enabled` — lives in
 [docs/CONFIG.md](docs/CONFIG.md).
 
 ## Configuration
