@@ -362,3 +362,7 @@ Plans:
 **Wave 6** *(blocked on Wave 5 completion — дельта-ревизия владельца D-8-1/REV от 2026-10-06: список не нужен, bool по умолчанию включён)*
 
 - [x] 08-09-PLAN.md — Дельта-ревизия: секция a11y без списка приложений — `a11y.enabled` (bool, default ON): SPEC-ревизия §4 2026-10-06 (add-only), схема pointer-bool по прецеденту Sound, фолд на EffectiveEnabled, CONFIG.md/SKILL.md синхронно (regen) — D-8-1/REV / D-8-5/REV / D-8-6/REV
+
+**Wave 7** *(gap-closure: пост-дельта верификация 43/44 — README-секции a11y несли аннулированный контракт)*
+
+- [ ] 08-10-PLAN.md — Gap-closure: README.md/README.en.md a11y-разделы на bool-контракт (default ON, без a11y.apps), паритет 22/22 заголовков — D-8-7 / D-8-8
