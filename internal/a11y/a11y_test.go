@@ -267,8 +267,9 @@ func TestA11y_MidEpisodeDesiredChangeHonoredByFollowUp(t *testing.T) {
 }
 
 // argvLiterals is the closed vocabulary every recorded argv element must
-// belong to — the argv discipline's test form: the config's app list has
-// no path into this set, hence none into any command (T-08-03-01).
+// belong to — the argv discipline's test form: nothing from the config
+// (which carries no application list since the 2026-10-06 revision) has
+// any path into this set, hence none into any command (T-08-03-01).
 func argvLiterals() map[string]bool {
 	return map[string]bool{
 		binGSettings:            true,
@@ -375,8 +376,8 @@ func TestA11y_DeactivateNeverTouchesKey(t *testing.T) {
 
 // TestA11y_FixedArgvOnlyLiterals pins the argv discipline end to end:
 // every argv the series ever renders consists of package literals alone
-// (T-08-03-01 — the config's app list has no path into argv), and the
-// diff gate keeps a repeated Apply(true) at zero new calls.
+// (T-08-03-01 — nothing from the configuration has a path into argv), and
+// the diff gate keeps a repeated Apply(true) at zero new calls.
 func TestA11y_FixedArgvOnlyLiterals(t *testing.T) {
 	runner := &fakeRunner{value: answerFalse}
 	r := New(runner.run, (&fakeStatus{}).set)

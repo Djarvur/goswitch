@@ -920,7 +920,8 @@ func (a *Actor) SetSoundSink(s SoundSink) {
 }
 
 // A11ySink is the accessibility-magic seam (plan 08-05, D-8-3): the fold
-// pushes the a11y section's Active() truth to the desktop reconciler.
+// pushes the a11y section's EffectiveEnabled() truth to the desktop
+// reconciler.
 // Defined at the point of use; the interface travels with the consumer
 // (the SoundSink precedent). The implementation is fire-and-forget by
 // contract — it must never block the actor's hot path (the apply series
@@ -1317,9 +1318,10 @@ func (a *Actor) applySnapshot() {
 }
 
 // pushA11y hands the reconciler the folded a11y state (plan 08-05, D-8-3
-// — the pushMenuSync form): the fold reads ONLY snap.A11y.Active() — the
-// single ACTIVE-semantics source (08-02), never recomputed here — and
-// pushes it to the sink only on a CHANGE of that boolean (the
+// — the pushMenuSync form; revised by the owner's 2026-10-06 decision,
+// plan 08-09): the fold reads ONLY snap.A11y.EffectiveEnabled() — the
+// single definition of the desired a11y state, never recomputed here —
+// and pushes it to the sink only on a CHANGE of that boolean (the
 // refreshACBlocklist diff-gate form): a repeated fold of the same state
 // never touches the sink, so dconf churn and journal noise are impossible
 // at any fold rate. The push rides the same synchronous under-the-mutex

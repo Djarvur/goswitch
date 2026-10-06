@@ -10,9 +10,11 @@
 // to the caller. Deactivation never touches the desktop (D-8-4: a
 // manually enabled key is indistinguishable from a goswitch-enabled one —
 // the only revert is the uninstaller's). Application names never reach
-// this package at all: the config list only decides WHETHER the fixed
-// actions run, the argv is rendered from package literals alone
-// (D-20/D-21, T-08-03-01 — the ASVS V5 argv discipline).
+// this package at all — the schema carries no application list since the
+// owner's 2026-10-06 revision (D-8-1/REV): the a11y.enabled switch alone
+// decides WHETHER the fixed series runs, and the argv is rendered from
+// package literals alone (D-20/D-21, T-08-03-01 — the ASVS V5 argv
+// discipline).
 package a11y
 
 import (
@@ -30,9 +32,10 @@ import (
 
 // The pinned gsettings coordinates of the global a11y key (D-8-6: the
 // exact lever the owner enabled manually for ZCode) and the two verbs.
-// The reconcile argv is rendered ONLY from these literals — the config's
-// app list never becomes an argument (T-08-03-01, the install.go
-// argv-discipline canon).
+// The reconcile argv is rendered ONLY from these literals — nothing from
+// the configuration ever becomes an argument, and since the 2026-10-06
+// revision there is no application list in the schema at all (T-08-03-01,
+// the install.go argv-discipline canon).
 const (
 	binGSettings            = "gsettings"
 	schemaGnomeInterface    = "org.gnome.desktop.interface"
