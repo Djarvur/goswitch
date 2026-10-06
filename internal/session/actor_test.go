@@ -6447,15 +6447,14 @@ func TestActor_FoldAppliedConfig(t *testing.T) {
 	}
 }
 
-// The a11y-sink corpus of plan 08-05: the accessibility-magic seam — the
-// fold delivers the a11y section's Active() truth to the sink ONLY on a
-// change of that boolean (the refreshACBlocklist diff-gate form), a late
-// install self-syncs the last folded state (the SetSoundSink precedent),
-// and a nil sink stays a silent no-op.
-
-// a11yListedApp is the fold corpus's app pattern — the owner's ZCode
-// precedent (D-8-1), one constant for every a11y document feed.
-const a11yListedApp = "zcode"
+// The a11y-sink corpus of plan 08-05, rewritten by the 2026-10-06 owner
+// revision (plan 08-09): the accessibility-magic seam — the fold delivers
+// the a11y section's EffectiveEnabled() truth to the sink ONLY on a change
+// of that boolean (the refreshACBlocklist diff-gate form), a late install
+// self-syncs the last folded state (the SetSoundSink precedent), and a nil
+// sink stays a silent no-op. There is no app list in the schema any more:
+// the fold reads the single global switch (nil decodes ON — the owner's
+// default-ON verdict, D-8-6/REV).
 
 // fakeA11ySink is the actor's A11ySink double (plan 08-05): every pushed
 // state recorded under a mutex — the fold's diff-gate observability.
@@ -6480,101 +6479,78 @@ func (f *fakeA11ySink) pushed() []bool {
 	return slices.Clone(f.pushes)
 }
 
-// a11yDoc returns the defaults document with the a11y section set to the
-// given state — the fold corpus's feed (a complete valid document, the
-// reloadCfg shape).
-func a11yDoc(enabled bool, apps []string) config.Config {
+// a11yDoc returns the defaults document with the a11y switch set to the
+// given value — the fold corpus's feed (a complete valid document, the
+// reloadCfg shape). The pointer form mirrors the schema: an explicit bool
+// is the document's own verdict, the nil pointer the absent-key shape.
+func a11yDoc(enabled bool) config.Config {
 	cfg := config.Defaults()
-	cfg.A11y.Enabled = enabled
-	cfg.A11y.Apps = apps
+	cfg.A11y.Enabled = &enabled
 
 	return cfg
 }
 
-// TestActor_A11yFoldTriggersSinkOnActivation pins the activation push
-// (plan 08-05): a fold of a document with the section enabled over a
-// non-empty list delivers exactly one Apply(true) — the startup fold
-// (newActor's FoldAppliedConfig) reaches the reconciler the same way.
-func TestActor_A11yFoldTriggersSinkOnActivation(t *testing.T) {
+// TestActor_A11yDefaultsDocumentPushesTrue pins the default-ON fold (the
+// owner's 2026-10-06 revision in action, D-8-6/REV): the fold of the
+// built-in defaults document — whose a11y switch decodes ON — delivers
+// exactly one Apply(true) to the reconciler.
+func TestActor_A11yDefaultsDocumentPushesTrue(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	src := &reloadSource{cfg: a11yDoc(true, []string{a11yListedApp})}
+	src := &reloadSource{cfg: config.Defaults()}
 	a.AttachConfig(src)
 	a.SetA11ySink(sink)
 
 	a.FoldAppliedConfig()
 
 	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
-		t.Errorf("a11y pushes after the active fold = %v, want exactly [true]", got)
+		t.Errorf("a11y pushes after the defaults fold = %v, want exactly [true] (default ON)", got)
 	}
 }
 
-// TestActor_A11yFoldDiffGated pins the diff gate (plan 08-05, the
-// refreshACBlocklist form): a repeated fold of the same document and a
-// fold of a document with a DIFFERENT list but the same Active truth both
-// stay silent — the folded state is a boolean, never the list, so dconf
-// churn and journal noise are impossible at any fold rate.
-func TestActor_A11yFoldDiffGated(t *testing.T) {
+// TestActor_A11yFoldTriggersSinkOnActivation pins the activation push
+// (plan 08-05): a fold of a document with the switch enabled delivers
+// exactly one Apply(true), and a REPEATED fold of the same state stays
+// silent — the diff gate keeps dconf churn and journal noise at zero at
+// any fold rate (the startup fold of newActor's FoldAppliedConfig reaches
+// the reconciler the same way).
+func TestActor_A11yFoldTriggersSinkOnActivation(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	cfg := a11yDoc(true, []string{a11yListedApp})
+	cfg := a11yDoc(true)
 	src := &reloadSource{cfg: cfg}
 	a.AttachConfig(src)
 	a.SetA11ySink(sink)
 
 	a.FoldAppliedConfig() // the activation — the only push
-	cfg.A11y.Apps = []string{a11yListedApp, "telegram"}
 	src.set(cfg)
-	a.FoldAppliedConfig() // a different list, the same Active — silence
+	a.FoldAppliedConfig() // the same state — silence
 
 	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
-		t.Errorf("a11y pushes after a repeated and a list-changed fold = %v, want exactly [true] — "+
+		t.Errorf("a11y pushes after the active and a repeated fold = %v, want exactly [true] — "+
 			"the gate is on the boolean", got)
 	}
 }
 
-// TestActor_A11yDeactivatePropagates pins the deactivation push (plan
-// 08-05): a fold of a disabled document after an active one delivers
-// Apply(false) — the 08-03 reconciler itself decides that a false touches
-// nothing (D-8-4); the actor's job is only to deliver the change.
-func TestActor_A11yDeactivatePropagates(t *testing.T) {
+// TestActor_A11yExplicitFalsePushesFalse pins the deactivation push (plan
+// 08-05): a fold of a document with an EXPLICIT enabled: false after an
+// active one delivers Apply(false) — the only OFF shape of the revised
+// section. The 08-03 reconciler itself decides that a false touches
+// nothing (D-8-4, pinned by its own corpus); the actor's job is only to
+// deliver the change.
+func TestActor_A11yExplicitFalsePushesFalse(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	cfg := a11yDoc(true, []string{a11yListedApp})
-	src := &reloadSource{cfg: cfg}
+	src := &reloadSource{cfg: a11yDoc(true)}
 	a.AttachConfig(src)
 	a.SetA11ySink(sink)
 
 	a.FoldAppliedConfig() // active
-	cfg.A11y.Enabled = false
-	src.set(cfg)
-	a.FoldAppliedConfig() // disabled — the change must propagate
+	src.set(a11yDoc(false))
+	a.FoldAppliedConfig() // explicit false — the change must propagate
 
 	if got := sink.pushed(); !slices.Equal(got, []bool{true, false}) {
-		t.Errorf("a11y pushes after activate then disable = %v, want exactly [true false]", got)
-	}
-}
-
-// TestActor_A11yEnabledEmptyListInactive pins the Active() semantics as the
-// fold's ONLY truth source (plan 08-05, the 08-02 single definition): an
-// enabled section with an EMPTY list is not active — the fold pushes
-// Apply(false) where an inline enabled check would stay silent.
-func TestActor_A11yEnabledEmptyListInactive(t *testing.T) {
-	a, _ := wiredActor()
-	sink := &fakeA11ySink{}
-	cfg := a11yDoc(true, []string{a11yListedApp})
-	src := &reloadSource{cfg: cfg}
-	a.AttachConfig(src)
-	a.SetA11ySink(sink)
-
-	a.FoldAppliedConfig() // active
-	cfg.A11y.Apps = nil   // enabled with an empty list — Active() is false
-	src.set(cfg)
-	a.FoldAppliedConfig()
-
-	if got := sink.pushed(); !slices.Equal(got, []bool{true, false}) {
-		t.Errorf("a11y pushes after activate then enabled-with-empty-list = %v, want exactly [true false] — "+
-			"the fold reads Active(), not enabled", got)
+		t.Errorf("a11y pushes after activate then explicit false = %v, want exactly [true false]", got)
 	}
 }
 
@@ -6586,7 +6562,7 @@ func TestActor_A11yEnabledEmptyListInactive(t *testing.T) {
 func TestActor_A11ySinkInstallSelfSyncs(t *testing.T) {
 	a, _ := wiredActor()
 	sink := &fakeA11ySink{}
-	src := &reloadSource{cfg: a11yDoc(true, []string{a11yListedApp})}
+	src := &reloadSource{cfg: a11yDoc(true)}
 	a.AttachConfig(src)
 
 	a.FoldAppliedConfig() // the startup fold — no sink installed yet
@@ -6604,11 +6580,11 @@ func TestActor_A11ySinkInstallSelfSyncs(t *testing.T) {
 // effect, the silent absence of pushes.
 func TestActor_A11yNilSinkNoOp(t *testing.T) {
 	a, _ := wiredActor()
-	src := &reloadSource{cfg: a11yDoc(true, []string{a11yListedApp})}
+	src := &reloadSource{cfg: a11yDoc(true)}
 	a.AttachConfig(src)
 
 	a.FoldAppliedConfig() // active with no sink — silent
-	src.set(a11yDoc(false, nil))
+	src.set(a11yDoc(false))
 	a.FoldAppliedConfig() // deactivated with no sink — still silent
 
 	if st := a.StatusSnapshot(); !st.SoundEnabled {
