@@ -704,6 +704,63 @@ func TestPlayer_WatcherEventSoundsMute(t *testing.T) {
 	}
 }
 
+// TestPlayer_EventSoundsMuteDropsTonesWithoutRedial pins the muted arm's
+// suppression (PD-1's effective play: config sound AND event-sounds): a
+// tone arriving while the system event-sounds key is off — the config
+// switch still on, the actor gate open — is DROPPED WITHOUT a redial;
+// the muted state ends only when the key turns true again, and the next
+// tone dials and plays.
+func TestPlayer_EventSoundsMuteDropsTonesWithoutRedial(t *testing.T) {
+	p, d, r := newSoundTestPlayer()
+	p.Start()
+	p.Flip()
+	if !poll(func() bool { return d.dialCount() == 1 && d.lastWriteCount() == 1 }) {
+		t.Fatal("the pre-mute tone never played")
+	}
+	if !poll(func() bool { return r.monitor() != nil }) {
+		t.Fatal("the watcher never started the monitor")
+	}
+	mon := r.monitor()
+
+	mon.emit("event-sounds: false")
+	if !poll(func() bool { return d.lastConn().closeCount() == 1 }) {
+		t.Fatal("the event-sounds=false transition never closed the connection (PD-1)")
+	}
+
+	p.Flip() // a tone under the system mute — dropped WITHOUT a redial
+	staysFalse(t, "a redial under the system mute", func() bool { return d.dialCount() != 1 })
+	staysFalse(t, "a played tone under the system mute", func() bool { return d.lastWriteCount() != 1 })
+
+	mon.emit("event-sounds: true") // the muted state ends
+	p.Flip()
+	if !poll(func() bool { return d.dialCount() == 2 && d.lastWriteCount() == 2 }) {
+		t.Fatal("the post-unmute tone never dialed and played — the lazy reconnect is broken")
+	}
+}
+
+// TestPlayer_EventSoundsMutedAtStartDialsNothing pins the startup arm:
+// the start re-read finding event-sounds=false mutes from the first tone
+// — nothing ever dials until the key turns true, then the lazy redial
+// rides the next tone.
+func TestPlayer_EventSoundsMutedAtStartDialsNothing(t *testing.T) {
+	p, d, r := newSoundTestPlayer()
+	r.sounds = "false"
+	p.Start()
+	if !poll(func() bool { return r.monitor() != nil }) {
+		t.Fatal("the watcher never started the monitor")
+	}
+
+	p.Flip() // the system mute held from the start read — dropped, no dial
+	staysFalse(t, "a dial under the startup system mute", func() bool { return d.dialCount() != 0 })
+	staysFalse(t, "a played tone under the startup system mute", func() bool { return d.lastWriteCount() != 0 })
+
+	r.monitor().emit("event-sounds: true")
+	p.Flip()
+	if !poll(func() bool { return d.dialCount() == 1 && d.lastWriteCount() == 1 }) {
+		t.Fatal("the post-unmute tone never dialed and played")
+	}
+}
+
 // TestPlayer_GSettingsMissingFallsBack pins the PD-2 degradation: the
 // whole gsettings path unavailable — the theme degrades to the XDG
 // fallback theme with ONE warn-once WARN and playback carries on.
