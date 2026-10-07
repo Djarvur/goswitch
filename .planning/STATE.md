@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 Phase: 4 — Поставка и приёмка
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-07 — Completed quick task 261007-0yg: engine/ and layouts/ moved under internal/ (SPEC §8 revision)
+Last activity: 2026-10-08 — Completed quick task 261008-00m: milestone-close owner fixes (G-2-3 flip-buffer + G-5-5 auto-wrap + stand hermeticity); live matrix v1 16/16
 
 Progress: [████████░░] 75%
 
@@ -315,7 +315,7 @@ None yet.
 | 261006-squ | feat: sound — persistent PulseAudio stream (jfreymuth/pulse v0.1.3 + oggvorbis v1.0.5, vorbis v1.0.2 via oggvorbis) + GNOME sound-theme playback with XDG resolver and PCM cache replaces canberra subprocess (~150 ms → ~30 ms tone); spec-delta SPEC §5/§11 BEFORE code (D-55); mute = zero server connections incl. event-sounds arm (verifier gap found and fixed); synthesized tone stays as never-wait fallback; SoundSink seam unchanged; owner by-ear check pending | 2026-10-06 | efe6cd3 | Needs Review | [261006-squ-sound-persistent-pulseaudio-stream-gnome](./quick/261006-squ-sound-persistent-pulseaudio-stream-gnome/) |
 | 261006-vqw | feat(correct): per-character layout inversion as THE mixed-text semantics (owner verdict, UAT phase 6; D-22/D-23 revised; WINDOWS-12 freeze rejected) — spec-delta SPEC §4.2 before code (D-55, a24afa9), golden corpus re-pinned RED (3c7f564), invertPerChar in the run pipeline (4da90d8), 13 matrix rows v1..v4 re-pinned + case_word.go oracle (f9ed497); refusals/homogeneous byte-identical; owner live-matrix + gedit check pending | 2026-10-06 | f9ed497 | Needs Review | [261006-vqw-mixed-text-per-character-layout-inversio](./quick/261006-vqw-mixed-text-per-character-layout-inversio/) |
 | 261007-0yg | refactor: move engine/ and layouts/ under internal/ (owner decision 2026-10-07, SPEC §8 rev; D-55 spec-delta 649c00f before the move 5427d7a — 42 files, renames R98-R100, zero logic edits); .golangci.yml/mise.toml/LICENSE-data.md re-pointed, generator parity byte-identical; verifier reproduced a PRE-EXISTING flaky test (TestRun_OnConnHookCalledOnce read-once race) — stabilized with deadline-polled waits incl. the same-class sound test (08b598a), 9× green -race series; verification passed 5/5 | 2026-10-07 | 08b598a | Verified | [261007-0yg-move-engine-and-layouts-under-internal-o](./quick/261007-0yg-move-engine-and-layouts-under-internal-o/) |
-| 261008-00m | milestone-close owner fixes: G-2-3 own-engine flip keeps the correction buffer (ADR-004 amendment + flipCredit; live matrix v1 16/16, word-mixed → паиghbdtn) + G-5-5 half-wrapped sources auto-wrap-then-refuse (ADR-006/SPEC §4.3-4.4 deltas, owner verbatim) + matrix stand hermeticity (plain cases pin base config, no owner-config adoption) | 2026-10-07 | ae54bf4 | — | [261008-00m-milestone-close-owner-fixes-batch-1-g-2-](./quick/261008-00m-milestone-close-owner-fixes-batch-1-g-2-/) |
+| 261008-00m | milestone-close owner fixes: G-2-3 own-engine flip keeps the correction buffer (ADR-004 amendment + flipCredit; live matrix v1 16/16, word-mixed → паиghbdtn) + G-5-5 half-wrapped sources auto-wrap-then-refuse (ADR-006/SPEC §4.3-4.4 deltas, owner verbatim) + matrix stand hermeticity (plain cases pin base config, no owner-config adoption) | 2026-10-08 | 4dc4877 | Verified | [261008-00m-milestone-close-owner-fixes-batch-1-g-2-](./quick/261008-00m-milestone-close-owner-fixes-batch-1-g-2-/) |
 
 ## Deferred Items
 
