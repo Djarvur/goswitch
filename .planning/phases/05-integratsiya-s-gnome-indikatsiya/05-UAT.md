@@ -74,14 +74,13 @@ blocked: 0
 Нет FAILED истин, отсутствующих/стабовых артефактов, несвязанных key links или блокер-антипаттернов. Открытые review-предупреждения WR-02/WR-03/WR-05 — fix-очередь владельца, ни одно не инвалидирует must-have как написано. README-абзац очищенной эры (WR-04×2) — маленький хвост для touch-up.
 
 ### G-5-5: полусостояние sources — владелец требует авто-дозаворачивание с фолбэком в отказ
-status: failed
-reason: "Владелец (2026-10-07, дословно): «автоматически приводить конфигурацию к правильной,
-а если не получилось - отказ». Текущее поведение — немедленный отказ errMixedSources без
-попытки починки (TestWrapSourcesRefusalTable пинит отказ как контракт FLAGGED assumption
-05-02). Требуется ревизия поведения: попытка автоматического дозаворачивания чужого тупля
-при обнаружении полусостояния, отказ только при неудаче; спека до кода (D-55)."
-severity: major
-test: 5
-artifacts: []
-missing:
-  - "Ревизия поведения в спеке (§4/§10 по D-55) + изменение refusal-пути: wrap-attempt → fallback refusal"
+status: resolved
+resolved_by: 261008-00m
+resolved_at: 2026-10-08
+reason: "Закрыто quick 261008-00m: спек-дельта до кода (ADR-006 amendment + SPEC §4.3/§4.4,
+0781a5f, дословная формулировка владельца в audit trail), затем TDD: wrapSources
+авто-завершает полусостояние через renderWrapped + engine dedupe (RED e0e21ec → GREEN
+2fa8b53), resolveWrapInput маршрутизирует mixed-live через completion, selfcheck лечит
+(один gsettings set → re-read → green); residue/unsupported/nothing-wrappable держат
+исходные отказы атомарно и без записи. Юнит-корпус зелёный; живую демонстрацию владельец
+может сделать в любой момент."
