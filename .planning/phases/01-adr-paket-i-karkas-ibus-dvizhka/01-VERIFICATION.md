@@ -61,7 +61,7 @@ covered_files:
   - test/e2e/focus_helper.py
   - test/e2e/main.go
   - test/e2e/preflight.go
-covered_digest: "v1:sha256:2aceb9ec77dc872143fe78b6b55cfbe033e44ebb487ead80348f1022e2429848"
+covered_digest: "v1:sha256:e3866f09bcfded8f1bde1c1788114fdd0544c96f1b77f347a55e5336ca7fc513"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:

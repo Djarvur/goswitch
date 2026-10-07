@@ -56,7 +56,7 @@ covered_files:
   - test/e2e/matrix_test.go
   - test/e2e/cases/matrix-v4.yaml
   - mise.toml
-covered_digest: "v1:sha256:0a0a2c5069f280718c351af78e88f1ea4a170cf58854628dd36232cef2f23e69"
+covered_digest: "v1:sha256:566481df94ef83d02f7d1b0ef90ee8c9b5609e870026119094b968cabc26b282"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:

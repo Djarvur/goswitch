@@ -50,7 +50,7 @@ covered_files:
   - test/e2e/main.go
   - test/e2e/matrix.go
   - test/e2e/matrix_test.go
-covered_digest: "v1:sha256:c28a700d3c4cfe91d4fe116c4f960eb69593e1212bb872bf3b50041319aff2ca"
+covered_digest: "v1:sha256:f66ae0c8b5552645ccc3bb5e04902da7fca82e82a701559792e2f25b8b3158ef"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
