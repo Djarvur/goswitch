@@ -1,6 +1,6 @@
 ---
 phase: 05-integratsiya-s-gnome-indikatsiya
-verified: 2026-10-07T20:52:42Z
+verified: 2026-10-07T23:09:59Z
 status: passed
 score: 6/6 must-haves verified
 covered_files:
@@ -22,6 +22,8 @@ covered_files:
   - README.md
   - cmd/goswitchd/main.go
   - cmd/goswitchd/main_test.go
+  - docs/SPEC.md
+  - docs/adr/ADR-004-buffer-reset-triggers.md
   - docs/adr/ADR-006-two-engine-revision.md
   - internal/activate/activate.go
   - internal/activate/activate_test.go
@@ -47,27 +49,34 @@ covered_files:
   - test/e2e/case_switch_test.go
   - test/e2e/main.go
   - test/e2e/matrix.go
-covered_digest: "v1:sha256:15e3bf4febd3787f359f066cc9dfc6b722397b1f546d21e6d21cb874cfa5edbe"
+  - test/e2e/matrix_test.go
+covered_digest: "v1:sha256:c28a700d3c4cfe91d4fe116c4f960eb69593e1212bb872bf3b50041319aff2ca"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: human_needed
-  previous_score: 4/6
+  previous_status: passed
+  previous_score: 6/6
   gaps_closed: []
   gaps_remaining: []
   regressions: []
 ---
 
-# Phase 5: Интеграция с GNOME — Verification Report (re-verification, milestone close)
+# Phase 5: Интеграция с GNOME — Verification Report (focused staleness refresh, milestone close)
 
 **Phase Goal:** goswitch переключает раскладку как полноценный гражданин GNOME: верхняя панель показывает индикатор активной раскладки (en/ru), флип (одиночный Shift, Super+Space, флип после коррекции) переключает источники через SetGlobalEngine на шине IBus — видимым для GNOME образом. Ревизия ADR-001 → ADR-006 фиксируется. (Исходная формулировка «ДВА goswitch-источника» ревизована владельцем 2026-09-30 вечером — ADR-006 Amendment: single-source model, ≥1 goswitch-источник; собственный индикатор — SNI goswitch в трее.)
-**Verified:** 2026-10-07T20:52:42Z (HEAD 2171fae, branch gsd/internalize-engine-layouts — последний код-коммит 5427d7a/08b598a)
+**Verified:** 2026-10-07T23:09:59Z (HEAD 8292dd4, branch gsd/phase-07-menyu-v2-i-chernyy-spisok-avtokorrektsii — последний код-коммит дельты 4dc4877, docs 8292dd4)
 **Status:** passed
-**Re-verification:** Yes — fingerprint-staleness refresh at milestone close (previous: human_needed 4/6, 2026-09-30T15:10:58Z, HEAD bbbbd04)
+**Re-verification:** Yes — fingerprint-staleness refresh №2 (quick task 261008-00m приземлился ПОСЛЕ верификации 2026-10-07T20:52:42Z и изменил код дерева, покрытый этой фазой; предыдущий прогон: passed 6/6 на HEAD 2171fae)
 
-**Scope of this pass.** Предыдущий отчёт признал 4/6 истин и вынес 6 human-гейтов. С тех пор дерево прошло 306 коммитов (фазы 6–8, PR #10, quick-задачи 260930-toa / 261001-fg3 / 261006-squ / 261006-vqw / 261007-0yg). Проверяются те же 6 must-have на ТЕКУЩЕМ дереве: полные проверки там, где пути/проводка менялись (engine/ → internal/engine/, actor.go/install.go/main.go/case_switch.go тронуты поздними фазами), точечные регрессии — где доказательства переносятся. Человеко-принимаемые измерения закрыты вердиктами владельца (в UAT фаз 6/8, записанных на диске, и вердиктами 2026-10-07, переданными координатором milestone-UAT-сессии); human-пункты здесь не возобновляются — по правилам этого прогона они возобновляются только при отсутствующем/несвязанном артефакте (таких нет).
+**Scope of this pass (focused).** Прошлый прогон (passed 6/6) устарел по отпечатку: quick 261008-00m (коммиты 77c91b7..4dc4877, спек-дельта 0781a5f) изменил ровно три шва, покрытые фазой. Дельта проверена полностью, остальное — точечная регрессия:
 
-**Path-staleness note:** все пути `engine/*.go` из прошлого отчёта устарели (коммит 5427d7a перенёс engine/ и layouts/ под internal/, SPEC §8 rev D-55). Все пути ниже re-выведены против текущего дерева; covered_digest пересчитан вербой verification.fingerprint.
+1. **G-2-3, internal/session/actor.go** (4a0c887; ADR-004 amendment 2026-10-07): `flipTo` после УСПЕШНОГО раунд-трипа SetGlobalEngine армит ровно один `flipCredit` (:2017; поле :263); `HandleLifecycle` FocusOut поглощает ровно один кредит и пропускает ТОЛЬКО жёсткий сброс буфера (:788-793) — синтетическая пара focus_out/focus_in собственного флипа — не «смена фокуса окна»; Reset кредит не потребляет никогда; WARN-неудача/nil-шов кредита не армит. Это ПРЯМО касается SC-3/SC-4 фазы: воронка flipTo, settleCorrectionFlip и D-36 порядок записей регресс-проверены (ниже).
+2. **G-5-5, internal/install/**\* (2fa8b53; ADR-006 amendment 2026-10-07 + SPEC §4.3/§4.4 дельты, дословное решение владельца «автоматически приводить конфигурацию к правильной, а если не получилось - отказ»): SC-1 перевырен к ДЕЙСТВУЮЩЕМУ контракту — полуобёрнутый список теперь ДОЗАВЁРТЫВАЕТСЯ (`wrapSources` :837 — единственный арбитр завершения: renderWrapped + дедупликация повторных движковых туплей по первой позиции); отказ — ТОЛЬКО чужой остаток вне us/ru (`errMixedSources` :860 при наличии goswitch-материала), неподдерживаемый вид, нечего заворачивать (`errUnsupportedPair` :168) — все ДО любой мутации; `resolveWrapInput` :892 маршрутизирует mixed-live через тот же арбитр; `checkInputSource` (selfcheck.go :196) ЛЕЧИТ завершаемое полусостояние (один gsettings set :218 → перечитка :221-226 → зелёный вердикт), остаток остаётся красным с нулём записей. Гэп G-5-5 из 05-UAT.md закрыт этим quick-заданием (запись `status: resolved, resolved_by: 261008-00m` на диске).
+3. **test/e2e/matrix.go** (4dc4877): герметичность стенда ТОЛЬКО — предикат `caseNeedsBaseEstablishment` пинит -config-документ каждому кейс-демону (кроме reload-кейсов, чей первый reload-шаг и есть установление); оракулы и ожидания не тронуты.
+
+Живое доказательство на диске (записано оркестратором на fix-дереве, не пересоздаётся этим прогоном): матрица v1 **16/16** (слово через флип → «паиghbdtn» — case, падавший до фикса, зелёный) и v2 **20/21** (ОБА пере-пиненных mixed-ряда зелёные; единственный FAIL super-space-alive — детерминированно атрибутированный отчётом стендовый класс кражи фокуса, не продукт) — `.planning/quick/261008-00m-milestone-close-owner-fixes-batch-1-g-2-/261008-00m-VERIFICATION.md`, `.planning/STATE.md` (строка 261008-00m, Verified), корроборация в 03-VERIFICATION.
+
+Человеко-принимаемые измерения остаются закрытыми вердиктами владельца прошлого прогона (на диске: 06-UAT, 08-VERIFICATION, 05-UAT; переданы координатором milestone-UAT-сессии 2026-10-07): артефакты всех пунктов присутствуют и wired, новых человеческих поверхностей дельта не создала — оба новых инварианта (кредит, дозаворот) имеют поведенческие тесты (ниже).
 
 ## Goal Achievement
 
@@ -75,68 +84,70 @@ re_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | **SC-1** — install оборачивает источники пользователя в goswitch-движки их раскладки; непригодный ввод — честный отказ; uninstall восстанавливает оригинал дословно | ✓ VERIFIED | Текущее дерево, модель по ADR-006 Amendment 2026-09-30 (одновложенная ревизия: «в гномовском переключателе остается один источник» — дословная цитата владельца в ADR): `wrapSources` (install.go:830) оборачивает КАЖДЫЙ пригодный источник, **минимум один** (TestWrapSourcesSingleSource); отказы `errUnsupportedPair` (:168) и `errMixedSources` (:172, foreignResidueHint :858) ДО первой записи; `resolveWrapInput` → `savedSources` state-файла (:864-894); `TestUninstall_FullRollback` зелёный. Именованные прогоны этого верификатора на HEAD 2171fae (-race): TestWrapSourcesPairPreserved/SingleSource/ForeignResidueRefused/RefusalTable/AlreadyOwnedUpgrade, TestUninstall_FullRollback — все PASS. Полный живой install-cycle принят владельцем по доказательствам (2026-10-07, вердикт координатора) |
-| 2 | **SC-2 (спек-дельта)** — индикатор отражает активный источник при пользовательских жестах; видим нативным для GNOME образом | ✓ VERIFIED (закрыт вердиктом владельца) | Предыдущий ⚠️ PRESENT_BEHAVIOR_UNVERIFIED закрыт: **владелец подтвердил 2026-10-07 ежедневным использованием, что индикатор следует переключениям источника** (вердикт передан координатором milestone-UAT; ранее — пиксельное подтверждение SNI-иконки 2026-09-30, quick 260930-pf6). Артефакты на текущем дереве wired: `UpdateModeSymbol` эмитится на каждом флипе (actor.go:1973, :2035; TestActor_FlipEmitsPanelSymbol PASS), display-шов `ModeChanged` (:1980) и трей-меню `menuSync.SetMode` (:1987) — тот же символ; интерактивный трей (261001-fg3): SNI Activate + DBusMenu, супервизор re-attach (main.go:166 `Toggle: actor.ToggleMode`). ADR-006 Amendment фиксирует дисплей-путь (нативный индикатор скрыт при одном источнике — SNI goswitch его замещает) |
-| 3 | **SC-3** — все жесты через SetGlobalEngine на ibus-соединении демона (не subprocess), <50 мс; состояние демона не расходится с активным источником (sync при FocusIn; WARN при неудаче) | ✓ VERIFIED | Воронка едина и расширена: `flipTo` (actor.go:1954) — 4 классических сайта + **новый пятый жест** ToggleMode (:1050-1057, трей-меню/Activate) через ТОТ ЖЕ путь (TestActor_ToggleModeFlips PASS); `SetSwitcher`-замыкание (actor.go:840) → `CallWithContext(ibusService+".SetGlobalEngine")` (conn.go:240) с записью `switch_engine` + WARN при сбое (:242-246); `switchTimeout = 150ms` (actor.go:67) — клин-гард над бюджетом, не бюджет. Wiring в main.go (:554-569: OnGlobalEngine→SyncEngine, BindSwitcher→SetSwitcher, BindGlobalEngine→IfOwned) перепривязан на internal/engine — сборка зелёная, TestSwitcherCallsSetGlobalEngine (wire-акт через fake bus) PASS. Sync: TestActor_SyncEngineNeverSwitches PASS. Латентность: живой замер 05-05 ≈41 мс < 50 мс; **G-6-1 (ADR-006 Amendment 2026-10-02)** устранил самоблокировку фабрики — `AttachEngine` lock-free (`atomic.Pointer[emitterSlot]`, actor.go:171/:832-834): 24/24 немедленных буквы, RTT 6.5–9.2 мс, матрица 32/35×2 — бывший симптом «съеденной буквы» закрыт изменением механизма при неизменном контракте. Именованные прогоны: TestActor_FlipRoutesThroughSwitcher/FlipOrderPinned/SwitcherDeadlineBounded — PASS |
-| 4 | **SC-4** — режим после коррекции = скрипт результата (lat→cyr оставляет goswitch-ru, наоборот — goswitch-en) | ✓ VERIFIED | `settleCorrectionFlip` (actor.go:1190) → `flipTo(scriptOf(converted))`, три сайта вызова (:2787, :2818, :2846) нетронуты ревизией mixed-семантики (261006-vqw переписал конвейер инверсии, НЕ флип-семантику). TestActor_CorrectionFlipSetsResultEngine — PASS на текущем дереве (оба направления) |
-| 5 | **SC-5** — GNOME-переключение по клавишам остаётся у goswitch; selfcheck отражает состояние источников | ✓ VERIFIED (модель ревизована владельцем) | Selfcheck по ADR-006 Amendment: `checkInputSource` требует **≥1** goswitch-движок и НОЛЬ чужих (selfcheck.go:176-186, красный вердикт называет движки и фикс); корпус TestSelfcheck_InputSourceTwoEngines/SingleGreen/ForeignRejected/MixedRejected — PASS. Чорды GNOME не трогаются (суперсе́ссия 260930-nxd стоит): `clearSwitchBinding`/`ownerSourcesSet`/`clearedSwitchBindings` отсутствуют во всех *.go (absence-пин этого прогона). **WR-04 закрыт**: README переписан (v1.1.0, 6f2742e) — схема теперь верная `org.gnome.desktop.wm.keybindings` `switch-input-source` … «не трогаются» (README.md:65-66), абзац очищенной эры удалён; раздел «Источники ввода и индикатор режима» документирует single-source + SNI-трей (README.md:72-85). super-space-alive выведен из matrix-v4 вердиктом владельца 2026-10-04 (daemon владеет переключением, доказано e2e-flip-keystroke) |
-| 6 | **SC-6** — e2e-матрица зелёная дважды на живом столе, включая кейсы переключения; акт переключения наблюдаем в журнале | ✓ VERIFIED (вердикты владельца на диске) | WINDOWS #12 разрешён веткой «семантика пересматривается»: mixed-семантика ревизована в посимвольную инверсию (спека-дельта D-55, 2026-10-06 — записанный владельцем follow-up из 06-UAT), 13 строк матриц re-pinned (f9ed497, matrix-v1..v4), поведение доказано юнит-корпусом и верифицировано фазой 6 (51/51, 06-VERIFICATION). Двойная зелень — вердикт владельца 2026-10-04 (06-UAT тест 1: PASS, «Матрица 32/35×2 стабильно» после G-6-1-фикса); формальный свежесессионный гейт D-48/D-49 принят владельцем по доказательствам (2026-10-07, координатор); чек-лист docs/ACCEPTANCE.md (D-49) — рабочая поверхность milestone-UAT-сессии координатора, не гэп фазы. Акт переключения наблюдаем: оракул пары mode→switch_engine TestFlipMarksPaired/TestModeFollowedOnly — PASS на текущем дереве; кейсы two-source-flip/external-flip-sync в реестре (test/e2e/main.go:269-271); mise-задачи на месте (mise.toml:137-169) |
+| 1 | **SC-1 (контракт G-5-5, ревизован владельцем 2026-10-07)** — install оборачивает источники пользователя в goswitch-движки их раскладки; завершаемое полусостояние дозаворачивается к канонической goswitch-конфигурации; отказ — только чужой остаток вне us/ru / неподдерживаемый вид / нечего заворачивать — всегда ДО любой мутации; uninstall восстанавливает оригинал дословно | ✓ VERIFIED | Текущее дерево по ADR-006 amendment 2026-10-07 (дословная цитата владельца в audit-trail, снятый контракт задокументирован) и SPEC §4.3/§4.4 (:139-148): `wrapSources` (install.go:837) — ЕДИНСТВЕННЫЙ арбитр завершения: каждый xkb us/ru заворачивается, минимум один (TestWrapSourcesSingleSource), повторные движковые тупли дедуплицируются по первой позиции — полусостояние «goswitch-en + xkb us» завершается (новый TestWrapSourcesHalfWrappedCompletes PASS); отказы `errMixedSources` (:860, только при наличии goswitch-материала рядом с чужим остатком) / неподдерживаемый вид / нечего заворачивать — ДО первой записи (saveState-гейт :530-546, «ноль записей gsettings на отказе» — дисциплина 260930-toa сохранена); `resolveWrapInput` (:892) маршрутизирует mixed-live через wrap-попытку (один арбитр); selfcheck ЛЕЧИТ завершаемое полусостояние (selfcheck.go:212-234: один set → перечитка → верификация владения до зелёного вердикта; остаток красный с D-53-рационал). Именованные прогоны этого верификатора на HEAD 8292dd4 (-race): TestWrapSourcesPairPreserved/SingleSource/ForeignResidueRefused/HalfWrappedCompletes/RefusalTable/AlreadyOwnedUpgrade — 6/6 PASS; TestSelfcheck_InputSourceTwoEngines/SingleGreen/ForeignRejected/MixedHeals/ResidueStaysRed — 5/5 PASS; TestUninstall_FullRollback переносится (uninstall-путь дельтой не тронут — diff 2fa8b53 не меняет restore). Полный живой install-cycle принят владельцем по доказательствам (2026-10-07, вердикт координатора) |
+| 2 | **SC-2 (спек-дельта)** — индикатор отражает активный источник при пользовательских жестах; видим нативным для GNOME образом | ✓ VERIFIED (закрыт вердиктом владельца) | Вердикт владельца 2026-10-07 (ежедневное использование; координатор milestone-UAT) переносится — дельта его не касается, машинная поверхность перепроверена: эмиссии панели на месте в flipTo — `UpdateModeSymbol` (:2025, :2087), `ModeChanged` (:2032, :2092), трей-меню `menuSync.SetMode` (:2039, :2097); кредитный путь G-2-3 пропускает ТОЛЬКО buf.HardReset — эмиссии режима в кредитной ветке не страдают (код :788-793 прочитан; TestActor_FlipEmitsPanelSymbol — PASS прошлым прогоном, его код-путь эмиссий дельтой не тронут). SNI-трей + DBusMenu + супервизор re-attach (main.go Toggle: actor.ToggleMode) — файл main.go дельтой не тронут |
+| 3 | **SC-3** — все жесты через SetGlobalEngine на ibus-соединении демона (не subprocess), <50 мс; состояние демона не расходится с активным источником (sync при FocusIn; WARN при неудаче) | ✓ VERIFIED (регресс-проверено против дельты G-2-3) | Воронка едина и после дельты: `flipTo` (actor.go:1996) — все сайты вызова на месте (:1056, :1095 ToggleMode, :1118, :1204, :2613) + settleCorrectionFlip (:1234); кредит-арминг (:2017) АДДИТИВЕН — сам вызов `sw(ctx, engineNameOf(target))`, WARN-запись и порядок D-36 не тронуты (diff 4a0c887 прочитан: только else-ветка с `a.flipCredit++`); `SetSwitcher`-замыкание (:874) → `SetSwitcher:`-шов → `CallWithContext(ibusService+".SetGlobalEngine")` (conn.go:240, файл не тронут) с записью `switch_engine` + WARN при сбое; `switchTimeout = 150ms` (:67); wiring main.go (:554-566: OnGlobalEngine→SyncEngine, BindSwitcher→SetSwitcher, BindGlobalEngine) — main.go не тронут. Именованные прогоны этого верификатора (-race, HEAD 8292dd4): **TestSwitcherCallsSetGlobalEngine** (wire-акт через fake bus) PASS, **TestActor_SyncEngineNeverSwitches** PASS, TestActor_FlipRoutesThroughSwitcher/FlipOrderPinned/SwitcherDeadlineBounded/ToggleModeFlips — PASS прошлым прогоном (flipTo-тело вокруг арминга не менялось; D-36-пин :1950-1952 стоит дословно). Латентность: живой замер 05-05 ≈41 мс < 50 мс; G-6-1 lock-free фабрика не тронута |
+| 4 | **SC-4** — режим после коррекции = скрипт результата (lat→cyr оставляет goswitch-ru, наоборот — goswitch-en); слово, набранное ЧЕРЕЗ собственный флип демона, корректируется целиком (G-2-3) | ✓ VERIFIED | `settleCorrectionFlip` (actor.go:1224) → `flipTo(scriptOf(converted))`, три сайта вызова (:2839, :2870, :2898) — diff 4a0c887 их НЕ трогает. Именованные прогоны (-race): **TestActor_CorrectionFlipSetsResultEngine** PASS (оба направления). Новый инвариант G-2-3 поведенчески закреплён: **TestActor_OwnFlipMixedWordCorrectsWhole** PASS (слово через синтетический FocusOut корректируется целиком → «паиghbdtn»-семантика, живое подтверждение — матрица v1 16/16 на диске), **TestActor_OwnFlipCreditConsumedOnce** PASS (ровно один кредит; ВТОРОЙ FocusOut — реальная потеря с полным сбросом), **TestActor_OwnFlipFailedSwitcherArmsNothing** PASS (WARN/nil-шов кредита не армит), **TestBuffer_ResetByFocusOut** PASS (реальная потеря фокуса сохраняет жёсткий сброс — прежний CORR-09 контракт не деградировал) |
+| 5 | **SC-5** — GNOME-переключение по клавишам остаётся у goswitch; selfcheck отражает состояние источников | ✓ VERIFIED (модель ревизована владельцем; selfcheck-часть регресс-проверена против дельты G-5-5) | Selfcheck по ADR-006 Amendment + G-5-5: `checkInputSource` (selfcheck.go:196) требует ≥1 goswitch-движок и НОЛЬ чужих, ЛЕЧИТ завершаемое полусостояние (TestSelfcheck_InputSourceMixedHeals PASS), остаток — красный с D-53-рационалом и НУЛЁМ мутаций (TestSelfcheck_InputSourceResidueStaysRed PASS); зелёный вердикт называет движки (TestSelfcheck_InputSourceTwoEngines/SingleGreen PASS); чужой источник честно отклонён (TestSelfcheck_InputSourceForeignRejected PASS). Чорды GNOME не трогаются (absence-пин этого прогона: `clearSwitchBinding`/`ownerSourcesSet`/`clearedSwitchBindings` — 0 вхождений во всех *.go). README v1.1.0 (wm.keybindings, «не трогаются», README.md:65-66; single-source + SNI :72-85) — файл не тронут дельтой |
+| 6 | **SC-6** — e2e-матрица зелёная дважды на живом столе, включая кейсы переключения; акт переключения наблюдаем в журнале | ✓ VERIFIED (живые вердикты на диске) | Дельта matrix.go — ТОЛЬКО герметичность (4dc4877: каждый кейс-демон пинит -config; найдено живьём 2026-10-08 — daemon без -config адоптировал живой конфиг владельца машины), оракулы/ожидания не тронуты. Живое доказательство на fix-дереве ЗАПИСАНО: v1 16/16 + v2 20/21, оба mixed-ряда зелёные, single FAIL = стендовый environmental-класс (261008-00m-VERIFICATION, STATE.md, 03-VERIFICATION). Акт переключения наблюдаем: оракул пары mode→switch_engine (TestFlipMarksPaired/TestModeFollowedOnly — PASS прошлым прогоном, их код-пути дельтой не тронуты); кейсы two-source-flip/external-flip-sync в реестре (test/e2e/main.go:269-271); mise-задачи на месте (mise.toml:137-169). Двойная зелень/чек-лист D-48/D-49 — вердикты владельца прошлого прогона (на диске), переносятся |
 
 **Score:** 6/6 truths verified (0 present-behavior-unverified; 0 FAILED; 0 overrides)
 
-Обе «человеческие» истины прошлого прогона (SC-2 индикатор, SC-6 матрица) закрыты записанными вердиктами владельца — источник каждого вердикта указан в строке таблицы. Это апгрейд статуса, не пере-классификация по присутствию: машинные поверхности (артефакты, проводка, юнит-оракулы) дополнительно перепроверены на текущем дереве.
-
 ### Deferred Items
 
-Нет. Ни один открытый пункт не покрывается поздней фазой (фазы 6–8 завершены, milestone закрывается). Пункт deferred-items.md (preflight selftest-тап как реальный флип) остаётся задокументированным advisory — безобидным для всех текущих кейсов, как записано в 05-05.
+Нет. Ни один открытый пункт не покрывается поздней фазой (фазы 6–8 завершены, milestone закрывается). G-5-5 из 05-UAT.md закрыт quick 261008-00m (запись resolved на диске).
 
 ### Advisory (New Scope, Unevidenced)
 
-Re-verification прогон выполнен; новых new-scope находок нет: debt-marker скан всех covered-файлов — ноль TBD/FIXME/XXX; стаб-паттерны — ноль. Три review-ворнинга 05-REVIEW переносятся из прошлого отчёта (carried, не new-scope) — см. Anti-Patterns.
+Re-verification прогон выполнен; новых new-scope находок нет: debt-marker скан всех шести дельта-файлов (actor.go, actor_test.go, install.go, install_internal_test.go, selfcheck.go, selfcheck_test.go, matrix.go, matrix_test.go) — ноль TBD/FIXME/XXX; стаб-паттерны — ноль. Три review-ворнинга 05-REVIEW переносятся из прошлых отчётов (carried, не new-scope; WR-03 перепроверен на текущем дереве — activateEngine(ctx, engineEN) install.go:411 на месте) — см. Anti-Patterns.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| `internal/install/install.go` | wrapSources (≥1 источник), отказы, resolveWrapInput, skip-if-equal, report | ✓ VERIFIED | все символы на месте (:818-894, :411, :942-966); a11y-расширение фазы 8 (snapshot/restore toolkit-accessibility) не тронуло ASVS-дисциплину (TestUninstall_FullRollback PASS) |
-| `internal/activate/activate.go` | канонический ParseSourceTuples/SourceTuple | ✓ VERIFIED | единственное место разбора; install и selfcheck потребляют (:137, selfcheck.go:14) |
-| `internal/install/selfcheck.go` | checkInputSource ≥1 goswitch-движок, ноль чужих | ✓ VERIFIED | :176-204; вердикт называет движки (260930-toa bfebd28) |
-| `internal/session/actor.go` | flipTo/SetSwitcher/ToggleMode/SyncEngine/settleCorrectionFlip/switchTimeout | ✓ VERIFIED | 2946+ строк после фаз 6-8; все швы и пины порядка на месте; G-6-1 lock-free emitter-слот |
-| `internal/engine/conn.go` | BindSwitcher/OnGlobalEngine/BindGlobalEngine, newSwitcher → SetGlobalEngine, диспетчер, switch_engine-запись | ✓ VERIFIED | переехал из engine/ (5427d7a); wire-контракты нетронуты (TestSwitcherCallsSetGlobalEngine PASS) |
-| `internal/engine/engine.go`/`factory.go`/`types.go` | FocusIn→sync-вход; фабрика; NameEN/NameRU | ✓ VERIFIED | AttachEngine→actor lock-free (G-6-1); сборка+импорты internal/engine зелёные |
-| `cmd/goswitchd/main.go` | wiring: BindSwitcher/OnGlobalEngine→SyncEngine/BindGlobalEngine→IfOwned; трей Toggle | ✓ VERIFIED | :554-569, :121, :166; расширения фаз 7-8 (звук, a11y) рядом, не поверх |
-| `test/e2e/case_switch.go` (+test) | two-source-flip, external-flip-sync, flip-marks оракул | ✓ VERIFIED | TestFlipMarksPaired/TestModeFollowedOnly PASS на HEAD |
-| `test/e2e/case_combo.go`/`case_resilience.go` | аддитивные switch_engine-ожидания; ibus-restart (precondition count-agnostic с 260930-toa) | ✓ VERIFIED | ec2883e оракул ≥1 источника |
-| `test/e2e/matrix.go` | switch_engine-оракул | ✓ VERIFIED | 13 mixed-строк re-pinned (f9ed497); YAML-ожидания = юнит-доказанной семантике |
-| `docs/adr/ADR-006-two-engine-revision.md` | Accepted + 2 amendment + таблица живых доказательств | ✓ VERIFIED | Status: Accepted (2026-09-30); Amendment 2026-09-30 (single-source model, дословное решение владельца); Amendment 2026-10-02 (G-6-1, lock-free фабрика) |
-| `README.md` (+test/e2e/README.md) | single-source модель пользователя, SNI-индикатор | ✓ VERIFIED (WR-04 закрыт) | README.md:65-66 (wm.keybindings не трогаются), :72-85 (один источник goswitch + SNI-трей) |
-| `mise.toml` | e2e-two-source-flip/e2e-external-flip-sync/e2e-switch-spike/e2e-install-cycle/e2e-matrix* | ✓ VERIFIED | :97-169 |
+| `internal/install/install.go` | wrapSources — единственный арбитр завершения (G-5-5): дозаворот полусостояния, отказы до мутации; resolveWrapInput; skip-if-equal; report | ✓ VERIFIED | :837-884 (renderWrapped + first-occurrence dedupe), отказы :168/:172/:860, resolveWrapInput :892, saveState-гейт :530-546; TestWrapSources* 6/6 PASS -race |
+| `internal/install/selfcheck.go` | checkInputSource ≥1 goswitch-движок, ноль чужих; G-5-5 heal завершаемого полусостояния | ✓ VERIFIED | :196-236: wrapSources-арбитр → один gsettings set (:218) → перечитка → владение; TestSelfcheck_InputSource* 5/5 PASS -race |
+| `internal/activate/activate.go` | канонический ParseSourceTuples/SourceTuple | ✓ VERIFIED | :114; файл дельтой не тронут; потребляется install (:540) и selfcheck (один парсер на обе стороны) |
+| `internal/session/actor.go` | flipTo/SetSwitcher/ToggleMode/SyncEngine/settleCorrectionFlip/switchTimeout/flipCredit | ✓ VERIFIED | 3000+ строк после фаз 6-8 + G-2-3; flipCredit :263/:788/:2017; все швы и пины порядка (D-36 :1950-1952) на месте |
+| `internal/engine/conn.go` | BindSwitcher/OnGlobalEngine/BindGlobalEngine, newSwitcher → SetGlobalEngine, диспетчер, switch_engine-запись | ✓ VERIFIED | файл дельтой не тронут; :240 SetGlobalEngine call; TestSwitcherCallsSetGlobalEngine PASS -race на текущем дереве |
+| `internal/engine/engine.go`/`factory.go`/`types.go` | FocusIn→sync-вход; фабрика; NameEN/NameRU | ✓ VERIFIED | не тронуты дельтой; G-6-1 lock-free emitter-слот на месте |
+| `cmd/goswitchd/main.go` | wiring: BindSwitcher/OnGlobalEngine→SyncEngine/BindGlobalEngine→IfOwned; трей Toggle | ✓ VERIFIED | :554-566, :121, :166; не тронут дельтой |
+| `test/e2e/case_switch.go` (+test) | two-source-flip, external-flip-sync, flip-marks оракул | ✓ VERIFIED | не тронут дельтой; WR-05 статус неизменен (см. Anti-Patterns) |
+| `test/e2e/case_combo.go`/`case_resilience.go` | аддитивные switch_engine-ожидания | ✓ VERIFIED | не тронуты дельтой |
+| `test/e2e/matrix.go` (+test) | switch_engine-оракул; герметичность: -config пин каждому кейс-демону | ✓ VERIFIED | caseNeedsBaseEstablishment/caseHasReloadSteps (:866-882), TestMatrixCaseNeedsBaseEstablishment (261008-00m); живое v1 16/16 + v2 20/21 на диске |
+| `docs/adr/ADR-006-two-engine-revision.md` | Accepted + 3 amendment + таблица живых доказательств | ✓ VERIFIED | Amendment 2026-10-07 G-5-5 (:280-320): дословное решение владельца, снятый контракт в audit-trail, «что меняется/что НЕ меняется» |
+| `docs/adr/ADR-004-buffer-reset-triggers.md` | Amendment 2026-10-07 G-2-3 | ✓ VERIFIED | :81-112: механизм (синтетическая пара от re-mint), решение, различение кредитом — добавлено в covered_files этого прогона (теперь evidence-bearing для SC-3/SC-4) |
+| `docs/SPEC.md` | §4.3/§4.4 дельты G-5-5 | ✓ VERIFIED | :139-148; добавлен в covered_files (теперь mapped-requirement для SC-1) |
+| `README.md` (+test/e2e/README.md) | single-source модель пользователя, SNI-индикатор | ✓ VERIFIED | не тронут дельтой |
+| `mise.toml` | e2e-* задачи | ✓ VERIFIED | :97-169; не тронут дельтой |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 | ---- | --- | --- | ------ | ------- |
-| cmd/goswitchd/main.go | internal/session/actor.go | BindSwitcher → SetSwitcher до engine.Run | ✓ WIRED | main.go:558-565; TestMain_WiringSyncAndReader корпус зелёный (фаза 6 re-verify) |
-| cmd/goswitchd/main.go | internal/engine | internal/engine import, BindGlobalEngine→IfOwned | ✓ WIRED | main.go:29; сборка зелёная после переезда 5427d7a |
-| actor.go flipTo | internal/engine/conn.go | flipTo → SetSwitcher-замыкание → SetGlobalEngine | ✓ WIRED | conn.go:240; TestSwitcherCallsSetGlobalEngine (wire-акт) + TestActor_FlipRoutesThroughSwitcher PASS |
-| conn.go | actor.go | GlobalEngineChanged/FocusIn → OnGlobalEngine → SyncEngine | ✓ WIRED | main.go:554; TestActor_SyncEngineNeverSwitches PASS |
-| install.go | activate.go | activate.ParseSourceTuples (единственный парсер) | ✓ WIRED | install.go:137, activate.go:114 |
-| install.go | gsettings set sources | wrapSources-вывод, skip-if-equal | ✓ WIRED | install.go:913-917; TestInstall_Sequence/SequenceSingleSource PASS |
-| install state-файл | wrapSources вход | resolveWrapInput → savedSources | ✓ WIRED | install.go:864-894; TestUninstall_FullRollback |
-| test/e2e/main.go | case_switch.go | реестр pickCase (switch-spike, two-source-flip, external-flip-sync) | ✓ WIRED | main.go:269-271 |
+| cmd/goswitchd/main.go | internal/session/actor.go | BindSwitcher → SetSwitcher до engine.Run | ✓ WIRED | main.go:565; main.go не тронут дельтой |
+| cmd/goswitchd/main.go | internal/engine | import, BindGlobalEngine→IfOwned | ✓ WIRED | main.go:554/:566 |
+| actor.go flipTo | internal/engine/conn.go | flipTo → SetSwitcher-замыкание → SetGlobalEngine | ✓ WIRED | conn.go:240; TestSwitcherCallsSetGlobalEngine (wire-акт) PASS -race этим прогоном; кредит-арминг :2017 аддитивен к той же ветке |
+| conn.go | actor.go | GlobalEngineChanged/FocusIn → OnGlobalEngine → SyncEngine | ✓ WIRED | main.go:554; TestActor_SyncEngineNeverSwitches PASS -race этим прогоном |
+| install.go | activate.go | activate.ParseSourceTuples (единственный парсер) | ✓ WIRED | install.go:540, selfcheck.go:181; activate.go не тронут |
+| install.go | gsettings set sources | wrapSources-вывод (завершённый список), skip-if-equal | ✓ WIRED | завершённый/deduped список — то, что пишется; отказы до записи |
+| install state-файл | wrapSources вход | resolveWrapInput → savedSources | ✓ WIRED | install.go:892-910; already-owned путь не тронут (TestWrapSourcesAlreadyOwnedUpgrade PASS) |
+| selfcheck.go | install.go | heal через ТОТ ЖЕ wrapSources-арбитр | ✓ WIRED (новый шов G-5-5) | selfcheck.go:212; TestSelfcheck_InputSourceMixedHeals PASS |
+| test/e2e/main.go | case_switch.go | реестр pickCase | ✓ WIRED | main.go:269-271 |
 | case_switch.go / matrix.go | mise.toml | задачи e2e-* | ✓ WIRED | mise.toml:97-169 |
-| трей (main.go) | actor.flipTo | Toggle: actor.ToggleMode → тот же flipTo | ✓ WIRED | main.go:121/:166; TestActor_ToggleModeFlips PASS (261001-fg3) |
-| actor | SNI-индикатор | UpdateModeSymbol/ModeChanged/menuSync.SetMode на каждом флипе | ✓ WIRED | actor.go:1973/:1980/:1987; TestActor_FlipEmitsPanelSymbol PASS |
-| matrix.go | cases/matrix-v*.yaml | switch_engine-оракул + посимвольная инверсия ожиданий | ✓ WIRED | f9ed497 re-pin; CASES-FROZEN дисциплина соблюдена спека-дельтой |
+| трей (main.go) | actor.flipTo | Toggle: actor.ToggleMode → тот же flipTo | ✓ WIRED | main.go:121/:166; flipTo-тело едино после дельты |
+| actor | SNI-индикатор | UpdateModeSymbol/ModeChanged/menuSync.SetMode на каждом флипе | ✓ WIRED | actor.go:2025/:2032/:2039 (и :2087/:2092/:2097) |
+| matrix.go | cases/matrix-v*.yaml | switch_engine-оракул + герметичный -config-пин | ✓ WIRED | оракул не тронут; establishment 4dc4877 |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 | -------- | ------------- | ------ | ------------------ | ------ |
 | StatusSnapshot.Engine | engineNameOf(a.mode) | внутренний режим демона (single writer) | да | ✓ FLOWING |
-| switch_engine journal record | engineNameOf(target) | замыкание newSwitcher → wire-ответ ibus | да (живой RTT 6.5–9.2 мс после G-6-1) | ✓ FLOWING |
-| IfOwned reactivation | globalEngine reader | GetGlobalEngine desc-вариант (conn.go:369-390) | да | ✓ FLOWING |
-| install takeover value | wrapSources(resolveWrapInput) | живые sources gsettings / state-файл | да | ✓ FLOWING |
+| switch_engine journal record | engineNameOf(target) | замыкание newSwitcher → wire-ответ ibus | да (живой RTT 6.5–9.2 мс, G-6-1) | ✓ FLOWING |
+| IfOwned reactivation | globalEngine reader | GetGlobalEngine desc-вариант (conn.go:369+) | да | ✓ FLOWING |
+| install takeover value | wrapSources(resolveWrapInput) | живые sources gsettings / state-файл (завершённый список G-5-5) | да | ✓ FLOWING |
+| selfcheck heal value | wrapSources(живой список) | живой gsettings get → set → re-read | да | ✓ FLOWING |
 | трей-меню/иконка | modeSymbol | a.mode после флипа | да — реальное состояние, не хардкод | ✓ FLOWING |
 
 Статических подстановок, хардкодов данных или HOLLOW-звеньев не найдено.
@@ -145,77 +156,66 @@ Re-verification прогон выполнен; новых new-scope находо
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Сборка всех пакетов на HEAD 2171fae | `go build ./...` | exit 0 | ✓ PASS |
-| Флип через шов, порядок, SET-семантика, sync, дедлайн, трей-жест, панель-символ | `go test -race ./internal/session/ -run 'TestActor_FlipRoutesThroughSwitcher\|FlipOrderPinned\|CorrectionFlipSetsResultEngine\|SwitcherDeadlineBounded\|SyncEngineNeverSwitches\|ToggleModeFlips\|FlipEmitsPanelSymbol'` | 7/7 PASS | ✓ PASS |
-| Обёртка/отказы/откат/selfcheck (single-source модель) | `go test -race ./internal/install/ -run 'TestWrapSources\|TestUninstall_FullRollback\|TestSelfcheck_InputSource'` | 10/10 PASS | ✓ PASS |
-| Wire-акт SetGlobalEngine через fake bus | `go test -race ./internal/engine/ -run TestSwitcherCallsSetGlobalEngine` | PASS | ✓ PASS |
-| Оракул пары марок / sync-follow в e2e-корпусе | `go test -race ./test/e2e/ -run 'TestFlipMarksPaired\|TestModeFollowedOnly'` | 2/2 PASS | ✓ PASS |
+| Сборка всех пакетов на HEAD 8292dd4 | `go build ./...` | exit 0 | ✓ PASS |
+| Wire-акт SetGlobalEngine через fake bus | `go test -race ./internal/engine/ -run 'TestSwitcherCallsSetGlobalEngine$' -count=1` | PASS | ✓ PASS |
+| Коррекция-флип = скрипт результата; sync не воюет; слово через собственный флип корректируется целиком | `go test -race -v ./internal/session/ -run 'TestActor_CorrectionFlipSetsResultEngine$\|TestActor_SyncEngineNeverSwitches$\|TestActor_OwnFlipMixedWordCorrectsWhole$' -count=1` | 3/3 PASS | ✓ PASS |
+| Инварианты кредита G-2-3: ровно один кредит; неудача не армит; реальная потеря фокуса сохраняет сброс | `go test -race -v ./internal/session/ -run 'TestActor_OwnFlipCreditConsumedOnce$\|TestActor_OwnFlipFailedSwitcherArmsNothing$\|TestBuffer_ResetByFocusOut$' -count=1` | 3/3 PASS | ✓ PASS |
+| Дозаворот/отказы/откат-корпус (G-5-5 контракт) + selfcheck-корпус (включая heal и residue-red) | `go test -race -v ./internal/install/ -run 'TestWrapSources\|TestSelfcheck_InputSource' -count=1` | 11/11 PASS | ✓ PASS |
 
-Полный сюит НЕ прогонялся (правило этого прогона); зелёная итерация на HEAD corroborated фазовыми верификациями 6–8 (06: 51/51; 08: финальная верификация + UAT 6/6) и сборкой этого прогона.
+Полный сюит НЕ прогонялся (правило прогона: только именованные тесты); итог 18 именованных -race прогонов этого верфикатора — все зелёные. Зелёная итерация corroborated: `mise run ci` зелёный на fix-дереве (261008-00m), живые матрицы v1 16/16 / v2 20/21 на диске.
 
 ### Probe Execution
 
-Нет `scripts/*/tests/probe-*.sh` (конвенция проекта — mise-задачи живых кейсов, неизменна). Живые сценарии фазы покрыты записанными прогонами и владелец-вердиктами на диске (06-UAT, 08-UAT); новых probe-обязательностей у фазы 5 не возникло.
+Нет `scripts/*/tests/probe-*.sh` (конвенция проекта — mise-задачи живых кейсов, неизменна). Живые прогоны этого refresh-цикла (матрицы v1/v2 на fix-дереве) записаны оркестратором на диске (261008-00m-VERIFICATION, STATE.md) — по правилам прогона живое e2e не пересоздаётся; новых probe-обязательностей дельта не создала.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 | ----------- | ------------- | ----------- | ------ | -------- |
-| SWCH-01 | 05-03 | Right Shift переключает раскладку | ✓ SATISFIED | flipTo-воронка + TestActor_FlipRoutesThroughSwitcher; живой two-source-flip (05-05) |
-| SWCH-02 | 05-03 | Комбо «исправить и переключить» | ✓ SATISFIED | settleCombo через flipTo; TestActor_FlipOrderPinned |
-| SWCH-03 | 05-01, 05-05 | Родное GNOME-переключение и индикатор актуальны | ✓ SATISFIED | SNI-индикатор следует режиму (владелец 2026-10-07); трей-жест в flipTo; чорды GNOME не тронуты |
-| SWCH-04 | 05-03 | Тайминги single/double/triple разрешены ADR | ✓ SATISFIED | FSM-корпус нетронут; TestActor_FlipOnSingle корпус зелёный |
-| INTEG-01 | 05-03 | goswitchd как IBus engine, commit_text | ✓ SATISFIED | wire-контракты нетронуты переездом internal/ (TestSwitcherCallsSetGlobalEngine) |
-| INTEG-02 | 05-05 | Совместимость с keyd/xremap: транзит набора | ✓ SATISFIED | шов — исходящий D-Bus call; G-6-1 устранил глотание буквы (24/24) |
-| INTEG-03 | 05-02 | Дефолтный IM-стек без root | ✓ SATISFIED | gsettings-only; install-корпус зелёный |
-| INTEG-04 | 05-04 | Перерегистрация после рестарта ibus-daemon | ✓ SATISFIED | BindGlobalEngine per-generation (conn.go:66-74); IfOwned; живой ibus-restart (05-05) |
+| SWCH-01 | 05-03 | Right Shift переключает раскладку | ✓ SATISFIED | flipTo-воронка едина после G-2-3 (кредит аддитивен); TestSwitcherCallsSetGlobalEngine + TestActor_OwnFlipMixedWordCorrectsWhole PASS |
+| SWCH-02 | 05-03 | Комбо «исправить и переключить» | ✓ SATISFIED | settleCombo → settleCorrectionFlip → flipTo; сайты :2839/:2870/:2898 не тронуты |
+| SWCH-03 | 05-01, 05-05 | Родное GNOME-переключение и индикатор актуальны | ✓ SATISFIED | SNI-индикатор следует режиму (владелец 2026-10-07, переносится); эмиссии :2025/:2032/:2039 на месте |
+| SWCH-04 | 05-03 | Тайминги single/double/triple разрешены ADR | ✓ SATISFIED | FSM-корпус нетронут; switchTimeout :67 |
+| INTEG-01 | 05-03 | goswitchd как IBus engine, commit_text | ✓ SATISFIED | wire-контракт перепроверен этим прогоном (TestSwitcherCallsSetGlobalEngine PASS -race на HEAD 8292dd4) |
+| INTEG-02 | 05-05 | Совместимость с keyd/xremap: транзит набора | ✓ SATISFIED | шов — исходящий D-Bus call; G-6-1 не тронут |
+| INTEG-03 | 05-02 | Дефолтный IM-стек без root | ✓ SATISFIED | gsettings-only; install/selfcheck корпусы зелёные (11/11 этим прогоном) |
+| INTEG-04 | 05-04 | Перерегистрация после рестарта ibus-daemon | ✓ SATISFIED | BindGlobalEngine per-generation; conn.go не тронут; живой ibus-restart (05-05) |
 | INTEG-05 | 05-03 | Паника обработчика не роняет движок | ✓ SATISFIED | switcher-контур вне D-Bus-обработчиков; WARN-не-фатально пин |
-| INST-01 | 05-02 | Установка без root: unit, регистрация, поставка | ✓ SATISFIED | SC-1; принят владельцем (install-cycle по доказательствам, 2026-10-07) |
+| INST-01 | 05-02 | Установка без root: unit, регистрация, поставка | ✓ SATISFIED | SC-1 по ДЕЙСТВУЮЩЕМУ G-5-5 контракту (дозаворот, отказы до мутации); принят владельцем (install-cycle по доказательствам, 2026-10-07) |
 
-**Orphaned requirements:** нет — все 10 ID ROADMAP фазы 5 заявлены фронтматтером планов (пере-проверено этим прогоном).
+**Orphaned requirements:** нет — все 10 ID ROADMAP фазы 5 заявлены фронтматтером планов (перенесено из прошлого прогона; план-фронтматтеры дельтой не менялись).
 
 ### Decision Coverage
 
-All trackable CONTEXT.md decisions are honored by shipped artifacts. (check.decision-coverage-verify: total 3, honored 3, not_honored 0.)
+All trackable CONTEXT.md decisions are honored by shipped artifacts. (check.decision-coverage-verify этим прогоном: total 3, honored 3, not_honored 0.)
 
 ### Test Quality Audit
 
-Disabled/skipped тесты в requirement-linked корпусах: ноль (grep skip-паттернов по internal/, test/e2e — пусто). Циклических оракулов нет: ожидания матриц фиксируются спека-дельтой (D-55) и юнит-корпусом с независимым golden-файлом; flip-оракул читает журнал демона, не генерирует ожидания из системы под тестом. Сила утверждений — value/behavioral (пары марок в порядке, readback движка, вердикты отказов).
+Disabled/skipped тесты в requirement-linked корпусах: ноль. Новые тесты дельты доказывают ровно заявленное: TestActor_OwnFlipCreditConsumedOnce — state-переход «ровно один кредит» (второй FocusOut — полный сброс, behavioral-assertions); TestActor_OwnFlipFailedSwitcherArmsNothing — негативная ветка арминга; TestWrapSourcesHalfWrappedCompletes / TestSelfcheck_InputSourceMixedHeals / TestSelfcheck_InputSourceResidueStaysRed — завершение/лечение/остаток по отдельности (value-level). Циклических оракулов нет: ожидания матриц фиксируются спека-дельтой (D-55) и юнит-корпусом; живые прогоны — внешний оракул рабочего стола.
 
 ### Anti-Patterns Found
 
-Debt-marker scan всех covered-файлов на HEAD 2171fae: **ноль** TBD/FIXME/XXX/PLACEHOLDER; стабов нет. Статус переносённых review-ворнингов 05-REVIEW на текущем дереве:
+Debt-marker скан шести дельта-файлов на HEAD 8292dd4: **ноль** TBD/FIXME/XXX/PLACEHOLDER; стабов нет. Статус переносённых review-ворнингов 05-REVIEW на текущем дереве (все — carried-forward, ни один не new-scope):
 
 | File | Finding | Severity | Status on HEAD |
 | ---- | ------- | -------- | -------------- |
-| internal/session/actor.go flipTo | WR-01: мьютекс через SetGlobalEngine round trip | Warning | **ЗАКРЫТ** G-6-1 (ADR-006 Amendment 2026-10-02): фабрика освобождена от мьютекса (lock-free `atomic.Pointer[emitterSlot]`, actor.go:832-834); ауэт SetGlobalEngine под мьютексом с дедлайном 150 мс остаётся осознанным клин-гардом (пин 05-03 стоит) |
-| internal/engine/conn.go reader | WR-02: GetGlobalEngine реактивации без дедлайна | Warning | ОТКРЫТ (reader использует ctx звонящего, WithTimeout в conn.go нет) — перенос из прошлого отчёта, не на keystroke-траектории, сам-хилится реконнектом; не инвалидирует must-have |
-| internal/install/install.go:411 | WR-03: install активирует goswitch-en безусловно | Warning | ОТКРЫТ (`activateEngine(ctx, engineEN)` на месте) — перенос; при single-source модели менее остр (владелец сам выбрал активную запись); кандидат в fix-очередь |
-| test/e2e/case_switch.go:253/1045/1140 | WR-05: unit-restore defer регистрируется ПОСЛЕ systemctl stop | Warning | ОТКРЫТ (проверено на текущем дереве) — перенос; отказ stop может оставить юнит-демон остановленным; e2e-only поверхность |
-| README.md | WR-04: абзац очищенной эры с неверной схемой | Warning | **ЗАКРЫТ** — README v1.1.0 (6f2742e): верная схема wm.keybindings, «не трогаются» (README.md:65-66) |
-
-Все три открытых ворнинга — carried-forward наблюдения прошлого отчёта (в его таблице антипаттернов), ни один не является new-scope находкой этого прогона и ни один не инвалидирует must-have как написано (вердикт прошлого прогона подтверждён).
+| internal/session/actor.go flipTo | WR-01: мьютекс через SetGlobalEngine round trip | Warning | ЗАКРЫТ G-6-1 (lock-free фабрика, не тронута дельтой); ауэт с дедлайном 150 мс — осознанный клин-гард (пин 05-03 стоит) |
+| internal/engine/conn.go reader | WR-02: GetGlobalEngine реактивации без дедлайна | Warning | ОТКРЫТ (conn.go не тронут дельтой) — перенос; не на keystroke-траектории |
+| internal/install/install.go:411 | WR-03: install активирует goswitch-en безусловно | Warning | ОТКРЫТ (перепроверено этим прогоном на текущем дереве) — перенос; кандидат в fix-очередь |
+| test/e2e/case_switch.go:253 | WR-05: unit-restore defer регистрируется ПОСЛЕ systemctl stop | Warning | ОТКРЫТ (перепроверено этим прогоном) — перенос; e2e-only поверхность |
+| README.md | WR-04: абзац очищенной эры | Warning | ЗАКРЫТ (README v1.1.0, прошлый прогон) |
 
 ### Human Verification Required
 
-Нет (для этого прогона). Все 6 human-гейтов прошлого отчёта закрыты записанными вердиктами:
-
-1. Индикаторная UAT (WINDOWS #11) — **владелец подтвердил 2026-10-07** ежедневным использованием (координатор milestone-UAT).
-2. WINDOWS #12 (два красных ряда) — **разрешено владельцем**: mixed-семантика ревизована в посимвольную инверсию (спека-дельта D-55, 2026-10-06; записанный follow-up 06-UAT); строки re-pinned, доказаны юнит-корпусом, верифицированы фазой 6 (51/51).
-3. Полный install-cycle (WINDOWS #9) — **принят владельцем по доказательствам** (2026-10-07); каждая часть доказана живьём в 05-02/05-05.
-4. Формальный D-48/D-49 двойной свежесессионный прогон — **принят владельцем по доказательствам** (2026-10-07); чек-лист docs/ACCEPTANCE.md — рабочая поверхность milestone-UAT сессии координатора.
-5. Трактовка полуобёрнутого отказа — **суперсе́днута решением владельца** (single-source model, ADR-006 Amendment: отказ errMixedSources на подмес — владельческий контракт, корпус зелёный).
-6. Judgment-tier prohibitions — перепинены на текущем дереве: (b) приватность журнала (TestFlipMarksPaired PASS), (c) SyncEngine не воюет (TestActor_SyncEngineNeverSwitches PASS), (d) отказной корпус install (PASS), (e) чужой источник честно отклонён (TestSelfcheck_InputSourceForeignRejected/TestWrapSourcesForeignResidueRefused PASS); (a) WR-05 остаётся открытым ворнингом e2e-поверхности; «тихий журнал после 150 мс» — закрыт сильнее исходного вопроса: G-6-1 убрал сам узел (RTT 6.5–9.2 мс, 24/24 немедленных буквы, WARN более не норма на каждом флипе).
-
-Артефакты всех пунктов присутствуют и wired — по правилам этого прогона human-пункты не возобновляются.
+Нет (для этого прогона). Все human-гейты прошлого отчёта закрыты записанными вердиктами владельца (на диске: 06-UAT, 08-VERIFICATION, 05-UAT — включая G-5-5 `resolved_by: 261008-00m`; переданы координатором milestone-UAT 2026-10-07) и переносятся: дельта не создала новой человеческой поверхности — оба новых поведенческих инварианта (кредит G-2-3, дозаворот G-5-5) закреплены зелёными именованными -race тестами этого прогона, а живое слово-через-флип подтверждено записанной матрицей v1 16/16 на fix-дереве.
 
 ### Gaps Summary
 
-Гэпов нет. Все 6 must-have держатся на текущем дереве (HEAD 2171fae): код присутствует и wired по пере-выведенным путям (internal/engine/, internal/install/, internal/session/), поведенческие истины переподтверждены 20 именованными -race прогонами этого верификатора, две прежде-человеческие истины закрыты записанными вердиктами владельца (на диске: 06-UAT/08-VERIFICATION; переданы координатором: 2026-10-07). Три ревизии после фазы 5 (single-source model, G-6-1, per-char inversion + internalize) — санкционированные владельцем эволюции контракта, задокументированные в ADR-006/SPEC, ни одна не сломала носитель фазы; две из четырёх переносившихся review-строк (WR-01, WR-04) закрыты этими же ревизиями. 0 FAILED, 0 STUB, 0 ORPHANED, 0 NOT_WIRED, 0 behavior-unverified, 0 overrides. Цель фазы достигнута.
+Гэпов нет. Оба шва дельты quick 261008-00m держат цели фазы на текущем дереве (HEAD 8292dd4): **G-2-3** — кредит-механизм в flipTo аддитивен (воронка, D-36-порядок, switch_engine-запись не тронуты), все четыре грани инварианта поведенчески закреплены (корректируется-целиком / ровно-один-кредит / неудача-не-армит / реальная-потеря-сбрасывается) — 6/6 именованных actor-прогонов зелёные; **G-5-5** — wrapSources стал единственным арбитром завершения по дословному решению владельца (ADR-006 amendment + SPEC §4.3/§4.4), отказы атомарны и без записи, selfcheck лечит с перечиткой — 11/11 install-прогонов зелёные; **matrix.go** — герметичность без изменения оракулов, живые v1 16/16 / v2 20/21 записаны на диске. SC-1 переверен к действующему контракту (не к устаревшей outright-refusal формулировке). 0 FAILED, 0 STUB, 0 ORPHANED, 0 NOT_WIRED, 0 behavior-unverified, 0 overrides, 0 debt-markers. Цель фазы достигнута.
 
-Advisory: deferred-items.md (preflight selftest-тап) — безобидный, задокументированный; открытые WR-02/WR-03/WR-05 — fix-очередь владельца, на milestone-гейт не влияют.
+Advisory: открытые WR-02/WR-03/WR-05 — fix-очередь владельца (carried, ни один не инвалидирует must-have); deferred-items.md (preflight selftest-тап) — задокументированный, безобидный.
 
 ---
 
-_Verified: 2026-10-07T20:52:42Z_
+_Verified: 2026-10-07T23:09:59Z_
 _Verifier: Claude (gsd-verifier)_
