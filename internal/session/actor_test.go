@@ -1444,6 +1444,127 @@ func TestActor_MixedWordInvertsPerChar(t *testing.T) {
 	}
 }
 
+// The own-flip corpus (ADR-004 amendment 2026-10-07, G-2-3): the daemon's
+// OWN engine flip — the SetGlobalEngine round trip inside flipTo through
+// the D-52 seam — makes ibus re-mint engine objects, which delivers a
+// SYNTHETIC focus_out/focus_in lifecycle pair to the engine. A synthetic
+// transition is not «смена фокуса окна»: the correction buffer survives
+// the daemon's own flip so a word typed across it corrects as a whole,
+// while a REAL focus loss keeps the hard reset.
+
+// TestActor_OwnFlipMixedWordCorrectsWhole pins the live failure signature
+// of UAT phase 2 test 3 (matrix v1 word-mixed, run 2026-10-07) as FIXED:
+// "gfb" typed in EN (transit), the daemon's own flip EN→RU (the stub
+// switcher's SetGlobalEngine round trip returns nil), the synthetic
+// lifecycle pair the live bus delivers, the rest typed in RU (six Cyrillic
+// commits) — the double-tap correction then sees the WHOLE mixed token:
+// exactly one RequireSurroundingText, one deletion over (-9,9) and the
+// per-character inversion «паиghbdtn» — the re-pinned matrix row's
+// semantics. The pre-amendment actor hard-resets the buffer on the
+// synthetic FocusOut and corrects only the post-flip token: (-6,6) and
+// «ghbdtn» — the live failure signature.
+func TestActor_OwnFlipMixedWordCorrectsWhole(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	typeWord(a, "gfb") // EN part: transit, buffer fed as typed
+	flipMode(a)        // EN → RU: flipTo runs, the stub switcher's round trip returns nil
+	// The live bus answer to the daemon's own flip: ibus re-mints the
+	// engine objects and the engine receives the synthetic pair.
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+	typeWord(a, wordEN) // RU part: commits "привет", buffer script-true
+
+	if texts := sink.commitTexts(); len(texts) != 6 || texts[0]+texts[1]+texts[2]+texts[3]+texts[4]+texts[5] != wordRU {
+		t.Fatalf("RU typing commits = %q, want the six runes of %q", texts, wordRU)
+	}
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("mixed word across the own flip started verification %d times, want 1", got)
+	}
+
+	// The field holds the whole mixed token — exactly what the correction
+	// must replace.
+	field := "gfb" + wordRU
+	a.HandleSurroundingText(field, runeLen(field), runeLen(field))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -9, nchars: 9}) {
+		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole mixed token; the synthetic"+
+			" FocusOut of the own flip must not hard-reset the buffer", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 7 || texts[6] != "паиghbdtn" {
+		t.Fatalf("correction commits = %q, want the last one to be [паиghbdtn]", texts)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_OwnFlipCreditConsumedOnce pins the over-suppression guard: the
+// synthetic-lifecycle credit of the own flip is consumed EXACTLY once — a
+// SECOND FocusOut after the synthetic one is a real context loss and must
+// hard-reset the buffer (the double tap then yields the empty-buffer
+// refusal, no verification round at all).
+func TestActor_OwnFlipCreditConsumedOnce(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	flipMode(a) // EN → RU: the successful round trip arms exactly one credit
+	a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes it
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+
+	typeWord(a, wordEN) // a fresh word in the buffer
+	// A SECOND FocusOut with the credit spent: a REAL focus loss.
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("second FocusOut left a correctable token — a spent credit must not suppress a"+
+			" real focus loss; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("sink saw %d RequireSurroundingText calls, want 0", got)
+	}
+}
+
+// TestActor_OwnFlipFailedSwitcherArmsNothing pins the arming condition: a
+// flip whose SetGlobalEngine round trip FAILED (the WARN form) delivers no
+// engine re-mint, so no credit is armed — the next FocusOut is treated as
+// a real focus loss and hard-resets the buffer.
+func TestActor_OwnFlipFailedSwitcherArmsNothing(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetSwitcher(func(_ context.Context, _ string) error { return errSwitchInjected })
+
+	flipMode(a) // EN → RU: the seam fails (WARN), no credit armed
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("FocusOut after a failed-switcher flip left a correctable token — a failed"+
+			" SetGlobalEngine must arm no credit; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("sink saw %d RequireSurroundingText calls, want 0", got)
+	}
+}
+
 // TestActor_PhraseMixedCorrects pins D-26 on the sink (under the
 // spec-delta of 2026-10-06): a phrase with words in different layouts —
 // "ghbdtn" typed in EN, the flip, " привет" committed in RU — corrects
