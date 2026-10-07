@@ -250,6 +250,17 @@ type Actor struct {
 	// a broken seam must not spam the journal per flip (the appidWarned
 	// precedent).
 	switcherWarned bool
+	// flipCredit is the synthetic-lifecycle credit of the daemon's own flip
+	// (ADR-004 amendment 2026-10-07, G-2-3): a successful SetGlobalEngine
+	// round trip inside flipTo makes ibus re-mint engine objects, and the
+	// engine receives a synthetic focus_out/focus_in pair. flipTo arms one
+	// credit per successful round trip; HandleLifecycle's FocusOut branch
+	// consumes exactly one and skips ONLY the buffer hard-reset — a
+	// synthetic transition of the own flip is not «смена фокуса окна». A
+	// failed round trip (the WARN form) or the nil-seam degradation arms
+	// nothing, so a real focus loss keeps its full reset. Accessed only
+	// under a.mu — flipTo's callers and HandleLifecycle serialize on it.
+	flipCredit int
 	// display is the tray-indicator seam (quick 260930-pf6): the ModeDisplay
 	// the daemon wiring installs via SetModeDisplay; nil = no display, every
 	// mode change stays invisible to it. The display degrades itself — the
@@ -750,15 +761,38 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 // a pending series (the input context is gone — a decision there would be
 // garbage), hard-reset the phrase buffer (CORR-09) and retire any open
 // correction round — its verify answer belongs to an input context that no
-// longer exists; everything else is a DEBUG trace.
+// longer exists; everything else is a DEBUG trace. ADR-004 amendment
+// 2026-10-07 (G-2-3): a FocusOut carrying the own flip's synthetic-lifecycle
+// credit (a successful SetGlobalEngine makes ibus re-mint engine objects)
+// skips exactly the buffer hard-reset — the synthetic transition of the
+// daemon's own flip is not a real focus change; a real focus loss still
+// resets.
 func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	switch kind {
 	case engine.LifecycleFocusOut, engine.LifecycleReset:
+		// ADR-004 amendment 2026-10-07 (G-2-3): a FocusOut carrying the own
+		// flip's synthetic-lifecycle credit is not «смена фокуса окна» —
+		// exactly one credit is consumed and ONLY the buffer hard-reset is
+		// skipped, so a word typed across the daemon's own flip corrects as
+		// a whole. Every other side effect below is context-scoped (ibus
+		// re-minted the engine object) and stays correct: the FSM reset, the
+		// surrounding-cache clear, the pending-resolution retirement, the
+		// clearAfter, the combo/MACR cleanup, the timer stop. A Reset kind
+		// never consumes a credit — the observed synthetic pair is
+		// focus_out/focus_in; a spent or absent credit means a REAL focus
+		// loss and takes the full reset.
+		synthetic := false
+		if kind == engine.LifecycleFocusOut && a.flipCredit > 0 {
+			a.flipCredit--
+			synthetic = true
+		}
 		a.fsm.Feed(hotkey.Reset{}, a.elapsed())
-		a.buf.HardReset()
+		if !synthetic {
+			a.buf.HardReset()
+		}
 		// the caches belong to the input context that just left
 		a.surr = nil
 		a.sel = selectionState{}
@@ -1948,6 +1982,14 @@ func (a *Actor) backspaceCap() int {
 // async WR-01-handoff" pin stands — the D-36 record order and the final
 // correctness of rapid flips hold by the synchronous serialization.
 //
+// ADR-004 amendment 2026-10-07 (G-2-3): a SUCCESSFUL switcher round trip
+// arms one synthetic-lifecycle credit — ibus answers the flip by re-minting
+// engine objects, and the synthetic focus_out/focus_in pair then reaches
+// HandleLifecycle, which consumes the credit and skips exactly the buffer
+// hard-reset (the daemon's own flip is not a focus change; the word typed
+// across it corrects as a whole). A WARNed failure or the nil-seam
+// degradation arms nothing — the next FocusOut stays a real focus loss.
+//
 // A flipTo to the CURRENT mode is a no-op: the SET-semantics site
 // (settleCorrectionFlip) names its target from the corrected text's script,
 // and a same-script correction flip changes nothing.
@@ -1963,6 +2005,16 @@ func (a *Actor) flipTo(target scriptMode) {
 		defer cancel()
 		if err := sw(ctx, engineNameOf(target)); err != nil {
 			slog.Warn("engine switch failed", "engine", engineNameOf(target), "error", err)
+		} else {
+			// ADR-004 amendment 2026-10-07 (G-2-3): a SUCCESSFUL
+			// SetGlobalEngine round trip makes ibus re-mint engine objects —
+			// a synthetic focus_out/focus_in pair is on its way to the
+			// engine. Arm exactly one credit; the FocusOut branch of
+			// HandleLifecycle consumes it and skips exactly the buffer
+			// hard-reset (the daemon's own flip is not a focus change). A
+			// failed round trip arms nothing — the buffer then treats the
+			// next FocusOut as a real focus loss.
+			a.flipCredit++
 		}
 	} else if !a.switcherWarned {
 		a.switcherWarned = true

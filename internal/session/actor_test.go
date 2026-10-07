@@ -85,10 +85,13 @@ func countActions(buf *syncBuffer) int {
 
 // Corpus words of the correction pipeline (the 02-01 corpus pair — named
 // once, goconst). mismatchLine is the non-matching surrounding push of the
-// refusal corpus — it ends with neither layout's token.
+// refusal corpus — it ends with neither layout's token. mixedRU is the
+// per-character inversion of the mixed token "gfb"+wordRU — the re-pinned
+// matrix-v1 word-mixed expectation (2026-10-06 owner verdict).
 const (
 	wordEN       = "ghbdtn"
 	wordRU       = "привет"
+	mixedRU      = "паиghbdtn"
 	mismatchLine = "abc другойтекст"
 )
 
@@ -1436,8 +1439,8 @@ func TestActor_MixedWordInvertsPerChar(t *testing.T) {
 		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole mixed token range", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 7 || texts[6] != "паиghbdtn" {
-		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, "паиghbdtn")
+	if len(texts) != 7 || texts[6] != mixedRU {
+		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, mixedRU)
 	}
 	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
 		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
@@ -1500,7 +1503,7 @@ func TestActor_OwnFlipMixedWordCorrectsWhole(t *testing.T) {
 			" FocusOut of the own flip must not hard-reset the buffer", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 7 || texts[6] != "паиghbdtn" {
+	if len(texts) != 7 || texts[6] != mixedRU {
 		t.Fatalf("correction commits = %q, want the last one to be [паиghbdtn]", texts)
 	}
 	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
@@ -1519,7 +1522,7 @@ func TestActor_OwnFlipCreditConsumedOnce(t *testing.T) {
 	probe := &switchProbe{}
 	a.SetSwitcher(probe.switcher)
 
-	flipMode(a) // EN → RU: the successful round trip arms exactly one credit
+	flipMode(a)                                 // EN → RU: the successful round trip arms exactly one credit
 	a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes it
 	a.HandleLifecycle(engine.LifecycleFocusIn)
 
@@ -1909,8 +1912,8 @@ func TestActor_SelectionMixedConverts(t *testing.T) {
 		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 1 || texts[0] != "паиghbdtn" {
-		t.Fatalf("commits = %q, want exactly one [%s] — the selection inverts per character", texts, "паиghbdtn")
+	if len(texts) != 1 || texts[0] != mixedRU {
+		t.Fatalf("commits = %q, want exactly one [%s] — the selection inverts per character", texts, mixedRU)
 	}
 }
 
