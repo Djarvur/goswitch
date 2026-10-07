@@ -57,10 +57,10 @@ const (
 	// 2026-10-07): one goswitch tuple beside ONE foreign tuple — the ru
 	// form completes to the owned pair, the us form dedupes to the
 	// canonical single source, the fr form is the residue refusal.
-	wrapHalfWrapped    = `[('ibus', 'goswitch-en'), ('xkb', 'ru')]`
-	wrapHalfWrappedEN  = `[('ibus', 'goswitch-en'), ('xkb', 'us')]`
-	wrapHalfWrappedFR  = `[('ibus', 'goswitch-en'), ('xkb', 'fr')]`
-	wrapOwnedSingle    = `[('ibus', 'goswitch-en')]`
+	wrapHalfWrapped   = `[('ibus', 'goswitch-en'), ('xkb', 'ru')]`
+	wrapHalfWrappedEN = `[('ibus', 'goswitch-en'), ('xkb', 'us')]`
+	wrapHalfWrappedFR = `[('ibus', 'goswitch-en'), ('xkb', 'fr')]`
+	wrapOwnedSingle   = `[('ibus', 'goswitch-en')]`
 )
 
 // TestWrapSourcesPairPreserved pins the D-54 wrap of the user's own pair:
@@ -144,7 +144,8 @@ func TestWrapSourcesHalfWrappedCompletes(t *testing.T) {
 			t.Fatalf("wrapSources(%s) err = %v, want the completion to succeed", wrapHalfWrapped, err)
 		}
 		if got != wrapWrappedENRU {
-			t.Errorf("wrapSources(%s) = %q, want %q (completion, positions preserved)", wrapHalfWrapped, got, wrapWrappedENRU)
+			t.Errorf("wrapSources(%s) = %q, want %q (completion, positions preserved)",
+				wrapHalfWrapped, got, wrapWrappedENRU)
 		}
 	})
 
@@ -175,12 +176,12 @@ func TestWrapSourcesRefusalTable(t *testing.T) {
 		raw  string
 		want error
 	}{
-		"us+fr leaves a foreign residue":                     {raw: wrapUSFR, want: errMixedSources},
-		"goswitch-en beside foreign residue":                 {raw: wrapHalfWrappedFR, want: errMixedSources},
-		"triple leaves a foreign residue":                    {raw: wrapTriple, want: errMixedSources},
-		"single foreign layout":                              {raw: wrapSingleFR, want: errUnsupportedPair},
-		"unsupported kind in list":                           {raw: wrapForeignKind, want: errUnsupportedPair},
-		"already-owned single (nothing wrappable)":           {raw: wrapOwnedSingle, want: errUnsupportedPair},
+		"us+fr leaves a foreign residue":           {raw: wrapUSFR, want: errMixedSources},
+		"goswitch-en beside foreign residue":       {raw: wrapHalfWrappedFR, want: errMixedSources},
+		"triple leaves a foreign residue":          {raw: wrapTriple, want: errMixedSources},
+		"single foreign layout":                    {raw: wrapSingleFR, want: errUnsupportedPair},
+		"unsupported kind in list":                 {raw: wrapForeignKind, want: errUnsupportedPair},
+		"already-owned single (nothing wrappable)": {raw: wrapOwnedSingle, want: errUnsupportedPair},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

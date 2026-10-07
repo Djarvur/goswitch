@@ -527,10 +527,11 @@ func (i *Installer) readSources(ctx context.Context) (string, error) {
 //
 // Before ANY of that is written, the atomic refusal gate proves the
 // desktop's resolved sources wrap into a list goswitch owns ENTIRELY
-// (resolveWrapInput + wrapSources): a single wrappable source passes, but
-// a foreign residue, an unsupported kind or an unwrappable desktop fails
-// HERE — before the backup is written and before a single desktop setting
-// changes.
+// (resolveWrapInput + wrapSources): a completable half-state passes the
+// gate and the takeover WRITES the completed list (G-5-5, owner decision
+// 2026-10-07), but a foreign residue, an unsupported kind or an
+// unwrappable desktop fails HERE — before the backup is written and before
+// a single desktop setting changes.
 func (i *Installer) saveState(ctx context.Context) (string, error) {
 	prior, err := i.readSources(ctx)
 	if err != nil {
@@ -541,8 +542,8 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 		return "", err
 	}
 	// The gate is the FULL wrap computation, not just the resolution: a
-	// desktop carrying a wrappable entry beside a foreign source resolves
-	// fine and must still refuse here, atomically.
+	// desktop whose resolved value cannot complete into a goswitch-owned
+	// list refuses here, atomically.
 	if _, err := wrapSources(raw); err != nil {
 		return "", err
 	}
@@ -815,27 +816,30 @@ func renderWrapped(tuples []activate.SourceTuple) (parts []string, wrapped int, 
 	return parts, wrapped, unsupportedKind
 }
 
-// wrapSources computes the takeover value from one raw sources list: EVERY
-// xkb us/ru entry of the user's own list is wrapped into the goswitch
-// engine of its layout (positions preserved) — at least one is required
-// (single 'us' → goswitch-en, single 'ru' → goswitch-ru, the pair → both),
-// every other entry transits VERBATIM in its own position. The mapping is
-// closed-enum and the result is rendered only from the parsed Go values —
-// the raw input never reaches the gsettings argument (ASVS V5 /
-// T-05-02-01). A list with nothing wrappable, an entry of an unsupported
-// kind, a hand-edited half-wrapped list, or a foreign source that would
-// sit beside goswitch engines is a named refusal naming the failing tuple
-// TYPE and the fix — never a forced pair, never the raw user line (D-54,
-// D-20-safe).
+// wrapSources computes the takeover value from one raw sources list and is
+// the ONE completion arbiter of the G-5-5 revision (owner decision
+// 2026-10-07, verbatim: «автоматически приводить конфигурацию к
+// правильной, а если не получилось - отказ»): EVERY xkb us/ru entry of the
+// list — the user's own or the foreign part of a hand-edited half-wrapped
+// list — is wrapped into the goswitch engine of its layout (positions
+// preserved), at least one wrappable entry is required (single 'us' →
+// goswitch-en, single 'ru' → goswitch-ru, the pair → both), and repeated
+// engine tuples dedupe keeping the first position, so a completable
+// half-state (one goswitch tuple + one wrappable foreign tuple) completes
+// to the canonical goswitch-owned configuration. Refusal ONLY when the
+// completion fails: foreign residue outside us/ru (errMixedSources + the
+// fix hint), an entry of an unsupported kind or nothing wrappable
+// (errUnsupportedPair). The mapping is closed-enum and the result is
+// rendered only from the parsed Go values — the raw input never reaches
+// the gsettings argument (ASVS V5 / T-05-02-01). Every verdict names the
+// failing tuple TYPE and the fix — never a forced pair, never the raw user
+// line (D-54, D-20-safe).
 func wrapSources(raw string) (string, error) {
 	tuples, err := activate.ParseSourceTuples(raw)
 	if err != nil {
 		return "", fmt.Errorf("parse input sources: %w", err)
 	}
-	owned, foreign := countOwnedForeign(tuples)
-	if owned > 0 && foreign > 0 {
-		return "", errMixedSources
-	}
+	owned, _ := countOwnedForeign(tuples)
 	parts, wrapped, unsupportedKind := renderWrapped(tuples)
 	if unsupportedKind != "" {
 		return "", fmt.Errorf("%w: source kind %q is not a form goswitch wraps "+
@@ -843,31 +847,48 @@ func wrapSources(raw string) (string, error) {
 			"fix: set a layout to xkb 'us' or 'ru', then re-run goswitchctl install",
 			errUnsupportedPair, unsupportedKind)
 	}
+	// Foreign residue, computed exactly: unsupported kinds were already
+	// refused above, so every remaining part that is neither a goswitch
+	// tuple nor a wrapped xkb entry IS a verbatim transit. The residue
+	// refusal fires BEFORE the nothing-wrappable verdict whenever goswitch
+	// material is present (a wrapped layout or an owned engine): us+fr and
+	// goswitch-en+fr are the residue refusal, while a pure-foreign desktop
+	// and an already-owned list stay the nothing-wrappable refusal —
+	// DELIBERATE: selfcheck's own audit makes a goswitch-beside-foreign
+	// list red (D-53), so install must never write a list it would reject.
+	if transited := len(parts) - wrapped - owned; transited > 0 && (wrapped >= minWrapped || owned > 0) {
+		return "", fmt.Errorf("%w: %s", errMixedSources, foreignResidueHint)
+	}
 	if wrapped < minWrapped {
 		return "", errUnsupportedPair
 	}
-	// Foreign residue, computed exactly: unsupported kinds were already
-	// refused above, so every remaining part that is neither a goswitch
-	// tuple nor a wrapped xkb entry IS a verbatim transit. The check runs
-	// AFTER the nothing-wrappable verdict so a pure-foreign desktop stays
-	// the nothing-wrappable refusal, while us+fr and us+ru+fr become the
-	// residue refusal — DELIBERATE: selfcheck's own audit makes a
-	// goswitch-beside-foreign list red (D-53), so install must never write
-	// a list it would reject.
-	if transited := len(parts) - wrapped - owned; transited > 0 {
-		return "", fmt.Errorf("%w: %s", errMixedSources, foreignResidueHint)
+	// The G-5-5 completion: repeated engine tuples dedupe keeping the FIRST
+	// occurrence, other positions preserved — goswitch-en beside xkb us
+	// completes to the canonical single source, goswitch-en beside xkb ru
+	// to the owned pair.
+	deduped := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, p := range parts {
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		deduped = append(deduped, p)
 	}
 
-	return "[" + strings.Join(parts, ", ") + "]", nil
+	return "[" + strings.Join(deduped, ", ") + "]", nil
 }
 
 // resolveWrapInput resolves the raw value the takeover wrapper is computed
 // from: the LIVE list when it carries at least one wrappable xkb us/ru
-// entry; the SAVED original from the state file when the live desktop is
-// already goswitch-owned (Pitfall 7 — the state file holds the only true
-// pre-install list, the first backup stays sacred); a hand-edited
-// half-wrapped list and an unusable save are named refusals, never a
-// guess (T-05-02-02).
+// entry (the completable half-state of G-5-5 rides this branch — wrapSources
+// completes or refuses it); the SAVED original from the state file when the
+// live desktop is already goswitch-owned (Pitfall 7 — the state file holds
+// the only true pre-install list, the first backup stays sacred); a mixed
+// live value with NO wrappable entry routes through the wrap attempt too —
+// wrapSources is the one completion arbiter, and its refusal for
+// un-wrappable residue carries the errMixedSources identity; an unusable
+// save is a named refusal, never a guess (T-05-02-02).
 func (i *Installer) resolveWrapInput(live string) (string, error) {
 	if carriesWrappableXKB(live) {
 		return live, nil
@@ -879,7 +900,9 @@ func (i *Installer) resolveWrapInput(live string) (string, error) {
 	owned, foreign := countOwnedForeign(tuples)
 	switch {
 	case owned > 0 && foreign > 0:
-		return "", errMixedSources
+		// G-5-5: route the mixed live value through the wrap attempt — one
+		// arbiter decides completion or refusal (never a local verdict).
+		return live, nil
 	case owned > 0:
 		saved, trusted := savedSources(i.path(stateDirRel, stateFile))
 		if !trusted {
