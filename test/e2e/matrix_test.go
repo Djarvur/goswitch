@@ -421,6 +421,11 @@ timeouts:
   verify_wait_ms: 100
 `
 
+// reloadTapWindowLine is the applied-form reload fragment line the corpora
+// and the fragment-application assertions share (one mapping line replacing
+// the base document's tap window).
+const reloadTapWindowLine = "  tap_window_ms: 200"
+
 // TestMatrixStep_RunDispatch pins the dispatchable halves of the new step
 // kinds headlessly: the reload fragment application (key-line replace or
 // append — the append of an unknown key is exactly how a broken edit is
@@ -612,10 +617,10 @@ func TestMatrixCaseNeedsBaseEstablishment(t *testing.T) {
 	t.Parallel()
 
 	plain := matrixCase{
-		Name:    "plain",
-		Surface: matrixSurfaceZenity,
-		Mode:    "en",
-		Steps:   []matrixStep{{Type: "ghbdtn"}, {Key: matrixSpaceKey}, {Tap: "double"}},
+		Name:       "plain",
+		Surface:    matrixSurfaceZenity,
+		Mode:       "en",
+		Steps:      []matrixStep{{Type: acWordReadback}, {Key: matrixSpaceKey}, {Tap: "double"}},
 		ExpectText: "привет ",
 	}
 	if !caseNeedsBaseEstablishment(plain) {
@@ -635,7 +640,7 @@ func TestMatrixCaseNeedsBaseEstablishment(t *testing.T) {
 	withReload.Name = "with-reload"
 	withReload.Steps = []matrixStep{{
 		Reload: &matrixReload{
-			Lines:  []string{"  tap_window_ms: 200"},
+			Lines:  []string{reloadTapWindowLine},
 			Expect: matrixReloadApplied,
 		},
 	}}

@@ -863,6 +863,24 @@ func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error 
 	return caseErr
 }
 
+// caseHasReloadSteps reports whether the case carries a reload step: such a
+// case establishes its -config daemon at the FIRST reload step
+// (reloadMatrixStep), so the pre-establishment of runMatrixCase must stay
+// out of its way.
+func caseHasReloadSteps(c matrixCase) bool {
+	return slices.ContainsFunc(c.Steps, func(st matrixStep) bool {
+		return matrixStepKind(st) == matrixKindReload
+	})
+}
+
+// caseNeedsBaseEstablishment is the hermeticity predicate of runMatrixCase:
+// a case daemon may only boot without a pre-established -config document
+// when a reload step owns the establishment anyway. Every other case —
+// plain or config_base — pins the base document first.
+func caseNeedsBaseEstablishment(c matrixCase) bool {
+	return c.ConfigBase != "" || !caseHasReloadSteps(c)
+}
+
 // runMatrixCase drives one case on a live stand: engine activation, the
 // primary surface with its witness gate, the optional RU-mode flip (AFTER
 // the surface — the flip tap must land in the stand's own focused context,
@@ -870,12 +888,25 @@ func runMatrixCaseIsolated(ctx context.Context, cfg config, c matrixCase) error 
 // context at all, live finding 02-06), every step in file order, then the
 // expectation checks.
 func runMatrixCase(ctx context.Context, s *stand, c matrixCase) error {
-	// A config_base case establishes its -config daemon BEFORE the surface
-	// opens: the daemon's lazy per-app observer starts at its first key
-	// event (06-07 live finding), and the surface's fresh map-focus gain is
-	// what feeds it — a surface mapped before that start would never be
-	// identified (the macr-per-app surface-C lesson).
-	if c.ConfigBase != "" {
+	// EVERY case daemon runs on a PINNED -config document — only then is the
+	// stand hermetic (LIVE FINDING 2026-10-08): a plain case that starts the
+	// daemon without -config makes it ADOPT the machine owner's live
+	// ~/.config/goswitch/config.yaml, and on the owner's desktop the adopted
+	// autocorrect fired inside the word-after-space case, its
+	// flip_after_correction kept the correction buffer alive, and the case's
+	// own double-tap converted the corrected word back — a deterministic
+	// FAIL 15/16 twice (masked before the synthetic-FocusOut HardReset
+	// removal). The daemon behavior is correct; the stand must not depend on
+	// the desktop owner's config. Reload-step cases are the single
+	// exception: their FIRST reload step IS the establishment
+	// (reloadMatrixStep — the fragment rides the base document in the same
+	// restart), and pre-establishing would change that flow. A config_base
+	// case additionally establishes BEFORE the surface opens: the daemon's
+	// lazy per-app observer starts at its first key event (06-07 live
+	// finding), and the surface's fresh map-focus gain is what feeds it — a
+	// surface mapped before that start would never be identified (the
+	// macr-per-app surface-C lesson).
+	if caseNeedsBaseEstablishment(c) {
 		if err := establishCaseConfigBase(ctx, s, c); err != nil {
 			return err
 		}
