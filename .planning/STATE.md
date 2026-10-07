@@ -5,10 +5,10 @@ current_phase: 4
 current_phase_name: Поставка и приёмка
 status: planning
 stopped_at: Phase 8 complete, ready to plan Phase 4
-last_updated: "2026-10-06T05:59:22.276Z"
-last_activity: 2026-10-06
+last_updated: "2026-10-07T22:47:14.331Z"
+last_activity: 2026-10-07
 last_activity_desc: Phase 8 complete, transitioned to Phase 4
-state_head: 2ca9187521fe3f5093b6d697ade77b097f6905b4
+state_head: ae54bf4f3aae267056771bcf288cdaa7f852c919
 progress:
   total_phases: 8
   completed_phases: 1
@@ -315,6 +315,7 @@ None yet.
 | 261006-squ | feat: sound — persistent PulseAudio stream (jfreymuth/pulse v0.1.3 + oggvorbis v1.0.5, vorbis v1.0.2 via oggvorbis) + GNOME sound-theme playback with XDG resolver and PCM cache replaces canberra subprocess (~150 ms → ~30 ms tone); spec-delta SPEC §5/§11 BEFORE code (D-55); mute = zero server connections incl. event-sounds arm (verifier gap found and fixed); synthesized tone stays as never-wait fallback; SoundSink seam unchanged; owner by-ear check pending | 2026-10-06 | efe6cd3 | Needs Review | [261006-squ-sound-persistent-pulseaudio-stream-gnome](./quick/261006-squ-sound-persistent-pulseaudio-stream-gnome/) |
 | 261006-vqw | feat(correct): per-character layout inversion as THE mixed-text semantics (owner verdict, UAT phase 6; D-22/D-23 revised; WINDOWS-12 freeze rejected) — spec-delta SPEC §4.2 before code (D-55, a24afa9), golden corpus re-pinned RED (3c7f564), invertPerChar in the run pipeline (4da90d8), 13 matrix rows v1..v4 re-pinned + case_word.go oracle (f9ed497); refusals/homogeneous byte-identical; owner live-matrix + gedit check pending | 2026-10-06 | f9ed497 | Needs Review | [261006-vqw-mixed-text-per-character-layout-inversio](./quick/261006-vqw-mixed-text-per-character-layout-inversio/) |
 | 261007-0yg | refactor: move engine/ and layouts/ under internal/ (owner decision 2026-10-07, SPEC §8 rev; D-55 spec-delta 649c00f before the move 5427d7a — 42 files, renames R98-R100, zero logic edits); .golangci.yml/mise.toml/LICENSE-data.md re-pointed, generator parity byte-identical; verifier reproduced a PRE-EXISTING flaky test (TestRun_OnConnHookCalledOnce read-once race) — stabilized with deadline-polled waits incl. the same-class sound test (08b598a), 9× green -race series; verification passed 5/5 | 2026-10-07 | 08b598a | Verified | [261007-0yg-move-engine-and-layouts-under-internal-o](./quick/261007-0yg-move-engine-and-layouts-under-internal-o/) |
+| 261008-00m | milestone-close owner fixes: G-2-3 own-engine flip keeps the correction buffer (ADR-004 amendment + flipCredit; live matrix v1 16/16, word-mixed → паиghbdtn) + G-5-5 half-wrapped sources auto-wrap-then-refuse (ADR-006/SPEC §4.3-4.4 deltas, owner verbatim) + matrix stand hermeticity (plain cases pin base config, no owner-config adoption) | 2026-10-07 | ae54bf4 | — | [261008-00m-milestone-close-owner-fixes-batch-1-g-2-](./quick/261008-00m-milestone-close-owner-fixes-batch-1-g-2-/) |
 
 ## Deferred Items
 
