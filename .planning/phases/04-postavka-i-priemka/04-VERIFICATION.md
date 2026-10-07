@@ -58,7 +58,7 @@ covered_files:
   - test/e2e/quiesce_test.go
   - test/e2e/surface.go
   - test/e2e/watchdog_test.go
-covered_digest: "v1:sha256:13ff04f69498d40a1d8d8aa2a4e059ff7758c89b0ac905ee7f3f4b89eb5f2bdb"
+covered_digest: "v1:sha256:7caf827caab7ad35d7803245d31b2edb6130d314a6b27ebfab7418d7672d7d1d"
 behavior_unverified: 0
 overrides_applied: 1
 overrides:
