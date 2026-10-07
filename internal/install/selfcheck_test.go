@@ -100,17 +100,6 @@ func singleSourceStub(name string, args []string) ([]byte, error) {
 	return selfcheckGreenStub(name, args)
 }
 
-// redMixedSourceStub answers a hand-edited goswitch-beside-foreign desktop
-// over the otherwise-green stand-in — the foreign-residue form the audit
-// paints red (D-53).
-func redMixedSourceStub(name string, args []string) ([]byte, error) {
-	if name == binGSettings && len(args) == 3 && args[0] == opGet {
-		return []byte(mixedSources), nil
-	}
-
-	return selfcheckGreenStub(name, args)
-}
-
 // newSelfchecker builds an installer for the selfcheck corpus: fake runner,
 // the given $HOME, canned ctlStatus and activeEngines — no live bus, no
 // real desktop behind the audit.
@@ -407,9 +396,15 @@ func TestSelfcheck_StatusProbeSeam(t *testing.T) {
 	})
 }
 
-// mixedSources is the hand-edited goswitch-beside-foreign desktop the
-// mixed-verdict test answers.
+// mixedSources is the hand-edited completable half-state the heal test
+// answers: one goswitch engine beside one wrappable foreign xkb us layout
+// (the G-5-5 corpus, owner decision 2026-10-07).
 const mixedSources = `[('ibus', 'goswitch-en'), ('xkb', 'us')]`
+
+// residueSources is the un-completable residue form: a goswitch engine
+// beside a foreign layout outside us/ru — no wrap can complete it, the
+// audit refuses it with the D-53 rationale before any mutating call.
+const residueSources = `[('ibus', 'goswitch-en'), ('xkb', 'fr')]`
 
 // wrappedSourcesStub answers the D-54 wrapped-pair desktop (both goswitch
 // engines in the sources list) over the otherwise-green stand-in.
@@ -480,23 +475,82 @@ func TestSelfcheck_InputSourceForeignRejected(t *testing.T) {
 	}
 }
 
-// TestSelfcheck_InputSourceMixedRejected pins the foreign-residue desktop
-// as RED: a goswitch engine beside a foreign source fails with the D-53
-// rationale (the daemon sees no keys through an xkb source) and the
-// install hint.
-func TestSelfcheck_InputSourceMixedRejected(t *testing.T) {
-	f := &fakeRunner{stub: redMixedSourceStub}
+// TestSelfcheck_InputSourceMixedHeals pins the completion half of G-5-5
+// (owner decision 2026-10-07, verbatim: «автоматически приводить
+// конфигурацию к правильной, а если не получилось - отказ»): the
+// completable half-state — one goswitch engine beside one wrappable xkb us
+// tuple — is no longer a terminal refusal. The audit computes the
+// completion, performs EXACTLY ONE gsettings set with the healed list,
+// re-reads it and renders the green verdict naming the engines (a heal,
+// the component-cache repair precedent).
+func TestSelfcheck_InputSourceMixedHeals(t *testing.T) {
+	f := &fakeRunner{}
+	healed := false
+	var setArgs [][]string
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 4 && args[0] == opSet && args[2] == gsettingsKey {
+			healed = true
+			setArgs = append(setArgs, slices.Clone(args))
+
+			return nil, nil
+		}
+		if name == binGSettings && len(args) == 3 && args[0] == opGet {
+			if healed {
+				return []byte(goswitchSources), nil // the healed list on the re-read
+			}
+
+			return []byte(mixedSources), nil // the hand-edited half-state
+		}
+
+		return selfcheckGreenStub(name, args)
+	}
+	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
+
+	var buf bytes.Buffer
+	if err := i.Selfcheck(context.Background(), &buf); err != nil {
+		t.Fatalf("Selfcheck error = %v, want the completable half-state to heal green", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "ok input-source "+engineENName) {
+		t.Errorf("selfcheck output %q misses the healed engine verdict", out)
+	}
+	wantSet := []string{opSet, gsettingsSchema, gsettingsKey, goswitchSources}
+	if len(setArgs) != 1 || !slices.Equal(setArgs[0], wantSet) {
+		t.Errorf("set calls = %v, want exactly one %v (one verified heal write)", setArgs, wantSet)
+	}
+}
+
+// TestSelfcheck_InputSourceResidueStaysRed pins the refusal half of G-5-5:
+// the residue form — a goswitch engine beside a foreign layout outside
+// us/ru — stays RED with the D-53 rationale (the daemon sees no keys
+// through a foreign source) and the install hint, and the refusal gate
+// runs BEFORE any mutating call: zero gsettings set invocations on the
+// audit path (the 260930-toa atomicity discipline).
+func TestSelfcheck_InputSourceResidueStaysRed(t *testing.T) {
+	f := &fakeRunner{}
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet {
+			return []byte(residueSources), nil
+		}
+
+		return selfcheckGreenStub(name, args)
+	}
 	i := newSelfchecker(t, f, t.TempDir(), ctlStatusHealthy, nil, []string{engineENName})
 
 	var buf bytes.Buffer
 	if err := i.Selfcheck(context.Background(), &buf); err == nil {
-		t.Fatal("Selfcheck error = nil, want the mixed desktop to fail the audit")
+		t.Fatal("Selfcheck error = nil, want the residue desktop to fail the audit")
 	}
 	out := buf.String()
-	runRed(t, i, "FAIL input-source", hintInstall)
 	for _, want := range []string{"D-53", "no keys"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("verdict %q does not carry the D-53 rationale (%q missing)", out, want)
+		}
+	}
+	runRed(t, i, "FAIL input-source", hintInstall)
+	for _, c := range f.snapshot() {
+		if c.name == binGSettings && len(c.args) > 0 && c.args[0] == opSet {
+			t.Errorf("residue refusal issued a mutating call: %v — zero writes before any refusal", c.args)
 		}
 	}
 }
