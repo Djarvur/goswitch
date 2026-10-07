@@ -1,6 +1,6 @@
 ---
 phase: 06-avtokorrekcija-opcionalno
-verified: 2026-10-04T16:45:00Z
+verified: 2026-10-07T07:45:54Z
 status: passed
 score: 51/51 must-haves verified
 behavior_unverified: 0
@@ -33,7 +33,6 @@ covered_files:
   - docs/adr/ADR-006-two-engine-revision.md
   - docs/adr/ADR-007-autocorrect-hybrid-detector-and-role-policy.md
   - docs/ci-runner.md
-  - engine/conn_switcher_test.go
   - internal/appid/appid.go
   - internal/appid/appid_test.go
   - internal/config/config.go
@@ -42,175 +41,157 @@ covered_files:
   - internal/config/watch_test.go
   - internal/correct/buffer.go
   - internal/correct/buffer_test.go
+  - internal/correct/runs.go
+  - internal/correct/runs_test.go
   - internal/ctlsvc/ctlsvc.go
   - internal/ctlsvc/ctlsvc_test.go
   - internal/detect/detect.go
   - internal/detect/detect_test.go
+  - internal/engine/conn_switcher_test.go
+  - internal/layouts/dict_en.go
+  - internal/layouts/dict_ru.go
+  - internal/layouts/dict_test.go
+  - internal/layouts/dictgen/main.go
+  - internal/layouts/trigrams.go
   - internal/session/actor.go
   - internal/session/actor_test.go
-  - layouts/dict_en.go
-  - layouts/dict_ru.go
-  - layouts/dict_test.go
-  - layouts/dictgen/main.go
-  - layouts/trigrams.go
   - mise.toml
   - scripts/d48-nightly-dispatch.sh
   - test/e2e/case_autocorrect.go
   - test/e2e/case_switch.go
+  - test/e2e/case_word.go
   - test/e2e/cases/matrix-v4.yaml
   - test/e2e/fixtures/input.html
   - test/e2e/fixtures/password_entry.py
   - test/e2e/main.go
   - test/e2e/matrix.go
   - test/e2e/perf.go
-covered_digest: "v1:sha256:5f8ca4edc428bfb0b2a5b90d3ff3a190b4faf99adb2890914df5a87842838bcc"
+covered_digest: "v1:sha256:17d1137a29caf967b8e89ab28c5b0f13a2677cf2fbf9e7fa51f101320a06fa2c"
 overrides_applied: 0
-gaps: []  # no gaps — gap G-6-1 resolved (06-09/06-10), UAT 5/5 complete with owner verdicts, both former human gates closed
+gaps: []  # no gaps — fingerprint-staleness refresh: 6 stale paths re-derived (engine/, layouts/ → internal/), all must-haves hold on HEAD 1efc6fa
 re_verification:
-  previous_status: human_needed
-  previous_score: 42/44
-  gaps_closed:
-    - "06-08 T2 — полный двойной зелёный matrix-v4: корень красных строк найден UAT-измерением (самоблокировка фабрики на флипе, G-6-1), закрыт планами 06-09/06-10; после фикса матрица 32/35 ×2 подряд идентично, все 9 дрейф-строк зелёные; вердикт владельца 2026-10-04 (06-UAT.md тест 1)"
-    - "06-08 T3 — ADR-007 Proposed → Accepted: владелец принял на verify-work 2026-10-04; Status: Accepted на дереве (commit 87d5650)"
-    - "G-6-1 — первая буква после флипа: lock-free AttachEngine (atomic emitterSlot), живое доказательство 24/24 немедленных букв, RTT 6.5–9.2 мс, ноль deadline-WARN"
+  previous_status: passed
+  previous_score: 51/51
+  gaps_closed: []  # nothing to close — no open gaps carried in; this pass re-derives paths and re-proves wiring after post-phase tree evolution (phases 7/8, quick tasks 261006-squ/-vqw, internalize 261007-0yg)
   gaps_remaining: []
   regressions: []
 ---
 
-# Phase 6: Система автокоррекции — Verification Report (Re-verification)
+# Phase 6: Система автокоррекции — Verification Report (Re-verification: fingerprint refresh)
 
-**Phase Goal:** Опциональная (default off) автокоррекция — молчаливое исправление слова, набранного не в той раскладке, без горячей клавиши. Безопасность гибридным детектором (словарь + ремап + словарь; триграммный fallback для OOV) и политикой app×role на живых AT-SPI-данных (unknown → молчание). SPEC §10/§11 правится spec-delta внутри фазы (D-51: milestone v1.1.0).
-**Verified:** 2026-10-04T16:45:00Z
+**Phase Goal:** Опциональная (default off) автокоррекция — молчаливое исправление слова, набранного не в той раскладке, без горячей клавиши. Безопасность гибридным детектором (словарь + ремап + словарь; триграммный fallback для OOV) и политикой app×role на живых AT-SPI-данных (unknown → молчание).
+**Verified:** 2026-10-07T07:45:54Z
 **Status:** passed
-**Re-verification:** Yes — after gap closure (06-09/06-10) + UAT complete (bea10b9)
+**Re-verification:** Yes — fingerprint-staleness refresh at milestone close (HEAD 1efc6fa; previous verdict 2026-10-04T16:45:00Z, passed 51/51, gaps: [])
 
-## Свежесть (что изменилось с прошлой верификации)
+## Свежесть (что изменилось на дереве с прошлой верификации)
 
-Предыдущий отчёт (2026-10-02T20:15:00Z, human_needed, 42/44) предшествовал gap-планам G-6-1 и UAT. Эта ре-верификация перепроверила must-haves на ТЕКУЩЕМ дереве (HEAD 9dd0de8) first-hand:
+Прошлый отчёт (passed 51/51, gaps: []) закрывал фазу на HEAD 9dd0de8. С тех пор дерево эволюционировало; эта ре-верификация перепроверила все must-haves на ТЕКУЩЕМ дереве (1efc6fa) first-hand:
 
-- **G-6-1 закрыт:** `AttachEngine` — один атомарный `a.engSlot.Store(&emitterSlot{...})` без `a.mu` (internal/session/actor.go:770, слот :161, снапшот-аксессор :916); ADR-006 несёт «Amendment 2026-10-02 — G-6-1» (:14, :227); e2e-кейс flip-keystroke зарегистрирован (test/e2e/main.go:271, mise.toml:145); живое доказательство 24/24, RTT 6.5–9.2 мс (06-10-SUMMARY).
-- **UAT 5/5, статус complete** (06-UAT.md, bea10b9): все 5 тестов — с вердиктами владельца 2026-10-04.
-- **ADR-007: «Accepted — владелец, verify-work фазы 6, 2026-10-04»** на дереве (87d5650).
-- **Nyquist:** 06-VALIDATION.md `status: validated, nyquist_compliant: true` (9b25bd7).
-- **Security:** 06-SECURITY.md `status: verified, threats_open: 0, asvs_level: 1` (9dd0de8); D-20/D-21 перепроверены на каждом новом эммиссионном сайте.
-- **Review:** 06-REVIEW-FIX.md `status: all_fixed` (CR-01/CR-02/WR-01, RED→GREEN).
-- **super-space-alive выведена из матрицы** владельцем (1eda53d; SANCTIONED RETIREMENT 2026-10-04 в matrix-v4.yaml:5) — одноисточниковая модель, владение переключением у демона доказано e2e-flip-keystroke.
+- **Фаза 7 (PR #12, 42cbe72):** ревизия D-53 — **white-list `apps` → blocklist `apps_blocklist`** (regex-подстрока, потолок 64, пустые паттерны отвергаются; internal/config/config.go:119, валидация :392-414); SPEC §11 третья датированная ревизия (:411, :418); **ADR-007 Amendment 2026-10-04** (:193 «white-list → blocklist», таблица решений :223-226 — «unknown-идентичность при арме/подтверждении → пропуск», роль/капсы/детектор ОСТАЮТСЯ fail-closed). Формулировки белого списка в прежних must-haves УСТАРЕЛИ — проверяется ДЕЙСТВУЮЩИЙ контракт (см. SC 2).
+- **Фаза 8:** a11y-магия (internal/a11y), та же цепочка фолда конфига — автокоррекционный фолд не тронут (actor.go:1316-1322, рядом foldSound :1325 и pushA11y :1326).
+- **261006-squ (звук):** постоянный PulseAudio-поток заменяет canberra-сабпроцесс (internal/sound/*; go.mod + jfreymuth/pulse, oggvorbis — санкционированное владельцем spec-delta D-55). Взаимодействие с автокоррекцией перепроверено живыми тестами: TestActor_AutoCorrectFireSoundsSink, TestActor_AutoCorrectAbstainSilent — PASS (прогнан мной).
+- **261006-vqw (смешанный текст):** **посимвольная инверсия раскладки = ЦЕЛЕВАЯ семантика mixed** (SPEC §4.2:102-116; D-55 спека-до-кода); internal/correct/runs.go переписан, golden-корпус перепереносён (RED→GREEN), **13 строк e2e-матриц перепереносены** (matrix-v1..v4), case_word.go оракул «паиghbdtn». Это реализация записанного владельцем 2026-10-04 follow-up (06-UAT.md Deferred Follow-Ups п.1) — не новый скоуп фазы.
+- **261007-0yg (интернализация):** `engine/` и `layouts/` перенесены под `internal/` (5427d7a; SPEC §8 ревизия 2026-10-07, D-55:359-368). **6 устаревших путей covered_files пере-выведены:** engine/conn_switcher_test.go → internal/engine/conn_switcher_test.go; layouts/{dict_en,dict_ru,dict_test,trigrams}.go, layouts/dictgen/main.go → internal/layouts/….
 
 ## Goal Achievement
 
-### Success Criteria (ROADMAP) — вердикты
+### Success Criteria (ROADMAP) — вердикты на текущем дереве
 
-| # | Критерий | Вердикт | Evidence (свежий) |
+| # | Критерий | Вердикт | Evidence (свежий, HEAD 1efc6fa) |
 |---|----------|---------|----------|
-| 1 | Гибридный детектор: точность на корпусе, FP в бюджете | ✓ VERIFIED | `go test ./internal/detect/ -race` ok (прогнан мной 2026-10-04); golden-корпус: 190 уверенных, 404 легитимных слова — 0 FP, OOV никогда не уверены (провёрено в прошлой верификации, пакет не менялся с тех пор — fingerprint-файлы detect не в gap-дифе) |
-| 2 | Политика app×role, unknown → молчание | ✓ VERIFIED | `go test ./internal/session/ -race` ok (прогнан мной); silence-matrix 10 ячеек fail-closed; живые негативы — UAT тест 4: password-silent (witness 0→7, fired=0), terminal-silent (fired=0 при обеих доставках IME) — зелёные 2026-10-04 |
-| 3 | Default off, hot reload, счётчики в status, лог без содержимого | ✓ VERIFIED | Тесты зелёные в полном CI; renderStatus-токены на дереве (ctlsvc.go:160 `autocorrect_enabled=`, ac_skip_*); privacy D-20/D-21 — 0 открытых угроз (06-SECURITY.md, перепроверка на HEAD) |
-| 4 | Двойной Shift — ручное переопределение | ✓ VERIFIED | TestActor_ManualOverrideAfterAutocorrect в зелёном пакете; UAT тест 4: fires — исправление без хоткея + ручной Double конвертирует обратно, зелёный 2026-10-04 на починенном дереве |
-| 5 | e2e-матрица расширена автокоррекционными кейсами, ночная двойная зелёная | ✓ VERIFIED (вердикт владельца) | Расширение — на дереве (matrix-v4.yaml, ночной конвейер). Двойная зелень: корень красных строк был G-6-1 (UAT-измерение: потеря буквы внутри окна переключения, WARN deadline на каждом флипе) — закрыт 06-09/06-10; после фикса **32/35 ×2 подряд идентично, все 9 дрейф-строк зелёные**; остаток — word/phrase-mixed (замороженные WINDOWS #12 строки) с вердиктом владельца: целевая семантика = посимвольная инверсия раскладки, бэклог v1.1.x; super-space-alive выведена владельцем (1eda53d). Вердикт: «Владелец 2026-10-04: принял» (06-UAT.md тест 1) — human-гейт закрыт владельцем |
+| 1 | Гибридный детектор: точность на корпусе, FP в бюджете | ✓ VERIFIED | Golden-корпус прогнан мной под -race на текущем дереве: TestCorpus_WrongLayoutBothDirections, **TestCorpus_LegitWordsZeroFalsePositives** — PASS; корпус дополнен mixed-токенами новой семантики (TestCorpus_MixedTokens — PASS). detect.go не менялся (314 строк); пути словарей internal/layouts/dict_{en,ru}.go на месте (78 965 / 138 929 строк) |
+| 2 | Политика app×role, unknown → молчание | ✓ VERIFIED (контракт D-53) | **TestAutoCorrect_SilenceMatrix — 9/9 ячеек PASS** под -race (прогнан мной): все СЕКЬЮРИТИ-сегменты fail-closed (роль 40/60, ошибка/дедлайн роли, нет caps, unsure, короткое слово); identity-unknown СТРЕЛЯЕТ (инверсия 07-04, закреплена в silenceMatrixCells actor_test.go:5364), role-ambiguous 61+unknown отвергается (CR-01). Старая white-list формулировка снята ревизией D-53 — действующий контракт blocklist проверен |
+| 3 | Default off, hot reload, счётчики в status, лог без содержимого | ✓ VERIFIED | Default off: config.go :251 (AppsBlocklist nil, D-54), actor-фолд :1316-1322 (enabled/blocklist/пороги) + refreshACBlocklist (:2283, перекомпиляция только при изменении паттернов = hot reload); токены status: ctlsvc.go:162 autocorrect_enabled=, :163 autocorrect_fired=, :164 autocorrect_abstained=, :168 ac_skip_*; приватность: TestActor_DebugCorrectionRecord PASS (прогнан мной; «the log leaked %q (D-20/D-21)» — нет утечки содержимого) |
+| 4 | Двойной Shift — ручное переопределение | ✓ VERIFIED | TestActor_ManualOverrideAfterAutocorrect PASS под -race (прогнан мной 2026-10-07) |
+| 5 | e2e-матрица расширена автокоррекционными кейсами, ночная двойная зелёная | ✓ VERIFIED (вердикт владельца + юнит-доказательство ре-пина) | Матрица расширена (matrix-v4.yaml, 34 кейса; phrase-mixed :110, word-mixed :161); ночной конвейер цел (d48-nightly-dispatch.sh:32-33 → matrix-v4 fresh_session=true; e2e-matrix.yml default v4). Двойная зелень — вердикт владельца 2026-10-04 (32/35×2 после G-6-1, 06-UAT.md тест 1). **13 строк перепереносены** на посимвольную инверсию (261006-vqw) — поведение доказано юнит-корпусом на текущем дереве (TestActor_MixedWordInvertsPerChar, TestActor_PhraseMixedCorrects, TestConvertRuns_MixedInvertsPerChar — PASS, прогнаны мной); живой прогон ре-пиннутых строк — задекларированный ручной гейт самого quick-task'а (261006-vqw-VERIFICATION.md, human_needed) — НЕ гэп фазы 6 (см. «Post-verification evolution») |
 
-### Gap-closure G-6-1 — must-haves планов 06-09/06-10 (7/7, новое)
+### Gap-closure G-6-1 — must-haves планов 06-09/06-10 (7/7) — регрессия на текущем дереве
 
-| # | Truth | Status | Evidence (прогнано/прочитано мной на дереве 2026-10-04) |
+| # | Truth | Status | Evidence (прогнано/прочитано мной на дереве 2026-10-07) |
 |---|-------|--------|----------|
-| 1 | 06-09 D1: lock-free AttachEngine — реентерабельный CreateEngine фабрики завершается во время флипа без a.mu | ✓ VERIFIED | Код: `AttachEngine` = один `engSlot.Store` (actor.go:770), ноль Lock в теле; 25 чтений на снапшотах через `emitter()`. Поведенческие тесты **прогнаны мной под -race: TestActor_ReentrantAttachDuringFlip, TestActor_AttachEngineWhileFlipInFlight — PASS** |
-| 2 | 06-09 D2: контракт флипа не тронут (D-36 порядок, 150 мс wedge-guard, WARN-not-fatal, nil seam, автокоррекционный контур) | ✓ VERIFIED | Полный `mise run ci` **прогнан мной 2026-10-04: зелёный** (build+vet+lint strict+test -race, все пакеты ok — включая internal/session) |
-| 3 | 06-09 D3: wire-свидетели фаб-шины — синхронный реентерабельный CreateEngine внутри await; блокирующий хендлер — единственный гейт | ✓ VERIFIED | **TestFactoryReentrantCreateEngineAnswersDuringAwait + …BlockingHandlerIsOnlyGate — прогнаны мной под -race: PASS**; production engine/ не тронут (git diff gap-коммитов: только тест-файл) |
-| 4 | 06-09 D4: ADR-006 Amendment 2026-10-02 (диагноз, свойство, решение, что НЕ меняется, улики) | ✓ VERIFIED | Amendment на дереве (ADR-006 :14, секция :227); диагноз подтверждён журналом UAT (WARN на каждом флипе, engine created +1 мс после аборта); живая улика дописана 06-10 (24/24) — честность правки подтверждена владельцем через UAT тест 1 |
-| 5 | 06-10 D1: e2e-кейс flip-keystroke зарегистрирован, mise-задача вне [tasks.ci], оракул немедленной буквы | ✓ VERIFIED | main.go:271 (`"flip-keystroke": {fn: runFlipKeystroke, standalone: true}`), main.go:113/286, mise.toml:145; runFlipKeystroke в case_switch.go (grep = 2); оракул не ослаблен (T-06-10-01: паузы только ПОСЛЕ буквы) |
-| 6 | 06-10 D2: живое доказательство double-green + регрессия пары + журнальный аудит | ✓ VERIFIED | 24/24 немедленных буквы через 4 прогона (6/6 ×4; pre-fix база — 5/5 потерь), two-source-flip зелёный, аудит: 8/8 switch_engine INFO, RTT 6.50–9.16 мс (медиана 8.32), ноль WARN (06-10-SUMMARY Live Results; запуск e2e — живой стол, вне компетенции верификатора — числа приняты по SUMMARY+UAT с коррелирующим вердиктом владельца) |
-| 7 | 06-10 D3: fresh-session вердикт WINDOWS #13 — гейт владельца | ✓ VERIFIED (закрыт владельцем) | UAT тест 1: «Владелец 2026-10-04: принял. Матрица 32/35×2 стабильно» — вердикт записан в 06-UAT.md, гейт больше не открыт |
+| 1 | 06-09 D1: lock-free AttachEngine — реентерабельный CreateEngine завершается во время флипа без a.mu | ✓ VERIFIED | actor.go:832-834 — тело = один `a.engSlot.Store(&emitterSlot{eng: eng})`, ноль Lock; слот :171, снапшот-аксессоры через emitter(). **TestActor_ReentrantAttachDuringFlip + TestActor_AttachEngineWhileFlipInFlight — прогнаны мной под -race на internal/session: PASS** |
+| 2 | 06-09 D2: контракт флипа не тронут (D-36 порядок, 150 мс wedge-guard, WARN-not-fatal, nil seam) | ✓ VERIFIED | Флип-путь и ci-гейт целы (mise.toml:35-37 [tasks.ci]); целевые пакеты session/engine/detect/correct зелёные под -race (точечные прогоны этой сессии) |
+| 3 | 06-09 D3: wire-свидетели фаб-шины — синхронный реентерабельный CreateEngine внутри await | ✓ VERIFIED | internal/engine/conn_switcher_test.go (837 строк, перенесён 5427d7a): **TestFactoryReentrantCreateEngineAnswersDuringAwait + …BlockingHandlerIsOnlyGate — прогнаны мной под -race: PASS** |
+| 4 | 06-09 D4: ADR-006 Amendment 2026-10-02 (диагноз, свойство, решение) | ✓ VERIFIED | ADR-006:14 «Amended 2026-10-02 — G-6-1: the factory's self-deadlock on a flip» + секция :227 — на дереве |
+| 5 | 06-10 D1: e2e-кейс flip-keystroke зарегистрирован, mise-задача вне [tasks.ci] | ✓ VERIFIED | test/e2e/main.go:272 `"flip-keystroke": {fn: runFlipKeystroke, standalone: true}` (:113 usage, :289 standalone-список); mise.toml:145-147 `[tasks.e2e-flip-keystroke]` |
+| 6 | 06-10 D2: живое доказательство double-green (24/24 немедленных буквы) | ✓ VERIFIED (записанная улика) | 24/24, RTT 6.50-9.16 мс, ноль WARN — 06-10-SUMMARY Live Results + коррелирующий вердикт владельца (06-UAT.md тест 1); живой прогон — live-стол, вне компетенции верификатора, числа не оспариваются |
+| 7 | 06-10 D3: fresh-session вердикт WINDOWS #13 — гейт владельца | ✓ VERIFIED (закрыт владельцем) | 06-UAT.md тест 1: «Владелец 2026-10-04: принял. Матрица 32/35×2 стабильно» — вердикт записан, гейт закрыт |
 
-### Observable Truths исходных 8 планов (44) — регрессионная перепроверка
+### Observable Truths исходных 8 планов (44) — quick-regression
 
-42 истины, верифицированные 2026-10-02, — quick-regression (существование + санити) на текущем дереве: все артефакты на месте (matrix-v4.yaml, case_autocorrect.go, fixtures, appid/detect/config/buffer/actor/ctlsvc — ARTIFACTS-OK), греп-гейты SPEC-DELTA-OK и AUDIT-TRAIL-PRESENT **перезапущены мной — зелёные**, статусные токены на месте (ctlsvc.go:160). Пакеты internal/session и internal/detect прогнаны под -race — ok. Два бывших непокрытых must-have:
-
-| # | Truth | Прежний статус | Новый статус | Evidence |
-|---|-------|----------------|--------------|----------|
-| 43 | 06-08 T2: полный регресс — matrix-v4 зелёный дважды подряд | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | ✓ VERIFIED | Корень найден и закрыт (G-6-1 → 06-09/06-10); после фикса 32/35 ×2 идентично, дрейф-строки зелёные; вердикт владельца 2026-10-04 в 06-UAT.md тест 1 (детали — критерий 5) |
-| 44 | 06-08 T3: ADR-007 переведён в Accepted | ⚠️ HUMAN GATE | ✓ VERIFIED | ADR-007:5 «**Accepted — владелец, verify-work фазы 6, 2026-10-04**»; commit 87d5650; строка 5 Acceptance Evidence закрыта фиксом G-6-1 |
+44 истины, верифицированные в двух прежних проходах, — quick-regression (существование + санити + точечные поведенческие прогоны) на текущем дереве: артефакты на месте по ПЕРЕ-ВЫВЕДЕННЫМ путям (internal/engine/, internal/layouts/ — ARTIFACTS-OK, см. таблицу артефактов), appid/detect/config/buffer/actor/ctlsvc не регрессировали, статусные токены на месте, греп-гейты SPEC-дельт закрыты чтением (§4.2:102, §8:359, §11:411-418 — все три ревизии на дереве). Ни одна истина не потеряла носитель; 0 FAILED, 0 STUB, 0 ORPHANED, 0 NOT_WIRED, 0 behavior-unverified.
 
 **Score: 51/51 truths verified** (44 исходных + 7 gap-closure; 0 present-behavior-unverified; 0 FAILED; 0 overrides)
 
-## Resolved Human Verification Ledger (все 5 прежних пунктов)
-
-| # | Бывший human-пункт | Резолюция | Evidence |
-|---|--------------------|-----------|----------|
-| 1 | WINDOWS #13 / двойной зелёный + вердикт по дрейф-строкам | RESOLVED — владелец принял | 06-UAT.md тест 1: pass; матрица 32/35×2 после G-6-1; mixed-semantics → v1.1.x; super-space-alive retired (1eda53d) |
-| 2 | ADR-007 Proposed → Accepted | RESOLVED — владелец принял | 06-UAT.md тест 2: pass; ADR-007:5 Accepted с датой (87d5650) |
-| 3 | CR-01 асинхронное окно подтверждения — живая проверка | RESOLVED — три инструмента | 06-UAT.md тест 3: pass; юнит-корпус -race зелёный + живая проба 18/18 (0..100 мс, ноль порчи, честные abstain) + fires-кейс зелёный на починенном дереве |
-| 4 | Живой UAT трёх автокоррекционных кейсов | RESOLVED — все три зелёные | 06-UAT.md тест 4: pass; fires (ghbdtn→привет без хоткея + Double-регресс), password-silent (witness 0→7, fired=0, FINAL-verbatim), terminal-silent (fired=0 при обеих доставках) |
-| 5 | Judgment-запреты (4 позиции) | RESOLVED — владелец подтвердил | 06-UAT.md тест 5: pass; «да — все четыре подтверждены» (audit-trail дословность, GPL-чистота dictgen, cache-not-basis D-53, фикстура-без-утечки D-20/D-21) |
-
-Все пять UAT-тестов — с вердиктами владельца 2026-10-04; ни один не остаётся human-gated. Frontmatter `unverified-prohibitions` прежнего отчёта снят: 4/4 подтверждены владельцем (тест 5), privacy-запреты перепроверены 06-SECURITY.md на HEAD.
-
-## Required Artifacts (прирост с прошлой верификации)
+## Required Artifacts (ключевые носители на пере-выведенных путях)
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| internal/session/actor.go (gap-правка) | lock-free AttachEngine + engSlot | ✓ VERIFIED | actor.go:118-121/:154-161/:770/:916-917; ноль Lock в теле AttachEngine |
-| engine/conn_switcher_test.go (gap-правка) | reattach-хук + 2 wire-свидетеля | ✓ VERIFIED | Тесты прогнаны мной под -race: PASS |
-| docs/adr/ADR-006-two-engine-revision.md | Amendment 2026-10-02 G-6-1 | ✓ VERIFIED | :14 + секция :227 |
-| test/e2e/case_switch.go | runFlipKeystroke + tail-оракул | ✓ VERIFIED | runFlipKeystroke ×2 (определение+регистрация) |
-| test/e2e/main.go / mise.toml | регистрация кейса | ✓ VERIFIED | main.go:113/:271/:286; mise.toml:145 |
-| test/e2e/cases/matrix-v4.yaml | retirement super-space-alive | ✓ VERIFIED | SANCTIONED RETIREMENT 2026-10-04 (yaml:5, commit 1eda53d) |
-| 06-UAT.md / 06-VALIDATION.md / 06-SECURITY.md / 06-REVIEW-FIX.md | сводные артефакты приёмки | ✓ VERIFIED | complete 5/5 / validated+nyquist / verified+0 threats / all_fixed |
+| internal/engine/conn_switcher_test.go | reattach-хук + 2 wire-свидетеля (из engine/, 5427d7a) | ✓ VERIFIED | 837 строк; TestFactoryReentrantCreateEngine* PASS -race (прогнан мной) |
+| internal/layouts/dict_en.go / dict_ru.go / trigrams.go | golden словари + триграммы (из layouts/) | ✓ VERIFIED | 78 965 / 138 929 / 8 213 строк; едят тесты detect-корпуса — PASS |
+| internal/layouts/dict_test.go / dictgen/main.go | golden-тесты + генератор | ✓ VERIFIED | на месте (102 / 373 строки) |
+| internal/correct/runs.go (+runs_test.go) | посимвольная инверсия mixed-пайплайна (261006-vqw) | ✓ VERIFIED | 140 строк; TestConvertRuns_MixedInvertsPerChar PASS -race |
+| internal/session/actor.go | D-53 конъюнкция, lock-free AttachEngine, config-фолд | ✓ VERIFIED | 2946 строк; :832-834, :1316-1322, :2283; silence-matrix 9/9 |
+| internal/config/config.go | секция autocorrect (default off) + apps_blocklist | ✓ VERIFIED | :119 AppsBlocklist, :251 default nil, :392-414 валидация (потолок 64, пустые отвергаются) |
+| internal/ctlsvc/ctlsvc.go | renderStatus-токены автокоррекции | ✓ VERIFIED | :162-164, :168 |
+| test/e2e/cases/matrix-v4.yaml | 13 mixed-строк на посимвольной инверсии | ✓ VERIFIED | phrase-mixed :110, word-mixed :161; значения = юнит-доказанной семантике |
+| docs/SPEC.md / ADR-006 / ADR-007 | три ревизии (§4.2, §8, §11) + 2 amendment | ✓ VERIFIED | SPEC :102/:359/:411; ADR-006 :14/:227; ADR-007 Accepted (:5) + Amendment D-53 (:193) |
+| 06-UAT.md | приёмка 5/5 с вердиктами владельца | ✓ VERIFIED | status: complete, 5/5 pass — не изменилась |
 
-Остальные 13 артефактов прежнего отчёта — quick-regression: все на месте (ARTIFACTS-OK), не менялись gap-коммитами (кроме перечисленных).
-
-## Behavioral Spot-Checks (свежие прогоны этой верификации)
+## Behavioral Spot-Checks (прогоны этой верификации, 2026-10-07)
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Полный CI на HEAD | `mise run ci` (2026-10-04) | build+vet+lint+test -race — все пакеты ok, 0 FAIL | ✓ PASS |
-| G-6-1 реентераб-корпус | `go test ./internal/session/ -race -run 'TestActor_ReentrantAttachDuringFlip\|TestActor_AttachEngineWhileFlipInFlight' -v` | 2/2 PASS | ✓ PASS |
-| Wire-свидетели фабрики | `go test ./engine/ -race -run TestFactoryReentrantCreateEngine -v` | 2/2 PASS | ✓ PASS |
-| Spec-delta гейты | grep v1.1.0+2026-09-27+ADR-007, !«явно ВНЕ объёма»; grep «отвергнута владельцем осознанно» | SPEC-DELTA-OK, AUDIT-TRAIL-PRESENT | ✓ PASS |
-| Детектор/сессия -race | `go test ./internal/session/ ./internal/detect/ -race -count=1` | оба ok | ✓ PASS |
-| Статусные токены | grep ctlsvc.go | autocorrect_enabled (:160) + ac_skip_* | ✓ PASS |
+| G-6-1 реентераб-корпус | `go test ./internal/session/ -race -run 'TestActor_ReentrantAttachDuringFlip\|TestActor_AttachEngineWhileFlipInFlight' -count=1` | ok | ✓ PASS |
+| Wire-свидетели фабрики | `go test ./internal/engine/ -race -run 'TestFactoryReentrantCreateEngine' -count=1` | ok | ✓ PASS |
+| Golden-корпус 0-FP + mixed | `go test ./internal/detect/ -race -run 'TestCorpus_WrongLayoutBothDirections\|TestCorpus_LegitWordsZeroFalsePositives\|TestCorpus_MixedTokens' -count=1 -v` | все PASS | ✓ PASS |
+| Silence-matrix D-53 | `go test ./internal/session/ -race -run 'TestAutoCorrect_SilenceMatrix' -count=1 -v` | 9/9 ячеек PASS | ✓ PASS |
+| Посимвольная инверсия | `go test ./internal/session/ ./internal/correct/ -race -run '…MixedWordInvertsPerChar\|…PhraseMixedCorrects\|TestConvertRuns_MixedInvertsPerChar' -count=1 -v` | все PASS | ✓ PASS |
+| Ручное переопределение | `go test ./internal/session/ -race -run 'TestActor_ManualOverrideAfterAutocorrect' -count=1` | ok | ✓ PASS |
+| Приватность лога + звук | `go test ./internal/session/ -race -run 'TestActor_DebugCorrectionRecord\|TestActor_AutoCorrectFireSoundsSink\|TestActor_AutoCorrectAbstainSilent' -count=1 -v` | все PASS | ✓ PASS |
 
-Пропущено: живые e2e-прогоны (flip-keystroke, матрица) — требуют живой GNOME-стол; живые числа покрыты парой «06-10 SUMMARY + коррелирующий вердикт владельца в 06-UAT.md» и не оспариваются.
+Пропущено: живые e2e-прогоны (матрицы v1-v4, flip-keystroke) — live GNOME-стол; носители — записанные вердикты владельца (06-UAT.md) + юнит-доказательства семантики (выше).
 
 ## Probe Execution
 
-Не применимо — проект не объявляет scripts/*/tests/probe-*.sh; планы фазы (вкл. 06-09/06-10) не декларируют пробники. Носители — mise-задачи и go test (выше).
+Не применимо — проект не объявляет scripts/*/tests/probe-*.sh; ни один план фазы (вкл. 06-09/06-10) не декларирует пробники. Носители — mise-задачи и go test (выше).
 
 ## Requirements Coverage
 
 | Requirement | Source Plan(s) | Status | Evidence |
 | ----------- | -------------- | ------ | -------- |
-| SPEC §10/§11 (spec-delta), D-51 | 06-01..08 | ✓ SATISFIED | SPEC-DELTA-OK/AUDIT-TRAIL перезапущены; ADR-007 Accepted владельцем |
-| CORR-01..09 | 06-02..08 | ✓ SATISFIED | Полный CI зелёный на HEAD; UAT тест 4 (fires/password/terminal) — живые подтверждения; прежние носители не регрессировали |
-| MACR-ACL (app×role) | 06-01,03,04,06,07 | ✓ SATISFIED | silence-matrix в зелёном пакете; UAT тест 4: password-silent (одна role-forbidden абстенция) и terminal-silent живьём |
-| SWCH-01/SWCH-02 (G-6-1) | 06-09, 06-10 | ✓ SATISFIED | lock-free фабрика + reentrant-корпус + wire-свидетели (прогнаны мной); живое доказательство 24/24; two-source-flip регрессия зелёная |
+| SPEC §10/§11 (spec-delta), D-51 | 06-01..08 | ✓ SATISFIED | SPEC §11 несёт три датированные ревизии (:411 blocklist — актуальная); ADR-007 Accepted + Amendment D-53 |
+| CORR-01..09 | 06-02..08 | ✓ SATISFIED | Golden-корпус 0-FP PASS на текущем дереве; silence-matrix 9/9; mixed-семантика обновлена spec-delta §4.2 и доказана юнит-корпусом |
+| MACR-ACL (app×role) | 06-01,03,04,06,07 | ✓ SATISFIED | Действующий контракт — blocklist D-53 (адаптация прежней white-list формулировки, санкционированная владельцем); fail-closed сегменты security доказаны |
+| SWCH-01/SWCH-02 (G-6-1) | 06-09, 06-10 | ✓ SATISFIED | lock-free фабрика + реентераб-корпус + wire-свидетели PASS на internal/ путях |
 
-Orphaned requirements: НЕТ (как и прежде — REQUIREMENTS.md заморожен до complete-milestone по D-51; формализация REQ-ID — при new-milestone v1.1.0).
+Orphaned requirements: НЕТ (REQUIREMENTS.md по-прежнему заморожен до complete-milestone по D-51 — формализация REQ-ID при new-milestone).
 
 ## Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| — | — | Debt markers (TBD/FIXME/XXX/HACK) в gap-файлах (actor.go, case_switch.go, conn_switcher_test.go, matrix-v4.yaml, ADR-006, ADR-007) | none | скан 2026-10-04 — 0 совпадений |
-| — | — | Placeholder / stub / empty impl | none | 0; полный CI зелёный |
-| — | — | go.mod churn | none | tidy CLEAN в CI |
+| — | — | Debt markers (TBD/FIXME/XXX/HACK) в файлах фазы (пере-выведенные пути) | none | скан 2026-10-07 — 0 совпадений |
+| — | — | Placeholder / stub / empty impl | none | 0 (два совпадения «unknown placeholder» в test/e2e/case_switch.go:79/:161 — константа формата e2e-отчёта, не заглушка: значение не течёт в прод-рендер) |
+| — | — | Disabled tests (t.Skip) в requirement-linked тест-файлах | none | 0 (совпадения SkipReasons — словарь причин абстенций) |
+| — | — | go.mod churn | none | +2 прямых депа звука (jfreymuth/pulse, oggvorbis) — санкционированное spec-delta 261006-squ, вне скоупа фазы 6 |
 
-Info: ROADMAP.md:293 всё ещё показывает `- [ ]` для 06-10-PLAN.md при полном 06-10-SUMMARY (status: complete) и feat-коммите 9f78017 в истории — устаревшая галочка буккипинга, на цель фазы не влияет (рекомендация: отметить при complete-milestone). Преждевременный ручной флип `status: human_needed → passed` в незакоммиченном 06-VERIFICATION.md (без улик) заменён настоящим отчётом с full-уликами.
+## Post-verification Evolution (информационное, не гэпы фазы)
 
-## Deferred Follow-Ups (бэклог владельца v1.1.x — не гэпы фазы)
-
-Оба пункта записаны владельцем в 06-UAT.md § Deferred Follow-Ups (canonical ledger); поздних фаз текущего милстоуна нет (фаза 6 — последняя), в гэпы не включаются.
-
-1. **Семантика смешанного текста** (из UAT теста 1, решение владельца 2026-10-03): конвертация инверсией раскладки посимвольно — целевая семантика для word-mixed/phrase-mixed; WINDOWS #12-фриз отклонён; отдельный план, строки матрицы перезакрепить. Бэклог v1.1.x.
-2. **UX white-list identity-discovery** (из UAT теста 3): goswitchctl status дополнить токеном последней наблюдаемой bridge-идентичности приложения, чтобы список заполнялся без кейс-харнесса (18×ac_skip_app_not_listed при документационной догадке). Бэклог v1.1.x.
+1. **Живые гейты 261006-vqw.** Ре-пин 13 mixed-строк (261006-vqw, реализация записанного владельцем follow-up) несёт СОБСТВЕННЫЕ живые ручные гейты: 4 матрицы + ручной mixed-чек (261006-vqw-VERIFICATION.md, status: human_needed — все автоматизируемое зелёное). Это pending-приёмка quick-task'а, а не регрессия фазы 6: mixed-строки и раньше не были живо-зелёными (владелец принял их как drift с записанной целевой семантикой). На milestone close виден здесь — единый sink гейта остаётся в артефакте 261006-vqw.
+2. **Former deferred follow-ups — оба разрешены:** (а) семантика смешанного текста — реализована 261006-vqw (SPEC §4.2, «Смешанный текст: посимвольная инверсия раскладки» — todo закрыт, VERIFICATION quick-task'а на дереве); (б) UX white-list identity-discovery — растворён ревизией D-53: blocklist не требует наблюдаемой идентичности (ADR-007:223 прямо ссылается на UX-пробел 06-UAT).
+3. **Dep-базис:** go.mod вырос на звуковые депы (см. Anti-Patterns) — сознательное решение владельца в post-фазном quick-task; ограничение «stdlib + godbus + минимум» эволюционирует через spec-delta, к цели фазы 6 отношения не имеет.
 
 ## Decision Coverage
 
-Прежняя проверка gsd-tools check.decision-coverage-verify: 5/5 honored (запись 2026-10-02). Повторный вызов в этой сессии скипается вербом («CONTEXT.md missing» — проектный лэйаут); новых trackable CONTEXT-решений gap-планы не вводили (их key-decisions — планового уровня, записаны в 06-09/06-10 SUMMARY). Переносится как 5/5, 0 not honored.
+`gsd-tools check.decision-coverage-verify` (fresh, 2026-10-07): **5/5 honored, 0 not honored** — «All trackable CONTEXT.md decisions are honored by shipped artifacts.» (В прошлый раз гейт скипался вербом из-за проектного лэйаута; теперь отработал и подтвердил перенос 5/5.)
 
 ## Gaps Summary
 
-Гэпов нет. Обе прежние «незакрываемые» истины закрыты: 06-08 T2 — фиксацией корня (G-6-1: самоблокировка фабрики флипа) планами 06-09/06-10 с живым доказательством 24/24 и вердиктом владельца (32/35×2 после фикса); 06-08 T3 — прямым вердиктом владельца (ADR-007 Accepted, 2026-10-04). Все 5 human-пунктов разрешены (06-UAT.md, 5/5, owner verdicts). 4 judgment-запрета подтверждены владельцем. 0 FAILED, 0 STUB, 0 ORPHANED, 0 NOT_WIRED, 0 behavior-unverified. Цель фазы достигнута на текущем дереве: полный `mise run ci` зелёный (прогнан верификатором 2026-10-04).
+Гэпов нет. Все 51 must-have (44 исходных + 7 gap-closure) держатся на текущем дереве (HEAD 1efc6fa): поведенческие истины переподтверждены точечными прогонами под -race (G-6-1 корпус, wire-свидетели, golden-корпус 0-FP, silence-matrix 9/9, посимвольная инверсия, ручное переопределение, приватность лога, звук-интеракция), артефакты на месте по пере-выведенным путям (internal/engine/, internal/layouts/), три post-фазные ревизии SPEC (§4.2 mixed-семантика, §8 internalize, §11 blocklist) не тронули ни одного носителя фазы. Ревизия D-53 white-list → blocklist — санкционированная владельцем эволюция контракта SC 2 (ADR-007 Amendment), действующая семантика доказана инвертированной silence-matrix. 0 FAILED, 0 STUB, 0 ORPHANED, 0 NOT_WIRED, 0 behavior-unverified, 0 overrides. Цель фазы достигнута.
 
 ---
 
-_Verified: 2026-10-04T16:45:00Z_
+_Verified: 2026-10-07T07:45:54Z_
 _Verifier: Claude (gsd-verifier)_
