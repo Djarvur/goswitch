@@ -1,22 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 05-integratsiya-s-gnome-indikatsiya
 source: [05-VERIFICATION.md]
 started: 2026-09-30T15:15:00Z
-updated: 2026-10-07T20:46:50Z
+updated: 2026-10-07T20:55:00Z
 ---
 
 ## Current Test
 
-number: 6
-name: Residue judgment-tier prohibitions (ADR-550 D4)
-expected: |
-  (a) демоны/кейсы не оставляют стол изменённым ни при каком исходе (NOTE: WR-05 открыт —
-  отказ systemctl stop может оставить юнит-демон остановленным); (b) журнал флипа не несёт
-  пользовательского текста; (c) SyncEngine никогда не воюет с шиной; (d) install не навязывает
-  пару; (e) третий xkb-источник честно выводит из-под goswitch; плюс живое подтверждение
-  тихого журнала флипа после дедлайна 150 мс.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -60,12 +52,20 @@ goswitch должен попытаться автоматически дозав
 TestWrapSourcesRefusalTable зелёный). Требует ревизии поведения по D-55 (спека до кода) и
 фикса — см. Gaps G-5-5."
 
+### 6. Residue judgment-tier prohibitions (ADR-550 D4)
+expected: (a) стол не остаётся изменённым ни при каком исходе (NOTE: WR-05 открыт — отказ systemctl stop может оставить юнит-демон остановленным); (b) журнал флипа не несёт пользовательского текста; (c) SyncEngine никогда не воюет с шиной; (d) install не навязывает пару; (e) третий xkb-источник честно выводит из-под goswitch; плюс живое подтверждение тихого журнала флипа после дедлайна 150 мс.
+result: pass (owner, 2026-10-07 — принят с оговоркой)
+reason: "Владелец принял сводку после человеческой формулировки (goswitch и его тесты не
+оставляют после себя мусора в настройках системы ни при каком исходе — успех, сбой, падение).
+Оговорка WR-05 остаётся записанной. Тихий журнал флипа после 150 мс подтверждён живым
+аудитом 06-09 (zero deadline-abort WARN, RTT 6.5-9.2 мс)."
+
 ## Summary
 
 total: 6
-passed: 4
+passed: 5
 issues: 1
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
