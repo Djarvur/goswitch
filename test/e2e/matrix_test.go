@@ -596,6 +596,55 @@ func TestMatrixCaseBaseConfig(t *testing.T) {
 	}
 }
 
+// TestMatrixCaseNeedsBaseEstablishment pins the hermeticity predicate of
+// runMatrixCase (LIVE FINDING 2026-10-08): a PLAIN case — no config_base,
+// no reload steps — must establish the pinned base document, because a
+// daemon started without -config ADOPTS the machine owner's live
+// ~/.config/goswitch/config.yaml, and on the owner's desktop the adopted
+// autocorrect fired inside the word-after-space case, its
+// flip_after_correction kept the correction buffer alive, and the case's
+// own double-tap converted the corrected word back — the deterministic
+// 15/16 FAIL. A config_base case establishes too (the 06-07
+// observer-start ordering). ONLY a reload-steps case defers: its FIRST
+// reload step is the establishment itself (reloadMatrixStep), and a
+// pre-establishment would change that flow.
+func TestMatrixCaseNeedsBaseEstablishment(t *testing.T) {
+	t.Parallel()
+
+	plain := matrixCase{
+		Name:    "plain",
+		Surface: matrixSurfaceZenity,
+		Mode:    "en",
+		Steps:   []matrixStep{{Type: "ghbdtn"}, {Key: matrixSpaceKey}, {Tap: "double"}},
+		ExpectText: "привет ",
+	}
+	if !caseNeedsBaseEstablishment(plain) {
+		t.Error("plain case must establish the pinned base document — without -config" +
+			" the daemon adopts the owner's live config (live finding 2026-10-08)")
+	}
+
+	withBase := plain
+	withBase.Name = "with-config-base"
+	withBase.ConfigBase = matrixConfigBaseAutocorrect
+	if !caseNeedsBaseEstablishment(withBase) {
+		t.Error("config_base case must pre-establish its base document" +
+			" (the 06-07 observer-start ordering)")
+	}
+
+	withReload := plain
+	withReload.Name = "with-reload"
+	withReload.Steps = []matrixStep{{
+		Reload: &matrixReload{
+			Lines:  []string{"  tap_window_ms: 200"},
+			Expect: matrixReloadApplied,
+		},
+	}}
+	if caseNeedsBaseEstablishment(withReload) {
+		t.Error("reload-steps case must defer to its first reload step —" +
+			" reloadMatrixStep/establishCaseConfig owns the establishment")
+	}
+}
+
 // TestMatrixReport_ExitCode pins the TEST-04 exit contract without a live
 // desktop: a report with at least one FAIL computes exit code 1, an
 // all-PASS report computes 0.
