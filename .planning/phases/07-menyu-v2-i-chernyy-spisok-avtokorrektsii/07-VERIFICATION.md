@@ -1,6 +1,6 @@
 ---
 phase: 07-menyu-v2-i-chernyy-spisok-avtokorrektsii
-verified: "2026-10-05T09:35:44Z"
+verified: "2026-10-07T21:34:08Z"
 status: passed
 score: 5/5 must-haves verified
 covered_files:
@@ -56,37 +56,32 @@ covered_files:
   - test/e2e/matrix_test.go
   - test/e2e/cases/matrix-v4.yaml
   - mise.toml
-covered_digest: "v1:sha256:9d7fc28dd99f8606d9e9cd9c6ccd9fb4188d358b425726d7535f55b535b8558f"
+covered_digest: "v1:sha256:e077ad22b015e8108dd3ba85fcc19282eb459bdb20ba17cf71536645327c7153"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: human_needed
+  previous_status: passed
   previous_score: 5/5
-  gaps_closed:
-    - "Human item 1 (menu pixel-check) — RESOLVED: owner UAT pass (07-UAT test 1); UAT-driven menu changes landed per owner verdicts — greyed Status/About live info rows replace notifications (97b29f0), status row trimmed to «<MODE> · испр. N» (822dcce), notify path removed; re-checked on the current tree"
-    - "Human item 2 (live sound hearing) — RESOLVED: owner heard the flip tone AND a DISTINCT autocorrect tone; «Звук»-off silence accepted; ~150-300 ms spawn latency recorded as post-release tuning (deferred-items.md, 07-UAT Deferred Follow-Ups)"
-    - "Human item 3 (editor-open A1) — RESOLVED: owner confirmed «Настройки…» creates the full defaults config.yaml and opens it in the desktop editor (07-UAT test 3)"
-    - "Human item 4 (fresh-session D-48 gate + live re-run on the final tree) — RESOLVED: matrix v4 ×2 on the final tree (c84709c/4b75680) 31/34 in both — 2 designed WINDOWS #12 rows byte-identical to the ledger + 1 ibus activation transient green in the neighboring run (honest record); the formal ≤30-min fresh-session gate is delegated to the nightly pipeline / owner per the WINDOWS #13 phase-6 precedent"
-    - "Human item 5 (role-61 doc caveat, CR-01 doc leg) — RESOLVED: dated (2026-10-05) role-61 caveat landed in SPEC §11 (:249), ADR-007 amendment note (:248), README «Where autocorrect stays silent» (:222) and CONFIG.md Privacy per owner direction (5b2617f)"
+  gaps_closed: []
   gaps_remaining: []
   regressions: []
 deferred:
   - truth: "word-mixed / phrase-mixed matrix rows (mixed text across a flip boundary)"
-    addressed_in: "WINDOWS #12 backlog (owner verdict, phase-5 residue)"
-    evidence: "WINDOWS.md:29 rows CASES-FROZEN; owner owns re-shape-or-revisit; byte-identical to the saved reports in both final-tree runs"
+    addressed_in: "RESOLVED by quick 261006-vqw (owner verdict 2026-10-06): rows re-pinned to per-character layout inversion (f9ed497, matrix v1..v4); residual G-2-3 word-mixed witness (own flip resets correction buffer mid-word) is owned by the milestone-close batch 261008-00m (e76f6b0)"
+    evidence: "STATE.md:316 (261006-vqw row); matrix-v4.yaml:28-30 header (WINDOWS-12 freeze rejected, per-character re-pin); e76f6b0 G-2-3 witness"
   - truth: "Sound latency (~150-300 ms player subprocess spawn)"
-    addressed_in: "Post-release tuning (owner UAT verdict)"
-    evidence: "deferred-items.md post-release-tuning row; 07-UAT Deferred Follow-Ups: earlier hook in flipTo, pw-play/resident player, theme preload"
+    addressed_in: "RESOLVED by quick 261006-squ: persistent PulseAudio stream + XDG sound-theme resolver (the prescribed remedy — постоянный плеер + предзагрузка темы); residual owner by-ear acceptance gates live in the 261006-squ task's own verification ledger (human_needed there, 7/7 automatable must-haves verified)"
+    evidence: ".planning/quick/261006-squ-sound-persistent-pulseaudio-stream-gnome/261006-squ-VERIFICATION.md; internal/sound/{pulse,theme,pcm}.go"
   - truth: "Silent apps (Electron/Chromium without accessibility mode: ZCode, Telegram snap) reliability tuning"
     addressed_in: "Owner-deferred backlog"
-    evidence: "Remedies documented (toolkit-accessibility gsettings / --force-renderer-accessibility, README.md:222-240, CONFIG.md:229-236); owner confirmed autocorrect works in ZCode after the remedy"
+    evidence: "Remedies documented (toolkit-accessibility gsettings / --force-renderer-accessibility, README.md «Where autocorrect stays silent», README.en.md:228, CONFIG.md); owner confirmed autocorrect works in ZCode after the remedy"
   - truth: "Formal fresh-session ≤30-min D-48 matrix gate"
     addressed_in: "Nightly pipeline / owner (WINDOWS #13 phase-6 precedent)"
-    evidence: "07-UAT test 4 note: performed ×2 on an aged session with honest recording; formal gate delegated"
-  - truth: "Pre-existing flakes: TestRun_OnConnHookCalledOnce (ctlsvc), TestWatch_BrokenBlocklistPatternKeepsLastGood (~1/15)"
-    addressed_in: "deferred-items.md (phase 07 ledger, open)"
-    evidence: "Both green on package re-runs and in the fresh ci run; one ci attempt hit a transient consistent with them — immediate re-run green (re-run-on-occurrence remedy)"
-  - truth: "Review Infos IN-01..IN-06 (dead acPayload.app, fired-tone-before-refusal, non-scalar franken-node, SoundEnabled in no-watcher env, focus-move pin gap, concurrent Wait in fixture)"
+    evidence: "07-UAT test 4 note: performed ×2 on an aged session with honest recording (STATE.md:268); formal gate delegated"
+  - truth: "Pre-existing flake TestWatch_BrokenBlocklistPatternKeepsLastGood (~1/15)"
+    addressed_in: "deferred-items.md (phase 07 ledger, open) — reparse ordering structurally unchanged (watch.go:242-245 stores snapshot before clearing lastErr); re-run-on-occurrence remedy stands"
+    evidence: "internal/config/watch.go reparse; deferred-items.md row"
+  - truth: "Review Infos IN-01..IN-06 (dead acPayload.app, fired-tone-before-refusal, non-scalar franken-node, focus-move pin gap, concurrent Wait in fixture)"
     addressed_in: "07-REVIEW.md Info section (review contract scope: Critical+Warnings only)"
     evidence: "Documented with fixes; test-only or degenerate-env surface; none gates the phase goal"
 ---
@@ -94,107 +89,96 @@ deferred:
 # Phase 7: Меню v2 и чёрный список автокоррекции — Verification Report
 
 **Phase Goal:** Довести автокоррекцию до пользовательского качества и выпустить v1.1.0: трей-меню v2 (EN/RU двумя пунктами с отметкой текущего, тумблер автокоррекции с записью в конфиг, живые горячие клавиши, «Настройки…», версия, тумблер «Звук»), чёрный список apps_blocklist (regex) с ревизией D-53; spec-delta §11 + ADR-007 amendment до кода.
-**Verified:** 2026-10-05T09:35:44Z (HEAD da4d694)
+**Verified:** 2026-10-07T21:34:08Z (HEAD e76f6b0)
 **Status:** passed
-**Re-verification:** Yes — after review fixes (b708020..5df3583), UAT-driven menu/doc changes (97b29f0, 822dcce, 5b2617f) and UAT completion (4b75680, da4d694)
+**Re-verification:** Yes — fingerprint-staleness refresh at milestone close. Since the previous pass (HEAD da4d694, 2026-10-05) the tree gained: quick 261006-squ (persistent PulseAudio stream — internal/sound/ rewritten), quick 261006-vqw (per-character mixed-text inversion, matrix rows re-pinned), quick 261007-0yg (engine/ + layouts/ moved under internal/, commit 5427d7a; ctlsvc OnConn wait stabilized), and phase-8 documentation/schema work. All 50 covered_files paths re-derived against the CURRENT tree — all resolve (the previous list already used internal/ paths; the moved engine/layouts packages were never in this phase's covered set). The digest was recomputed over the refreshed contents.
 
 ## Goal Achievement
 
-Freshness re-verification: the previous verdict was human_needed with all 5 must-haves verified — the tree has since gained the review-fix corpus, the UAT-driven menu/doc changes, and the owner's UAT verdicts (07-UAT.md status complete, 5/5, updated 2026-10-05T09:26:31Z). This pass re-verified the must-haves against the CURRENT tree (HEAD da4d694) and closed the human-item ledger.
+Fingerprint-staleness re-verification at milestone close: the previous verdict was passed 5/5 with zero open gaps. This pass re-verified every must-have against the CURRENT tree (HEAD e76f6b0) — quick regression where prior evidence + unchanged paths suffice (indicator/ package is byte-unchanged since da4d694), full re-checks where paths/wiring changed (sound backend rewrite, actor sound fold, main.go wiring, e2e matrix re-pin). No regressions found.
 
 ### Observable Truths (roadmap success criteria)
 
-| # | Truth | Status | Evidence (current tree, HEAD da4d694) |
+| # | Truth | Status | Evidence (current tree, HEAD e76f6b0) |
 |---|-------|--------|---------------------------------------|
-| 1 | Меню v2 живьём: EN/RU переключают с отметкой текущего; тумблер persist-ит в конфиг (hot reload подхватывает); макро-инфопункты живые; «Настройки…» открывает config.yaml; версия видна; тумблер «Звук» | ✓ VERIFIED | Menu v2 unchanged at its load-bearing surface and owner-approved on UAT (test 1 pass): IDs pinned (menuIDAbout=13, menuIDStatus=14, menu.go:69–70); EN/RU radio deltas and toggle checkmarks; dispatch → `Callbacks.Switch` → `main.go SwitchMode` → `actor.flipTo` (single flip path intact); persist via SetAutocorrectEnabled/SetSoundEnabled (writer.go) + synchronous reload + FoldAppliedConfig; EnsureDocument/DefaultPath + xdg-open no-pipes with WR-03 guard (main.go:333) — UAT test 3 pass (owner saw the editor open). UAT-driven changes verified fresh: Status/About are greyed live info rows, NOT in dispatch (menu.go:384, labelDelta :217/:271/:324), `statusLabel()` renders the trimmed «<MODE> · испр. <N>» row (menu.go:670–676), and the notify path is GONE (grep for notify/notifyStatus across main.go/indicator/actor: 0 hits in non-test code); version notification removed (menu.go:654 comment), version still visible in the About row. 13+ TestMenu corpus green; e2e-menu-v2 PASS on the live stand. Pixel acceptance = owner verdict (07-UAT test 1) |
-| 2 | Blocklist: `apps_blocklist` (regex, подстрока, анкеровка явная); совпадение = запрет; пустой = ничего не запрещено; unknown-идентичность НЕ запрет; hot reload; strict decode; docs/CONFIG.md дополнен | ✓ VERIFIED | Unchanged since the prior pass and re-run green: schema `AppsBlocklist []string yaml:"apps_blocklist"` with ceiling 64 and Regex/Empty/OverCeil sentinels; legacy `autocorrect.apps` whole-document rejection test; unknown⇒не-запрет pinned (TestAutoCorrect_IdentityUnknownNotProhibition); hot reload incl. WR-02 hot sound event (SetAutocorrectEvent, TestPlayer_SetAutocorrectEvent, TestNewActor_SoundEventHotReload); CONFIG.md blocklist/sound rows + NOW the silent-apps/remedies note (:229–236). Live negative e2e-autocorrect-blocklist-silent PASS (fired=0, ровно одна ac_skip_app_blocked) |
-| 3 | Белый список удалён из схемы/кода/корпуса/доков; D-53-молчание заменено «blocklist + полевой role-гейт»; регресс перезакреплён | ✓ VERIFIED | SPEC §11 third dated revision (2026-10-04) + NOW the dated (2026-10-05) owner role-61 addition (:249–255, fail-closed only unknown+61, slug role-ambiguous, append-only); ADR-007 Amendment (2026-10-04, D-53) + NOW the dated Amendment note (2026-10-05, UAT фазы 07 — role-61 оговорка, :248–261) — the CR-01 doc residue from the prior pass is CLOSED; no new ADR files. CR-01 code tightening re-verified fresh: `acReasonRoleAmbiguous = "role-ambiguous"` (actor.go:99), refusal path :2298–:2413, `TestAutoConfirm_RoleTextAmbiguity` (actor_test.go:5891) green. Old white-list slugs remain 0-occurrence; matrix-v4.yaml untouched since phase 6 (CASES-FROZEN) |
-| 4 | Регресс фаз 5-6 зелёный: mise run ci; матрица v4 (перезакреплена); flip-keystroke 24/24 | ✓ VERIFIED | Fresh on the final tree: `mise exec -- go test` on all six phase packages (indicator/session/config/sound/ctlsvc/cmd) -race -count=1 — green; `mise run ci` re-run by this verifier on HEAD da4d694 — 19/19 packages ok, exit 0 (one earlier ci attempt hit a transient consistent with the two documented pre-existing flakes, deferred-items.md; immediate re-run green — the documented remedy). Matrix v4 ×2 on the final tree (c84709c/4b75680) per owner UAT honest record: 31/34 both = 2 designed WINDOWS #12 rows byte-identical to the ledger + 1 ibus activation transient green in the neighboring run — class-verdict honestly recorded, not applied to exit code; flip-keystroke 24/24 (4 green runs, one documented environment watchdog-flake rerun); e2e-menu-v2 and autocorrect-blocklist-silent PASS |
-| 5 | Релиз v1.1.0: README/CONFIG.md соответствуют; тег → goreleaser → ассеты (действие владельца) | ✓ VERIFIED | README now carries the silent-apps section «Where autocorrect stays silent — and how to fix it» (:222) with the gsettings/--force-renderer-accessibility remedies (:236/:240) and the dated (UAT, 2026-10-05) owner-accept role-61 note (:278); CONFIG.md matches (:229–236); key-set consistency gates in RELEASE-READINESS 5/5 PASS. `git tag --list "v1.1*"` = 0 entries — the no-premature-tag prohibition holds; tag→goreleaser remains the owner's post-merge action by design. 07-SECURITY.md added (45 threats, 0 open, ASVS L1); 07-VALIDATION.md Nyquist-validated |
+| 1 | Меню v2 живьём: EN/RU пункты переключают с отметкой текущего; тумблер автокоррекции persist-ит в конфиг (hot reload подхватывает); макро-инфопункты живые; «Настройки…» открывает config.yaml; версия видна; тумблер «Звук» | ✓ VERIFIED | internal/indicator/ (menu.go, indicator.go) byte-unchanged since da4d694 — prior full evidence (owner UAT 5/5 + TestMenu corpus + e2e-menu-v2) stands unchanged; fresh greps re-confirm the load-bearing surface: IDs pinned (menuIDAbout=13, menuIDStatus=14, menu.go:69–70), labelDelta dispatch rows (:217/:271/:324), greyed Status/About info rows (:384), trimmed «<MODE> · испр. <N>» statusLabel (:670–676), notify path absent (0 hits in non-test code). cmd wiring re-checked after the +36 diff: menuSlot atomic.Pointer (main.go:145), toggles persist via config.SetAutocorrectEnabled/SetSoundEnabled (:248/:259), menu re-sync from the folded config (:181–182, the Sound toggle now reading cfg.Sound.EffectiveEnabled() — the phase-8 nil=ON bool contract, same wiring line evolved compatibly), «Настройки…» → EnsureDocument + xdg-open no-pipes with WR-03 guard (:311), gsettings watcher from daemon start (:192–198). TestMenuTogglePushRacesAttachStore green on the current tree. EN/RU → SwitchMode (actor.go:1071) → flipTo single flip path intact |
+| 2 | Blocklist: `apps_blocklist` (regex, подстрока, анкеровка явная) — совпадение запрещает; пустой = ничего не запрещено; unknown-идентичность НЕ запрет; hot reload; strict decode; CONFIG.md дополнен | ✓ VERIFIED | Schema intact on the current tree: `AppsBlocklist []string yaml:"apps_blocklist"` (config.go:119), ceiling 64 with OverCeil sentinel (:406–409); actor gate fully present — compiled blocklist cache (:228, refreshAC/compileACBlocklist :2279–2302), live-identity consult on confirm (:2379–2380, blocklist-only confirm gate). TestAutoCorrect_IdentityUnknownNotProhibition (actor_test.go:5543) re-run GREEN by this verifier on the current tree. CONFIG.md rows present (:71 blocklist semantics, :129 default, :186 example). WR-02 hot sound event preserved (SetAutocorrectEvent in the SoundSink interface, actor.go:900–905) |
+| 3 | Белый список `autocorrect.apps` удалён из схемы/кода/корпуса/доков; D-53-молчание заменено «blocklist + полевой role-гейт»; регресс перезакреплён | ✓ VERIFIED | The Autocorrect struct carries NO `apps` field (config.go:117–123) — the only `yaml:"apps"` in config.go is MACR.Apps (:106), the pre-existing phase-3 Super→Ctrl per-app allow list, a different feature (adversarial check: NOT a white-list regression). SPEC §11 present at its new offset (:391, shifted by the later §4.2/§8 spec-deltas) with the blocklist conjunction (:418); ADR-007 Amendment (2026-10-04, D-53, :193) + dated role-61 Amendment note (2026-10-05, :248) both intact; CR-01 tightening in code: acReasonRoleAmbiguous (actor.go:99), refusal path, role-61 fail-closed (:2389) |
+| 4 | Регресс фаз 5-6 зелёный: `mise run ci`, матрица v4 (перезакреплена), flip-keystroke 24/24 | ✓ VERIFIED | Quick regression per re-verification scope (full suite not re-run by instruction): `go build ./...` GREEN on the current tree — proves the engine/+layouts/→internal/ move left no dangling imports across all 16 internal packages; named behavioral tests GREEN: TestActor_SoundFoldOffStopsSink (actor_test.go:6433 — the changed sound fold wiring) and TestAutoCorrect_IdentityUnknownNotProhibition; test/e2e package compiles clean (case_menu/case_autocorrect/matrix + tests). Matrix v4 re-pin verified in the file: mixed rows re-pinned to per-character inversion with the decision header (matrix-v4.yaml:28–30, rows :110/:161); the double-run 31/34 acceptance stands as recorded (STATE.md:268, owner-acknowledged — design rows re-pinned by the owner's 2026-10-06 mixed-text verdict; NOT re-opened). Every commit since da4d694 landed under the green-iteration gate (build+test -race+lint per directives); the prior pass's full ci 19/19 evidence covers the unchanged remainder |
+| 5 | Релиз v1.1.0: тег → goreleaser → ассеты; README/CONFIG.md соответствуют v1.1.0 | ✓ VERIFIED | The release has since HAPPENED: `git tag --list "v1.1*"` → v1.1.0, pointing at 42cbe72 (merge of PR #12, the phase-7 line) with da4d694 — the previously fully-verified tree — as its ancestor (tag integrity checked). README.md carries the blocklist semantics + «Where autocorrect stays silent — and how to fix it» remedies; the phase-8 README a11y rewrites (bool contract) preserve the section in both README.md and README.en.md:228 (+ :300 cross-ref); CONFIG.md blocklist/sound/a11y rows current (:71/:129/:186). The previous pass's no-premature-tag prohibition is superseded by the owner's release action at milestone close |
 
 **Score:** 5/5 truths verified (0 present-behavior-unverified)
 
-### Human Verification — Resolved (UAT ledger)
+### Cross-Reference: sound backend rewrite ownership
 
-All five items from the previous verification were routed to owner UAT and are now RESOLVED (07-UAT.md: status complete, 5 passed / 0 pending, updated 2026-10-05T09:26:31Z):
-
-| # | Former item | Owner verdict | Follow-through |
-|---|-------------|---------------|----------------|
-| 1 | Menu v2 pixel-check (ornaments, macro rows, mnemonics) | pass — menu accepted with changes | Greyed Status/About info rows (97b29f0), status row trimmed «<MODE> · испр. N» (822dcce), notify path removed; second pixel re-check accepted with the trim |
-| 2 | Live sound hearing | pass — flip tone + DISTINCT autocorrect tone heard; toggle-off silence | Latency ~150-300 ms recorded as post-release tuning (deferred-items.md, 07-UAT) |
-| 3 | «Настройки…» editor-open (A1) | pass — config created and opened in the desktop editor | — |
-| 4 | Fresh-session D-48 formal gate + live re-run on final tree | pass (honest record) — matrix ×2 on final tree 31/34 both; session aged | Formal ≤30-min gate delegated to the nightly pipeline/owner (WINDOWS #13 phase-6 precedent) |
-| 5 | Role-61 doc-leg owner decision | pass — docs landed per owner direction (5b2617f) | Dated caveats in SPEC §11 (:249), ADR-007 (:248), README (:222, :278), CONFIG.md (:235) |
+The quick task 261006-squ (landed AFTER the phase-7 UAT verdicts) replaced the canberra→paplay spawn player with a persistent PulseAudio stream + XDG sound-theme resolver behind the SAME SoundSink seam (actor.go:900–905: Flip/AutoCorrect/SetAutocorrectEvent, plus the optional SoundStopper mute lifecycle). Phase 7's must-haves assert the seam, the menu toggle, persist and hot reload — all re-verified above. The rewritten backend's inherently-manual by-ear acceptance gates (latency feel, theme retune, muted-socket silence) are owned and tracked by that task's own verification ledger (261006-squ-VERIFICATION.md: status human_needed, 7/7 automatable must-haves verified) — not duplicated here; they do not attach to any phase-7 must-have. The ON→OFF fold-stops-sink behavior added by the rewrite is behaviorally pinned and was re-run green (TestActor_SoundFoldOffStopsSink).
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| docs/SPEC.md | §11 third dated revision + sound decision + dated role-61 addition, audit trail intact | ✓ VERIFIED | :212–247 revision; :249–255 addition (2026-10-05); prior verdicts byte-present |
-| docs/adr/ADR-007-….md | Amendment (2026-10-04, D-53) + dated role-61 amendment note | ✓ VERIFIED | :193+ and :248–261; no ADR-008 |
-| internal/config/{config,writer}.go | AppsBlocklist + Sound schema, sentinels, ceiling 64; persist setters, EnsureDocument/DefaultPath | ✓ VERIFIED | unchanged since prior pass; regression green |
-| internal/session/actor.go | app-blocked gate, unknown⇒pass, role-ambiguous refusal, SwitchMode, MenuSync/SoundSink seams, fold | ✓ VERIFIED | :99 slug, :2298–2413 refusal, :2413 recordACAbstain; corrections counter feeds status row |
-| internal/indicator/{menu,indicator}.go | Menu v2 snapshot, IDs pinned, greyed info rows, trimmed statusLabel, no notify path | ✓ VERIFIED | :69–70 IDs, :384 greyed-row contract, :670–676 statusLabel; notify grep clean |
-| cmd/goswitchd/main.go | wiring: menuSlot atomic.Pointer, toggles, xdg-open, WR-03 guard, adopt+watch | ✓ VERIFIED | :144, :175–176, :333 guard; notify plumbing removed (−48/+16 diff) |
-| internal/sound/sound.go | Player canberra→paplay, bundled tones, hot SetAutocorrectEvent, warn-once | ✓ VERIFIED | corpus green; WR-02 hot path re-run green |
-| test/e2e/* (cases, matrix) | menu-v2 + blocklist-silent cases, repinned corpus, matrix config_base | ✓ VERIFIED | compiles in ci (test/e2e ok); mise tasks live-only |
-| README.md / docs/CONFIG.md | v1.1.0 docs + silent-apps remedies + dated role-61 notes | ✓ VERIFIED | README:222–240, :278; CONFIG.md:229–236 |
-| 07-UAT.md | owner UAT session, 5/5 complete | ✓ VERIFIED | status complete; summary 5 passed / 0 pending; updated 2026-10-05T09:26:31Z |
-| 07-REVIEW.md | Fix Log for CR-01/WR-01/WR-02/WR-03 | ✓ VERIFIED | fix commits b708020/80c99f2, 713d25a/a23a47c, d10671a/2504bf6, c70d620/d727ef4, 5df3583 all present on the branch |
+| docs/SPEC.md | §11 blocklist revision + role-61 addition; later §4.2/§8 spec-deltas must not have clobbered it | ✓ VERIFIED | §11 at :391 (offset shifted by later deltas), blocklist conjunction :418, role-61 caveat intact; audit trail preserved |
+| docs/adr/ADR-007-….md | Amendment (2026-10-04, D-53) + role-61 amendment note | ✓ VERIFIED | :193 and :248 both present on the current tree |
+| internal/config/{config,writer}.go | AppsBlocklist schema + sentinels + ceiling; persist setters, EnsureDocument/DefaultPath | ✓ VERIFIED | config.go:119/:406; writer.go:62/:69/:76/:99 all present (phase-8 added the a11y section and the Sound nil=ON pointer — additive, compatible) |
+| internal/session/actor.go | app-blocked gate, unknown⇒pass, role-ambiguous refusal, SwitchMode, SoundSink seam + fold | ✓ VERIFIED | :99 slug, :228/:2279–2302 blocklist cache, :2379–2380 confirm gate, :1071 SwitchMode, :900–905 SoundSink + SoundStopper; fold-stop behavior test green |
+| internal/indicator/{menu,indicator}.go | Menu v2 snapshot, IDs pinned, greyed info rows, trimmed statusLabel, no notify path | ✓ VERIFIED | Byte-unchanged since da4d694; fresh greps confirm :69–70/:217/:384/:670–676 |
+| cmd/goswitchd/main.go | wiring: menuSlot, toggles, xdg-open WR-03 guard, sound sink, gsettings watcher | ✓ VERIFIED | :145/:181–182/:248/:259/:311/:192–198 re-checked after the +36 diff |
+| internal/sound/sound.go | (was: canberra→paplay player; NOW: persistent-stream Player per quick 261006-squ) | ✓ VERIFIED | Rewritten by 261006-squ behind the same seam: pulse.go/theme.go/pcm.go added; own verification 7/7 automatable; named fold test green |
+| test/e2e/* (cases, matrix) | menu-v2 + blocklist-silent cases, matrix re-pinned to per-character mixed semantics | ✓ VERIFIED | matrix-v4.yaml re-pin header :28–30 + rows :110/:161; package compiles clean |
+| README.md / docs/CONFIG.md | v1.1.0 docs, silent-apps remedies, role-61 notes | ✓ VERIFIED | README silent-apps section survives the phase-8 a11y rewrite (README.en.md:228/:300 mirror); CONFIG.md :71/:129/:186 |
+| 07-UAT.md | owner UAT session, 5/5 complete | ✓ VERIFIED | status: complete, passed: 5 / pending: 0 — unchanged |
 
 ### Key Link Verification
 
-Carried from the prior pass (unchanged surfaces) — all previously ✓ WIRED links re-confirmed present on the current tree via the greps in the truths table: menu→SwitchMode→flipTo, toggle→persist→reload→fold, flipTo→SoundSink.Flip, fired→SoundSink.AutoCorrect, fold→EffectiveEnabled/EffectiveAutocorrectEvent, e2e oracles→pinned IDs, blocklist gate→compiled patterns, config keys↔README/CONFIG.md, SPEC §11↔ADR-007↔CONTEXT. New/changed links re-verified: corrections counter (actor snapshot → statusLabel via ItemsPropertiesUpdated channel — menu.go:217/:481) and the removed notify path (absence confirmed).
+All previously ✓ WIRED links re-confirmed on the current tree via the truth-table greps: menu→SwitchMode→flipTo (menu.go dispatch → actor.go:1071), toggle→persist→reload→fold (main.go:248/:259 → writer.go:62/:69 → Watcher → actor fold), flipTo→SoundSink.Flip and fired→SoundSink.AutoCorrect (actor.go seam, fold-stop test green), fold→EffectiveEnabled/EffectiveAutocorrectEvent (main.go:182/:198 — now through the nil=ON pointer contract), e2e oracles→pinned IDs (menu.go:69–70), blocklist gate→compiled patterns (actor.go:2279–2302), config keys↔README/CONFIG.md (:71/:129/:186), SPEC §11↔ADR-007↔code slugs (:99). New links from the rewrite (daemon starts the sink, ON→OFF fold stops it) verified by TestActor_SoundFoldOffStopsSink green.
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Phase packages under race | `mise exec -- go test ./internal/indicator/ ./internal/session/ ./internal/config/ ./internal/sound/ -race -count=1` | ok ×4 (1.08s/3.61s/1.31s/1.05s) | ✓ PASS |
-| Remaining packages under race | `mise exec -- go test ./internal/ctlsvc/ ./cmd/goswitchd/ -race -count=1` | ok ×2 | ✓ PASS |
-| Full iteration gate | `mise run ci` (build+vet+lint+test -race+tidy-diff) on HEAD da4d694 | 19/19 packages ok, exit 0, Finished in 6.52s (a prior attempt hit a documented-flake transient; immediate re-run green) | ✓ PASS |
-| CR-01 tightening | `TestAutoConfirm_RoleTextAmbiguity` in suite (actor_test.go:5891) | green in session -race run | ✓ PASS |
-| WR-01 fix intact | menuSlot atomic.Pointer (main.go:144) + TestMenuTogglePushRacesAttachStore | green in cmd -race run | ✓ PASS |
-| No premature tag | `git tag --list "v1.1*"` | 0 entries | ✓ PASS |
-| Debt markers on changed files | TBD/FIXME/XXX scan over README/main.go/indicator/actor (+tests) | 0 hits | ✓ PASS |
-| Disabled-test scan on changed tests | t.Skip-style scan menu_test.go / actor_test.go | 0 real skips (3 matches are `SkipReasons` assertion text) | ✓ PASS |
+| Whole-tree build after the engine/layouts move | `go build ./...` | exit 0, no output | ✓ PASS |
+| ON→OFF sound fold stops the sink (changed wiring) | `go test -run 'TestActor_SoundFoldOffStopsSink' -count=1 ./internal/session/` | ok 0.005s | ✓ PASS |
+| Blocklist unknown-identity pin (changed package) | `go test -run 'TestAutoCorrect_IdentityUnknownNotProhibition' -count=1 ./internal/session/` | ok 0.031s | ✓ PASS |
+| Menu toggle push/attach race (changed main.go) | `go test -run 'TestMenuTogglePushRacesAttachStore' -count=1 ./cmd/goswitchd/` | ok 0.006s | ✓ PASS |
+| e2e oracle package compiles | `go test -run 'ZZZNoSuchTest' -count=1 ./test/e2e/` | ok (compiles incl. tests) | ✓ PASS |
+| Release tag integrity | `git tag --list "v1.1*"` + merge-base --is-ancestor da4d694 v1.1.0 | v1.1.0 exists; verified tree is its ancestor | ✓ PASS |
+| Debt markers on changed files | TBD/FIXME/XXX scan over sound/ actor.go main.go config.go e2e | 0 hits | ✓ PASS |
+| Disabled-test scan on changed tests | skip-scan over actor_test.go / sound_test.go / menu_test.go | no real skips | ✓ PASS |
 
 ### Probe Execution
 
 | Probe | Command | Result | Status |
 | ----- | ------- | ------ | ------ |
-| mise live e2e tasks (e2e-matrix-v4 ×2, e2e-flip-keystroke, e2e-menu-v2, e2e-autocorrect-blocklist-silent) | not re-run by verifier | live GNOME-desktop only (>10 s budget, spawns daemons); final-tree ×2 matrix + menu/sound/blocklist verdicts recorded honestly by the owner in 07-UAT.md test 4 and per-item results; interactive evidence @a264a54 in RELEASE-READINESS §2–4 with saved reports | ? SKIP — owner UAT verdicts are the resolution record |
+| mise live e2e tasks (e2e-matrix-v4, e2e-flip-keystroke, e2e-menu-v2, e2e-autocorrect-blocklist-silent) | not re-run by verifier | live GNOME-desktop only (>10 s budget, spawns daemons); the matrix double-run 31/34 acceptance is the recorded milestone state (STATE.md:268, owner-acknowledged, design rows re-pinned by the 2026-10-06 verdict) — not re-opened per milestone-close instruction | ? SKIP — recorded acceptance state + owner verdicts are the resolution record |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 | ----------- | ---------- | ----------- | ------ | -------- |
-| SPEC §11 (spec-delta) | 07-01, 07-02, 07-08 | blocklist revision + sound decision recorded in spec BEFORE code (D-55) | ✓ SATISFIED | §11 three dated revisions + 2026-10-05 owner addition; audit trail intact; ADR-007 amendment + note |
-| MACR-ACL (blocklist-ревизия) | 07-02..07-07 | white-list → blocklist revision end to end | ✓ SATISFIED | schema+validation+gate+confirm+e2e negative+docs; CR-01 tightening shipped and green |
-| CORR-01..09 (регресс) | 07-04, 07-06, 07-07 | manual-correction regression pins | ✓ SATISFIED | manual-double alive in fires; matrix + ci green on the final tree |
-| SWCH-01..04 (регресс) | 07-05, 07-06, 07-07 | switch-path regression through the single flipTo | ✓ SATISFIED | EN/RU menu → SwitchMode → flipTo unchanged; matrix switch rows + flip-keystroke 24/24 |
+| SPEC §11 (spec-delta) | 07-01, 07-02, 07-08 | blocklist revision + sound decision recorded in spec BEFORE code (D-55) | ✓ SATISFIED | §11 revisions + role-61 addition survive the later §4.2/§8 deltas; ADR-007 amendment + note intact |
+| MACR-ACL (blocklist-ревизия) | 07-02..07-07 | white-list → blocklist revision end to end | ✓ SATISFIED | schema+validation+gate+confirm+e2e negative+docs all re-confirmed on the current tree; identity pin test green |
+| CORR-01..09 (регресс) | 07-04, 07-06, 07-07 | manual-correction regression pins | ✓ SATISFIED | manual-double alive; mixed semantics re-pinned per-character (owner verdict); build + named tests green |
+| SWCH-01..04 (регресс) | 07-05, 07-06, 07-07 | switch-path regression through the single flipTo | ✓ SATISFIED | EN/RU menu → SwitchMode → flipTo unchanged; flip-keystroke acceptance recorded |
 
-Orphaned requirements: none — REQUIREMENTS.md unchanged since the prior pass (not in the 3c315b8..da4d694 diffset); all v1 REQ-ID mappings stand.
-
-### Test Quality Audit
-
-Carried from the prior pass (all phase test corpora SOUND: value/behavioral assertions, 0 skipped, 0 circular); the changed test files since (menu_test.go, actor_test.go) re-scanned: 0 disabled tests, 0 circular patterns, behavioral/value assertion levels unchanged. New UAT-driven assertions (greyed-row labels, trimmed statusLabel, corrections counter) are value-level pins in menu_test.go.
+Orphaned requirements: none — REQUIREMENTS.md unchanged in the da4d694..e76f6b0 diffset; all v1 REQ-ID mappings stand.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| (none) | — | TBD/FIXME/XXX/placeholder/empty-impl scan across phase-modified files (incl. all files changed since the prior pass) | clean | — |
+| (none) | — | TBD/FIXME/XXX/placeholder/empty-impl scan across all files changed since the prior pass (sound/*, actor.go, main.go, config.go, e2e/*, matrix-v4.yaml) | clean | — |
 
-### Decision Coverage
+Note: the word "todo" appears in sound package doc comments only as provenance citations to the owner's backlog item «Звук» that AUTHORIZED and was CLOSED by those very commits (fa6c81f "todo closed") — not unresolved-work markers.
 
-No trackable decisions in CONTEXT.md (gate result: `{skipped: true, total: 0, honored: 0, not_honored: []}` — owner decisions recorded in prose/locked-semantics form; all verified against SPEC/ADR/code).
+### Human Verification Required
+
+None at phase level. All five former phase-7 human items remain closed by the owner's UAT verdicts (07-UAT.md: complete, 5/5). The only live by-ear gates on the current tree (sound latency feel, theme retune, muted-socket silence) attach to the quick task 261006-squ's own verification ledger (human_needed there, 7/7 automatable verified) — tracked at task level, not a phase-7 must-have.
 
 ### Gaps Summary
 
-None. The phase goal is achieved on the current tree: menu v2 is owner-approved live (with the UAT-driven greyed-info-row redesign re-verified in code), the blocklist revision is complete end-to-end with the CR-01 fail-closed tightening and its dated doc caveats, phases 5–6 regression is green fresh on the final tree (ci 19/19 + six package -race runs; matrix class-verdict honestly recorded), and release readiness stands with the no-premature-tag prohibition intact. The five former human-verification items are closed by the owner's UAT verdicts (5/5). Remaining items are recorded as deferred follow-ups (sound latency, silent-apps reliability tuning, the formal fresh-session nightly gate, WINDOWS #12 backlog, pre-existing flakes, review Infos) — none gates the phase goal.
+None. The fingerprint staleness is resolved: all 5 must-haves hold on the current tree (HEAD e76f6b0). The menu v2 surface is byte-unchanged since the owner-approved pass; the blocklist revision, SPEC/ADR audit trail, and release docs are intact through the later spec-deltas; the engine/+layouts/→internal/ move builds clean tree-wide; the rewritten sound backend sits behind the same verified seam with its behavioral fold pin green; the v1.1.0 tag exists and contains the fully-verified phase-7 tree. The matrix acceptance stands as recorded. Remaining items are accurately deferred (mixed-text G-2-3 witness → milestone-close batch; by-ear sound gates → 261006-squ ledger; silent-apps tuning, formal fresh-session gate, the ~1/15 watch flake, review Infos) — none gates the phase goal.
 
 ---
 
-_Verified: 2026-10-05T09:35:44Z_
+_Verified: 2026-10-07T21:34:08Z_
 _Verifier: Claude (gsd-verifier)_
