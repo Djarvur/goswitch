@@ -1,19 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 04-Поставка и приёмка
 source: [04-VERIFICATION.md]
 started: 2026-09-16T18:40:00Z
-updated: 2026-09-16T19:45:00Z
+updated: 2026-10-07T20:46:50Z
 ---
 
 ## Current Test
 
-number: 2
-name: D-48 formal fresh-session run — owner relogin, then dispatch e2e-matrix fresh_session=true
-expected: |
-  loginctl preflight passes (session age <= 30 min), then both sequential v3 runs report
-  matrix: 31/31 PASS, job conclusion success
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -28,7 +23,13 @@ result: pass (owner, 2026-09-16)
 expected: owner relogin → dispatch e2e-matrix with fresh_session=true per
 docs/ci-runner.md «D-48 double-run gate» → loginctl preflight passes (session age ≤ 30 min),
 then both sequential v3 runs report matrix: 31/31 PASS, job conclusion success
-result: [pending]
+result: pass (owner, 2026-10-07 — принято по доказательствам)
+reason: "Тест переопределён директивой владельца 2026-09-17 «убери человека» в автономный
+ночной гейт D-48 v2 (планы 04-08/04-09 исполнены, пробелы G-4-1/G-4-2 закрыты). Двойной
+прогон 31/31 живьём доказан (run 35108412175) и записан в docs/ACCEPTANCE.md п.1; свежесть
+сессии проверяется машиной при каждом запуске (preflight). Ночной таймер перезагрузки
+отключён владельцем 02.10 — гейт остаётся машинным инструментом по требованию. Вердикт
+владельца 2026-10-07: принять по доказательствам."
 attempts:
   - attempt 1 (run 35142914380, 2026-09-16 19:50Z): preflight PASS (session genuinely
     fresh), matrix v3 run #1 FAILED 8/31 — a11y witness not answering within 30s
@@ -51,9 +52,9 @@ attempts:
 ## Summary
 
 total: 2
-passed: 1
+passed: 2
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
