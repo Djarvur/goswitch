@@ -15,6 +15,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,8 +26,8 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/activate"
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // Timing knobs: every value is a behavioral constant, named once. cmdTimeout
@@ -81,6 +82,20 @@ const (
 
 	gsettingsSchema = "org.gnome.desktop.input-sources"
 	gsettingsKey    = "sources"
+	// The a11y magic key (D-8-4, SPEC §4 revision 2026-10-05): the
+	// pre-install toolkit-accessibility value joins install-state.json —
+	// install snapshots it verbatim, uninstall restores it only-if-present,
+	// never a fabricated "restore false" (Pitfall 5). The snapshot is
+	// AUXILIARY: a failed read degrades to an empty field + one WARN, never
+	// a failed install (T-08-04-04).
+	gsettingsSchemaInterface = "org.gnome.desktop.interface"
+	gsettingsKeyA11y         = "toolkit-accessibility"
+	// a11yEnabled/a11yDisabled are the ONLY state-file values the restore
+	// trusts — exact boolean literals rendered straight into gsettings argv
+	// (ASVS V5 / T-08-04-01: a forged or corrupt state file must never
+	// steer the restore; there is NO fallback to substitute).
+	a11yEnabled  = "true"
+	a11yDisabled = "false"
 	// The layout-switch keybinding lives in the WINDOW-MANAGER keybindings
 	// schema, not in desktop.input-sources (live finding 2026-09-27: the
 	// desktop.input-sources schema carries no switch key at all — a
@@ -219,6 +234,12 @@ type installState struct {
 	Sources             string `json:"sources"`
 	SwitchInputSource   string `json:"switch_input_source"`
 	SwitchInputSourceBw string `json:"switch_input_source_backward"`
+	// ToolkitAccessibility is the pre-install org.gnome.desktop.interface
+	// toolkit-accessibility value, verbatim (D-8-4). Empty = not captured —
+	// an old install's state file or a failed read; the uninstall restore
+	// treats empty as "nothing to revert", NEVER "restore false" (Pitfall
+	// 5: a manually-enabled key must survive the uninstall).
+	ToolkitAccessibility string `json:"toolkit_accessibility"`
 }
 
 // componentXML is the rendered component document: the wire identity of
@@ -433,6 +454,13 @@ func (i *Installer) Uninstall(ctx context.Context, purge bool) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
+	// The a11y revert rides the same restore-before-removal discipline as
+	// the sources and the chords: the snapshot is read while the state file
+	// still exists (D-8-4).
+	lines, err = i.restoreToolkitAccessibility(ctx, lines)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.Remove(statePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("remove %s: %w", statePath, err)
 	}
@@ -488,20 +516,22 @@ func (i *Installer) readSources(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// saveState reads the current sources AND the current switch bindings and
-// stores them verbatim (the uninstall restore's material — install itself
-// writes nothing to the chords, ADR-006 two-source) — unless a state file
-// already exists, in which case it is LEFT UNTOUCHED: the FIRST install's
-// backup is sacred (an install-over-install must never save the
-// post-takeover goswitch-only desktop — nor any later live binding value —
-// over the owner's original values).
+// saveState reads the current sources AND the current switch bindings AND
+// the current a11y magic key (D-8-4) and stores them verbatim (the
+// uninstall restore's material — install itself writes nothing to the
+// chords, ADR-006 two-source) — unless a state file already exists, in
+// which case it is LEFT UNTOUCHED: the FIRST install's backup is sacred
+// (an install-over-install must never save the post-takeover goswitch-only
+// desktop — nor any later live binding value — over the owner's original
+// values).
 //
 // Before ANY of that is written, the atomic refusal gate proves the
 // desktop's resolved sources wrap into a list goswitch owns ENTIRELY
-// (resolveWrapInput + wrapSources): a single wrappable source passes, but
-// a foreign residue, an unsupported kind or an unwrappable desktop fails
-// HERE — before the backup is written and before a single desktop setting
-// changes.
+// (resolveWrapInput + wrapSources): a completable half-state passes the
+// gate and the takeover WRITES the completed list (G-5-5, owner decision
+// 2026-10-07), but a foreign residue, an unsupported kind or an
+// unwrappable desktop fails HERE — before the backup is written and before
+// a single desktop setting changes.
 func (i *Installer) saveState(ctx context.Context) (string, error) {
 	prior, err := i.readSources(ctx)
 	if err != nil {
@@ -512,8 +542,8 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 		return "", err
 	}
 	// The gate is the FULL wrap computation, not just the resolution: a
-	// desktop carrying a wrappable entry beside a foreign source resolves
-	// fine and must still refuse here, atomically.
+	// desktop whose resolved value cannot complete into a goswitch-owned
+	// list refuses here, atomically.
 	if _, err := wrapSources(raw); err != nil {
 		return "", err
 	}
@@ -528,6 +558,19 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 	}
 	priorSwitchBw := strings.TrimSpace(string(out))
 
+	// The a11y snapshot (D-8-4) is the state's auxiliary member: a failed
+	// read degrades to an empty field + ONE WARN — the install proceeds and
+	// the value is never fabricated (T-08-04-04; the uninstall restore
+	// treats an empty field as "nothing to revert", Pitfall 5). Unlike the
+	// sources and the chords, this value is NOT install-critical.
+	out, err = i.call(ctx, binGSettings, "get", gsettingsSchemaInterface, gsettingsKeyA11y)
+	priorA11y := ""
+	if err != nil {
+		slog.Warn("a11y key value not captured", "error", err)
+	} else {
+		priorA11y = strings.TrimSpace(string(out))
+	}
+
 	path := i.path(stateDirRel, stateFile)
 	if _, err := os.Stat(path); err == nil {
 		return prior, nil // idempotent backup: the original state stays
@@ -535,9 +578,10 @@ func (i *Installer) saveState(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("stat state file: %w", err)
 	}
 	data, err := json.Marshal(installState{
-		Sources:             prior,
-		SwitchInputSource:   priorSwitch,
-		SwitchInputSourceBw: priorSwitchBw,
+		Sources:              prior,
+		SwitchInputSource:    priorSwitch,
+		SwitchInputSourceBw:  priorSwitchBw,
+		ToolkitAccessibility: priorA11y,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal install state: %w", err)
@@ -772,27 +816,30 @@ func renderWrapped(tuples []activate.SourceTuple) (parts []string, wrapped int, 
 	return parts, wrapped, unsupportedKind
 }
 
-// wrapSources computes the takeover value from one raw sources list: EVERY
-// xkb us/ru entry of the user's own list is wrapped into the goswitch
-// engine of its layout (positions preserved) — at least one is required
-// (single 'us' → goswitch-en, single 'ru' → goswitch-ru, the pair → both),
-// every other entry transits VERBATIM in its own position. The mapping is
-// closed-enum and the result is rendered only from the parsed Go values —
-// the raw input never reaches the gsettings argument (ASVS V5 /
-// T-05-02-01). A list with nothing wrappable, an entry of an unsupported
-// kind, a hand-edited half-wrapped list, or a foreign source that would
-// sit beside goswitch engines is a named refusal naming the failing tuple
-// TYPE and the fix — never a forced pair, never the raw user line (D-54,
-// D-20-safe).
+// wrapSources computes the takeover value from one raw sources list and is
+// the ONE completion arbiter of the G-5-5 revision (owner decision
+// 2026-10-07, verbatim: «автоматически приводить конфигурацию к
+// правильной, а если не получилось - отказ»): EVERY xkb us/ru entry of the
+// list — the user's own or the foreign part of a hand-edited half-wrapped
+// list — is wrapped into the goswitch engine of its layout (positions
+// preserved), at least one wrappable entry is required (single 'us' →
+// goswitch-en, single 'ru' → goswitch-ru, the pair → both), and repeated
+// engine tuples dedupe keeping the first position, so a completable
+// half-state (one goswitch tuple + one wrappable foreign tuple) completes
+// to the canonical goswitch-owned configuration. Refusal ONLY when the
+// completion fails: foreign residue outside us/ru (errMixedSources + the
+// fix hint), an entry of an unsupported kind or nothing wrappable
+// (errUnsupportedPair). The mapping is closed-enum and the result is
+// rendered only from the parsed Go values — the raw input never reaches
+// the gsettings argument (ASVS V5 / T-05-02-01). Every verdict names the
+// failing tuple TYPE and the fix — never a forced pair, never the raw user
+// line (D-54, D-20-safe).
 func wrapSources(raw string) (string, error) {
 	tuples, err := activate.ParseSourceTuples(raw)
 	if err != nil {
 		return "", fmt.Errorf("parse input sources: %w", err)
 	}
-	owned, foreign := countOwnedForeign(tuples)
-	if owned > 0 && foreign > 0 {
-		return "", errMixedSources
-	}
+	owned, _ := countOwnedForeign(tuples)
 	parts, wrapped, unsupportedKind := renderWrapped(tuples)
 	if unsupportedKind != "" {
 		return "", fmt.Errorf("%w: source kind %q is not a form goswitch wraps "+
@@ -800,31 +847,48 @@ func wrapSources(raw string) (string, error) {
 			"fix: set a layout to xkb 'us' or 'ru', then re-run goswitchctl install",
 			errUnsupportedPair, unsupportedKind)
 	}
+	// Foreign residue, computed exactly: unsupported kinds were already
+	// refused above, so every remaining part that is neither a goswitch
+	// tuple nor a wrapped xkb entry IS a verbatim transit. The residue
+	// refusal fires BEFORE the nothing-wrappable verdict whenever goswitch
+	// material is present (a wrapped layout or an owned engine): us+fr and
+	// goswitch-en+fr are the residue refusal, while a pure-foreign desktop
+	// and an already-owned list stay the nothing-wrappable refusal —
+	// DELIBERATE: selfcheck's own audit makes a goswitch-beside-foreign
+	// list red (D-53), so install must never write a list it would reject.
+	if transited := len(parts) - wrapped - owned; transited > 0 && (wrapped >= minWrapped || owned > 0) {
+		return "", fmt.Errorf("%w: %s", errMixedSources, foreignResidueHint)
+	}
 	if wrapped < minWrapped {
 		return "", errUnsupportedPair
 	}
-	// Foreign residue, computed exactly: unsupported kinds were already
-	// refused above, so every remaining part that is neither a goswitch
-	// tuple nor a wrapped xkb entry IS a verbatim transit. The check runs
-	// AFTER the nothing-wrappable verdict so a pure-foreign desktop stays
-	// the nothing-wrappable refusal, while us+fr and us+ru+fr become the
-	// residue refusal — DELIBERATE: selfcheck's own audit makes a
-	// goswitch-beside-foreign list red (D-53), so install must never write
-	// a list it would reject.
-	if transited := len(parts) - wrapped - owned; transited > 0 {
-		return "", fmt.Errorf("%w: %s", errMixedSources, foreignResidueHint)
+	// The G-5-5 completion: repeated engine tuples dedupe keeping the FIRST
+	// occurrence, other positions preserved — goswitch-en beside xkb us
+	// completes to the canonical single source, goswitch-en beside xkb ru
+	// to the owned pair.
+	deduped := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, p := range parts {
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		deduped = append(deduped, p)
 	}
 
-	return "[" + strings.Join(parts, ", ") + "]", nil
+	return "[" + strings.Join(deduped, ", ") + "]", nil
 }
 
 // resolveWrapInput resolves the raw value the takeover wrapper is computed
 // from: the LIVE list when it carries at least one wrappable xkb us/ru
-// entry; the SAVED original from the state file when the live desktop is
-// already goswitch-owned (Pitfall 7 — the state file holds the only true
-// pre-install list, the first backup stays sacred); a hand-edited
-// half-wrapped list and an unusable save are named refusals, never a
-// guess (T-05-02-02).
+// entry (the completable half-state of G-5-5 rides this branch — wrapSources
+// completes or refuses it); the SAVED original from the state file when the
+// live desktop is already goswitch-owned (Pitfall 7 — the state file holds
+// the only true pre-install list, the first backup stays sacred); a mixed
+// live value with NO wrappable entry routes through the wrap attempt too —
+// wrapSources is the one completion arbiter, and its refusal for
+// un-wrappable residue carries the errMixedSources identity; an unusable
+// save is a named refusal, never a guess (T-05-02-02).
 func (i *Installer) resolveWrapInput(live string) (string, error) {
 	if carriesWrappableXKB(live) {
 		return live, nil
@@ -836,7 +900,9 @@ func (i *Installer) resolveWrapInput(live string) (string, error) {
 	owned, foreign := countOwnedForeign(tuples)
 	switch {
 	case owned > 0 && foreign > 0:
-		return "", errMixedSources
+		// G-5-5: route the mixed live value through the wrap attempt — one
+		// arbiter decides completion or refusal (never a local verdict).
+		return live, nil
 	case owned > 0:
 		saved, trusted := savedSources(i.path(stateDirRel, stateFile))
 		if !trusted {
@@ -1025,6 +1091,70 @@ func (i *Installer) restoreSwitchBinding(ctx context.Context, lines []string) ([
 	}
 
 	return lines, nil
+}
+
+// restoreToolkitAccessibility puts the saved pre-install a11y magic key
+// back (D-8-4, the uninstall half of saveState's verbatim snapshot), run
+// BEFORE the state file is removed. The saved value is shape-validated
+// BEFORE it reaches gsettings (ASVS V5/T-08-04-01: only the exact boolean
+// literals pass — a corrupt or injected state file must never steer the
+// restore), and unlike the sources and the chords there is NO safe
+// fallback: a missing field (an old install's state, Pitfall 5) and a
+// corrupt value both SKIP with the skip REPORTED — restoring a guessed
+// "false" would reset a key the owner enabled by hand, the one outcome
+// this contract exists to prevent (T-08-04-02). The revert is auxiliary
+// (T-08-04-04): a failed set degrades to one WARN + a report line, never a
+// failed uninstall.
+//
+//nolint:unparam // the restore-step shape keeps the call site symmetric with the other restore steps.
+func (i *Installer) restoreToolkitAccessibility(ctx context.Context, lines []string) ([]string, error) {
+	value, present, trusted := savedA11yState(i.path(stateDirRel, stateFile))
+	if !present {
+		slog.Warn("toolkit-accessibility: nothing to revert")
+
+		return append(lines,
+			"toolkit-accessibility: nothing to revert (no saved pre-install value — the key stays as-is)"), nil
+	}
+	if !trusted {
+		slog.Warn("toolkit-accessibility: shape refused")
+
+		return append(lines,
+			"toolkit-accessibility: corrupt saved value skipped (not a boolean literal) — the key stays as-is"), nil
+	}
+	if _, err := i.call(ctx, binGSettings, "set", gsettingsSchemaInterface, gsettingsKeyA11y, value); err != nil {
+		slog.Warn("toolkit-accessibility: restore failed", "error", err)
+
+		return append(lines,
+			"toolkit-accessibility: restore failed — the key stays as-is ("+err.Error()+")"), nil
+	}
+
+	return append(lines, "toolkit-accessibility: restored "+value), nil
+}
+
+// savedA11yState reads the state file's toolkit-accessibility member and
+// reports it in three states: NOT present (no file, an unparsable file, or
+// an old install's empty/absent field — "nothing to revert", never a
+// guess); present-but-untrusted (a value that is not the exact
+// "true"/"false" literal — shape refused); present-and-trusted (the
+// verbatim pre-install value).
+func savedA11yState(path string) (value string, present, trusted bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false, false
+	}
+	var st installState
+	if err := json.Unmarshal(data, &st); err != nil {
+		return "", false, false
+	}
+	v := strings.TrimSpace(st.ToolkitAccessibility)
+	switch {
+	case v == "":
+		return "", false, false
+	case v != a11yEnabled && v != a11yDisabled:
+		return v, true, false
+	}
+
+	return v, true, true
 }
 
 // savedSwitchBindings reads the state file and returns its switch chord

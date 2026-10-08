@@ -85,7 +85,7 @@ steps:
   - {tap: single}      # script flip EN→RU; the runner waits for the mode record (Pitfall 5)
   - {type: "ghbdtn"}   # committed as привет through the engine
   - {tap: double}
-expect_text: "паипривет"  # D-23 (03-01 succession of the D-16 refusal): anchor RU from the last letter — the foreign run gfb→паи converts, the Cyrillic run stays
+expect_text: "паиghbdtn"  # spec-delta 2026-10-06 (owner verdict 2026-10-03, 7dd46e9; supersedes D-22/D-23): every letter inverts per character — gfb→паи, привет→ghbdtn
 ---
 name: fallback-chromium
 surface: chromium

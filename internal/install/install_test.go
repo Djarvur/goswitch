@@ -3,7 +3,9 @@ package install_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/engine"
 	"github.com/Djarvur/goswitch/internal/install"
 )
 
@@ -73,6 +75,17 @@ const (
 	// derivedActivation is the engine name the first ('xkb', 'us') tuple of
 	// ownerSources restores to (the fallbackEngine derivation).
 	derivedActivation = "xkb:us::eng"
+	// The a11y magic key (D-8-4, plan 08-04): install snapshots the
+	// pre-install org.gnome.desktop.interface toolkit-accessibility value
+	// into the state file; uninstall restores it only-if-present. The
+	// a11yGet* constants are the exact `gsettings get` reply shapes — the
+	// trailing newline the snapshot trims away.
+	gsettingsSchemaInterface = "org.gnome.desktop.interface"
+	gsettingsKeyA11y         = "toolkit-accessibility"
+	a11yGetTrue              = "true\n"
+	a11yGetFalse             = "false\n"
+	a11yValTrue              = "true"
+	a11yValFalse             = "false"
 )
 
 // instCall is one recorded subprocess invocation: argv plus the env the
@@ -237,8 +250,9 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 }
 
 // TestInstall_Sequence pins the D-54/D-39/D-40 subprocess order end to end
-// over the fake desktop: sources + switch-binding snapshot (the pair check
-// gates the whole install BEFORE any mutation, D-54) → state save → XML →
+// over the fake desktop: sources + switch-binding + a11y-key snapshot (the
+// pair check gates the whole install BEFORE any mutation, D-54) → state
+// save → XML →
 // env-carrying write-cache → list-engine verification → unit →
 // daemon-reload → enable + restart → ibus restart → live-registration wait →
 // live sources re-read → the COMPUTED two-source wrapper (never a
@@ -261,6 +275,7 @@ func TestInstall_Sequence(t *testing.T) {
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
+		{binGSettings, "get " + gsettingsSchemaInterface + " " + gsettingsKeyA11y},
 		{binIbus, opWriteCache},
 		{binIbus, opRestart},
 		{binIbus, opListEngine},
@@ -352,6 +367,7 @@ func TestInstall_SequenceSingleSource(t *testing.T) {
 		{binGSettings, "get " + gsettingsSchema + " " + gsettingsKey},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitch},
 		{binGSettings, "get " + gsettingsKeybindingsSchema + " " + gsettingsKeySwitchBackward},
+		{binGSettings, "get " + gsettingsSchemaInterface + " " + gsettingsKeyA11y},
 		{binIbus, opWriteCache},
 		{binIbus, opRestart},
 		{binIbus, opListEngine},
@@ -576,6 +592,162 @@ func TestInstall_StateFileOutsideConfigDir(t *testing.T) {
 	assertPerm(t, statePath, 0o600)
 }
 
+// errA11yGetRefused is the corpus's simulated a11y-key read refusal (the
+// sentinel convention).
+var errA11yGetRefused = errors.New("simulated a11y read refusal")
+
+// recordSink is the slog handler double recording every record — the WARN
+// visibility seam of the degradation contracts (the a11y/watch_test
+// slog-capture precedent).
+type recordSink struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+// Enabled accepts every level — the corpus wants all records.
+func (s *recordSink) Enabled(context.Context, slog.Level) bool { return true }
+
+// Handle appends the record to the sink's list.
+func (s *recordSink) Handle(_ context.Context, rec slog.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, rec)
+
+	return nil
+}
+
+// WithAttrs keeps the sink (the corpus reads bare records).
+func (s *recordSink) WithAttrs([]slog.Attr) slog.Handler { return s }
+
+// WithGroup keeps the sink (the corpus reads bare records).
+func (s *recordSink) WithGroup(string) slog.Handler { return s }
+
+// hasWarn reports whether the sink captured a record with the exact message.
+func (s *recordSink) hasWarn(msg string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return slices.ContainsFunc(s.records, func(r slog.Record) bool { return r.Message == msg })
+}
+
+// captureWarns installs the recording slog default and restores the old one
+// at cleanup — the process-global default is the daemon's log door (the
+// watch_test capture precedent).
+func captureWarns(t *testing.T) *recordSink {
+	t.Helper()
+	sink := &recordSink{}
+	old := slog.Default()
+	slog.SetDefault(slog.New(sink))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	return sink
+}
+
+// TestInstall_A11ySnapshotCaptured pins the D-8-4 snapshot half: install
+// reads the pre-install toolkit-accessibility value and stores it VERBATIM
+// in install-state.json — the uninstall restore's material. The daemon
+// applies the key only after install (the canonical install-before-daemon
+// order), so the snapshot is the honest pre-goswitch state; the fake
+// answers the exact `gsettings get` reply shape and the state field carries
+// the trimmed value with no reply-shape artifacts.
+func TestInstall_A11ySnapshotCaptured(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet &&
+			args[1] == gsettingsSchemaInterface && args[2] == gsettingsKeyA11y {
+			return []byte(a11yGetFalse), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	var st struct {
+		ToolkitAccessibility string `json:"toolkit_accessibility"`
+	}
+	if err := json.Unmarshal([]byte(readAll(t, statePath)), &st); err != nil {
+		t.Fatalf("parse install state: %v", err)
+	}
+	if st.ToolkitAccessibility != a11yValFalse {
+		t.Errorf("state toolkit_accessibility = %q, want the pre-install value %q VERBATIM",
+			st.ToolkitAccessibility, a11yValFalse)
+	}
+}
+
+// TestInstall_A11ySnapshotTrueValue pins the honest-snapshot case: a key the
+// owner enabled BY HAND before goswitch ever installed is captured as
+// "true" — the snapshot never assumes goswitch turned the key on, so the
+// uninstall restore can put the owner's own true back (Pitfall 5's other
+// half: the snapshot is verbatim, in both directions).
+func TestInstall_A11ySnapshotTrueValue(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet &&
+			args[1] == gsettingsSchemaInterface && args[2] == gsettingsKeyA11y {
+			return []byte(a11yGetTrue), nil
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	var st struct {
+		ToolkitAccessibility string `json:"toolkit_accessibility"`
+	}
+	if err := json.Unmarshal([]byte(readAll(t, statePath)), &st); err != nil {
+		t.Fatalf("parse install state: %v", err)
+	}
+	if st.ToolkitAccessibility != a11yValTrue {
+		t.Errorf("state toolkit_accessibility = %q, want the pre-install value %q VERBATIM",
+			st.ToolkitAccessibility, a11yValTrue)
+	}
+}
+
+// TestInstall_A11ySnapshotReadFailureLeavesEmpty pins the auxiliary-step
+// degradation (T-08-04-04): a failed a11y-key read NEVER fails the install
+// and NEVER fabricates a value — the state field stays empty and the
+// refusal is one WARN (an old-install-shaped state the uninstall restore
+// must skip, never guess).
+func TestInstall_A11ySnapshotReadFailureLeavesEmpty(t *testing.T) {
+	sink := captureWarns(t)
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 3 && args[0] == opGet &&
+			args[1] == gsettingsSchemaInterface && args[2] == gsettingsKeyA11y {
+			return nil, errA11yGetRefused
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	var st struct {
+		ToolkitAccessibility string `json:"toolkit_accessibility"`
+	}
+	if err := json.Unmarshal([]byte(readAll(t, statePath)), &st); err != nil {
+		t.Fatalf("parse install state: %v", err)
+	}
+	if st.ToolkitAccessibility != "" {
+		t.Errorf("state toolkit_accessibility = %q, want empty — a failed read must never fabricate a value",
+			st.ToolkitAccessibility)
+	}
+	if !sink.hasWarn("a11y key value not captured") {
+		t.Error("no WARN captured for the failed a11y read — the refusal must be reported, never silent")
+	}
+}
+
 // TestInstall_SecondInstallKeepsOriginalBackup pins the idempotency core:
 // an existing state file is never overwritten — the FIRST install's backup
 // is sacred, so repeated installs cannot destroy the pre-goswitch desktop.
@@ -718,12 +890,12 @@ func TestUninstall_FullRollback(t *testing.T) {
 }
 
 // installCallCount is the subprocess count of one happy-path install (the
-// FullRollback corpus asserts the uninstall suffix of the recording): three
-// gsettings gets (sources + the two switch bindings) at snapshot time, two
-// ibus cache steps, three systemctl steps, list-engine, the takeover's
-// live sources re-read, the wrapper set (ADR-006: no chord writes),
-// engine activation.
-const installCallCount = 12
+// FullRollback corpus asserts the uninstall suffix of the recording): four
+// gsettings gets (sources + the two switch bindings + the a11y key) at
+// snapshot time, two ibus cache steps, three systemctl steps, list-engine,
+// the takeover's live sources re-read, the wrapper set (ADR-006: no chord
+// writes), engine activation.
+const installCallCount = 13
 
 // uninstallCalls returns the recording suffix after one happy-path install
 // — the uninstall phase's own calls. Fails the test when install itself did
@@ -847,6 +1019,198 @@ func TestUninstall_CorruptStateFallsBack(t *testing.T) {
 				t.Errorf("report %v does not mention the fallback — the substitution must be visible", report)
 			}
 		})
+	}
+}
+
+// errA11ySetRefused is the corpus's simulated a11y-key set refusal (the
+// sentinel convention).
+var errA11ySetRefused = errors.New("simulated a11y set refusal")
+
+// countA11ySets counts the recorded `gsettings set … toolkit-accessibility`
+// calls — with value pinned when non-empty, all of them when empty.
+func countA11ySets(calls []instCall, value string) int {
+	n := 0
+	for _, c := range calls {
+		if c.name == binGSettings && len(c.args) == 4 && c.args[0] == opSet &&
+			c.args[1] == gsettingsSchemaInterface && c.args[2] == gsettingsKeyA11y &&
+			(value == "" || c.args[3] == value) {
+			n++
+		}
+	}
+
+	return n
+}
+
+// plantA11yState overwrites the state file with a sources+a11y document —
+// the restore corpus's planted-state driver.
+func plantA11yState(t *testing.T, statePath, a11yValue string) {
+	t.Helper()
+	plant := `{"sources":"` + ownerSources + `","toolkit_accessibility":"` + a11yValue + `"}`
+	if err := os.WriteFile(statePath, []byte(plant), 0o600); err != nil {
+		t.Fatalf("plant the a11y state: %v", err)
+	}
+}
+
+// TestUninstall_A11yRestoreTrue pins the D-8-4 restore half: a state file
+// whose a11y field says "true" (the owner had the key ON before goswitch)
+// restores EXACTLY true through `gsettings set … toolkit-accessibility true`
+// — and the restore necessarily runs BEFORE the state file dies: the set is
+// recorded at all only because the restore could still read the file. The
+// report names the restored value.
+func TestUninstall_A11yRestoreTrue(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plantA11yState(t, statePath, a11yValTrue)
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the a11y restore inside the green rollback", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), a11yValTrue); n != 1 {
+		t.Errorf("a11y restore issued %d toolkit-accessibility sets of %q, want exactly 1", n, a11yValTrue)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "toolkit-accessibility: restored "+a11yValTrue)
+	}) {
+		t.Errorf("report %v does not name the restored a11y value", report)
+	}
+}
+
+// TestUninstall_A11yRestoreFalse pins the legitimate false case: the owner
+// kept the key OFF before goswitch — restoring the saved "false" is the
+// verbatim pre-install state, NOT the forbidden fabricated "restore false"
+// (that verdict belongs exclusively to a MISSING field, Pitfall 5).
+func TestUninstall_A11yRestoreFalse(t *testing.T) {
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plantA11yState(t, statePath, a11yValFalse)
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the a11y restore inside the green rollback", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), a11yValFalse); n != 1 {
+		t.Errorf("a11y restore issued %d toolkit-accessibility sets of %q, want exactly 1", n, a11yValFalse)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "toolkit-accessibility: restored "+a11yValFalse)
+	}) {
+		t.Errorf("report %v does not name the restored a11y value", report)
+	}
+}
+
+// TestUninstall_A11yMissingFieldSkipsSilently pins the Pitfall-5 guard
+// (T-08-04-02): an OLD install's state without the a11y field means there
+// is NOTHING to revert — ZERO `gsettings set` calls carry
+// toolkit-accessibility, the skip is reported (the "nothing to revert"
+// verdict + one WARN), and the uninstall stays green. A key the owner
+// enabled by hand must survive the uninstall untouched.
+func TestUninstall_A11yMissingFieldSkipsSilently(t *testing.T) {
+	sink := captureWarns(t)
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plant := `{"sources":"` + ownerSources + `"}`
+	if err := os.WriteFile(statePath, []byte(plant), 0o600); err != nil {
+		t.Fatalf("plant the old-install state: %v", err)
+	}
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the missing field to keep the rollback green", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), ""); n != 0 {
+		t.Errorf("old-install uninstall issued %d toolkit-accessibility set calls, want 0 (never \"restore false\")", n)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "nothing to revert")
+	}) {
+		t.Errorf("report %v does not name the nothing-to-revert verdict", report)
+	}
+	if !sink.hasWarn("toolkit-accessibility: nothing to revert") {
+		t.Error("no WARN captured for the missing a11y field — the skip must be reported, never silent")
+	}
+}
+
+// TestUninstall_A11yCorruptValueSkips pins the ASVS V5 shape gate
+// (T-08-04-01): a saved value that is not the exact "true"/"false" literal
+// NEVER reaches gsettings argv — zero set calls, a shape-refused WARN, the
+// uninstall green (a forged or corrupt state file must not steer the
+// restore, and there is NO safe fallback to substitute — unlike the sources
+// and the chords, a wrong a11y guess is a trust defect, not a repair).
+func TestUninstall_A11yCorruptValueSkips(t *testing.T) {
+	sink := captureWarns(t)
+	f := &fakeRunner{}
+	home := t.TempDir()
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plantA11yState(t, statePath, "garbage")
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the corrupt value to keep the rollback green", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), ""); n != 0 {
+		t.Errorf("corrupt-value uninstall issued %d toolkit-accessibility set calls, want 0 (argv discipline)", n)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "toolkit-accessibility: corrupt saved value skipped")
+	}) {
+		t.Errorf("report %v does not name the corrupt-value skip", report)
+	}
+	if !sink.hasWarn("toolkit-accessibility: shape refused") {
+		t.Error("no WARN captured for the corrupt a11y value — the shape refusal must be reported")
+	}
+}
+
+// TestUninstall_A11yRestoreFailureReported pins the auxiliary degradation
+// (T-08-04-04): a failed a11y set NEVER fails the uninstall — the rollback
+// completes green and the refusal is one WARN + a report line.
+func TestUninstall_A11yRestoreFailureReported(t *testing.T) {
+	sink := captureWarns(t)
+	f := &fakeRunner{}
+	home := t.TempDir()
+	f.stub = func(name string, args []string) ([]byte, error) {
+		if name == binGSettings && len(args) == 4 && args[0] == opSet &&
+			args[1] == gsettingsSchemaInterface && args[2] == gsettingsKeyA11y {
+			return nil, errA11ySetRefused
+		}
+
+		return defaultReply(name, args)
+	}
+	i := newInstaller(t, f, home, selfDirWithDaemon(t), []string{engineENName})
+	runInstall(t, i)
+
+	_, _, statePath := installPaths(home)
+	plantA11yState(t, statePath, a11yValTrue)
+
+	report, err := i.Uninstall(context.Background(), false)
+	if err != nil {
+		t.Fatalf("Uninstall() err = %v (report %v), want the a11y set failure to degrade, not abort", err, report)
+	}
+	if n := countA11ySets(uninstallCalls(t, f), a11yValTrue); n != 1 {
+		t.Errorf("a11y restore attempted %d sets, want exactly 1 (the failure is the set's answer)", n)
+	}
+	if !slices.ContainsFunc(report, func(line string) bool {
+		return strings.Contains(line, "toolkit-accessibility: restore failed")
+	}) {
+		t.Errorf("report %v does not name the failed a11y restore", report)
+	}
+	if !sink.hasWarn("toolkit-accessibility: restore failed") {
+		t.Error("no WARN captured for the failed a11y set — the refusal must be reported")
 	}
 }
 

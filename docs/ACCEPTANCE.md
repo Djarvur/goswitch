@@ -35,7 +35,7 @@ note: (механика двойного прогона доказана ран�
 
 ### 2. Установка с нуля по README (канал релиз-архива, без root)
 
-expected: следуя разделу Install [README.md](../README.md): скачать tar.gz со
+expected: следуя разделу Install [README.en.md](../README.en.md): скачать tar.gz со
 страницы Releases, распаковать, `./goswitchctl install` — команда завершается
 успехом БЕЗ sudo/root; затем `goswitchctl selfcheck` печатает шесть `ok`
 (версия → компонент → unit → движок → конфиг → источник); источник ввода в
@@ -57,7 +57,7 @@ note:
 
 ### 4. Конфиг: правка применяется без рестарта (hot reload)
 
-expected: подключить конфиг по разделу Configuration README
+expected: подключить конфиг по разделу Configuration [README.en.md](../README.en.md)
 (`systemctl --user edit goswitchd` с `-config ~/.config/goswitch/config.yaml`);
 правка валидного значения (например `timeouts.tap_window_ms: 300` → `250`)
 применяется без рестарта — `goswitchctl reload` отвечает успехом, поведение

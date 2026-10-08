@@ -1,0 +1,56 @@
+{
+  "version": "1.0",
+  "max_entries": 50,
+  "entries": [
+    {
+      "agent_id": "sequential-05-01",
+      "task_description": "Execute plan 05-01 (switch-spike tracer)",
+      "phase": "05",
+      "plan": "01",
+      "segment": null,
+      "timestamp": "2026-09-29T19:12:45Z",
+      "status": "completed",
+      "completion_timestamp": "2026-09-29T20:18:00Z"
+    },
+    {
+      "agent_id": "sequential-05-02",
+      "task_description": "Execute plan 05-02",
+      "phase": "05",
+      "plan": "02",
+      "segment": null,
+      "timestamp": "2026-09-29T20:20:25.980Z",
+      "status": "completed",
+      "completion_timestamp": "2026-09-29T20:40:22.017Z"
+    },
+    {
+      "agent_id": "sequential-05-03",
+      "task_description": "Execute plan 05-03 (BindSwitcher seam + actor flipTo)",
+      "phase": "05",
+      "plan": "03",
+      "segment": null,
+      "timestamp": "2026-09-29T21:39:01.928Z",
+      "status": "completed",
+      "completion_timestamp": "2026-09-29T22:31:00Z"
+    },
+    {
+      "agent_id": "sequential-05-04",
+      "task_description": "Execute plan 05-04 (sync listener + IfOwned GetGlobalEngine priority)",
+      "phase": "05",
+      "plan": "04",
+      "segment": null,
+      "timestamp": "2026-09-29T22:45:50.454Z",
+      "status": "completed",
+      "completion_timestamp": "2026-09-29T23:22:09.609Z"
+    },
+    {
+      "agent_id": "sequential-05-05",
+      "task_description": "Execute plan 05-05",
+      "phase": "05",
+      "plan": "05",
+      "segment": null,
+      "timestamp": "2026-09-29T23:25:30.684Z",
+      "status": "completed",
+      "completion_timestamp": "2026-09-30T00:28:14.451Z"
+    }
+  ]
+}

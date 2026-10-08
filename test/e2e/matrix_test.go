@@ -421,6 +421,11 @@ timeouts:
   verify_wait_ms: 100
 `
 
+// reloadTapWindowLine is the applied-form reload fragment line the corpora
+// and the fragment-application assertions share (one mapping line replacing
+// the base document's tap window).
+const reloadTapWindowLine = "  tap_window_ms: 200"
+
 // TestMatrixStep_RunDispatch pins the dispatchable halves of the new step
 // kinds headlessly: the reload fragment application (key-line replace or
 // append — the append of an unknown key is exactly how a broken edit is
@@ -593,6 +598,55 @@ func TestMatrixCaseBaseConfig(t *testing.T) {
 	def := matrixCaseBaseConfig("")
 	if strings.Contains(def, "autocorrect:") {
 		t.Errorf("default base document %q carries an autocorrect section", def)
+	}
+}
+
+// TestMatrixCaseNeedsBaseEstablishment pins the hermeticity predicate of
+// runMatrixCase (LIVE FINDING 2026-10-08): a PLAIN case — no config_base,
+// no reload steps — must establish the pinned base document, because a
+// daemon started without -config ADOPTS the machine owner's live
+// ~/.config/goswitch/config.yaml, and on the owner's desktop the adopted
+// autocorrect fired inside the word-after-space case, its
+// flip_after_correction kept the correction buffer alive, and the case's
+// own double-tap converted the corrected word back — the deterministic
+// 15/16 FAIL. A config_base case establishes too (the 06-07
+// observer-start ordering). ONLY a reload-steps case defers: its FIRST
+// reload step is the establishment itself (reloadMatrixStep), and a
+// pre-establishment would change that flow.
+func TestMatrixCaseNeedsBaseEstablishment(t *testing.T) {
+	t.Parallel()
+
+	plain := matrixCase{
+		Name:       "plain",
+		Surface:    matrixSurfaceZenity,
+		Mode:       "en",
+		Steps:      []matrixStep{{Type: acWordReadback}, {Key: matrixSpaceKey}, {Tap: "double"}},
+		ExpectText: "привет ",
+	}
+	if !caseNeedsBaseEstablishment(plain) {
+		t.Error("plain case must establish the pinned base document — without -config" +
+			" the daemon adopts the owner's live config (live finding 2026-10-08)")
+	}
+
+	withBase := plain
+	withBase.Name = "with-config-base"
+	withBase.ConfigBase = matrixConfigBaseAutocorrect
+	if !caseNeedsBaseEstablishment(withBase) {
+		t.Error("config_base case must pre-establish its base document" +
+			" (the 06-07 observer-start ordering)")
+	}
+
+	withReload := plain
+	withReload.Name = "with-reload"
+	withReload.Steps = []matrixStep{{
+		Reload: &matrixReload{
+			Lines:  []string{reloadTapWindowLine},
+			Expect: matrixReloadApplied,
+		},
+	}}
+	if caseNeedsBaseEstablishment(withReload) {
+		t.Error("reload-steps case must defer to its first reload step —" +
+			" reloadMatrixStep/establishCaseConfig owns the establishment")
 	}
 }
 

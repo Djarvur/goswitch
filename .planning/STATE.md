@@ -1,44 +1,41 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 4
-current_phase_name: Поставка и приёмка
-status: planning
-stopped_at: Phase 7 complete, ready to plan Phase 4
-last_updated: "2026-10-05T09:39:09.422Z"
-last_activity: 2026-10-05
-last_activity_desc: Phase 7 complete, transitioned to Phase 4
-state_head: 471bed46697ff3efe2479a6cb9f504ae7fbec63f
+status: Awaiting next milestone
+stopped_at: Phase 8 complete — all phases complete
+last_updated: "2026-10-08T06:25:49.855Z"
+last_activity: 2026-10-08
+last_activity_desc: Milestone v1.0.0 completed and archived
+state_head: 2f938476fd838464303fd8aa30fc81ab89f10819
 progress:
-  total_phases: 7
-  completed_phases: 1
-  total_plans: 51
-  completed_plans: 51
+  total_phases: 8
+  completed_phases: 6
+  total_plans: 61
+  completed_plans: 61
+current_phase: 8
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-15)
+See: .planning/PROJECT.md (updated 2026-10-08)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 07 — Меню v2 и чёрный список автокоррекции
+**Current focus:** Веха v1.0.0 закрыта — планирование следующей вехи (кандидаты v2 в архиве REQUIREMENTS)
 
 ## Current Position
 
-Phase: 4 — Поставка и приёмка
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-05 — Phase 7 complete, transitioned to Phase 4
-
-Progress: [████████░░] 75%
+Phase: Milestone v1.0.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-08 — Milestone v1.0.0 completed and archived
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 37
+- Total plans completed: 61
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -55,6 +52,9 @@ Progress: [████████░░] 75%
 | 3 | 7 | - | - |
 | 6 | 10 | - | - |
 | 7 | 8 | - | - |
+| 8 | 10 | - | - |
+| 4 | 9 | - | - |
+| 5 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -118,6 +118,16 @@ Progress: [████████░░] 75%
 | Phase 07 P06 | 86 min | 3 tasks | 11 files |
 | Phase 07 P06 | 86 min | 3 tasks | 11 files |
 | Phase 07 P07 | 55 min | 3 tasks | 4 files |
+| Phase 08 P01 | 11 min | 2 tasks | 1 files |
+| Phase 08 P02 | 12 min | 2 tasks | 4 files |
+| Phase 08 P03 | 27 min | 2 tasks | 4 files |
+| Phase 08 P04 | 17 min | 2 tasks | 4 files |
+| Phase 08 P05 | 9 min | 2 tasks | 4 files |
+| Phase 08 P06 | 18 min | 3 tasks | 2 files |
+| Phase 08 P07 | 11 min | 2 tasks | 4 files |
+| Phase 8 P08 | 16 min | 2 tasks | 5 files |
+| Phase 08 P09 | 34min | 4 tasks | 13 files |
+| Phase 08 P10 | 12 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -126,6 +136,7 @@ Progress: [████████░░] 75%
 - Phase 5 added (2026-09-28, owner directive «починить индикацию и интеграцию с gnome»): Интеграция с GNOME — индикация и двухисточниковое переключение (ревизия ADR-001 → ADR-006; решения D-52..D-54 в 05-CONTEXT.md).
 - Phase 6 added (2026-09-28): Система автокоррекции (артефакты переименованы 05→06, ADR 006→007; решения D-51..D-55, research HIGH готов).
 - Phase 7 added (2026-10-04, владелец, при проектировании релиза v1.1.0): Меню v2 (EN/RU, тумблер автокоррекции, макросы, настройки, версия) + чёрный список autocorrect.apps_blocklist (regex) — ревизия D-53: белый список удаляется.
+- Phase 8 added (2026-10-05, /gsd-manager --analyze-deps): a11y-магия приложений, документация и конфиг-skill — беклог разобран (3 todo → resolves_phase: 8); порядок волн = порядок зависимостей: a11y-код → документация → skill (data-flow: skill генерируется из финального CONFIG.md).
 
 ### Decisions
 
@@ -256,6 +267,29 @@ Recent decisions affecting current work:
 - [Phase 07]: [07-07] Матрица v4 двойка — 31/34 в обеих: 2 дизайн-красные WINDOWS #12 строки (readback байт = актуалу реестра), по 1 мигрирующему средовому транзиенту SetGlobalEngine на прогон (зелёные в соседнем прогоне); красные не перегонялись в фальшивую зелень — класс-строчный вердикт 06-08
 - [Phase 07]: [07-07] Предусловие свежесессии (<=30 мин) честно НЕ выполнено (3477+ мин, записано в RELEASE-READINESS); двойка — по прямому указанию оркестратора и прецеденту 06-08/WINDOWS #13; формальный fresh_session-гейт остаётся машинным инструментом владельца на verify-work
 - [Phase 07]: [07-07] README v1.1.0: канал B переведён @latest (точен до и после тега — не анонсирует несуществующий v1.1.0 и не оставляет пользователей на v1.0.0); RELEASE-READINESS артефакт — доказательства + чек-лист доков 5/5 + реестр 17/17 probe-строк + post-merge шаги владельца (планом не исполняются); статус RELEASE-READY
+- [Phase 08]: a11y.enabled / a11y.apps зафиксированы как канонические имена секции a11y (discretion по D-8-1) — Точное имя D-8-1 оставила на discretion планировщика; ревизия 08-01 закрепляет канон в SPEC §4
+- [Phase 08]: Ревизия консервативна по A1: демон ставит ОБЕ ручки (ключ + пояс IsEnabled), контракт верен при любой композиции стартовых проверок Chromium/Electron — Live-верифицированное research развязка ключ/IsEnabled; OR-композиция проверок — assumption A1, консервативный контракт снимает риск
+- [Phase 08]: Потолок a11y.apps=64 безусловен по enabled (DoS-потолок, T-06-04-01); compile-результаты в схеме не кэшируются — потребители компилируют своё
+- [Phase 08]: Тест 2 green-by-design: валидация на Load уже отвергает битый a11y-документ до apply — hot-reload кейс зелёный сразу, RED не фабриковался (прецедент 02-04)
+- [Phase 08]: Секция a11y несёт ровно два ключа (enabled/apps): набор магии фиксирован D-8-6 — strict decode отвергает per-app ключи, тест пинит
+- [Phase 08]: 08-04: a11y-снапшот читается в saveState после чтения чордов, до idempotent-backup раннего возврата — ранний возврат держит первый снапшот нетронутым, TestInstall_SecondInstallKeepsOriginalBackup зелёный без правок
+- [Phase 08]: снапшот вспомогателен: отказ чтения — пустое поле + один WARN (a11y key value not captured), инсталл зелёный, значение никогда не фабрикуется (T-08-04-04)
+- [Phase 08]: 08-04: restoreToolkitAccessibility сохраняет сигнатуру (ctx, lines) ([]string, error) c nolint:unparam — форма restore-шага симметрична restoreSources/restoreSwitchBinding; missing/corrupt → ноль set-вызовов + REPORTED skip (никогда не restore false), отказ set — WARN при зелёном uninstall
+- [Phase 08]: 08-04: точные sequence-пины TestInstall_Sequence/SingleSource и installCallCount 12→13 обновлены под новый снапшот-get — прямое следствие GREEN-действия плана, не правка защищённого поведения
+- [Phase 08]: Seam A11ySink в акторе: фолд pushA11y читает только snap.A11y.Active() и пушит ровно на изменение булева (форма refreshACBlocklist); SetA11ySink self-syncs (форма SetSoundSink); nil — тихий no-op — Единственный источник ACTIVE-семантики — метод конфига (08-02); дубль семантики в акторе запрещён греп-гейтом
+- [Phase 08]: Wiring демона: reconciler a11y.New(NewExecRunner, NewDBusStatusSetter) + SetA11ySink одним блоком в OnConn рядом с SetSoundSink; применение только через существующий фолд (старт FoldAppliedConfig + self-sync, reload applySnapshot), ноль новых watcher-веток (D-32) — D-8-3 daemon-reconcile: один источник истины о применении — фолд; wiring ставится один раз
+- [Phase 08]: a11y-доки: пример-литералы плана (zcode→org.zdev.Zed) заменены регистр- и подстрок-корректными (chromium→org.chromium.Chromium) — Rule 1: пример плана противоречил чувствительности к регистру и подстрочности, пиннутым той же строкой того же плана; форма «анкерованный + голый substring» сохранена
+- [Phase 08]: SPEC-сверка 2026-10-05: единственное расхождение — install не пишет конфиг (решение 04-02 adopt+watch), исправлено ин-плейс в форме 08-01 — аудит-трейл цел; дефектов поведения не выявлено — новые todo не заводились; §4.4 вне перечня сверки, канон флипа в ADR-006
+- [Phase 08]: README русский-первый (D-8-7): README.md = русская главная v1.1.0 + a11y-раздел, README.en.md = EN-канон, README.ru.md удалён; кириллица в EN-файле — только пример коррекции и литералы русскоязычного меню демона — Дословное решение владельца D-8-7; литералы меню переводить нельзя — код рендерит их по-русски (internal/indicator/menu.go)
+- [Phase 08]: D-8-8 README-сверка: About/Статус в меню — серые информационные строки («goswitch <версия>», «EN · испр. N»), не уведомления (owner UAT 2026-10-05); uninstall упоминает a11y-откат; дефектов поведения нет — todo не заводились — internal/indicator/indicator.go:94 и menu.go:653-676: строки без колбэков, UAT-решение владельца; правка только в документах
+- [Phase 8]: skillgen парсит таблицу docs/CONFIG.md с канон-заголовком как якорем; malformed-строка — hard error (file:line), never silent skip; строки копируются verbatim — дрейф SKILL.md от CONFIG.md невозможен по построению (D-8-10)
+- [Phase 8]: Синхрон-гейт D-8-10 живёт golden-тестом CommittedFileInSync внутри обычного mise run test (research Pattern 5a — ноль правок workflow); dev-only регенерация — mise-задача skillgen-regen; CI только сверяет golden
+- [Phase 8]: RED-фаза 08-08 — shape-стаб по прецеденту 06-04/08-02 (компиляционная ошибка была бы INVALID_RED #3770); CommittedFileInSync при отсутствии файла падает, а не скипается — скип сделал бы CI-гейт слепым к удалению SKILL.md
+- [Phase 08]: Default-ON a11y mechanism = the Sound pointer-bool precedent (Enabled *bool + EffectiveEnabled, nil = ON); no custom UnmarshalYAML, no Defaults() overlay in Load — load.go/watch.go untouched
+- [Phase 08]: Loud migration (D-33): a config carrying the removed a11y.apps key is rejected WHOLE by strict decode with the field named — pinned by a test that passes only while the field is gone (08-09)
+- [Phase 08]: T2 compile bridge: pushA11y switched to EffectiveEnabled inside the schema GREEN commit; the session corpus rewrite rides task 3 (plan-pinned structural red between T2 and T3, full ci stands at T3/T4)
+- [Phase 08]: README a11y sections mirror docs/CONFIG.md canon fact-order; no synonym paraphrase (D-8-8) — Mirrors the canonical section wording; canonical wording is self-evidently authoritative per D-8-8 (docs discrepancies are fixed in docs)
+- [Phase 08]: Constant a11y.apps grep gate for future README edits lives in plan 08-10 gates; CI workflow extraction is out of gap-plan scope — files_modified of the gap plan exclude CI files; gates T1/T2/T3 already re-runnable from 08-VALIDATION.md
 
 ### Pending Todos
 
@@ -271,12 +305,6 @@ None yet.
 
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
-| 260927-sy8 | engine self-reactivation: re-activate the global IBus engine on daemon (re)registration when goswitch owns the current input source | 2026-09-27 | c543d2b | Needs Review | [260927-sy8-engine-self-reactivation-re-activate-the](./quick/260927-sy8-engine-self-reactivation-re-activate-the/) |
-| 260927-vu8 | correction UX batch A: convert the bracket-row punctuation during correction (allow-set, SPEC §4.2, owner decision 1 revised) + flip the script mode after a changed correction (flip_after_correction, default ON, owner decision 2) | 2026-09-27 | f679b95 | Needs Review | [260927-vu8-correction-ux-batch-a-convert-letter-map](./quick/260927-vu8-correction-ux-batch-a-convert-letter-map/) |
-| 260930-nxd | fix: switchTimeout 40→150ms (actor.go, live RTT 41–45 ms made the 40 ms deadline WARN on every flip) + installer leaves GNOME switch-input-source/-backward bindings untouched (ADR-006 two-source: external flips synced by 05-04 listener; uninstall restore kept) | 2026-09-30 | 65670b8 | Needs Review | [260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst](./quick/260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst/) |
-| 260930-pf6 | feat: tray indicator (SNI/AppIndicator) — goswitchd publishes an EN/RU icon on its existing ctl connection, ModeDisplay seam observer-last in flipTo/syncMode, one-WARN degradations, Menu /NO_DBUSMENU sentinel (checker PASSED, verifier gap fixed); owner pixel check pending | 2026-09-30 | 9063703 | Verified | [260930-pf6-feat-tray-indicator-statusnotifieritem-a](./quick/260930-pf6-feat-tray-indicator-statusnotifieritem-a/) |
-| 260930-toa | feat: single-source input model — installer/selfcheck accept 1..N goswitch-wrapped sources (foreign residue still refused, atomic-refusal gate fixed in saveState), e2e oracle count-agnostic, README user-model rewrite + ADR-006 amendment; live machine on [('ibus','goswitch-en')], selfcheck 6×ok; owner visual check pending | 2026-09-30 | 0e34a83 | Verified (human_needed) | [260930-toa-feat-single-source-input-model-selfcheck](./quick/260930-toa-feat-single-source-input-model-selfcheck/) |
-| 261001-fg3 | feat: interactive tray — supervisor re-attaches on watcher appearance (NameOwnerChanged) + ~30 s health check (owner-requested silent-eviction self-heal, proven live twice), DBusMenu (com.canonical.dbusmenu, toggle-first/status/reload), SNI Activate; interface-name gap caught in live leg and fixed with a literal wire-name pin; owner confirmed the menu | 2026-10-01 | e8dae38 | Verified | [261001-fg3-feat-interactive-tray-daemon-re-attaches](./quick/261001-fg3-feat-interactive-tray-daemon-re-attaches/) |
 
 ## Deferred Items
 
@@ -284,10 +312,26 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
-| *(none)* | | | | |
+| deferred_items | 02/deferred-items.md: Persistent AT-SPI tree wedge after repeated surface SIGKILLs (bus-restart remedy; CI-runner book candidate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: Daemon verify-after round settles on a stale first push (grace-window candidate fix, daemon-side plan) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: closeEntrySurface ydotool "Escape" name → physical E (one-word "esc" fix when shell path next touched) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 04/deferred-items.md: combo-word-layout post-reload tap flake under unusual desktop focus state (surface-hold candidate remedy) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 05/deferred-items.md: Preflight injection-selftest tap is a real flip on an installed desktop (stale assumption, comment/touch-up) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-05 — pre-existing ctlsvc OnConnHook flake under full-suite load (stabilized later by 08b598a) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-07 — OnConnHook root cause (assert-before-wait) + first-key-after-flip session drift (WINDOWS #13, environmental) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-08 — session drift verdict (23-24/35 double-run, third diff exoneration; D-48 nightly is the machine gate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: 07-03 — watch_test BrokenBlocklistPattern ~1/15 flake (lastErr-settled wait candidate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: pre-existing-flake TestRun_OnConnHookCalledOnce — RESOLVED in place by quick 261007-0yg (08b598a) | resolved-in-place | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: post-release-tuning sound latency — RESOLVED in place by quick 261006-squ (persistent PulseAudio stream) | resolved-in-place | 2026-10-08 | v1.0.0 |
+| deferred_items | 08/deferred-items.md: 08-01 — ctlsvc/config flakes under load (bus-isolation hardening todo for owner) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 08/deferred-items.md: 08-06 — same environmental class (extend bus isolation to appid close-verdict test) | acknowledged | 2026-10-08 | v1.0.0 |
 
 ## Session Continuity
 
-Last session: 2026-10-05T03:26:44.549Z
-Stopped at: Phase 7 complete, ready to plan Phase 4
+Last session: 2026-10-08T02:30:00.000Z
+Stopped at: Milestone v1.0.0 complete and archived
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

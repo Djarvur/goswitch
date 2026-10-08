@@ -179,10 +179,20 @@ func (i *Installer) checkConfig(_ context.Context) (string, error) {
 // the recommended shape; the wrapped pair stays green). The sources are
 // parsed with the SAME grammar the installer wraps with
 // (activate.ParseSourceTuples) — one parser on both sides, never substring
-// guessing. A goswitch engine beside a foreign entry is red with the D-53
-// rationale (the daemon sees no keys through an xkb source). The green
-// verdict names the engines found — config literals only, never the raw
-// gsettings line (D-20/D-21).
+// guessing. G-5-5 (owner decision 2026-10-07, verbatim: «автоматически
+// приводить конфигурацию к правильной, а если не получилось - отказ»): a
+// completable half-state — one goswitch engine beside one wrappable xkb
+// us/ru tuple — HEALS: wrapSources (the one completion arbiter) computes
+// the canonical list, exactly one gsettings set lands it through the
+// Installer's call seam, and the re-read verifies the landed value before
+// the green verdict names the engines (a heal, the component-cache repair
+// precedent). Any failure — the wrap refusal, a set error, a re-read
+// parse/ownership mismatch — stays the red verdict; D-53 remains the
+// RESIDUE rationale (the daemon sees no keys through a foreign source),
+// and the refusal gate runs BEFORE any mutating call — zero gsettings
+// writes on a refusal (the 260930-toa atomicity discipline). The verdict
+// names the engines found — config literals only, never the raw gsettings
+// line (D-20/D-21).
 func (i *Installer) checkInputSource(ctx context.Context) (string, error) {
 	out, err := i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKey)
 	if err != nil {
@@ -199,7 +209,31 @@ func (i *Installer) checkInputSource(ctx context.Context) (string, error) {
 	case owned == 0:
 		return "", errSourceNotOwner
 	case foreign > 0:
-		return "", fmt.Errorf("%w: %s", errMixedSources, foreignResidueHint)
+		healed, werr := wrapSources(strings.TrimSpace(string(out)))
+		if werr != nil {
+			// The un-completable residue form: the current red verdict —
+			// issued BEFORE any mutating call.
+			return "", fmt.Errorf("%w: %s", errMixedSources, foreignResidueHint)
+		}
+		if _, serr := i.call(ctx, binGSettings, "set", gsettingsSchema, gsettingsKey, healed); serr != nil {
+			return "", fmt.Errorf("%w: the heal write failed: %w (fix: goswitchctl install)", errSourceNotOwner, serr)
+		}
+		reout, rerr := i.call(ctx, binGSettings, "get", gsettingsSchema, gsettingsKey)
+		if rerr != nil {
+			return "", fmt.Errorf("%w: the heal read-back failed: %w "+
+				"(fix: goswitchctl install)", errSourceNotOwner, rerr)
+		}
+		retuples, perr := activate.ParseSourceTuples(strings.TrimSpace(string(reout)))
+		if perr != nil {
+			return "", fmt.Errorf("%w: the healed list did not land (read-back parse: %w) "+
+				"(fix: goswitchctl install)", errSourceNotOwner, perr)
+		}
+		reOwned, reForeign := countOwnedForeign(retuples)
+		if reOwned == 0 || reForeign > 0 {
+			return "", fmt.Errorf("%w: the healed list did not land (read-back is not goswitch-owned) "+
+				"(fix: goswitchctl install)", errSourceNotOwner)
+		}
+		tuples = retuples
 	}
 	names := make([]string, 0, len(tuples))
 	for _, t := range tuples {

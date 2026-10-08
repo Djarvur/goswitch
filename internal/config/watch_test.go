@@ -395,6 +395,67 @@ func TestWatch_BrokenBlocklistPatternKeepsLastGood(t *testing.T) {
 	}
 }
 
+// TestWatch_A11yUnknownKeyKeepsLastGood pins the D-32/D-33 propagation to
+// the a11y section WITHOUT any watcher code (the 07-02 blocklist-case
+// precedent, retargeted by the 2026-10-06 owner revision): a reload
+// carrying an unknown key inside a11y invalidates the WHOLE document —
+// the reload is rejected, the last-good snapshot keeps serving, the WARN
+// "config reload rejected" lands — and the repaired document applies
+// without a restart. The REAL parser runs (config.Load), so the property
+// under test is the schema's.
+func TestWatch_A11yUnknownKeyKeepsLastGood(t *testing.T) {
+	buf := captureLogs(t)
+
+	path := filepath.Join(t.TempDir(), "goswitch.yaml")
+	if err := os.WriteFile(path, []byte(a11yDocYAML("  enabled: true\n")), 0o600); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+
+	fx := newFakeSource()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	w, err := config.NewWatcher(ctx, path,
+		config.WithSource(func() (config.EventSource, error) { return fx, nil }),
+		config.WithLoader(config.Load),
+		config.WithDebounce(10*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+	if got := w.Snapshot().A11y.EffectiveEnabled(); !got {
+		t.Fatalf("initial snapshot a11y effective switch = %v, want true (default ON)", got)
+	}
+
+	// The broken edit: an unknown key inside a11y invalidates the whole file.
+	if err := os.WriteFile(path, []byte(a11yDocYAML("  enabled: true\n  per_app_levels: wat\n")), 0o600); err != nil {
+		t.Fatalf("write broken config: %v", err)
+	}
+	fx.send(path, fsnotify.Write)
+	if !waitUntil(func() bool { return w.LastError() != nil }) {
+		t.Fatal("LastError never set after a broken a11y edit")
+	}
+	if got := w.Snapshot().A11y.EffectiveEnabled(); !got {
+		t.Errorf("snapshot a11y effective switch = %v after the rejection, want the last-good true", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"config reload rejected"`) {
+		t.Errorf("log %q misses the WARN record config reload rejected", buf.String())
+	}
+
+	// The repair applies without a restart: the only OFF shape.
+	if err := os.WriteFile(path, []byte(a11yDocYAML("  enabled: false\n")), 0o600); err != nil {
+		t.Fatalf("write repaired config: %v", err)
+	}
+	fx.send(path, fsnotify.Write)
+	if !waitUntil(func() bool { return !w.Snapshot().A11y.EffectiveEnabled() }) {
+		t.Fatalf("snapshot a11y effective switch = %v after the repair, want false",
+			w.Snapshot().A11y.EffectiveEnabled())
+	}
+	if err := w.LastError(); err != nil {
+		t.Errorf("LastError = %v after the repaired reload, want nil", err)
+	}
+}
+
 // TestWatch_IgnoresIrrelevantEvents pins the filters: events for other
 // file names in the watched directory and non-trigger operations on the
 // watched file (Chmod) never cause a re-parse.

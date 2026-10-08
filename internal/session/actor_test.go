@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
+	"github.com/Djarvur/goswitch/internal/engine"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/session"
 )
@@ -85,10 +85,13 @@ func countActions(buf *syncBuffer) int {
 
 // Corpus words of the correction pipeline (the 02-01 corpus pair — named
 // once, goconst). mismatchLine is the non-matching surrounding push of the
-// refusal corpus — it ends with neither layout's token.
+// refusal corpus — it ends with neither layout's token. mixedRU is the
+// per-character inversion of the mixed token "gfb"+wordRU — the re-pinned
+// matrix-v1 word-mixed expectation (2026-10-06 owner verdict).
 const (
 	wordEN       = "ghbdtn"
 	wordRU       = "привет"
+	mixedRU      = "паиghbdtn"
 	mismatchLine = "abc другойтекст"
 )
 
@@ -1393,15 +1396,15 @@ func TestActor_ScriptTrueBuffer(t *testing.T) {
 	}
 }
 
-// TestActor_MixedWordConvertsForeignRuns pins the D-16→D-23 succession
-// (plan 03-01 task 2): a mixed word assembled the way the desktop produces
-// it — "gfb" typed in EN (transit), then the flip, then the rest typed in
-// RU (committed Cyrillic runes) — is no longer refused wholesale; the
-// run-wise conversion converts ONLY the foreign Latin run: the whole token
-// range is deleted (-9,9) and "паипривет" is committed, the Cyrillic run
-// re-committed unchanged. The Phase 2 refusal pin (TestActor_MixedWord-
-// Untouched, D-16) is superseded by this contract.
-func TestActor_MixedWordConvertsForeignRuns(t *testing.T) {
+// TestActor_MixedWordInvertsPerChar pins the per-character inversion of the
+// mixed word (spec-delta 2026-10-06; owner verdict, UAT of phase 6,
+// 2026-10-03, commit 7dd46e9 — supersedes the D-16→D-23 foreign-run
+// succession of plan 03-01): a mixed word assembled the way the desktop
+// produces it — "gfb" typed in EN (transit), then the flip, then the rest
+// typed in RU (committed Cyrillic runes) — inverts EVERY letter through
+// its own script's table: the whole token range is deleted (-9,9) and
+// "паиghbdtn" is committed, every letter flipped to the other layout.
+func TestActor_MixedWordInvertsPerChar(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
 
@@ -1427,7 +1430,7 @@ func TestActor_MixedWordConvertsForeignRuns(t *testing.T) {
 	}
 
 	// The verification sees the whole mixed token — exactly what the ladder
-	// deletes — and the settle commits the run-converted replacement.
+	// deletes — and the settle commits the per-character inversion.
 	field := "gfb" + wordRU
 	a.HandleSurroundingText(field, runeLen(field), runeLen(field))
 
@@ -1436,20 +1439,141 @@ func TestActor_MixedWordConvertsForeignRuns(t *testing.T) {
 		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole mixed token range", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 7 || texts[6] != "паи"+wordRU {
-		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, "паи"+wordRU)
+	if len(texts) != 7 || texts[6] != mixedRU {
+		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, mixedRU)
 	}
 	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
 		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
 	}
 }
 
-// TestActor_PhraseMixedCorrects pins D-26 on the sink: a phrase with words
-// in different layouts — "ghbdtn" typed in EN, the flip, " привет"
-// committed in RU — corrects through the SAME run semantics as the mixed
-// word (anchor = last letter of the phrase, foreign runs converted, own
-// runs untouched); there is no separate phrase-level script semantics. The
-// triple tap deletes the whole phrase (-13,13) and commits "привет привет".
+// The own-flip corpus (ADR-004 amendment 2026-10-07, G-2-3): the daemon's
+// OWN engine flip — the SetGlobalEngine round trip inside flipTo through
+// the D-52 seam — makes ibus re-mint engine objects, which delivers a
+// SYNTHETIC focus_out/focus_in lifecycle pair to the engine. A synthetic
+// transition is not «смена фокуса окна»: the correction buffer survives
+// the daemon's own flip so a word typed across it corrects as a whole,
+// while a REAL focus loss keeps the hard reset.
+
+// TestActor_OwnFlipMixedWordCorrectsWhole pins the live failure signature
+// of UAT phase 2 test 3 (matrix v1 word-mixed, run 2026-10-07) as FIXED:
+// "gfb" typed in EN (transit), the daemon's own flip EN→RU (the stub
+// switcher's SetGlobalEngine round trip returns nil), the synthetic
+// lifecycle pair the live bus delivers, the rest typed in RU (six Cyrillic
+// commits) — the double-tap correction then sees the WHOLE mixed token:
+// exactly one RequireSurroundingText, one deletion over (-9,9) and the
+// per-character inversion «паиghbdtn» — the re-pinned matrix row's
+// semantics. The pre-amendment actor hard-resets the buffer on the
+// synthetic FocusOut and corrects only the post-flip token: (-6,6) and
+// «ghbdtn» — the live failure signature.
+func TestActor_OwnFlipMixedWordCorrectsWhole(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	typeWord(a, "gfb") // EN part: transit, buffer fed as typed
+	flipMode(a)        // EN → RU: flipTo runs, the stub switcher's round trip returns nil
+	// The live bus answer to the daemon's own flip: ibus re-mints the
+	// engine objects and the engine receives the synthetic pair.
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+	typeWord(a, wordEN) // RU part: commits "привет", buffer script-true
+
+	if texts := sink.commitTexts(); len(texts) != 6 || texts[0]+texts[1]+texts[2]+texts[3]+texts[4]+texts[5] != wordRU {
+		t.Fatalf("RU typing commits = %q, want the six runes of %q", texts, wordRU)
+	}
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("mixed word across the own flip started verification %d times, want 1", got)
+	}
+
+	// The field holds the whole mixed token — exactly what the correction
+	// must replace.
+	field := "gfb" + wordRU
+	a.HandleSurroundingText(field, runeLen(field), runeLen(field))
+
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -9, nchars: 9}) {
+		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole mixed token; the synthetic"+
+			" FocusOut of the own flip must not hard-reset the buffer", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 7 || texts[6] != mixedRU {
+		t.Fatalf("correction commits = %q, want the last one to be [паиghbdtn]", texts)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// TestActor_OwnFlipCreditConsumedOnce pins the over-suppression guard: the
+// synthetic-lifecycle credit of the own flip is consumed EXACTLY once — a
+// SECOND FocusOut after the synthetic one is a real context loss and must
+// hard-reset the buffer (the double tap then yields the empty-buffer
+// refusal, no verification round at all).
+func TestActor_OwnFlipCreditConsumedOnce(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	flipMode(a)                                 // EN → RU: the successful round trip arms exactly one credit
+	a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes it
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+
+	typeWord(a, wordEN) // a fresh word in the buffer
+	// A SECOND FocusOut with the credit spent: a REAL focus loss.
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("second FocusOut left a correctable token — a spent credit must not suppress a"+
+			" real focus loss; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("sink saw %d RequireSurroundingText calls, want 0", got)
+	}
+}
+
+// TestActor_OwnFlipFailedSwitcherArmsNothing pins the arming condition: a
+// flip whose SetGlobalEngine round trip FAILED (the WARN form) delivers no
+// engine re-mint, so no credit is armed — the next FocusOut is treated as
+// a real focus loss and hard-resets the buffer.
+func TestActor_OwnFlipFailedSwitcherArmsNothing(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetSwitcher(func(_ context.Context, _ string) error { return errSwitchInjected })
+
+	flipMode(a) // EN → RU: the seam fails (WARN), no credit armed
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+		t.Errorf("FocusOut after a failed-switcher flip left a correctable token — a failed"+
+			" SetGlobalEngine must arm no credit; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("sink saw %d RequireSurroundingText calls, want 0", got)
+	}
+}
+
+// TestActor_PhraseMixedCorrects pins D-26 on the sink (under the
+// spec-delta of 2026-10-06): a phrase with words in different layouts —
+// "ghbdtn" typed in EN, the flip, " привет" committed in RU — corrects
+// through the SAME per-character inversion as the mixed word; there is no
+// separate phrase-level script semantics. The triple tap deletes the whole
+// phrase (-13,13) and commits "привет ghbdtn" — every letter flipped.
 func TestActor_PhraseMixedCorrects(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor()
@@ -1476,8 +1600,8 @@ func TestActor_PhraseMixedCorrects(t *testing.T) {
 		t.Fatalf("deletions = %+v, want exactly one (-13,13) — the whole mixed phrase range", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 7 || texts[6] != wordRU+" "+wordRU {
-		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, wordRU+" "+wordRU)
+	if len(texts) != 7 || texts[6] != wordRU+" "+wordEN {
+		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, wordRU+" "+wordEN)
 	}
 	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
 		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
@@ -1770,10 +1894,10 @@ func TestActor_NoSelectionStillWord(t *testing.T) {
 	}
 }
 
-// TestActor_SelectionMixedConverts pins D-23 on the selection range: the
-// selected mixed text "gfbпривет" converts by the last-letter anchor — the
-// foreign Latin run gfb→паи, the Cyrillic run recommitted unchanged —
-// through the SAME ConvertRuns the word and phrase paths use.
+// TestActor_SelectionMixedConverts pins the mixed selection under the
+// spec-delta of 2026-10-06: the selected mixed text "gfbпривет" inverts
+// per character — gfb→паи, привет→ghbdtn — through the SAME ConvertRuns
+// the word and phrase paths use.
 func TestActor_SelectionMixedConverts(t *testing.T) {
 	a, sink := wiredActor()
 
@@ -1788,8 +1912,8 @@ func TestActor_SelectionMixedConverts(t *testing.T) {
 		t.Fatalf("deletions = %+v, want none — the commit replaces the active selection", calls)
 	}
 	texts := sink.commitTexts()
-	if len(texts) != 1 || texts[0] != "паи"+wordRU {
-		t.Fatalf("commits = %q, want exactly one [%s] — run conversion inside the selection", texts, "паи"+wordRU)
+	if len(texts) != 1 || texts[0] != mixedRU {
+		t.Fatalf("commits = %q, want exactly one [%s] — the selection inverts per character", texts, mixedRU)
 	}
 }
 
@@ -6151,13 +6275,15 @@ func TestCtlStatus_EndToEnd(t *testing.T) {
 // fakeSoundSink is the actor's SoundSink double (plan 07-08): both tones
 // counted under a mutex, the re-pinned autocorrect event recorded (WR-02),
 // with an optional flip hook the order pins interleave against the
-// display/menu hooks.
+// display/menu hooks. It also carries the SoundStopper capability (the
+// 261006-squ mute lifecycle) — the stop counter is the fold pins' oracle.
 type fakeSoundSink struct {
 	mu     sync.Mutex
 	flips  int
 	fires  int
 	event  string
 	onFlip func()
+	stops  int
 }
 
 // Flip records one flip tone and plays the hook.
@@ -6187,6 +6313,15 @@ func (f *fakeSoundSink) SetAutocorrectEvent(event string) {
 	f.mu.Unlock()
 }
 
+// Stop records the mute lifecycle's close — the fold's ON→OFF transition
+// is the close trigger (requirement 3: muted means NO sound-server
+// connection).
+func (f *fakeSoundSink) Stop() {
+	f.mu.Lock()
+	f.stops++
+	f.mu.Unlock()
+}
+
 func (f *fakeSoundSink) flipCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -6199,6 +6334,13 @@ func (f *fakeSoundSink) fireCount() int {
 	defer f.mu.Unlock()
 
 	return f.fires
+}
+
+func (f *fakeSoundSink) stopCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.stops
 }
 
 // flipSoundOn returns the bare sound-on Options — the flip-tone corpus
@@ -6408,6 +6550,126 @@ func TestActor_SoundFoldGatesFromSnapshot(t *testing.T) {
 	}
 }
 
+// TestActor_SoundFoldOffStopsSink pins the mute lifecycle's close half
+// (261006-squ, requirement 3): a fold that transitions the sound switch
+// ON→OFF calls the installed sink's stop EXACTLY ONCE — muted sound means
+// NO sound-server connection, the lazy redial rides the next tone.
+func TestActor_SoundFoldOffStopsSink(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &fakeSoundSink{}
+	cfg := config.Defaults()
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetOptions(soundOn())
+	a.SetSoundSink(sound)
+
+	flipMode(a) // ON — the fold has no transition to close
+	if got := sound.stopCount(); got != 0 {
+		t.Fatalf("stops after an ON fold = %d, want 0", got)
+	}
+
+	off := false
+	cfg.Sound.Enabled = &off
+	src.set(cfg)
+	flipMode(a) // the ON→OFF transition — the close trigger
+	if got := sound.stopCount(); got != 1 {
+		t.Errorf("stops after the ON→OFF fold = %d, want exactly 1 — the connection must close", got)
+	}
+
+	flipMode(a) // still OFF — no further transition
+	if got := sound.stopCount(); got != 1 {
+		t.Errorf("stops after a second muted fold = %d, want still 1 — only the transition closes", got)
+	}
+}
+
+// TestActor_SoundFoldStaysOffStopsNothingExtra pins the OFF→OFF fold: a
+// document that arrives already muted stops nothing — the close is the
+// TRANSITION's, never the state's.
+func TestActor_SoundFoldStaysOffStopsNothingExtra(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &fakeSoundSink{}
+	cfg := config.Defaults()
+	off := false
+	cfg.Sound.Enabled = &off
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	opts := soundOn()
+	opts.SoundEnabled = false
+	a.SetOptions(opts)
+	a.SetSoundSink(sound)
+
+	flipMode(a) // OFF→OFF — nothing to close
+	if got := sound.stopCount(); got != 0 {
+		t.Errorf("stops after an OFF→OFF fold = %d, want 0", got)
+	}
+
+	on := true
+	cfg.Sound.Enabled = &on
+	src.set(cfg)
+	flipMode(a) // OFF→ON — the lazy redial rides the next tone, not a stop
+	if got := sound.stopCount(); got != 0 {
+		t.Errorf("stops after the OFF→ON fold = %d, want 0 — enable never stops", got)
+	}
+}
+
+// TestActor_SinkWithoutStopCapabilityFoldsSilently pins the optional
+// capability: a sink that only satisfies SoundSink (type-assertion miss
+// on SoundStopper) folds silently — the mute close degrades to a no-op,
+// byte-as-today for every pre-existing sink.
+type bareSoundSink struct {
+	mu    sync.Mutex
+	flips int
+}
+
+func (b *bareSoundSink) Flip() {
+	b.mu.Lock()
+	b.flips++
+	b.mu.Unlock()
+}
+
+func (*bareSoundSink) AutoCorrect() {}
+
+func (*bareSoundSink) SetAutocorrectEvent(string) {}
+
+func TestActor_SinkWithoutStopCapabilityFoldsSilently(t *testing.T) {
+	a, _ := wiredActor()
+	sound := &bareSoundSink{}
+	cfg := config.Defaults()
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetOptions(soundOn())
+	a.SetSoundSink(sound)
+
+	off := false
+	cfg.Sound.Enabled = &off
+	src.set(cfg)
+	flipMode(a) // the ON→OFF transition against a stop-less sink — no panic, the fold proceeds
+
+	if got := sound.flips; got != 0 {
+		t.Errorf("flip tones after the muted fold = %d, want 0 — the gate held", got)
+	}
+}
+
+// TestActor_NilSinkFoldSilent pins the nil degradation through the mute
+// fold: no sink installed — the ON→OFF transition folds byte-as-today,
+// silently.
+func TestActor_NilSinkFoldSilent(t *testing.T) {
+	a, _ := wiredActor()
+	cfg := config.Defaults()
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetOptions(soundOn())
+
+	off := false
+	cfg.Sound.Enabled = &off
+	src.set(cfg)
+	flipMode(a) // the ON→OFF transition with no sink — no panic
+
+	if got := a.StatusSnapshot().SoundEnabled; got {
+		t.Errorf("sound option after the muted fold = true, want false — the fold applied")
+	}
+}
+
 // TestActor_FoldAppliedConfig pins the menu toggle's synchronous-apply
 // seam (plan 07-06, the 07-05 pin live-proven by the menu-v2 case): the
 // toggle's reload re-stores the watcher snapshot, and FoldAppliedConfig
@@ -6444,5 +6706,151 @@ func TestActor_FoldAppliedConfig(t *testing.T) {
 	bare.FoldAppliedConfig()
 	if st := bare.StatusSnapshot(); st.AutoCorrectEnabled {
 		t.Errorf("autocorrect option after a sourceless fold = true, want the SetOptions value false")
+	}
+}
+
+// The a11y-sink corpus of plan 08-05, rewritten by the 2026-10-06 owner
+// revision (plan 08-09): the accessibility-magic seam — the fold delivers
+// the a11y section's EffectiveEnabled() truth to the sink ONLY on a change
+// of that boolean (the refreshACBlocklist diff-gate form), a late install
+// self-syncs the last folded state (the SetSoundSink precedent), and a nil
+// sink stays a silent no-op. There is no app list in the schema any more:
+// the fold reads the single global switch (nil decodes ON — the owner's
+// default-ON verdict, D-8-6/REV).
+
+// fakeA11ySink is the actor's A11ySink double (plan 08-05): every pushed
+// state recorded under a mutex — the fold's diff-gate observability.
+type fakeA11ySink struct {
+	mu     sync.Mutex
+	pushes []bool
+}
+
+// Apply records one pushed a11y state.
+func (f *fakeA11ySink) Apply(active bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.pushes = append(f.pushes, active)
+}
+
+// pushed returns the recorded push history.
+func (f *fakeA11ySink) pushed() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return slices.Clone(f.pushes)
+}
+
+// a11yDoc returns the defaults document with the a11y switch set to the
+// given value — the fold corpus's feed (a complete valid document, the
+// reloadCfg shape). The pointer form mirrors the schema: an explicit bool
+// is the document's own verdict, the nil pointer the absent-key shape.
+func a11yDoc(enabled bool) config.Config {
+	cfg := config.Defaults()
+	cfg.A11y.Enabled = &enabled
+
+	return cfg
+}
+
+// TestActor_A11yDefaultsDocumentPushesTrue pins the default-ON fold (the
+// owner's 2026-10-06 revision in action, D-8-6/REV): the fold of the
+// built-in defaults document — whose a11y switch decodes ON — delivers
+// exactly one Apply(true) to the reconciler.
+func TestActor_A11yDefaultsDocumentPushesTrue(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	src := &reloadSource{cfg: config.Defaults()}
+	a.AttachConfig(src)
+	a.SetA11ySink(sink)
+
+	a.FoldAppliedConfig()
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("a11y pushes after the defaults fold = %v, want exactly [true] (default ON)", got)
+	}
+}
+
+// TestActor_A11yFoldTriggersSinkOnActivation pins the activation push
+// (plan 08-05): a fold of a document with the switch enabled delivers
+// exactly one Apply(true), and a REPEATED fold of the same state stays
+// silent — the diff gate keeps dconf churn and journal noise at zero at
+// any fold rate (the startup fold of newActor's FoldAppliedConfig reaches
+// the reconciler the same way).
+func TestActor_A11yFoldTriggersSinkOnActivation(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	cfg := a11yDoc(true)
+	src := &reloadSource{cfg: cfg}
+	a.AttachConfig(src)
+	a.SetA11ySink(sink)
+
+	a.FoldAppliedConfig() // the activation — the only push
+	src.set(cfg)
+	a.FoldAppliedConfig() // the same state — silence
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("a11y pushes after the active and a repeated fold = %v, want exactly [true] — "+
+			"the gate is on the boolean", got)
+	}
+}
+
+// TestActor_A11yExplicitFalsePushesFalse pins the deactivation push (plan
+// 08-05): a fold of a document with an EXPLICIT enabled: false after an
+// active one delivers Apply(false) — the only OFF shape of the revised
+// section. The 08-03 reconciler itself decides that a false touches
+// nothing (D-8-4, pinned by its own corpus); the actor's job is only to
+// deliver the change.
+func TestActor_A11yExplicitFalsePushesFalse(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	src := &reloadSource{cfg: a11yDoc(true)}
+	a.AttachConfig(src)
+	a.SetA11ySink(sink)
+
+	a.FoldAppliedConfig() // active
+	src.set(a11yDoc(false))
+	a.FoldAppliedConfig() // explicit false — the change must propagate
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true, false}) {
+		t.Errorf("a11y pushes after activate then explicit false = %v, want exactly [true false]", got)
+	}
+}
+
+// TestActor_A11ySinkInstallSelfSyncs pins the late install (plan 08-05,
+// the SetSoundSink self-sync form): the startup fold runs with NO sink
+// installed (the OnConn ordering — the wiring attaches later), and the
+// SetA11ySink install pushes the last folded state immediately, so the
+// reconcile-at-start does not depend on the install order.
+func TestActor_A11ySinkInstallSelfSyncs(t *testing.T) {
+	a, _ := wiredActor()
+	sink := &fakeA11ySink{}
+	src := &reloadSource{cfg: a11yDoc(true)}
+	a.AttachConfig(src)
+
+	a.FoldAppliedConfig() // the startup fold — no sink installed yet
+
+	a.SetA11ySink(sink) // the late install self-syncs the folded state
+
+	if got := sink.pushed(); !slices.Equal(got, []bool{true}) {
+		t.Errorf("a11y pushes after a late install over an active fold = %v, want exactly [true] — "+
+			"the install pushes immediately", got)
+	}
+}
+
+// TestActor_A11yNilSinkNoOp pins the nil degradation (the SetMenuSync nil
+// form): folds with no sink installed run byte-as-today — no panic, no
+// effect, the silent absence of pushes.
+func TestActor_A11yNilSinkNoOp(t *testing.T) {
+	a, _ := wiredActor()
+	src := &reloadSource{cfg: a11yDoc(true)}
+	a.AttachConfig(src)
+
+	a.FoldAppliedConfig() // active with no sink — silent
+	src.set(a11yDoc(false))
+	a.FoldAppliedConfig() // deactivated with no sink — still silent
+
+	if st := a.StatusSnapshot(); !st.SoundEnabled {
+		t.Errorf("status unreadable after nil-sink folds — the folds must run byte-as-today " +
+			"(the defaults document reads sound ON)")
 	}
 }

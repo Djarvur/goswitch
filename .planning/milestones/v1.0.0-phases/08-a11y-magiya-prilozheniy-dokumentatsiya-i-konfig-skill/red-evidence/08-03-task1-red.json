@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/a11y/ -race -count=1 (raw output /tmp/08-03-t1-red-raw.txt; tree = 08-03 Task-1 RED-stub shape per the 06-04/08-02 precedent: package a11y carries the seams Runner/StatusSetter, the Reconciler struct + New, Apply pinning desired only — no series spawn, no episode, no warns; newSetCmd literal shape present)",
+  "exitCode": 1,
+  "targetTest": "TestA11y_ActivateSetsKeyWhenFalse",
+  "failingTest": "TestA11y_ActivateSetsKeyWhenFalse",
+  "expected": "Apply(true) with the key false runs the apply series: exactly one get with argv [gsettings get org.gnome.desktop.interface toolkit-accessibility] and exactly one set with argv [gsettings set org.gnome.desktop.interface toolkit-accessibility true]; lastApplied converges to true.",
+  "actual": "The series never runs: Apply only pins desired under the mutex (the RED stub carries the shape, not the behavior) — lastApplied stays false and every activation test fails on 'series did not converge to lastApplied=true within the deadline' (5 target tests: ActivateSetsKeyWhenFalse, AlreadyTrueNoSet, DeactivateNeverTouchesKey's post-activation leg, FixedArgvOnlyLiterals, ApplyDoesNotBlockAndConverges). TestA11yWireLiterals and TestA11y_SetCmdNoPipesForm are green-by-design — they pin the literal vocabulary and the newSetCmd fork shape, which the RED stub already carries in full (the 08-02 zero-value precedent: negative/shape assertions pass on the stub).",
+  "output": "not ok 1 - TestA11y_ActivateSetsKeyWhenFalse\nnot ok 2 - TestA11y_AlreadyTrueNoSet\nnot ok 3 - TestA11y_DeactivateNeverTouchesKey\nnot ok 4 - TestA11y_FixedArgvOnlyLiterals\nnot ok 5 - TestA11y_ApplyDoesNotBlockAndConverges\n# tests 7\n# pass 2\n# fail 5\n"
+}

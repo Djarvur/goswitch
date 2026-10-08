@@ -22,10 +22,11 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/a11y"
 	"github.com/Djarvur/goswitch/internal/activate"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
+	"github.com/Djarvur/goswitch/internal/engine"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/indicator"
 	"github.com/Djarvur/goswitch/internal/logging"
@@ -181,13 +182,32 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			menu.SetSoundEnabled(cfg.Sound.EffectiveEnabled())
 			menu.SetKeys(cfg.Hotkeys.TapKey, cfg.Hotkeys.WordLayoutCombo, cfg.Hotkeys.ModeSwitchChord)
 			actor.SetMenuSync(menu) // the install push covers ordering skew, as SetModeDisplay
-			// The sound sink (plan 07-08): the flip tone rides the schema
-			// constant, the autocorrect tone starts at the startup
-			// document's effective event — the actor's fold re-pushes every
-			// changed event to the installed sink (WR-02: the key folds
-			// live), so no reload branch exists here either (the D-32
-			// contour — the wiring installs once).
-			actor.SetSoundSink(sound.New(config.DefaultSoundFlipEvent, cfg.Sound.EffectiveAutocorrectEvent()))
+			// The sound sink (plan 07-08; the 261006-squ persistent-stream
+			// rewrite): the flip tone rides the schema constant, the
+			// autocorrect tone starts at the startup document's effective
+			// event — the actor's fold re-pushes every changed event to
+			// the installed sink (WR-02: the key folds live), so no
+			// reload branch exists here either (the D-32 contour — the
+			// wiring installs once). The sink starts BEFORE the install:
+			// the gsettings watcher runs from daemon start regardless of
+			// any muted state (PD-3 — settings infrastructure, not a
+			// sound-server connection), and the sound-server connection
+			// itself is dialed lazily by the first tone (requirement 3);
+			// the fold's stopper assertion needs the sink installed
+			// before any fold can observe it.
+			soundSink := sound.New(config.DefaultSoundFlipEvent, cfg.Sound.EffectiveAutocorrectEvent())
+			soundSink.Start()
+			actor.SetSoundSink(soundSink)
+			// The a11y-magic reconciler (plan 08-05, D-8-3): assembled on
+			// the production adapters only — the gsettings runner and the
+			// godbus belt setter (the pinned 08-03 constructors). The fold
+			// is the ONE application path — the startup document applied
+			// by newActor's FoldAppliedConfig (the self-sync above fires
+			// the initial Apply after this late install, the OnConn
+			// ordering), every reload by applySnapshot — so no reload
+			// branch exists here either (the D-32 contour: the wiring
+			// installs once).
+			actor.SetA11ySink(a11y.New(a11y.NewExecRunner(), a11y.NewDBusStatusSetter()))
 			actor.SetModeDisplay(item)
 			go item.Supervise(connCtx, conn)
 

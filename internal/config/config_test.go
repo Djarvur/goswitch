@@ -700,6 +700,25 @@ func TestDefaults_SoundOn(t *testing.T) {
 	}
 }
 
+// TestDefaults_A11yDefaultOn pins the a11y section's default-ON shape (the
+// owner's 2026-10-06 revision D-8-6/REV — a deliberate default-ON verdict,
+// NOT the D-54 autocorrect precedent): the magic ships enabled — the
+// pointer points at true — and the defaults still validate as a whole.
+func TestDefaults_A11yDefaultOn(t *testing.T) {
+	t.Parallel()
+
+	got := config.Defaults().A11y
+	if got.Enabled == nil || !*got.Enabled {
+		t.Errorf("Defaults().A11y.Enabled = %v, want a pointer to true (default ON, 2026-10-06)", got.Enabled)
+	}
+	if !got.EffectiveEnabled() {
+		t.Error("Defaults().A11y.EffectiveEnabled() = false, want true (default ON)")
+	}
+	if err := config.Defaults().Validate(); err != nil {
+		t.Errorf("Defaults() does not validate with the a11y section: %v", err)
+	}
+}
+
 // chordDocYAML renders a complete document with the given
 // hotkeys.mode_switch_chord YAML value — the decode corpus's template (the
 // clipboard_rung idiom: full document, one key under test).

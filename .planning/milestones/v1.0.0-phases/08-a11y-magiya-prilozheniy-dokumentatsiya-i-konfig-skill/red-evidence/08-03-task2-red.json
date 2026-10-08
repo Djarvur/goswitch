@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/a11y/ -race -count=1 (raw output /tmp/08-03-t2-red-raw.txt; tree = Task-1 GREEN series + reasonBelt shape const only — the StatusSetter call site is not wired yet, exactly the plan's RED expectation «пояс ещё не вызывается / бюджет не переоткрывается»)",
+  "exitCode": 1,
+  "targetTest": "TestA11y_BeltSetOnEveryActivation",
+  "failingTest": "TestA11y_BeltSetOnEveryActivation",
+  "expected": "org.a11y.Status.IsEnabled rides every activation episode: first activation → 1 belt call, re-activation after deactivation → 2, already-true activation → 3 (session-scoped, A5).",
+  "actual": "The series never invokes the StatusSetter seam — belt calls = 0 after every activation ('belt calls after first activation = 0, want exactly 1'). The same failure shape hits BeltFailureWarnOnce (warns with reason belt-set-failed = 0), ReadFailureWarnOnceAndFailsTowardDesired (belt calls = 0 despite read-warn and set both landing) and SuccessfulEpisodeReopensBudget (no belt call → no budget to reopen). TestA11y_BeltNotCalledOnDeactivation is green-by-design — a negative assertion trivially true while the belt is not wired at all.",
+  "output": "not ok 1 - TestA11y_BeltSetOnEveryActivation\nnot ok 2 - TestA11y_BeltFailureWarnOnce\nnot ok 3 - TestA11y_ReadFailureWarnOnceAndFailsTowardDesired\nnot ok 4 - TestA11y_SuccessfulEpisodeReopensBudget\n# tests 12\n# pass 8\n# fail 4\n"
+}

@@ -164,8 +164,40 @@ func (s Sound) EffectiveAutocorrectEvent() string {
 	return s.AutocorrectEvent
 }
 
-// Config is the whole daemon configuration: exactly the six sections
-// hotkeys / timeouts / correction / macr / autocorrect / sound
+// A11y is the accessibility-magic schema section (D-8-1/REV, the owner's
+// 2026-10-06 revision): the GLOBAL switch of the accessibility magic —
+// nothing else. The former a11y.apps RE2 pattern list and all application
+// matching semantics are REMOVED from the contract (D-8-5/REV annulled —
+// the regex validation and the 64-entry ceiling existed for the list
+// alone): the toolkit-accessibility key is desktop-wide, so the owner's
+// verbatim verdict «раз настройка глобальная, то список не нужен, а нужен
+// bool параметр, по дефолту настройка включен» collapses the section to
+// one key, and the strict decoder refuses any other (a document carrying
+// the removed list key is rejected whole — the loud D-33 migration). The
+// magic set itself is FIXED by D-8-6/REV (the global toolkit-accessibility
+// key plus the IsEnabled belt). Enabled is a POINTER on purpose — the
+// Sound section's precedent (07-08): Load never overlays defaults (the
+// complete-document contract, 03-02), so an absent section or key decodes
+// nil — and nil must read "on" (the owner's deliberate default-ON verdict,
+// D-8-6/REV, NOT the D-54 autocorrect precedent), which a plain bool's
+// zero value could not express.
+type A11y struct {
+	Enabled *bool `yaml:"enabled"`
+}
+
+// EffectiveEnabled reports the section's effective switch — the SINGLE
+// definition of the a11y semantics every consumer reads (the actor fold
+// reads only this): nil (the absent key or the whole absent section) means
+// ON — the owner's default-ON verdict (D-8-6/REV, the SPEC revision of
+// 2026-10-06) — so only an explicit enabled: false stops the daemon from
+// applying the magic. It is the section's ONLY method: there is no
+// matching left to gate and no other key to resolve.
+func (a A11y) EffectiveEnabled() bool {
+	return a.Enabled == nil || *a.Enabled
+}
+
+// Config is the whole daemon configuration: exactly the seven sections
+// hotkeys / timeouts / correction / macr / autocorrect / sound / a11y
 // (D-31, D-54).
 type Config struct {
 	Hotkeys     Hotkeys     `yaml:"hotkeys"`
@@ -174,6 +206,7 @@ type Config struct {
 	MACR        MACR        `yaml:"macr"`
 	Autocorrect Autocorrect `yaml:"autocorrect"`
 	Sound       Sound       `yaml:"sound"`
+	A11y        A11y        `yaml:"a11y"`
 }
 
 // Defaults returns the documented built-in defaults: the daemon runs on
@@ -182,9 +215,12 @@ type Config struct {
 // D-27's 50, the clipboard rung off (D-28), MACR off with no
 // alternative modifier (ADR-005 b.3), the post-correction script flip
 // ON (owner decision 2, 2026-09-27: the mode follows a changed
-// correction), the autocorrect layer OFF with a nil blocklist and the
-// sound section ON with the built-in autocorrect event — the zero
-// Autocorrect value is the off state (D-54 default off everywhere).
+// correction), the autocorrect layer OFF with a nil blocklist (D-54), the
+// sound section ON with the built-in autocorrect event and the a11y
+// section ON — the accessibility magic ships ENABLED by the owner's
+// deliberate default-ON verdict (D-8-6/REV, the SPEC revision of
+// 2026-10-06; a11y is not autocorrect, the D-54 default-off precedent does
+// not reach it).
 func Defaults() Config {
 	return Config{
 		Hotkeys: Hotkeys{
@@ -224,11 +260,17 @@ func Defaults() Config {
 			Enabled:          boolPtr(true),
 			AutocorrectEvent: DefaultSoundAutocorrectEvent,
 		},
+		// The accessibility magic ships ON (the owner's default-ON verdict,
+		// D-8-6/REV): an absent document section reads the same through the
+		// EffectiveEnabled accessor.
+		A11y: A11y{
+			Enabled: boolPtr(true),
+		},
 	}
 }
 
-// boolPtr returns a pointer to v — the Sound section's pointer-bool
-// default needs an addressable literal.
+// boolPtr returns a pointer to v — the Sound and A11y sections'
+// pointer-bool defaults need an addressable literal.
 func boolPtr(v bool) *bool { return &v }
 
 // The documented default binding names (shared with the corpus).
@@ -254,8 +296,15 @@ func (c Config) Validate() error {
 	if err := c.MACR.validate(); err != nil {
 		return err
 	}
+	if err := c.Autocorrect.validate(); err != nil {
+		return err
+	}
 
-	return c.Autocorrect.validate()
+	// The a11y section carries no validation: its single enabled key is a
+	// bool — there is nothing to range-check, and the matching semantics
+	// the old list validation served are removed from the contract
+	// (D-8-5/REV annulled). The strict decoder owns the section's shape.
+	return nil
 }
 
 // validate resolves both bindings through the closed hotkey name tables —

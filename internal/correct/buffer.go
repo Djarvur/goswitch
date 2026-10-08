@@ -12,7 +12,7 @@ import (
 	"slices"
 	"unicode"
 
-	"github.com/Djarvur/goswitch/layouts"
+	"github.com/Djarvur/goswitch/internal/layouts"
 )
 
 // Buffer mirrors the text before the cursor as a rune phrase with token

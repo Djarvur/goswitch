@@ -16,14 +16,14 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/appid"
 	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/correct"
 	"github.com/Djarvur/goswitch/internal/detect"
+	"github.com/Djarvur/goswitch/internal/engine"
 	"github.com/Djarvur/goswitch/internal/hotkey"
-	"github.com/Djarvur/goswitch/layouts"
+	"github.com/Djarvur/goswitch/internal/layouts"
 )
 
 // defaultVerifyWait is the ADR-004 verify budget the actor STARTS with
@@ -250,6 +250,17 @@ type Actor struct {
 	// a broken seam must not spam the journal per flip (the appidWarned
 	// precedent).
 	switcherWarned bool
+	// flipCredit is the synthetic-lifecycle credit of the daemon's own flip
+	// (ADR-004 amendment 2026-10-07, G-2-3): a successful SetGlobalEngine
+	// round trip inside flipTo makes ibus re-mint engine objects, and the
+	// engine receives a synthetic focus_out/focus_in pair. flipTo arms one
+	// credit per successful round trip; HandleLifecycle's FocusOut branch
+	// consumes exactly one and skips ONLY the buffer hard-reset — a
+	// synthetic transition of the own flip is not «смена фокуса окна». A
+	// failed round trip (the WARN form) or the nil-seam degradation arms
+	// nothing, so a real focus loss keeps its full reset. Accessed only
+	// under a.mu — flipTo's callers and HandleLifecycle serialize on it.
+	flipCredit int
 	// display is the tray-indicator seam (quick 260930-pf6): the ModeDisplay
 	// the daemon wiring installs via SetModeDisplay; nil = no display, every
 	// mode change stays invisible to it. The display degrades itself — the
@@ -269,6 +280,15 @@ type Actor struct {
 	// late SetSoundSink self-syncs to (the SetMenuSync install-push
 	// precedent).
 	soundACEvent string
+	// a11ySink is the accessibility-magic seam (plan 08-05): the A11ySink
+	// the daemon wiring installs via SetA11ySink; nil = no sink, every
+	// push stays a silent no-op. The sink degrades itself (the menu
+	// precedent).
+	a11ySink A11ySink
+	// a11yActive is the a11y state last seen in a folded document (plan
+	// 08-05): the diff gate of the sink pushes and the value a late
+	// SetA11ySink self-syncs to (the soundACEvent precedent).
+	a11yActive bool
 	// soundEnabled is the applied sound switch folded from the snapshot
 	// (plan 07-05) — the EffectiveEnabled truth the status token serves.
 	soundEnabled bool
@@ -362,8 +382,8 @@ type selectionState struct {
 	anchor uint32
 }
 
-// correctionRange parameterizes the correction pipeline by its range (D-23 —
-// one pipeline, different ranges): the word path (Double) supplies the token,
+// correctionRange parameterizes the correction pipeline by its range (one
+// pipeline, different ranges): the word path (Double) supplies the token,
 // its boundary tail and ReplaceToken; the phrase path (Triple) supplies the
 // whole phrase since the last hard reset, no tail and ReplacePhrase (D-25).
 // The selection path (03-03) supplies the client-reported selection — the
@@ -741,15 +761,38 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 // a pending series (the input context is gone — a decision there would be
 // garbage), hard-reset the phrase buffer (CORR-09) and retire any open
 // correction round — its verify answer belongs to an input context that no
-// longer exists; everything else is a DEBUG trace.
+// longer exists; everything else is a DEBUG trace. ADR-004 amendment
+// 2026-10-07 (G-2-3): a FocusOut carrying the own flip's synthetic-lifecycle
+// credit (a successful SetGlobalEngine makes ibus re-mint engine objects)
+// skips exactly the buffer hard-reset — the synthetic transition of the
+// daemon's own flip is not a real focus change; a real focus loss still
+// resets.
 func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	switch kind {
 	case engine.LifecycleFocusOut, engine.LifecycleReset:
+		// ADR-004 amendment 2026-10-07 (G-2-3): a FocusOut carrying the own
+		// flip's synthetic-lifecycle credit is not «смена фокуса окна» —
+		// exactly one credit is consumed and ONLY the buffer hard-reset is
+		// skipped, so a word typed across the daemon's own flip corrects as
+		// a whole. Every other side effect below is context-scoped (ibus
+		// re-minted the engine object) and stays correct: the FSM reset, the
+		// surrounding-cache clear, the pending-resolution retirement, the
+		// clearAfter, the combo/MACR cleanup, the timer stop. A Reset kind
+		// never consumes a credit — the observed synthetic pair is
+		// focus_out/focus_in; a spent or absent credit means a REAL focus
+		// loss and takes the full reset.
+		synthetic := false
+		if kind == engine.LifecycleFocusOut && a.flipCredit > 0 {
+			a.flipCredit--
+			synthetic = true
+		}
 		a.fsm.Feed(hotkey.Reset{}, a.elapsed())
-		a.buf.HardReset()
+		if !synthetic {
+			a.buf.HardReset()
+		}
 		// the caches belong to the input context that just left
 		a.surr = nil
 		a.sel = selectionState{}
@@ -894,6 +937,17 @@ type SoundSink interface {
 	SetAutocorrectEvent(event string)
 }
 
+// SoundStopper is the mute lifecycle's optional capability (261006-squ,
+// requirement 3): the sound switch's ON→OFF fold transition stops the
+// sink — muted sound holds NO sound-server connection; re-enabling dials
+// lazily on the first tone. Optional by design: a sink without it folds
+// silently (the type-assertion miss is a no-op). Defined at the point of
+// use, next to SoundSink; Stop must be quick and re-entrant-safe under
+// the actor's mutex (the actor.mu → sink.mu one-way ordering holds).
+type SoundStopper interface {
+	Stop()
+}
+
 // SetSoundSink installs the sound seam — the SetMenuSync mirror (plan
 // 07-08). nil = no sink: every tone stays a silent no-op (the menu nil
 // form — a degradation, never an error). A non-nil install self-syncs the
@@ -907,6 +961,37 @@ func (a *Actor) SetSoundSink(s SoundSink) {
 	a.soundSink = s
 	if s != nil && a.soundACEvent != "" {
 		s.SetAutocorrectEvent(a.soundACEvent)
+	}
+}
+
+// A11ySink is the accessibility-magic seam (plan 08-05, D-8-3): the fold
+// pushes the a11y section's EffectiveEnabled() truth to the desktop
+// reconciler.
+// Defined at the point of use; the interface travels with the consumer
+// (the SoundSink precedent). The implementation is fire-and-forget by
+// contract — it must never block the actor's hot path (the apply series
+// runs on the sink's own serialization, outside the actor mutex, WR-01)
+// and must never panic; every failure is the sink's own best-effort
+// episode (one WARN), never an actor error.
+type A11ySink interface {
+	Apply(active bool)
+}
+
+// SetA11ySink installs the accessibility-magic seam (plan 08-05) — the
+// SetSoundSink mirror. nil = no sink: every push stays a silent no-op (the
+// menu nil form — a degradation, never an error). A non-nil install
+// self-syncs the last folded a11y state (the SetSoundSink install-push
+// precedent): a sink attached after a fold — the OnConn ordering, where
+// the startup FoldAppliedConfig has already run — still serves the folded
+// truth immediately, so the D-8-3 reconcile-at-start never depends on the
+// install order.
+func (a *Actor) SetA11ySink(s A11ySink) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.a11ySink = s
+	if s != nil && a.a11yActive {
+		s.Apply(true)
 	}
 }
 
@@ -1272,8 +1357,48 @@ func (a *Actor) applySnapshot() {
 	// precedent): the owner's default ON is the EffectiveEnabled truth —
 	// an absent section reads ON, only an explicit enabled: false mutes,
 	// and the next gesture carries the change (the D-32 hot reload).
-	a.opts.SoundEnabled = snap.Sound.EffectiveEnabled()
+	a.foldSound(snap.Sound.EffectiveEnabled())
+	a.pushA11y(snap) // the a11y-magic fold rides the same per-fold push chain (plan 08-05)
 	a.pushMenuSync(snap)
+}
+
+// foldSound applies the snapshot's sound switch (plan 07-08's fold, the
+// 261006-squ mute lifecycle): the owner's default ON is the
+// EffectiveEnabled truth, and the ON→OFF TRANSITION is the close trigger
+// — the installed sink stops (muted sound holds no sound-server
+// connection; the lazy redial rides the next tone). The gate in
+// soundSinkFor keeps its exact nil form — the fold transition closes,
+// the gate remains the single play gate. The caller holds the mutex.
+func (a *Actor) foldSound(enabled bool) {
+	if a.opts.SoundEnabled && !enabled {
+		if stopper, ok := a.soundSink.(SoundStopper); ok {
+			stopper.Stop() // quick and re-entrant-safe under the sink's own mutex
+		}
+	}
+	a.opts.SoundEnabled = enabled
+}
+
+// pushA11y hands the reconciler the folded a11y state (plan 08-05, D-8-3
+// — the pushMenuSync form; revised by the owner's 2026-10-06 decision,
+// plan 08-09): the fold reads ONLY snap.A11y.EffectiveEnabled() — the
+// single definition of the desired a11y state, never recomputed here —
+// and pushes it to the sink only on a CHANGE of that boolean (the
+// refreshACBlocklist diff-gate form): a repeated fold of the same state
+// never touches the sink, so dconf churn and journal noise are impossible
+// at any fold rate. The push rides the same synchronous under-the-mutex
+// discipline as the sound pushes — legal because the sink contract is
+// fire-and-forget (a field write plus its own spawn, 08-03): the
+// subprocess series serializes on the reconciler's OWN mutex, never under
+// the actor's (WR-01) — the actor.mu → sink.mu ordering is one-way (the
+// sink never calls the actor back, the pushMenuSync comment's form).
+// The caller holds the mutex.
+func (a *Actor) pushA11y(snap config.Config) {
+	if active := snap.A11y.EffectiveEnabled(); active != a.a11yActive {
+		a.a11yActive = active
+		if a.a11ySink != nil {
+			a.a11ySink.Apply(active)
+		}
+	}
 }
 
 // pushMenuSync hands the menu the applied config truth (plan 07-05): both
@@ -1857,6 +1982,14 @@ func (a *Actor) backspaceCap() int {
 // async WR-01-handoff" pin stands — the D-36 record order and the final
 // correctness of rapid flips hold by the synchronous serialization.
 //
+// ADR-004 amendment 2026-10-07 (G-2-3): a SUCCESSFUL switcher round trip
+// arms one synthetic-lifecycle credit — ibus answers the flip by re-minting
+// engine objects, and the synthetic focus_out/focus_in pair then reaches
+// HandleLifecycle, which consumes the credit and skips exactly the buffer
+// hard-reset (the daemon's own flip is not a focus change; the word typed
+// across it corrects as a whole). A WARNed failure or the nil-seam
+// degradation arms nothing — the next FocusOut stays a real focus loss.
+//
 // A flipTo to the CURRENT mode is a no-op: the SET-semantics site
 // (settleCorrectionFlip) names its target from the corrected text's script,
 // and a same-script correction flip changes nothing.
@@ -1872,6 +2005,16 @@ func (a *Actor) flipTo(target scriptMode) {
 		defer cancel()
 		if err := sw(ctx, engineNameOf(target)); err != nil {
 			slog.Warn("engine switch failed", "engine", engineNameOf(target), "error", err)
+		} else {
+			// ADR-004 amendment 2026-10-07 (G-2-3): a SUCCESSFUL
+			// SetGlobalEngine round trip makes ibus re-mint engine objects —
+			// a synthetic focus_out/focus_in pair is on its way to the
+			// engine. Arm exactly one credit; the FocusOut branch of
+			// HandleLifecycle consumes it and skips exactly the buffer
+			// hard-reset (the daemon's own flip is not a focus change). A
+			// failed round trip arms nothing — the buffer then treats the
+			// next FocusOut as a real focus loss.
+			a.flipCredit++
 		}
 	} else if !a.switcherWarned {
 		a.switcherWarned = true
@@ -2517,7 +2660,7 @@ func (a *Actor) activeSelection() (selectionSpec, []rune, bool) {
 
 // startSelectionCorrection launches the SELECTION correction (CORR-03,
 // D-30): the range is the client-reported selection, converted by the same
-// run pipeline as the word and the phrase (D-23 — ConvertRuns over the
+// run pipeline as the word and the phrase (the same ConvertRuns over the
 // range), with the same refusal vocabulary and the same two-phase
 // verification; the pre-check is range-anchored (VerifyRangeAt — the
 // selection may sit on either side of the cursor, Pitfall 6), and the
@@ -2534,9 +2677,8 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 		return
 	}
 	if !changed {
-		// D-24: every letter of the range is already in the anchor layout —
-		// a SUCCESSFUL operation without changes; nothing to replace,
-		// nothing to verify.
+		// D-24: the success-without-changes outcome — a SUCCESSFUL
+		// operation without changes; nothing to replace, nothing to verify.
 		a.countCorrectionDone()
 		slog.Info("correction", "outcome", "done")
 		a.settleCombo()
@@ -2582,9 +2724,9 @@ func (a *Actor) startPhraseCorrection() {
 }
 
 // startRangeCorrection is the ONE correction pipeline of the daemon,
-// parameterized by its range (D-23): convert the range run-wise through
-// ConvertRuns (homogeneous wholesale, mixed by the last-letter anchor —
-// D-22/D-23), choose the ladder level by the caps bit, then verify against
+// parameterized by its range: convert the range through ConvertRuns
+// (homogeneous wholesale, mixed by per-character inversion — spec-delta
+// 2026-10-06), choose the ladder level by the caps bit, then verify against
 // the freshest surrounding text (ADR-004 — the verification covers the
 // whole range, token+tail, exactly what the ladder deletes). Every refusal
 // logs its D-20 reason at INFO — without the range's contents — and touches
@@ -2617,9 +2759,9 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 		return
 	}
 	if !changed {
-		// D-24: every letter of the range is already in the anchor layout —
-		// a SUCCESSFUL operation without changes (the owner's choice over a
-		// refusal and over a WARN); nothing to replace, nothing to verify.
+		// D-24: the success-without-changes outcome — a SUCCESSFUL
+		// operation without changes (the owner's choice over a refusal and
+		// over a WARN); nothing to replace, nothing to verify.
 		a.countCorrectionDone()
 		slog.Info("correction", "outcome", "done")
 		a.settleCombo()
@@ -2841,7 +2983,7 @@ func concatRunes(head, tail []rune) []rune {
 }
 
 // refusalReason labels a ConvertRuns refusal for the D-20 skip log: a range
-// without Latin or Cyrillic letters has nothing to anchor on; anything else
+// without Latin or Cyrillic letters has nothing to convert; anything else
 // failed on a letter missing from the layout tables. A diagnostic label
 // only — the refusal decision itself belongs to correct.ConvertRuns and is
 // not duplicated here.

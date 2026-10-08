@@ -20,12 +20,14 @@ const (
 	// wordResultRUAfterSpace is the D-13 expectation: the corrected word
 	// WITH its separator — the trailing space is load-bearing.
 	wordResultRUAfterSpace = "привет "
-	// wordMixedConverted is the D-23 oracle (succession of the D-16
-	// refusal, plan 03-01): the mixed word assembled through both real
-	// printing branches — the EN part typed in EN mode (transit) plus the
-	// RU part committed by the engine after the flip — converts ONLY its
-	// foreign Latin run: gfb→паи, the Cyrillic run untouched.
-	wordMixedConverted = "паи" + wordResultRU
+	// wordMixedConverted is the mixed-word oracle (spec-delta 2026-10-06;
+	// owner verdict, UAT of phase 6, 2026-10-03, commit 7dd46e9 —
+	// supersedes the D-23 foreign-run succession of plan 03-01): the mixed
+	// word assembled through both real printing branches — the EN part
+	// typed in EN mode (transit) plus the RU part committed by the engine
+	// after the flip — inverts per character: gfb→паи and привет→ghbdtn
+	// (the RU-typed part flips back to its literal Latin probe form).
+	wordMixedConverted = "паи" + wordProbeEN
 )
 
 // runWordENRU proves the core-value tracer (CORR-01, CORR-07 level 1):
@@ -222,13 +224,14 @@ func runWordRUEN(ctx context.Context, s *stand) error {
 	return nil
 }
 
-// runWordMixed proves the D-23 run conversion live (plan 03-01, succession
-// of the 02-04 D-16 refusal): "gfb" typed in EN mode transits, the flip
-// switches to RU, "ghbdtn" is committed as «привет» — the field holds the
-// mixed word gfbпривет assembled through both real printing branches, and
-// the double tap converts ONLY the foreign Latin run: the daemon logs the
-// correction-done record and both oracles — the content-exact readback and
-// the zenity stdout — print "паипривет".
+// runWordMixed proves the per-character inversion live (spec-delta
+// 2026-10-06; supersedes the D-23 foreign-run conversion of plan 03-01):
+// "gfb" typed in EN mode transits, the flip switches to RU, "ghbdtn" is
+// committed as «привет» — the field holds the mixed word gfbпривет
+// assembled through both real printing branches, and the double tap
+// inverts EVERY letter: the daemon logs the correction-done record and
+// both oracles — the content-exact readback and the zenity stdout —
+// print "паиghbdtn".
 func runWordMixed(ctx context.Context, s *stand) error {
 	if err := s.activateGoswitch(ctx); err != nil {
 		return err
@@ -267,10 +270,10 @@ func runWordMixed(ctx context.Context, s *stand) error {
 	if err := s.waitForLog(ctx, `"msg":"action","n":2`, decisionWait); err != nil {
 		return fmt.Errorf("word-mixed double-tap decision: %w", err)
 	}
-	// D-23: the run conversion completes — the foreign run gfb converted,
-	// the Cyrillic run recommitted unchanged.
+	// spec-delta 2026-10-06: the per-character inversion completes — every
+	// letter flipped; only the neutral runes ride as typed.
 	if err := s.waitForLog(ctx, `"msg":"correction","outcome":"done"`, correctionWait); err != nil {
-		return fmt.Errorf("word-mixed D-23 conversion: %w", err)
+		return fmt.Errorf("word-mixed inversion: %w", err)
 	}
 
 	if err := s.waitZenityText(ctx, wordMixedConverted); err != nil {

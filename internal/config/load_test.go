@@ -416,6 +416,133 @@ func TestSound_ExplicitOffAndCustomEvent(t *testing.T) {
 	}
 }
 
+// TestLoad_A11yAbsentSectionMeansDefaultOn pins the default-ON decode
+// contract (owner revision 2026-10-06, D-8-6/REV — NOT the D-54
+// precedent): a document WITHOUT the a11y section — every shipped user
+// document's shape — loads unchanged, the Enabled pointer decodes nil,
+// and the section's effective switch reads ON, because Load never
+// overlays defaults (03-02) and nil is the "on" verdict.
+func TestLoad_A11yAbsentSectionMeansDefaultOn(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, fullDocYAML))
+	if err != nil {
+		t.Fatalf("Load(document without a11y): %v", err)
+	}
+	if cfg.A11y.Enabled != nil {
+		t.Errorf("a11y.Enabled = %v for an absent section, want nil — Load never overlays defaults", cfg.A11y.Enabled)
+	}
+	if !cfg.A11y.EffectiveEnabled() {
+		t.Error("a11y.EffectiveEnabled() = false for an absent section, want true (default ON, 2026-10-06)")
+	}
+}
+
+// TestLoad_A11yAbsentKeyMeansDefaultOn pins the same default-ON verdict
+// one level deeper: a PRESENT section without the enabled key decodes nil
+// and reads ON — only an explicit enabled: false silences the magic.
+func TestLoad_A11yAbsentKeyMeansDefaultOn(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, a11yDocYAML("")))
+	if err != nil {
+		t.Fatalf("Load(a11y section without enabled): %v", err)
+	}
+	if cfg.A11y.Enabled != nil {
+		t.Errorf("a11y.Enabled = %v for an absent key, want nil — Load never overlays defaults", cfg.A11y.Enabled)
+	}
+	if !cfg.A11y.EffectiveEnabled() {
+		t.Error("a11y.EffectiveEnabled() = false for an absent key, want true (default ON)")
+	}
+}
+
+// TestLoad_A11yExplicitFalseDisables pins the only OFF shape: an explicit
+// enabled: false decodes into a pointer to false and the effective switch
+// reads OFF.
+func TestLoad_A11yExplicitFalseDisables(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(writeConfig(t, a11yDocYAML("  enabled: false\n")))
+	if err != nil {
+		t.Fatalf("Load(a11y enabled: false): %v", err)
+	}
+	if cfg.A11y.Enabled == nil || *cfg.A11y.Enabled {
+		t.Errorf("a11y.Enabled = %v, want a pointer to false (the document's value)", cfg.A11y.Enabled)
+	}
+	if cfg.A11y.EffectiveEnabled() {
+		t.Error("a11y.EffectiveEnabled() = true for enabled: false, want false — the only OFF shape")
+	}
+}
+
+// legacyA11yAppsDocYAML is the PRE-revision document: the a11y section
+// carries the app-list key the 2026-10-06 owner revision REMOVED. The
+// strict decoder must reject the whole file (D-33 — loud migration, never
+// a silent ignore and never a partial decode).
+const legacyA11yAppsDocYAML = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: false
+  apps_blocklist: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+a11y:
+  enabled: true
+  apps: ["zcode"]
+`
+
+// TestLoad_A11yRemovedListKeyRejectedWhole pins the loud migration (D-33,
+// the 07-02 autocorrect-apps precedent): a document carrying the removed
+// a11y app-list key is rejected WHOLE by the strict decoder with the key
+// named. The pin holds ONLY while the list field is gone from the schema —
+// a reintroduced field would flip this test back to green by decode.
+func TestLoad_A11yRemovedListKeyRejectedWhole(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(writeConfig(t, legacyA11yAppsDocYAML))
+	if err == nil {
+		t.Fatal("removed a11y app-list key accepted, want a whole-document rejection (D-33 loud migration)")
+	}
+	if !strings.Contains(err.Error(), "apps") || !strings.Contains(err.Error(), "config.A11y") {
+		t.Errorf("error %q does not name the removed field apps of the a11y section", err)
+	}
+}
+
+// a11yDocYAML renders the complete document with the given a11y section
+// body — the decode corpus's template for the a11y keys (the soundDocYAML
+// idiom: full document, one section under test).
+func a11yDocYAML(body string) string {
+	return strings.Replace(fullDocYAML, "autocorrect:", "a11y:\n"+body+"autocorrect:", 1)
+}
+
+// TestLoad_A11yStrictDecodeUnknownKey pins D-33 propagation to the a11y
+// section (T-08-02-03): an unknown key inside the section invalidates the
+// WHOLE document — the strict decoder covers the section for free
+// (KnownFields(true)), no new code in load.go.
+func TestLoad_A11yStrictDecodeUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.Load(writeConfig(t, a11yDocYAML("  enabled: true\n  per_app_levels: wat\n")))
+	if err == nil {
+		t.Fatal("unknown a11y key accepted, want a whole-document rejection (D-33)")
+	}
+	if !strings.Contains(err.Error(), "per_app_levels") {
+		t.Errorf("error %q does not name the unknown field per_app_levels", err)
+	}
+}
+
 // TestSound_StrictDecodeUnknownKey pins D-33 propagation to the new
 // section: an unknown key inside the sound section invalidates the WHOLE
 // document — the strict decoder covers the section automatically, no new
