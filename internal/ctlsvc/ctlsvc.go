@@ -131,6 +131,17 @@ func (s *Svc) CorrectNow() (reply string, err *dbus.Error) {
 	return s.deps.Correct.CorrectNow(), nil
 }
 
+// ProbeForward implements org.djarvur.goswitch.ProbeForward (s) → s: the
+// debug-gated spike verb of plan 09-02. RED scaffold: the declaration exists
+// so the corpus compiles and fails on assertions; the fail-closed gate and
+// the delegation land in the GREEN commit.
+func (s *Svc) ProbeForward(spec string) (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeForward", &err)
+	_ = spec
+
+	return "", nil
+}
+
 // renderStatus formats the snapshot as the Status method's single-line
 // key=value report — the wire canon: human-readable as printed, machine-
 // parseable by goswitchctl's --json. The build version (D-37) LEADS the

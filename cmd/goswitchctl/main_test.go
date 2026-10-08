@@ -8,8 +8,11 @@ package main
 // the build identity from `goswitchctl status` / `status --json`.
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -69,4 +72,61 @@ func TestStatusJSON_VersionTokenSurvives(t *testing.T) {
 	if v, ok := obj["config_error"].(string); !ok || v != "decode config: boom with spaces" {
 		t.Errorf("json config_error = %#v, want the flattened parse reason", obj["config_error"])
 	}
+}
+
+// TestRun_ProbeForwardCli pins the probe verb's client half (plan 09-02):
+// exactly one positional keyspec (anything else is the bare errUsage, the
+// identity comparison keeps the unknown-subcommand wrapper out), and a
+// valid spec dials ProbeForward through the seam — the dial itself is
+// swapped out so the corpus never touches a live bus.
+func TestRun_ProbeForwardCli(t *testing.T) {
+	t.Run("no argument is the usage refusal", func(t *testing.T) {
+		err := run(context.Background(), []string{"probe-forward"})
+		if err != errUsage {
+			t.Fatalf("probe-forward with no argument = %v, want the bare errUsage", err)
+		}
+		if !strings.Contains(err.Error(), "probe-forward <keyspec>") {
+			t.Errorf("errUsage %q missing the probe-forward segment", err.Error())
+		}
+	})
+	t.Run("two arguments are the usage refusal", func(t *testing.T) {
+		err := run(context.Background(), []string{"probe-forward", "x", "y"})
+		if err != errUsage {
+			t.Fatalf("probe-forward with two arguments = %v, want the bare errUsage", err)
+		}
+	})
+	t.Run("valid spec dials ProbeForward", func(t *testing.T) {
+		var dialedMethod string
+		var dialedArgs []any
+		prev := probeForwardCall
+		probeForwardCall = func(_ context.Context, method string, args ...any) (string, error) {
+			dialedMethod = method
+			dialedArgs = args
+
+			return "probe forwarded", nil
+		}
+		t.Cleanup(func() { probeForwardCall = prev })
+
+		if err := run(context.Background(), []string{"probe-forward", "shift+Home"}); err != nil {
+			t.Fatalf("probe-forward shift+Home error = %v, want nil", err)
+		}
+		if dialedMethod != "ProbeForward" {
+			t.Errorf("seam dialed method %q, want ProbeForward", dialedMethod)
+		}
+		if len(dialedArgs) != 1 || dialedArgs[0] != "shift+Home" {
+			t.Errorf("seam dialed args %#v, want exactly [shift+Home]", dialedArgs)
+		}
+	})
+	t.Run("dial error names the subcommand", func(t *testing.T) {
+		prev := probeForwardCall
+		probeForwardCall = func(context.Context, string, ...any) (string, error) {
+			return "", errors.New("probe disabled")
+		}
+		t.Cleanup(func() { probeForwardCall = prev })
+
+		err := run(context.Background(), []string{"probe-forward", "x"})
+		if err == nil || !strings.Contains(err.Error(), "probe-forward") {
+			t.Fatalf("probe-forward dial error = %v, want a wrap naming the subcommand", err)
+		}
+	})
 }

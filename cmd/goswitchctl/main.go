@@ -50,12 +50,19 @@ var errDaemonNotRunning = errors.New("daemon not running? (org.djarvur.goswitch 
 
 // errUsage is the subcommand grammar (err113: static).
 var errUsage = errors.New(
-	"usage: goswitchctl status [--json] | reload | correct | install | uninstall [--purge] | selfcheck")
+	"usage: goswitchctl status [--json] | reload | correct | probe-forward <keyspec>" +
+		" | install | uninstall [--purge] | selfcheck")
 
 // configErrorKey terminates the status token grammar: its value is the
 // LAST field and may contain spaces (a flattened parse error), so the
 // parser must treat everything after it as the value.
 const configErrorKey = "config_error="
+
+// probeForwardCall is the probe branch's dial seam (the newEditorProc
+// precedent): the corpus swaps it so the CLI test never touches a live bus.
+//
+//nolint:gochecknoglobals // the CLI corpus's dial seam (the launcher-precedent test seam)
+var probeForwardCall = callMethod
 
 func main() {
 	// No defer here: os.Exit skips defers, so error reporting lives in main
@@ -203,7 +210,7 @@ func runStatus(ctx context.Context, args []string) error {
 // callMethod performs one control call and returns the string reply. A
 // name without an owner is the friendly daemon-not-running verdict; every
 // other failure wraps the D-Bus error as-is.
-func callMethod(ctx context.Context, method string) (string, error) {
+func callMethod(ctx context.Context, method string, args ...any) (string, error) {
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
 		return "", fmt.Errorf("connect session bus: %w", err)
@@ -212,7 +219,7 @@ func callMethod(ctx context.Context, method string) (string, error) {
 
 	var reply string
 	call := conn.Object(ctlBusName, dbus.ObjectPath(ctlPath)).
-		CallWithContext(ctx, ctlBusName+"."+method, 0)
+		CallWithContext(ctx, ctlBusName+"."+method, 0, args...)
 	if call.Err != nil {
 		if isNoOwner(call.Err) {
 			return "", errDaemonNotRunning

@@ -315,6 +315,56 @@ func TestSvc_CorrectNow(t *testing.T) {
 	}
 }
 
+// TestCtlsvc_ProbeForwardNilDepFailClosed pins the debug gate's server half
+// (T-09-02-01): a nil ProbeForward dep answers the errFailed error naming
+// the disabled state — never a panic, never a silent no-op.
+func TestCtlsvc_ProbeForwardNilDepFailClosed(t *testing.T) {
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{})
+
+	reply, err := svc.ProbeForward("x")
+	if err == nil {
+		t.Fatalf("ProbeForward with a nil dep = (%q, nil), want the fail-closed error", reply)
+	}
+	var derr *dbus.Error
+	if !errors.As(err, &derr) {
+		t.Fatalf("ProbeForward nil-dep error = %T, want *dbus.Error", err)
+	}
+	if !strings.Contains(err.Error(), "probe disabled") {
+		t.Errorf("ProbeForward nil-dep error %q missing the disabled verdict", err.Error())
+	}
+}
+
+// TestCtlsvc_ProbeForwardDelegates pins the delegation: a live dep receives
+// the spec verbatim and the method answers an ok line; a dep failure
+// surfaces as errFailed carrying the dep's error text.
+func TestCtlsvc_ProbeForwardDelegates(t *testing.T) {
+	var got []string
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{ProbeForward: func(spec string) error {
+		got = append(got, spec)
+
+		return nil
+	}})
+	reply, err := svc.ProbeForward("shift+Home")
+	if err != nil {
+		t.Fatalf("ProbeForward with a live dep error = %v, want nil", err)
+	}
+	if reply == "" {
+		t.Fatal("ProbeForward ok reply is empty, want the acknowledgment line")
+	}
+	if len(got) != 1 || got[0] != "shift+Home" {
+		t.Errorf("dep received %q, want exactly [shift+Home]", got)
+	}
+
+	errBoom := errors.New("emitter detached")
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeForward: func(string) error { return errBoom }})
+	if reply, err = svc.ProbeForward("Home"); err == nil {
+		t.Fatalf("ProbeForward over a failing dep = (%q, nil), want errFailed", reply)
+	}
+	if !strings.Contains(err.Error(), "emitter detached") {
+		t.Errorf("ProbeForward dep-failure error %q missing the dep's text", err.Error())
+	}
+}
+
 // runeLen is the cursor position at the end of s (the surrounding-text
 // argument shape, self-computed).
 func runeLen(s string) uint32 {
