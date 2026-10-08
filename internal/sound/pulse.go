@@ -12,6 +12,7 @@ package sound
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/jfreymuth/pulse"
 	"github.com/jfreymuth/pulse/proto"
@@ -89,6 +90,33 @@ func (r *toneReader) feed(data []byte) {
 // appName is the client name the sound server's mixers show.
 const appName = "goswitch"
 
+// toneLatency is the tone stream's server-side buffer — the prototype's
+// stable ~30 ms quantum.
+const toneLatency = 30 * time.Millisecond
+
+// latencyOption caps the stream's server-side buffer at toneLatency. The
+// default negotiation let pipewire-pulse choose 8192 samples (~186 ms),
+// and the persistent stream queues every tone BEHIND the buffered
+// silence — the owner's by-ear gate (261006-squ HV-1) heard the old
+// spawn delay again. Reads the rate and channel count the preceding
+// options pinned — openStream wraps it in PlaybackRawOption after them
+// (the library's option-order contract); int16-LE is the stream's only
+// wire format (2 bytes/sample).
+func latencyOption() func(*proto.CreatePlaybackStream) {
+	return func(o *proto.CreatePlaybackStream) {
+		// int16-LE is the stream's only wire format.
+		const (
+			bytesPerSample = 2
+			maxToTarget    = 2 // the library's double-buffer shape (its own PlaybackLatency form)
+		)
+		// #nosec G115 -- a sub-second fraction times a wire rate fits uint32
+		frames := uint32(toneLatency.Seconds() * float64(o.Rate))
+		o.BufferTargetLength = frames * uint32(o.Channels) * bytesPerSample
+		o.BufferMaxLength = maxToTarget * o.BufferTargetLength
+		o.AdjustLatency = true
+	}
+}
+
 // pulseConn is the production audioConn over jfreymuth/pulse: one client
 // (the dial), one stream at a time (the worker recreates on format
 // change), int16-LE wire format.
@@ -121,6 +149,7 @@ func (c *pulseConn) openStream(format streamFormat) (audioStream, error) {
 		pulse.NewReader(reader, proto.FormatInt16LE),
 		pulse.PlaybackSampleRate(format.Rate),
 		pulse.PlaybackChannels(channelMap(format.Channels)),
+		pulse.PlaybackRawOption(latencyOption()), // after rate/channels — the option-order contract
 	)
 	if err != nil {
 		return nil, fmt.Errorf("open playback stream: %w", err)
