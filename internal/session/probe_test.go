@@ -51,7 +51,7 @@ func (p *probeSink) ForwardKeyEvent(keyval, keycode, state uint32) {
 	p.events = append(p.events, probeEvent{keyval: keyval, keycode: keycode, state: state})
 }
 
-func (p *probeSink) RequireSurroundingText() {}
+func (p *probeSink) RequireSurroundingText()             {}
 func (p *probeSink) DeleteSurroundingText(int32, uint32) {}
 func (p *probeSink) CommitText(engine.IBusText)          {}
 func (p *probeSink) UpdateModeSymbol(string)             {}
@@ -69,10 +69,10 @@ func (p *probeSink) snapshot() []probeEvent {
 // modifiers, any combination) and case-folding on named keys only.
 func TestParseProbeKey_Named(t *testing.T) {
 	for _, tc := range []struct {
-		spec       string
-		wantKV     uint32
-		wantKC     uint32
-		wantMod    uint32
+		spec    string
+		wantKV  uint32
+		wantKC  uint32
+		wantMod uint32
 	}{
 		{spec: "Home", wantKV: engine.KeyHome, wantKC: tcKeyHome},
 		{spec: "End", wantKV: engine.KeyEnd, wantKC: tcKeyEnd},
@@ -102,9 +102,9 @@ func TestParseProbeKey_Named(t *testing.T) {
 // modifiers explicitly).
 func TestParseProbeKey_Printable(t *testing.T) {
 	for _, tc := range []struct {
-		spec    string
-		wantKV  uint32
-		wantKC  uint32
+		spec   string
+		wantKV uint32
+		wantKC uint32
 	}{
 		{spec: "x", wantKV: 0x78, wantKC: tcKeyX},
 		{spec: "A", wantKV: 0x41, wantKC: tcKeyA},
@@ -136,7 +136,10 @@ func TestParseProbeKey_Rejects(t *testing.T) {
 		{spec: "shift+", wantErr: session.ErrProbeSpecFormat},
 		{spec: "+Home", wantErr: session.ErrProbeSpecFormat},
 		{spec: "Frobnicate", wantErr: session.ErrProbeKeyUnknown},
-		{spec: "q+shift", wantErr: session.ErrProbeKeyUnknown},
+		// "q+shift": the trailing modifier sits in the KEY slot and the
+		// leading "q" in the MODIFIER slot — the parser names the offending
+		// modifier-slot token (the refusal class of the nested-modifier form).
+		{spec: "q+shift", wantErr: session.ErrProbeModUnknown},
 		{spec: "hyper+Home", wantErr: session.ErrProbeModUnknown},
 		{spec: "ы", wantErr: session.ErrProbeKeyUnmapped},
 		{spec: "\t", wantErr: session.ErrProbeKeyUnmapped},

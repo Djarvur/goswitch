@@ -84,7 +84,7 @@ func run(ctx context.Context, debug bool, configPath string) error {
 	}
 
 	actor := newActor(lc.cfg, watcher)
-	startCtl(ctx, actor, watcher, lc.cfg, lc.path)
+	startCtl(ctx, actor, watcher, lc.cfg, lc.path, debug)
 	if err := engine.Run(ctx, engineConfig(actor)); err != nil {
 		return fmt.Errorf("engine run: %w", err)
 	}
@@ -100,14 +100,23 @@ func run(ctx context.Context, debug bool, configPath string) error {
 // «Настройки…» read and write THAT document. A ctl failure NEVER kills the
 // daemon: the desktop's input rides this process, so the error is logged
 // and the daemon keeps serving without the control surface (the appid
-// degradation precedent).
-func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher, cfg config.Config, cfgPath string) {
+// degradation precedent). The debug flag gates the probe verb's dep
+// (plan 09-02, T-09-02-01): only a -debug daemon emits synthetic keys —
+// without it the method fails closed ("probe disabled").
+func startCtl(
+	ctx context.Context,
+	actor *session.Actor,
+	watcher *config.Watcher,
+	cfg config.Config,
+	cfgPath string,
+	debug bool,
+) {
 	var reload ctlsvc.Reloader
 	if watcher != nil {
 		reload = watcher // nil without a resolvable path: ReloadConfig answers "no config file"
 	}
 	go func() {
-		deps := ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}
+		deps := newCtlDeps(actor, reload, debug)
 		// The tray indicator rides the ctl connection (quick plan
 		// 260930-pf6): one bus name more visible at org.djarvur.goswitch,
 		// attached after the name and the ctl object go live. Attach errors
@@ -217,6 +226,21 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			slog.Error("ctl service stopped", "error", err)
 		}
 	}()
+}
+
+// newCtlDeps assembles the control-service dependencies over the actor. The
+// probe verb's emission dep exists ONLY under -debug (plan 09-02,
+// T-09-02-01): a nil field is the fail-closed state — ProbeForward answers
+// "probe disabled" and emits nothing on a production daemon.
+func newCtlDeps(actor *session.Actor, reload ctlsvc.Reloader, debug bool) ctlsvc.Deps {
+	deps := ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}
+	if debug {
+		deps.ProbeForward = func(spec string) error {
+			return session.ProbeForward(actor.ProbeEmitter(), spec)
+		}
+	}
+
+	return deps
 }
 
 // menuToggles carries the two persisted-toggle compositions of the menu

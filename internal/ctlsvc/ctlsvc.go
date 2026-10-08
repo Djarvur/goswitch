@@ -72,12 +72,17 @@ type Deps struct {
 	// OnConn is the optional post-export hook on the live session-bus
 	// connection (quick plan 260930-pf6): the tray indicator attaches here —
 	// one connection, one bus name, one object path more. The FIRST argument
-	// is the serve context Run itself holds (quick plan 261001-fg3): the
-	// tray supervisor's goroutine dies with it. Run calls the hook exactly
+	// is the serve context Run itself holds (quick plan 261001-fg3): the tray
+	// supervisor's goroutine dies with it. Run calls the hook exactly
 	// once after the name and the ctl object are live; an error is a WARN
 	// and serving CONTINUES — a broken indicator never takes the control
 	// surface down.
 	OnConn func(ctx context.Context, conn *dbus.Conn) error
+	// ProbeForward is the debug-gated spike verb's emission dep (plan
+	// 09-02, T-09-02-01): the daemon assigns it ONLY under -debug. A nil
+	// field is the fail-closed state — ProbeForward answers "probe
+	// disabled" and emits nothing.
+	ProbeForward func(spec string) error
 }
 
 // Svc is the object exported at ObjectPath on BusName; godbus dispatches
@@ -132,14 +137,23 @@ func (s *Svc) CorrectNow() (reply string, err *dbus.Error) {
 }
 
 // ProbeForward implements org.djarvur.goswitch.ProbeForward (s) → s: the
-// debug-gated spike verb of plan 09-02. RED scaffold: the declaration exists
-// so the corpus compiles and fails on assertions; the fail-closed gate and
-// the delegation land in the GREEN commit.
+// debug-gated spike verb of plan 09-02 (T-09-02-01). The dep exists ONLY
+// when the daemon runs under -debug (the Deps assembly gates it), so a nil
+// dep is the fail-closed answer ("probe disabled") — the method is a
+// surface any session-bus caller can reach, and without the debug gate it
+// must not emit synthetic keys. A live dep's parse/emission failure
+// surfaces as errFailed carrying the dep's error text.
 func (s *Svc) ProbeForward(spec string) (reply string, err *dbus.Error) {
 	defer recoverMethod("ProbeForward", &err)
-	_ = spec
 
-	return "", nil
+	if s.deps.ProbeForward == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{"probe disabled (daemon not under -debug)"}}
+	}
+	if perr := s.deps.ProbeForward(spec); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
+
+	return "probe forwarded", nil
 }
 
 // renderStatus formats the snapshot as the Status method's single-line

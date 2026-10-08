@@ -355,7 +355,7 @@ func TestCtlsvc_ProbeForwardDelegates(t *testing.T) {
 		t.Errorf("dep received %q, want exactly [shift+Home]", got)
 	}
 
-	errBoom := errors.New("emitter detached")
+	errBoom := errStubEmitterDetached
 	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeForward: func(string) error { return errBoom }})
 	if reply, err = svc.ProbeForward("Home"); err == nil {
 		t.Fatalf("ProbeForward over a failing dep = (%q, nil), want errFailed", reply)
@@ -455,6 +455,9 @@ func startTestBus(t *testing.T) {
 
 // errCtlOwnerTimeout is the guard corpus's static timeout (err113).
 var errCtlOwnerTimeout = errors.New("control name never gained an owner")
+
+// errStubEmitterDetached is the probe-delegation corpus's static refusal (err113).
+var errStubEmitterDetached = errors.New("emitter detached")
 
 // waitCtlOwner polls the private bus until the control name has an owner —
 // the first Run's export completed. A wait-for-condition poll, never a

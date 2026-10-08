@@ -64,6 +64,10 @@ const configErrorKey = "config_error="
 //nolint:gochecknoglobals // the CLI corpus's dial seam (the launcher-precedent test seam)
 var probeForwardCall = callMethod
 
+// probeForwardArgCount is the probe branch's argv shape: the subcommand plus
+// exactly one positional keyspec.
+const probeForwardArgCount = 2
+
 func main() {
 	// No defer here: os.Exit skips defers, so error reporting lives in main
 	// itself (the goswitchd skeleton).
@@ -106,6 +110,16 @@ func run(ctx context.Context, args []string) error {
 			return fmt.Errorf("correct: %w", err)
 		}
 		printLine(reply)
+	case "probe-forward":
+		ctx, cancel := context.WithTimeout(ctx, ctlCallTimeout)
+		defer cancel()
+
+		if len(args) != probeForwardArgCount { // exactly one positional keyspec
+			return errUsage
+		}
+		if err := runProbeForward(ctx, args[1]); err != nil {
+			return err
+		}
 	case "install":
 		return runInstallCmd(ctx)
 	case "uninstall":
@@ -164,6 +178,19 @@ func runUninstallCmd(ctx context.Context, args []string) error {
 		return fmt.Errorf("uninstall: %w", err)
 	}
 	printReport(report)
+
+	return nil
+}
+
+// runProbeForward drives the debug-gated probe verb (plan 09-02): the CLI
+// stays a thin client — one positional keyspec, one control call, one reply
+// line; every parse/emission refusal is the daemon's error reply.
+func runProbeForward(ctx context.Context, spec string) error {
+	reply, err := probeForwardCall(ctx, "ProbeForward", spec)
+	if err != nil {
+		return fmt.Errorf("probe-forward: %w", err)
+	}
+	printLine(reply)
 
 	return nil
 }
