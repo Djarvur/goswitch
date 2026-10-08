@@ -1,18 +1,16 @@
 ---
 gsd_state_version: "1.0"
-milestone: v1.0.0
-status: Awaiting next milestone
-stopped_at: Phase 8 complete — all phases complete
-last_updated: "2026-10-08T06:25:49.855Z"
+milestone: v1.2
+milestone_name: Терминалы и видимость приложений
+status: planning
+last_updated: "2026-10-08T11:17:31.907Z"
 last_activity: 2026-10-08
-last_activity_desc: Milestone v1.0.0 completed and archived
-state_head: 2f938476fd838464303fd8aa30fc81ab89f10819
 progress:
-  total_phases: 8
-  completed_phases: 6
-  total_plans: 61
-  completed_plans: 61
-current_phase: 8
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -26,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 
 ## Current Position
 
-Phase: Milestone v1.0.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-10-08 — Milestone v1.0.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-10-08 — Milestone v1.2 started
 
 ## Performance Metrics
 
