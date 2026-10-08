@@ -1,410 +1,360 @@
-# Architecture Research
+# Architecture Research — goswitch v1.2 «Терминалы и видимость приложений»
 
-**Domain:** IBus input-method-engine daemon for GNOME Wayland (keyboard layout corrector / switcher, Punto Switcher analog)
-**Researched:** 2026-09-10
-**Confidence:** HIGH (live D-Bus introspection on the actual target system, owner's prior prototypes read in full, upstream C/JS sources read directly; web-sourced claims tagged individually)
+**Domain:** IBus engine daemon (Go) — integration research for terminal correction, dynamic tray-menu blocklist item, a11y recipes
+**Researched:** 2026-10-08
+**Confidence:** HIGH for all claims grounded in the existing codebase (read directly, live-verified by v1.0.0); MEDIUM for VTE/wezterm transport behavior (web findings cross-checked against the owner's 2026-10-08 live spike); LOW for raw web-only claims (flagged inline)
 
-> Method note: this research was performed **on the target machine** (Ubuntu 24.04, GNOME Wayland, IBus 1.5.29-rc2, layouts `us`+`ru`, keyd installed but disabled). The IBus daemon was introspected live over its private socket; an engine was registered and activated end-to-end to verify the lifecycle; the owner's two Python prototypes (`~/.local/share/punto-switcher/punto_engine.py`, `~/.local/share/ibus-test/test_shift.py`) were read as prior art. Upstream sources (`ibus/ibus` C code, `gnome-shell` keyboard.js, `sarim/goibus`) were fetched and read. Claims below carry provenance.
-
----
-
-## Standard Architecture
-
-### System Overview — where an IBus engine sits in the Linux input stack
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ KERNEL LAYER                                                            │
-│   physical keyboard → evdev (/dev/input/event*) → [keyd / xremap]       │
-│                                        │ (optional remap, uinject out)  │
-├────────────────────────────────────────┼────────────────────────────────┤
-│ COMPOSITOR LAYER (mutter / gnome-shell, Wayland)                        │
-│   libinput → XKB translation (per current layout) → keyval stream       │
-│   input-method-v1/v2 + text-input protocols → routes keys into IME      │
-├─────────────────────────────────────────────────────────────────────────┤
-│ IME LAYER (IBus)                                                        │
-│   GTK/Qt/Electron IM module (in-app, creates InputContext)              │
-│        ↕ D-Bus (private ibus socket, session-user)                      │
-│   ibus-daemon (registry, engine lifecycle, key routing)                 │
-│        ↕ D-Bus (Factory.CreateEngine → engine object)                   │
-│   goswitchd  ← THIS PROJECT (engine: sees keys, commits text)           │
-├─────────────────────────────────────────────────────────────────────────┤
-│ GNOME SESSION LAYER                                                     │
-│   org.gnome.desktop.input-sources (sources / current / mru-sources)     │
-│   gnome-shell activates engine + applies its declared XKB layout        │
-│   goswitchd control service (session bus) ← goswitchctl CLI             │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-Key structural fact (verified by live traffic): **an IBus engine receives key events after XKB layout translation and after any keyd/xremap remap**, and injects text via D-Bus signals that ibus-daemon routes back into the focused application's IM module. It never touches evdev, so it cannot conflict with remappers (spec axiom satisfied by construction).
-
-### goswitchd process architecture (single daemon, per spec §3.2)
-
-```
-┌──────────────────────────── goswitchd (one process) ─────────────────────────────┐
-│                                                                                   │
-│  engine/ (wire adapter)                    internal/* (pure logic, no D-Bus)      │
-│  ┌──────────────────────────┐              ┌───────────────────────────────────┐  │
-│  │ IBus conn (private sock) │  EngineEvent │ session actor (1 goroutine)       │  │
-│  │  Factory.CreateEngine    ├─────────────►│  per-IC keystroke buffers         │  │
-│  │  Engine objects (per IC) │◄─────────────┤  hotkey FSM (tap/debounce)        │  │
-│  │  - ProcessKeyEvent→bool  │  ActionCmd   │  correction decisions             │  │
-│  │  - FocusIn/Out,Reset     │              └───────┬───────────────────────────┘  │
-│  │  - SetSurroundingText    │                      │ uses                          │
-│  │  emits: CommitText,      │              ┌───────▼───────────┐  ┌────────────┐  │
-│  │  ForwardKeyEvent,        │              │ correct/          │  │ layouts/   │  │
-│  │  DeleteSurroundingText   │              │ direction+detect  │  │ EN↔RU map  │  │
-│  └──────────────────────────┘              └───────────────────┘  └────────────┘  │
-│  ┌──────────────────────────┐              ┌───────────────────────────────────┐  │
-│  │ ctlsvc (session bus)     │◄─────────────│ config watcher (fsnotify→atomic)  │  │
-│  │ org.djarvur.goswitch.Svc │  status/reload│ layoutset (gsettings subprocess)  │  │
-│  └──────────────────────────┘              └───────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────────────────────┘
-        ▲ goswitchctl (separate binary, session bus client)
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| `engine/` wire adapter | Own the IBus private-socket connection; discover address; register component; export Factory + per-IC engine objects; translate D-Bus ↔ typed Go events; emit Commit/Forward/Delete signals | godbus `Dial/Auth/Hello/Export/Emit` — pattern proven by sarim/goibus (pure-Go path, read in source) |
-| Session actor | Single goroutine owning ALL mutable state: per-input-context buffers, hotkey tap FSM, debounce timers, correction triggering | funnel channel; godbus dispatches handlers on arbitrary goroutines, so all events are serialized into one actor |
-| `internal/hotkey` | Pure tap/combo state machine: single/double/triple RShift, Shift+RCtrl, modifier-use discrimination, configurable debounce windows | plain struct + `Feed(event, now) → []Action`; fully unit-testable against synthetic streams |
-| `internal/correct` | Decide replacement scope (word/phrase/selection), direction (EN→RU / RU→EN / mixed), produce replacement strategy per client caps | pure functions over `layouts/` tables |
-| `layouts/` | Positional key mapping tables (QWERTY↔ЙЦУКЕН incl. punctuation, case, digits row variants) | `go:generate` from `/usr/share/X11/xkb/symbols/{us,ru}` (see Build Order) |
-| `internal/layoutset` | Read/write/observe `org.gnome.desktop.input-sources` (current, sources, mru-sources) | subprocess `gsettings get/set/monitor` (no GLib in Go; dconf D-Bus API is not a stable contract) |
-| `internal/config` | YAML parse + validation + hot reload | `fsnotify` (or stdlib mtime poll to keep dep budget) → publish immutable `*Config` snapshot |
-| `internal/ctlsvc` | D-Bus service on the **session bus** for goswitchctl: Status, ReloadConfig, CorrectNow | godbus, second connection in same process |
-| Logging | Structured, levels, key-trace debug mode | `log/slog` (stdlib, Go ≥1.21) |
+This file OVERWRITES the v1.0.0 architecture research. The v1.0.0 architecture it supersedes is shipped and documented in the code itself (`internal/session/actor.go` carries the authoritative commentary).
 
 ---
 
-## The IBus Engine Lifecycle (verified on target system)
+## Standard Architecture (the system this milestone extends)
 
-Empirically validated by registering and activating an engine during this research; all signatures below are from **live introspection of IBus 1.5.29-rc2** on this machine plus owner prototype logs.
-
-1. **Address discovery** — read `$IBUS_ADDRESS`; else parse `~/.config/ibus/bus/<machine-id>-<display>` files (select by `WAYLAND_DISPLAY`/`DISPLAY` suffix, newest mtime). Content: `IBUS_ADDRESS=unix:path=/home/<u>/.cache/ibus/dbus-<rand>,guid=<guid>`.
-2. **Connect** — `dbus.Dial(addr)` → `conn.Auth(External)` → `conn.Hello()`.
-3. **Own the name** — `RequestName("org.freedesktop.IBus.goswitch", ReplaceExisting)`; result also serves as single-instance guard (AlreadyOwner → another instance lives).
-4. **Export Factory** at `/org/freedesktop/IBus/Factory`, interface `org.freedesktop.IBus.Factory`:
-   - `CreateEngine(s engine_name) → (o object_path)` — daemon calls this when an input context switches to one of our engines. We mint a fresh path (e.g. `/org/freedesktop/IBus/Engine/goswitch/<n>`), export the engine object there, return the path. (Verified live: factory interface introspected; prototype log shows `engine __init__` → `focus_in` after engine selection.)
-5. **RegisterComponent** — `org.freedesktop.IBus.RegisterComponent(v component)` where the variant wraps the marshalled component struct (`'IBusComponent'`, attachments dict, name, description, version, license, author, homepage, exec, textdomain, engines[] of EngineDesc structs — 17-field wire form confirmed in the daemon's `Engines` property).
-6. **Per-input-context engine object** — daemon then calls on it:
-   - `ProcessKeyEvent(u keyval, u keycode, u state) → b handled` — keyval is XKB-translated; keycode is hardware evdev code; `state` packs modifier masks + `IBUS_RELEASE_MASK = 1<<30` for key-up (values verified in `ibustypes.h`).
-   - `FocusIn() / FocusOut()`, `Enable() / Disable()`, `Reset()`
-   - `SetCapabilities(u caps)` — per-client capability bitmap: PREEDIT=1, AUX=2, LOOKUP=4, FOCUS=8, PROPERTY=16, **SURROUNDING_TEXT=32**, OSK=64, **SYNC_PROCESS_KEY=128** (Chromium historically sets sync mode).
-   - `SetSurroundingText(v text, u cursor_pos, u anchor_pos)` — arrives only when caps include SURROUNDING_TEXT; `anchor_pos != cursor_pos` means active selection (this is how "correct selection" should be detected — no clipboard hacks).
-7. **Engine → daemon signals** (emit on own object path):
-   - `CommitText(v IBusText)` — THE text injection primitive.
-   - `ForwardKeyEvent(u keyval, u keycode, u state)` — inject a synthetic key into the app (used for the BackSpace fallback).
-   - `DeleteSurroundingText(i offset_from_cursor, u nchars)` — **verified in ibusengine.c (main): this is now a SIGNAL with no boolean ack**; the engine is expected to update its own surrounding-text cache optimistically. Treat as fire-and-forget; older GI bindings' bool return is meaningless on 1.5.29.
-   - `UpdatePreeditText(v, u, b, u mode)` (4-arg form on 1.5.29; verify arity against installed daemon in M1), `UpdateProperty(v)` for panel state.
-8. **Teardown / restart** — daemon may call `org.freedesktop.IBus.Service.Destroy()`; on ibus-daemon restart the connection drops and **runtime registrations are lost** → goswitchd needs a reconnect+re-register loop with backoff (spec Q6). Component XML in `/usr/share/ibus/component/` remains valuable for GNOME discovery and as respawn hint; guard against double-spawn via the RequestName check (step 3).
-
-Timing requirement (critical): `ProcessKeyEvent` is a synchronous call from ibus-daemon; the reply must return in single-digit milliseconds. **Debounce waits (450–550 ms tap windows) must happen after replying** — reply immediately, decide later via timers posting events back into the actor.
-
-## The Key-Event Pipeline
+### System Overview
 
 ```
-app IM module → ibus-daemon → ProcessKeyEvent(keyval, keycode, state)
-     ↓ (engine/, decode: release bit, modifier masks)
- [passthrough gate] not a tracked hotkey key? → return false  (~99.9% of keys, zero work)
-     ↓ tracked key (e.g. Shift_R press/release)
- hotkey FSM: tap counting, modifier-use discrimination
-     (any other key while held ⇒ it was a modifier chord, not a tap)
-     ↓ single / double / triple decided by timer expiry
- buffer scope resolution (word | phrase | selection)
-     word/phrase: engine's own keystroke buffer (per input context)
-                 + SetSurroundingText tail as ground truth / fallback
-     selection: anchor_pos≠cursor_pos from surrounding text
-     ↓
- direction decision (layouts/: char-class vote, mixed-text partial)
-     ↓
- replacement execution (capability-aware):
-   caps & SURROUNDING_TEXT  → emit DeleteSurroundingText(-n, n); emit CommitText(fixed)
-   else                     → emit ForwardKeyEvent(BackSpace)×n; emit CommitText(fixed)
-     ↓
- optional layout switch (combo action): layoutset.Switch → gsettings set current
- buffer reset (Enter/Tab/Escape, FocusOut, Reset, surrounding-cursor jump)
+┌────────────────────────────────────────────────────────────────────────┐
+│  cmd/goswitchd (wiring only — composes, never decides)                 │
+│    engineConfig(actor) · startCtl · newMenuToggles · configEditor      │
+└──────┬──────────────────────┬───────────────────────┬──────────────────┘
+       │                      │                       │
+┌──────▼───────┐   ┌──────────▼─────────┐   ┌─────────▼────────┐
+│ internal/    │   │ internal/ctlsvc    │   │ internal/        │
+│ engine       │   │ + goswitchctl      │   │ indicator        │
+│ IBus socket  │   │ session-bus service│   │ SNI item +       │
+│ wire adapter │   │ status/reload/     │   │ DBusMenu v3      │
+└──────┬───────┘   │ correct            │   └─────────┬────────┘
+       │           └──────────┬─────────┘             │
+┌──────▼──────────────────────▼───────────────────────▼──────────────┐
+│ internal/session — Actor (one mutex; the daemon's only brain)       │
+│   hotkey FSM → buffer → correct pipeline → emitter bursts           │
+│   seams (nil-safe, install-push): MenuSync · ModeDisplay ·          │
+│   SoundSink · A11ySink · Switcher · AppidSource · Clipboard         │
+│   + NEW v1.2: terminalOp stepper · MenuSync.SetBlocklistTarget      │
+└──┬────────┬───────────┬──────────┬───────────┬───────────┬──────────┘
+   │        │           │          │           │           │
+┌──▼───┐ ┌──▼────┐ ┌────▼────┐ ┌───▼────┐ ┌────▼───┐ ┌─────▼─────┐
+│correct│ │hotkey │ │internal/│ │internal│ │internal│ │internal/  │
+│(PURE) │ │(PURE) │ │clipboard│ │/appid  │ │/a11y   │ │config     │
+│runs,  │ │tap FSM│ │wl-clip  │ │a11y-bus│ │gsettings│ │strict YAML│
+│plan,  │ │bindgs │ │Runner   │ │identity│ │+IsEnabled│ │watcher +  │
+│verify │ │       │ │         │ │+role   │ │enabler │ │writer     │
+└──────┘ └───────┘ └─────────┘ └────────┘ └────────┘ └───────────┘
 ```
 
-Design decisions baked into this pipeline:
+### Component Responsibilities (v1.2 deltas marked)
 
-- **Buffer per input context.** The daemon creates one engine object per input context (per window). Buffers, tap FSM, and caps must be keyed by engine object path; `FocusOut` resets all.
-- **Surrounding text is best-effort.** Chromium/Electron do not implement `delete_surrounding_text` (ibus issue #2354) and Firefox had cap regressions (ibus#2054). The replacement strategy object must be selected per client caps, with the BackSpace fallback always available. `commit_text` itself works everywhere IBus works.
-- **Mouse-click buffer reset is NOT observable at the IBus layer** (engines see no pointer events). Approximate via: focus-out, Escape/Enter/Tab, and surrounding-text cursor jumps (a click that moves the caret shows as cursor_pos delta). Flag for spec-delta: exact click semantics cannot be guaranteed from the IME layer (potential AT-SPI subscription later — costs a11y bus dependency; v2 decision).
+| Component | Responsibility | v1.2 change |
+|-----------|----------------|-------------|
+| `internal/session` (Actor) | Serializes all events through one mutex; owns every decision and every emitter burst; off-mutex rungs for subprocess work (`rungMu`) | **Modified — main work.** New terminal-correction rung family + `terminalOp` stepper; terminal gate in the Double/Triple dispatch; `MenuSync` gains `SetBlocklistTarget` |
+| `internal/correct` | Pure conversion/planning/verification (no D-Bus, no time) | **Modified — small.** Pure terminal helpers: read-back sanity gate, select-chord geometry; reuses `ConvertRuns`/`BuildPlan` unchanged |
+| `internal/clipboard` | wl-clipboard subprocess client: `Runner` seam, 1500 ms deadline, wl-copy fork/no-pipes, stdin-only content | **Modified — small.** Add `ReadPrimary` (`wl-paste --primary`) + primary save/restore; zero new dependencies |
+| `internal/indicator` | SNI item + DBusMenu v3; mutex-guarded snapshot; `Callbacks` func fields are the daemon's interactive surface | **Modified.** New dynamic item «Добавить ⟨app⟩ в чёрный список» (id 16); `Callbacks` gains `BlocklistTarget`/`AddToBlocklist`; refresh at `AboutToShow` |
+| `internal/config` | Strict YAML, 2 s stat-poll watcher (last-good), Node round-trip writer with temp+rename | **Modified — small.** Add `AppendBlocklistEntry(path, app)` beside `SetAutocorrectEnabled` |
+| `internal/appid` | Lazy a11y-bus observer: bridge-namespace identity + live `GetRole` | **Modified — trigger only.** Also started when the menu needs identity (today: only when `macr.apps` non-empty) |
+| `internal/engine` | IBus wire adapter: `ProcessKeyEvent` in, `CommitText`/`ForwardKeyEvent`/`DeleteSurroundingText`/`RequireSurroundingText` out; generation seam | **Modified — only if the wezterm defect fix needs it** (spike decides; most likely fixes land in session) |
+| `internal/a11y` | `toolkit-accessibility` + `IsEnabled` reconciler with snapshot/restore | **Unchanged (daemon side).** v1.2's A11Y item is recipes/docs + install-side helpers per owner decision 2026-10-08 |
+| `internal/hotkey`, `internal/detect`, `internal/layouts`, `internal/sound`, `internal/ctlsvc`, `internal/install`, `internal/activate` | Unchanged responsibilities | Unchanged (ctlsvc `Status` render grows terminal counters; install grows A11Y recipe bits if any) |
 
-## Layout Observation and Switching — the two-engine pattern (RECOMMENDED)
+---
 
-Verified from gnome-shell source (`js/ui/status/keyboard.js`, main):
+## The Six Integration Questions
 
-```js
-_getXkbId() {
-    const engineDesc = IBusManager.getIBusManager().getEngineDesc(this.id);
-    ...
-    return `${engineDesc.layout}+${engineDesc.variant}`;   // (or plain layout)
-}
-activateInputSource(is, interactive) {
-    this._keyboardManager.apply(is.xkbId);    // 1) set XKB layout FROM ENGINE DESC
-    ...
-    this._ibusManager.setEngine(engine);      // 2) activate the IBus engine
-}
+### 1. Where the terminal-correction flow lives: actor orchestration, not a new planner
+
+**Verdict: orchestration in `internal/session`, planning stays pure in `internal/correct`. HIGH confidence.**
+
+The repo already answered this shape twice:
+
+- The one-correction-pipeline rule (`startRangeCorrection` is "the ONE correction pipeline of the daemon, parameterized by its range") lives in the actor; `internal/correct` only computes.
+- The clipboard rung (`runClipboardRung`) is the sanctioned pattern for multi-step, subprocess-bearing, time-taking work: **runs OFF the actor mutex** (WR-01 — up to three 1.5 s subprocesses must never stall the keystroke path), serialized by `rungMu.TryLock()` (busy → skip, never block), touches no FSM/buffer state, takes `a.mu` only for counter updates.
+
+The terminal flow is the same animal (forward keys → wait → subprocess read → compute → forward keys → commit), so it is a **terminal rung family in `internal/session`**, gated at the existing dispatch:
+
+- `ExpiryAt` → `hotkey.Double` → **terminal gate** → either today's `startCorrection()` or new `startTerminalCorrection(termWord)`.
+- `hotkey.Triple` → terminal gate → `startTerminalCorrection(termLine)` (feasibility-gated feature).
+
+What goes into `internal/correct` (pure, headless-TDD-able, zero new imports):
+
+- read-back sanity gate: the text read from the primary selection must be non-empty, bounded length, and convertible — a pure `TerminalPayload(text []rune) (payload, reason, ok)` wrapping `ConvertRuns` plus terminal-specific refusals (shell prompt characters, empty read).
+- replay arithmetic: `correct.BuildPlan(token, nil, converted, 0, backspaceCap)` already computes exactly "N backspaces + one commit of converted" — the level-2 ladder math is **reused verbatim** for the terminal replay (caps forced to 0, so `BuildPlan` always yields the backspace level).
+- select-chord geometry table (word → `Shift+Ctrl+Left`, line → `Shift+Home`) as data, so the corpus pins it.
+
+Dependency direction is preserved: `correct` never imports `session`/`engine`/`clipboard` (pure packages never import D-Bus-bound ones — the repo's standing rule).
+
+### 2. Clipboard read/write: extend `internal/clipboard`, never a second runner
+
+**Verdict: `ReadPrimary` + primary save/restore on the existing `Clipboard`; all subprocess discipline is already solved there. HIGH confidence (code-read).**
+
+The existing package already pins everything the terminal flow needs:
+
+- **`Runner` seam** (`func(ctx, name, args, stdin) ([]byte, error)`) — the unit corpus drives a recording fake; production is `exec.CommandContext` under the package deadline (`cmdTimeout` = 1500 ms, T-03-03-05).
+- **wl-copy fork/no-pipes precedent** (`execRunner`): wl-copy gets NO stdout/stderr pipes (the forked grandchild serving the clipboard deadlocks a piped `Run` — live finding 2026-09-15); wl-paste captures stdout byte-exactly. `wl-paste --primary` is the same binary shape — same runner, one more flag.
+- **Empty-vs-error semantics** (`Save`): genuine non-zero wl-paste exit = empty selection (`had=false`, no error); signal-kill or done-context = real error. `ReadPrimary` must reuse this classification verbatim — misreading "killed" as "empty" would clear/replace a selection the subprocess merely failed to report.
+- **Content hygiene**: bytes ride stdin only, never argv; content never logged at any level (D-20/D-21 extension).
+
+Additions (all in `internal/clipboard`, no new package):
+
+| New method | Wire shape | Notes |
+|---|---|---|
+| `ReadPrimary(ctx)` | `wl-paste --primary --no-newline` | same empty/error split as `Save` |
+| `SetPrimary(ctx, b)` | `wl-copy --primary --trim-newline` (stdin) | restore path only |
+| `ClearPrimary(ctx)` | `wl-copy --primary --clear` | restore of an originally-empty primary |
+
+**Save/restore symmetry (D-29 carried over):** the forwarded select burst itself overwrites the Wayland primary selection (keyboard selections update primary — Arch Wiki terminal-copy conventions; LOW-to-MEDIUM web confidence, live-confirm in the spike). The rung therefore saves the primary **before** the select burst and restores it best-effort after the commit — a failed restore is a WARN, never an operation error. Note: unlike the selection-correction rung, the terminal flow needs **no `wl-copy` write of the payload at all** — the write-back is backspace-replay + `commit_text`, not a Ctrl+V paste (plain Ctrl+C is SIGINT in a shell; the copy chord `Ctrl+Shift+C` is exactly the trap the primary-read design avoids).
+
+### 3. Selection-key forwarding vs the existing `ForwardKeyEvent` machinery
+
+**Verdict: new four-event forward helpers beside `forwardCtrlV`; time-stepped coordination with epoch guards; do NOT reuse `pendingFix`/`pendingAfter`. HIGH confidence (code-read).**
+
+Proven mechanics to reuse:
+
+- `ForwardKeyEvent` is the daemon's only clean injection channel: the engine emits, ibus-daemon relays on the client's input context, the client IM module synthesizes the key into the app (owner's validated prototype four-event Ctrl+V: `punto_engine.py:301-304`; MACR's Ctrl+letter bursts live-proven). The owner's 2026-10-08 spike confirmed this channel works in wezterm where the external injector fails — «демонский канал свободен от гонки за фокусом».
+- **The MACR lesson is binding:** a burst forwarded while a physical modifier is still held arrives polluted (client reads Ctrl+Super — live finding). The terminal rung must forward only from **clean modifier state**; the triggering gestures (Double/Triple Shift) decide at window expiry *after* Shift release, and the rung should assert clean mods at arm.
+- New helpers, same shape as `forwardCtrlV` (modifier press bare → key under mask → key release → modifier release):
+  - `forwardShiftCtrlLeft(eng)` — word select (4 events);
+  - `forwardShiftHome(eng)` — line select (4 events);
+  - replay burst: `plan.Backspaces × ForwardKeyEvent(KeyBackSpace, 14, 0)` — byte-identical to `executeLevel2`, which is built but never live-driven: **v1.2 is its first live client**.
+
+What does NOT carry over: `pendingFix`/`pendingAfter` model an **event-answered verify round** (client pushes surrounding text). Terminals never answer: VTE's `im_retrieve_surrounding()` is a stub returning false behind a false-advertised `IBUS_CAP_SURROUNDING_TEXT` (Red Hat Bugzilla 1847347 → GNOME vte#214, unfixed; MEDIUM confidence — corroborated by the repo's own observation that clients push spontaneously and VTE never does), and wezterm honestly reports caps `0x9` (no surrounding bit — owner-observed). The terminal flow is therefore **time-stepped**, with the read-back as its own verification:
+
+```
+arm (under a.mu, epoch++)
+  → forward select burst          (fire-and-forget)
+  → settle delay (AfterFunc; config knob, spike-pinned ~50–100 ms)
+  → ReadPrimary (off-mutex goroutine)
+  → pure payload gate + ConvertRuns + BuildPlan
+  → replay Backspaces ×N + CommitText   ← DESTRUCTIVE POINT, one way
+  → (optional verify-after) re-select + re-read primary, suffix-compare
 ```
 
-Therefore: **register TWO engines in one component** — `goswitch-en` (EngineDesc.layout=`us`) and `goswitch-ru` (layout=`ru`) — and set GNOME sources to `[('ibus','goswitch-en'), ('ibus','goswitch-ru')]`. Consequences:
+**Verify-after in terminals:** reuse the *pattern* of `armAfterVerify` (epoch tag, deadline timer, mismatch ⇒ INFO + never auto-repair — «abort, не мусорить») but as the terminal stepper's last phase, not the `pendingAfter` type. A mismatched re-read logs `terminal-verify-mismatch` and stops; a clipboard-rung repair fallback is explicitly out of v1.2 scope.
 
-- Activating either source makes gnome-shell apply the correct XKB layout **and** route all keys to goswitchd. Keyvals arrive already layout-translated; the common path stays pure passthrough (`return false`).
-- "Proxy Right Shift → Super+Space" becomes: consume the tap, then `gsettings set org.gnome.desktop.input-sources current N` (or use GNOME's switch-input-source keybinding semantics via the settings key). Forwarding a synthetic Super+Space to the app would NOT trigger the compositor grab — gsettings write is the correct mechanism.
-- **Layout observation needs no polling**: a user pressing Super+Space manifests as FocusOut on one of our engines + FocusIn on the other — the daemon derives current layout from which engine is focused. `mru-sources` is maintained by GNOME itself; Super+Space MRU cycling keeps working.
-- Selection conversion uses surrounding-text anchor instead of the prototype's `wl-paste/wl-copy` hack.
+### 4. State-machine additions for the multi-step flow (failure/rollback)
 
-Fallback (proven by owner's prototype, keep as plan B): single engine with internal mode, translating every keystroke via per-key `commit_text`. Works, but per-key overhead, broken composing, indicator mismatch — only if the two-engine pattern hits an unexpected wall in M1 (it is the primary thing M1 must validate).
-
-Non-Latin/Cyrillic third layouts (spec Q5): engines are only `us`/`ru`; if the user adds e.g. `de`, switching there moves focus away from our engines — goswitch simply goes dormant (keys unseen, no correction). Graceful by construction.
-
-## Coexistence with keyd / xremap
-
-- keyd/xremap remap at the kernel evdev/uinput layer; mutter sees remapped events; IBus receives post-remap keyvals. goswitch never opens evdev and never grabs (no EVIOCGRAB) — spec axiom holds by construction.
-- Consequence for configuration: goswitch hotkeys are expressed in **post-remap** keys. If the user remaps Right-Shift in keyd, they must rebind goswitch in YAML (document this).
-- e2e interaction: ydotool injects via its own uinput device; a running keyd may grab it and form feedback loops (documented class of problem, see Mouseless/keyd notes). e2e runner must ensure keyd exclusion for the ydotool device (or run the matrix with keyd disabled first, keyd-enabled variant later).
-
-## Recommended Project Structure
-
-Spec §8 fixes the top-level skeleton; everything else goes under `internal/`:
-
-```
-goswitch/
-├── cmd/goswitchd/            # main: flag/env config path, wiring, graceful stop
-├── cmd/goswitchctl/          # CLI: status | reload | correct <scope> | version
-├── engine/                   # IBus wire adapter (spec-fixed location)
-│   ├── address.go            # IBUS_ADDRESS / bus-file discovery + validation
-│   ├── conn.go               # Dial/Auth/Hello, reconnect+reregister loop
-│   ├── types.go              # Component/EngineDesc marshalling (+ XML emit for install)
-│   ├── factory.go            # CreateEngine dispatch → session.NewSession
-│   ├── engine.go             # per-IC object: exported methods, event funnel
-│   └── keys.go               # keyval consts (Shift_R=0xFFE1…), state masks, release bit
-├── internal/session/         # actor goroutine: owns buffers, FSM, caps, per-IC registry
-├── internal/hotkey/          # pure tap/combo state machine
-├── internal/correct/         # scope resolution + direction + replacement strategy
-├── internal/layoutset/       # gsettings subprocess wrapper + monitor parsing
-├── internal/config/          # YAML schema, validation, fsnotify hot reload
-├── internal/ctlsvc/          # session-bus control service (org.djarvur.goswitch)
-├── internal/logging/         # slog setup, key-trace mode
-├── layouts/                  # generated tables + generator (go:generate; spec-fixed)
-├── test/e2e/                 # ydotool + AT-SPI harness, YAML case matrix (spec-fixed)
-└── docs/                     # spec, ADRs, install guide
-```
-
-### Structure Rationale
-
-- **`engine/` is the only package allowed to import godbus for IBus purposes** — a wire adapter translating D-Bus into typed events (`EngineEvent`) and commands (`EngineAction`). Everything below it is pure Go testable headless in CI.
-- **`internal/`** hides non-contract packages from external importers (Go convention; also keeps the audit surface small per the "minimal deps" constraint).
-- **`layouts/` is pure data + generator**: `go:generate ./...` parses `/usr/share/X11/xkb/symbols/us` and `symbols/ru` to emit `tables.go`. This kills the hand-transcription bug class (the owner's prototype hand-wrote winkeys-style digit-row maps while the session actually uses plain `ru` — exactly the kind of mismatch generation avoids; parameterize by variant).
-- **`test/e2e/` is a Go program + shell runner**, not `go test` — it needs a live GNOME session and its own exit-code contract.
-
-## Architectural Patterns
-
-### Pattern 1: Wire adapter over state machine
-
-**What:** `engine/` translates D-Bus ↔ typed events and owns NOTHING stateful; `internal/session` is a single-actor state machine with no D-Bus knowledge.
-**When to use:** always here — it is what makes the CI-testable fraction maximal (spec §7.1 demands headless unit/golden tests of "buffer logic, decision fixing").
-**Trade-offs:** one extra indirection layer; pays for itself the moment hotkey semantics are unit-tested against recorded event streams.
-
-### Pattern 2: Single session actor (funnel)
-
-**What:** all engine objects push `EngineEvent` into one channel; one goroutine owns buffers/FSM/config snapshot; timers (`time.AfterFunc`) re-enter as synthetic events; replies to `ProcessKeyEvent` are computed synchronously but only ever "handled/not-handled" (cheap).
-**When to use:** godbus dispatches each method call on its own goroutine — without a funnel you need locks around every buffer; with it, zero mutexes on the hot path.
-**Trade-offs:** actor is a serialization point; irrelevant at human typing rates (~10–20 events/s).
+**Verdict: a dedicated `terminalOp` state with an explicit safe point; aborts are free only before the destructive point. HIGH confidence (design follows the actor's own invariants).**
 
 ```go
-// engine.go (wire adapter sketch — signatures match live introspection)
-func (e *Engine) ProcessKeyEvent(keyval, keycode, state uint32) (bool, *dbus.Error) {
-    ev := KeyEvent{Keyval: keyval, Keycode: keycode,
-        Release: state&(1<<30) != 0, Mods: state & 0x5f001fff}
-    return e.session.Feed(ev), nil   // Feed replies in O(1); debounce happens inside via timers
+// internal/session — one open terminal op; nil = idle.
+type terminalOp struct {
+    kind      termScope        // termWord | termLine
+    phase     termPhase        // armed→selected→read→planned→replayed→verified
+    epoch     uint64           // stale-timer guard (verifyEpoch precedent)
+    converted []rune           // the payload (memory-only; never logged)
+    plan      correct.Plan
+    saved     []byte; hadPrimary bool
+    deadline  *time.Timer      // per-phase budget (per-phase slugs below)
 }
 ```
 
-### Pattern 3: Capability-aware replacement strategy
+Rules the spec-delta must pin (each maps to an existing actor invariant):
 
-**What:** per input context, remember `SetCapabilities`; at correction time choose `DeleteSurroundingText+CommitText` (caps&32) or `ForwardKeyEvent(BackSpace)×n+CommitText`.
-**When to use:** Chromium/Electron break surrounding-text deletion; GTK is fine. The strategy object makes the e2e matrix's per-app expectations explicit.
-**Trade-offs:** BackSpace fallback visibly walks the cursor (no "jump-free" guarantee there) — acceptable, matches spec's known limitation wording.
+1. **Safe point.** Everything before the first `ForwardKeyEvent(BackSpace)` mutates nothing in the field — abort is free. Failure slugs: `terminal-busy` (TryLock-style re-entry guard), `terminal-read-empty`, `terminal-refused-<correct reason>`, `terminal-interrupted` (printable key / FocusOut / Reset arrived mid-flow — abort, restore primary), `terminal-appid-unavailable` (if the gate needs identity and it is unknown — policy per spec).
+2. **Past the safe point there is no rollback.** The replay burst is wire-synchronous (same stance as `executeLevel2`: «the burst→commit order is the wire contract»); a commit failure after replay is one WARN + counter, never a second destructive pass. This is the level-2 degradation doctrine applied to a new transport.
+3. **Focus/context death.** `HandleLifecycle` (FocusOut/Reset) cancels the op like `resolvePending`+`clearAfter` — but if phase ≥ replayed, let the burst finish; the context that died receives at most the correction it asked for. The flipCredit machinery (own-flip synthetic lifecycle) is untouched — the terminal flow does not flip engines.
+4. **Re-entry.** A second Double while an op is open ⇒ `terminal-busy` skip (the `rungMu.TryLock` precedent), never interleaving.
+5. **Settlement effects copied from the word path:** `buf.HardReset()` after commit (the selection-path precedent: the buffer can no longer mirror the field), `settleCorrectionFlip(scriptOf(converted))` (owner rule: mode follows the corrected script), `settleCombo()` strictly after the settled record (D-36 order).
+6. **Counters/status:** `corrDone`/`skipReasons` extend with the terminal slugs; `Status` grows a terminal breakdown (counts only — D-20/D-21). `goswitchctl status` and the menu's Status row render them.
+7. **Latency budget honesty:** SPEC §5's <50 ms is the *reaction* budget (hotkey → first wire action). The terminal flow's select→read leg is subprocess-bound (~150–400 ms realistic). The spec-delta must state: reaction <50 ms (select burst leaves inside it), completion best-effort with the per-phase deadlines as wedge guards — otherwise the acceptance matrix will «fail» a healthy design.
 
-### Pattern 4: Immutable config snapshots
+**Gate design (which path decides «this is a terminal»):** caps are untrustworthy (VTE lies; wezterm's honest `0x9` differs). The workable discriminators, in order of preference:
 
-**What:** watcher loads YAML, validates, publishes `atomic.Pointer[Config]`; every decision reads `cfg.Load()` once per event.
-**When to use:** hot reload is a hard requirement; immutable snapshots make reload race-free without locks.
+1. **Identity/role** via `internal/appid`: `Role(ctx) == RoleTerminal (60)` or the focused identity in a configured terminal-apps list (wezterm, `org.gnome.Terminal`). Fail-closed default when unknown: standard path (today's behavior — verify-timeout skip — is already the safe outcome).
+2. **Fallback escalation** (spec decision): a Double whose standard verify round times out *and* `correction.terminal: on` may re-arm as a terminal op instead of silently skipping. This turns today's dead gesture in terminals into the feature — at the cost of ~one verify budget of latency and a new failure surface. Recommend ON for word, gated by spike evidence for line.
 
-### Pattern 5: Self-healing registration
+Note the autocorrect role gate stays as-is: role 60 never autocorrects in terminals (owner: автокоррекция в терминалах НЕ делается) — only the manual gesture path bypasses the gate.
 
-**What:** monitor connection loss (ibus-daemon restart) → reconnect with backoff → re-`RegisterComponent` → re-export factory. Combined with the RequestName single-instance guard and the installed component XML (whose exec points at the same binary) this closes spec Q6.
+**wezterm layout-switch defect:** treat as a spike-first defect with three candidate hypotheses, each with a journal-observable probe (owner's `-debug` trace + `ibus engine`/journal): (h1) commits/keys race mutter's `zwp_text_input_v3` arming at focus (wezterm#1772 class; the GNOME GitLab «IME dead after unlock» report is the same family — LOW web confidence, live-confirm); (h2) engine re-mint churn on flip loses the armed state (the flipCredit machinery's cousin); (h3) RU-mode consumption happens but `commit_text` doesn't land on the bridge. Candidate fixes range from a wezterm-scoped retry/re-arm in session to documentation-plus-config workaround. **No fix is designed before the spike's verdict table** — the defect phase exists to produce it.
+
+### 5. Menu «Добавить ⟨app⟩ в чёрный список»: identity in, config file append, hot-reload out
+
+**Verdict: a third `Callbacks`-driven toggle-composition; refresh the label at `AboutToShow`; write through a new `config.AppendBlocklistEntry` on the existing atomic-rename writer. HIGH confidence (all precedents in-repo).**
+
+Data flow:
+
+```
+[menu open] indicator.Menu.AboutToShow(id)
+    → cb.BlocklistTarget()  (actor: appid.FocusedApp(); "" ⇒ item disabled)
+    → m.SetBlocklistTarget(app)   (label «Добавить ⟨app⟩ в чёрный список»; LayoutUpdated if visibility changed)
+[click] Menu.Event → dispatchClick(menuIDBlocklist)
+    → cb.AddToBlocklist(app)      (daemon wiring composition, own mutex)
+        1. empty-path guard (WR-03 precedent)          → one WARN, nothing changes
+        2. EnsureDocument(path)
+        3. config.AppendBlocklistEntry(path, app):
+           load Node → autocorrect.apps_blocklist → append regexp.QuoteMeta(app)
+           (identities contain dots — raw dots are regex any-char; QuoteMeta IS the
+            owner's "substring regex" semantics applied to a literal identity),
+           dedupe by exact string, cap 64 (maxAutocorrectBlocklist), validate
+           → rewriteAtomically: encode 2-space → temp ".config.*.tmp" (dot-prefix
+             ignored by the watcher) → chmod 0600 → os.Rename  (POSIX-atomic)
+        4. push menu state; synchronous reload + actor.FoldAppliedConfig()
+           (the configToggle.flip order — the apply is in force in the same click;
+            the 200 ms stat-poll echo re-applies the same values harmlessly)
+        5. the fold recompiles acBlocklist (refreshACBlocklist) — the gate is live
+```
+
+Component specifics:
+
+- **`internal/indicator`:** new item id `menuIDBlocklist = 16` (after Reload); `Callbacks` gains `BlocklistTarget func() string` and `AddToBlocklist func(app string)` — nil-safe no-ops, the established Callbacks discipline (the menu never imports appid/session; callbacks run on godbus dispatch goroutines and own their synchronization). The dynamic label is a property update (`ItemsPropertiesUpdated`); hidden↔visible flips bump the revision and emit `LayoutUpdated` — the existing machinery already covers both.
+- **Identity freshness:** the actor's appid cache holds the **last-focused** bridge-namespace identity (`FocusedApp()`), which is exactly right for a tray action («the app I was just in»). `AboutToShow` is the natural refresh point — the shell calls it on every menu open. This requires appid to be started for menu reasons, not only MACR: change the lazy-start trigger to «menu attached OR macr.apps non-empty» (start-at-menu-attach is simplest; the a11y bus is normally up because `a11y.enabled` defaults ON). When appid is unavailable, `BlocklistTarget` answers "" and the item renders disabled — the autocorrect gate's behavior never changes with the menu.
+- **`internal/config`:** `AppendBlocklistEntry` sits beside `SetAutocorrectEnabled`/`SetSoundEnabled` in `writer.go`, reusing `EnsureDocument`, the Node round-trip (comments preserved), `rewriteAtomically`, the validation ceiling (64) and the regex/empty checks from `validate`. Concurrent clicks serialize on a small mutex in the wiring composition (toggles are idempotent and skipped this; an append+rename is worth one mutex).
+- **Hot-reload fold:** nothing new — the watcher's stat-poll sees the rename; `FoldAppliedConfig`/`applySnapshot` recompile the blocklist (existing `refreshACBlocklist` + `compileACBlocklist`). The one new fold interaction: after a blocklist change the actor re-pushes `SetBlocklistTarget` so the menu can disable the item for the now-blocked app.
+
+### 6. Suggested build order (spec-delta first, spike first)
+
+**Verdict: five phases; the wezterm spike is Phase 1 and its evidence gates the terminal-correction design. HIGH confidence.**
+
+D-55 is absolute: **spec-delta (SPEC §4/§6/§9 amendments: TERM scope — word mandatory, line feasibility-gated, автокоррекция в терминалах off; MENU item; A11Y recipes; latency-budget completion clause) and a new ADR-008 (terminal transport) precede all code.** ADR-008 starts Proposed, is driven to Accepted by the Phase 1 spike's evidence table.
+
+| Phase | Content | Depends on | Key risk retired |
+|---|---|---|---|
+| **1. Спайк + дефект wezterm** | Live spike per terminal (wezterm, gnome-terminal): pin caps, `ProcessKeyEvent` arrival, `commit_text` landing, `ForwardKeyEvent` select-burst → primary read-back, a11y identity presence; verdict table → ADR-008 Accepted → **fix layout switch in wezterm** (+ e2e rows for wezterm) | spec-delta | The owner's daily defect; whether `commit_text` or per-key forwarded replay is the terminal transport; the gate's discriminators |
+| **2. TERM-слово (обязательный)** | `clipboard.ReadPrimary` + primary save/restore; pure terminal helpers in `correct`; `terminalOp` stepper + failure vocabulary; gate (identity-first, verify-timeout fallback); config knobs (`correction.terminal`, per-phase `timeouts`); e2e matrix rows (wezterm + VTE) | Phase 1 evidence | The never-live-driven level-2 replay gets its first real client under full instrumentation |
+| **3. MENU — пункт чёрного списка** | `config.AppendBlocklistEntry` (QuoteMeta, dedupe, cap, atomic rename); indicator item 16 + callbacks; `MenuSync.SetBlocklistTarget`; appid start-on-menu-attach; e2e via DBusMenu Event | independent of 2 | Config-file mutation from a click without breaking hot-reload |
+| **4. TERM-строка (если возможно)** | `forwardShiftHome` line select on the proven word rung; feasibility gate from Phase 1 read-back quality (prompt glyphs etc.); possibly scoped out by the owner at the phase gate | Phase 2 | Multi-word terminal corrections |
+| **5. A11Y — рецепты Telegram/ZCode** | Docs/recipes + install-side helpers; daemon unchanged (owner decision 2026-10-08); check-in gate: «если Telegram не поддастся — вернуться к вопросу настройки демона» | independent | Can run in parallel with 2–4 |
+
+Ordering rationale: the defect phase is first because it is the owner's daily pain **and** produces the transport evidence every later terminal phase consumes; MENU (3) is small, fully precedented, and independent — it slots after the mandatory TERM-word or swaps with it if terminal evidence slips; A11Y (5) is daemon-untouched and parallelizable.
+
+---
+
+## Recommended Project Structure (deltas only)
+
+```
+internal/
+├── correct/
+│   ├── terminal.go          # NEW pure: TerminalPayload gate, select-chord geometry table
+│   └── terminal_test.go
+├── clipboard/
+│   └── clipboard.go         # MODIFIED: ReadPrimary/SetPrimary/ClearPrimary (+ tests)
+├── session/
+│   ├── terminal.go          # NEW: terminalOp stepper, forwardShiftHome/ShiftCtrlLeft,
+│   │                        #      gate, slugs, counters (off-mutex rung discipline)
+│   ├── terminal_test.go
+│   └── actor.go             # MODIFIED: gate in ExpiryAt dispatch; MenuSync +=
+│                            #      SetBlocklistTarget; Status += terminal counters
+├── config/
+│   └── writer.go            # MODIFIED: AppendBlocklistEntry (+ tests)
+├── indicator/
+│   ├── menu.go              # MODIFIED: menuIDBlocklist=16, dynamic label, AboutToShow refresh
+│   └── indicator.go         # MODIFIED: Callbacks.BlocklistTarget/AddToBlocklist
+├── appid/                   # code unchanged — the start-trigger change lives in session/cmd
+└── engine/                  # touch ONLY if the Phase 1 verdict demands it
+```
+
+**Structure rationale:** every v1.2 change lands either in an existing file beside its precedent or in a new file inside the package that owns the concern; no new packages; the pure/D-Bus boundary (`correct`, `hotkey` pure — everything they serve stays out) is untouched, which keeps the golangci depguard architecture and the headless corpus green from task one.
+
+## Architectural Patterns (the three this milestone leans on)
+
+### Pattern 1: The off-mutex rung (WR-01) — extended to a time-stepped stepper
+
+**What:** long, subprocess-bearing work runs outside `a.mu`, serialized by its own mutex, communicating with actor state only through brief re-acquisitions and atomic snapshots.
+**When:** any flow with >1 ms of blocking I/O in the correction path.
+**Trade-offs:** state must be snapshotted at arm (`eng`, `clip`, payload); cancellation needs epoch-tagged timers.
+**Example:** `runClipboardRung` (actor.go:1659) is the template; the terminal stepper adds per-phase `AfterFunc` deadlines with the `verifyEpoch` stale-guard idiom.
+
+### Pattern 2: The config-toggle composition — generalized to any persisted menu action
+
+**What:** click = guard (empty path) → pure writer function on the Node tree → atomic rename → menu push → synchronous reload + `FoldAppliedConfig`.
+**When:** any menu item that must outlive the click in the user's config.
+**Trade-offs:** the whole document re-encodes (comments preserved, formatting normalized); a mutex is needed once actions are non-idempotent (append).
+**Example:** `configToggle.flip` (cmd/goswitchd/main.go:351) + `writeAtomically` (config/writer.go:326).
+
+### Pattern 3: Callbacks-in, pushes-out (the seam discipline)
+
+**What:** leaf D-Bus packages (`indicator`) receive func-field callbacks and expose `SetX` push methods; `cmd` wiring composes; the actor holds nil-safe seams with install-push self-sync.
+**When:** adding any interactive surface.
+**Trade-offs:** one more interface method per datum (`MenuSync` grows); never an import from leaf to brain.
+**Example:** `MenuSync`/`SetMenuSync` install-push (actor.go:1160, 914); the blocklist item adds exactly one datum (target label) and one callback pair.
 
 ## Data Flow
 
-### Correction round trip (hotkey to replaced text)
+### Terminal-correction flow (new)
 
 ```
-user: ghbdtn <tap-tap RShift>
-apps' IM module ─(keys)→ ibus-daemon ─→ engine.ProcessKeyEvent (×7)
-   replies: false ×5 (pass-through), true ×2 (RShift consumed)
-actor: tap FSM → DoubleTap action
-actor: buffer "ghbdtn" → correct.Detect → EN→RU, case-preserving → "привет"
-actor: caps(surrounding)? ─ y → engine emits DeleteSurroundingText(-6, 6)
-                            └ n → engine emits ForwardKeyEvent(BS)×6
-engine emits CommitText("привет") → ibus-daemon → IM module → widget text
-(actor updates surrounding cache; clears scope buffer)
+Double Shift (in wezterm/VTE)
+    ↓ ExpiryAt → gate (appid role/list; else verify-timeout fallback)
+startTerminalCorrection(termWord)   [a.mu: op armed, epoch++]
+    ↓ off-mutex stepper
+ForwardKeyEvent Shift+Ctrl+Left ×4   → terminal selects the word (primary updates)
+    ↓ settle delay (AfterFunc, config)
+clip.ReadPrimary()                   → wl-paste --primary (1500 ms budget)
+    ↓ pure gate: correct.TerminalPayload → ConvertRuns → BuildPlan(caps=0)
+ForwardKeyEvent BackSpace ×N; CommitText(converted)   ← destructive, one-way
+    ↓ restore primary (best-effort WARN) → optional re-select+re-read verify-after
+buf.HardReset · settleCorrectionFlip · counters/menu pushes
 ```
 
-### Layout switch round trip
+### Blocklist flow (new)
 
 ```
-actor (single RShift tap) → layoutset.Switch(next)
-   → gsettings set org.gnome.desktop.input-sources current N
-   → gnome-shell activateInputSource: keyboardManager.apply(us|ru) + ibus setEngine
-   → daemon: our engine-A FocusOut; engine-B FocusIn   ← daemon observes = layout known
-   (user-initiated Super+Space produces the identical FocusIn/FocusOut signature)
+menu open → AboutToShow → BlocklistTarget() → label push
+click → AddToBlocklist(app) → AppendBlocklistEntry (QuoteMeta, atomic rename)
+      → reload + FoldAppliedConfig → acBlocklist recompiled → item disables
 ```
 
-### Control flow
+## Scaling Considerations
 
-```
-goswitchctl ─(session bus)→ ctlsvc: Status()/ReloadConfig()/CorrectNow(scope)
-ctlsvc ─(direct call)→ session actor (same process)
-```
+| Scale | Adjustment |
+|-------|-----------|
+| 2 terminals (v1.2) | Hard-coded select-chord geometry + app list in config; nothing more |
+| More terminals (kitty, alacritty…) | The app list + per-app quirk table grows — keep it config data, never code branches; the Ghostty ForwardKeyEvent segfault (ghostty#2392, LOW web confidence) says per-terminal verification stays mandatory |
+| Other layout pairs (LAYOUT-01) | `correct`'s tables and the terminal payload gate are pair-agnostic already — no v1.2 debt |
 
-## Performance Envelope (replaces "scaling" for a single-user daemon)
-
-| Concern | Budget (spec: <50 ms reaction, <50 MB RSS) | Where it goes |
-|---------|--------------------------------------------|---------------|
-| Key delivery | ~1–5 ms | kernel→mutter→IM module→ibus-daemon→engine D-Bus hop |
-| Decision | <1 ms | actor + table lookups (map[rune]rune) |
-| Replacement | 5–20 ms | DeleteSurroundingText+CommitText round trip; BackSpace fallback ≈ n×2–5 ms |
-| Memory | ~1–2 MB tables + small buffers | generated tables; well under budget |
-| Footprint risk | none structural | single process, two D-Bus connections |
+**First bottleneck (predictable):** primary-selection timing on slow terminals (settle-delay tuning) — mitigate with the per-phase deadline + verify-after, not with longer blind sleeps.
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Blocking inside ProcessKeyEvent
+### Anti-Pattern 1: Trusting capability bits in terminals
+**What people do:** branch the ladder on `CapSurroundingText`.
+**Why it's wrong:** VTE advertises surrounding text and stubs it out (RHBZ 1847347) — a level-1 ladder would `DeleteSurroundingText` (no-op) + commit ⇒ duplicated line; a stale cross-app surrounding leak (the bug's Firefox example) could even suffix-match by coincidence.
+**Do this instead:** identity/role gate first; never execute the delete+commit ladder in a terminal-gated context; treat the read-back as the only terminal truth.
 
-**What people do:** wait out the debounce window before replying to decide single vs double tap.
-**Why it's wrong:** the daemon's call is synchronous with a timeout — stalling it freezes key delivery for the whole session.
-**Do this instead:** reply immediately; decide via timers that re-enter the actor (Pattern 2/3 above). The owner's prototype already worked this way (GLib timeouts).
+### Anti-Pattern 2: A second clipboard runner / a second config writer
+**What people do:** shell out to `wl-paste` ad hoc in session code, or write the config with `os.WriteFile`.
+**Why it's wrong:** loses the deadline, the empty-vs-error split, the no-pipes wl-copy exception, the atomic-rename/watcher interplay — each a live-learned fix.
+**Do this instead:** `clipboard.ReadPrimary` on the existing `Runner`; `AppendBlocklistEntry` on the existing Node+rename writer.
 
-### Anti-Pattern 2: Per-keystroke commit_text in the common path
+### Anti-Pattern 3: Reusing verify-round types for a time-stepped flow
+**What people do:** shove the terminal flow into `pendingFix`/`pendingAfter`.
+**Why it's wrong:** those types model event-answered verification; terminals never answer — the flow would wedge on timers that only settle on pushes that never come.
+**Do this instead:** the dedicated `terminalOp` stepper with its own phases, deadlines and safe-point rule.
 
-**What people do:** translate every key in-engine and commit (prototype's ru-mode path).
-**Why it's wrong:** adds latency and D-Bus traffic to 100% of typing to serve 0.1% corrections; breaks apps' own composition.
-**Do this instead:** two-engine layout split; engine is a passthrough except on tracked hotkeys.
-
-### Anti-Pattern 3: Trusting surrounding text universally
-
-**What people do:** assume DeleteSurroundingText works because GTK apps are fine.
-**Why it's wrong:** Chromium/Electron don't implement it (ibus#2354); no ack even where supported.
-**Do this instead:** caps-gated strategy + BackSpace fallback + optimistic cache reconciliation from later SetSurroundingText.
-
-### Anti-Pattern 4: Sharing one buffer across input contexts
-
-**What people do:** module-level buffer. **Why it's wrong:** engines are per input context; cross-window bleed corrupts corrections. **Do this instead:** per-engine state keyed by object path, reset on FocusOut.
-
-### Anti-Pattern 5: Triggering GNOME switching via forwarded Super+Space
-
-**What people do:** `ForwardKeyEvent(Super, Space)`. **Why it's wrong:** forwarded events target the app's IM context, not compositor grabs — the switcher never fires. **Do this instead:** gsettings `current` write (or IBus GlobalShortcut APIs in later versions).
-
-### Anti-Pattern 6: uinput / evdev anywhere in the correction path
-
-Spec axiom — restate: injection is `commit_text` only; e2e tooling may use ydotool, the product never does.
+### Anti-Pattern 4: Designing the wezterm fix from the issue tracker
+**What people do:** pick a fix from wezterm#1772/GNOME GitLab threads.
+**Why it's wrong:** the failure is a mutter↔wezterm↔ibus bridge race observed on one desktop; upstream threads describe other manifestations (unlock, commit-string bugs) — LOW-confidence material.
+**Do this instead:** the Phase 1 spike produces a verdict table on the owner's desktop; the fix (if in goswitch at all) cites it; upstream-linkable findings go back to the trackers.
 
 ## Integration Points
 
-### External Services
+### External Services / System Surfaces
 
-| Service | Integration Pattern | Notes / Gotchas |
-|---------|---------------------|-----------------|
-| ibus-daemon (private socket) | godbus Dial+Auth+Hello; RegisterComponent; Factory+Engine exports | registrations lost on daemon restart → re-register loop; address from `~/.config/ibus/bus/` |
-| GNOME input-sources (gsettings/dconf) | subprocess `gsettings get/set/monitor org.gnome.desktop.input-sources` | dconf's D-Bus write API is not a stable contract; subprocess is the pragmatic, dependency-free route; FocusIn-based observation is primary |
-| session bus (control) | own name `org.djarvur.goswitch` | goswitchctl client; second godbus connection |
-| systemd user unit | simple unit, `Wants=graphical-session.target` + `PartOf` | ordering after ibus-daemon; restart on failure; no root anywhere |
-| keyd/xremap | none (layer separation) | hotkeys documented as post-remap; e2e must handle ydotool-device exclusion when keyd enabled |
-| AT-SPI (e2e only) | python3-gi script (or Go via a11y bus) for focus + text readback | `Component.grabFocus` to activate target window per case (spec §7.3 trap) |
+| Surface | Integration pattern | Gotchas |
+|---|---|---|
+| Wayland primary selection | `wl-paste --primary` / `wl-copy --primary` via existing Runner | select keys overwrite it — save/restore; asynchronous update after select (settle delay) |
+| Terminal key semantics | Forwarded chords only via engine `ForwardKeyEvent`; Ctrl+C = SIGINT — never forward it as «copy» | VTE crash class with IM backspace sequences (gnome-terminal SIGSEGV under ibus-keyman, Launchpad 2024) — the replay burst is plain BackSpace, the safest shape |
+| wezterm IME path | mutter `zwp_text_input_v3` bridge, caps `0x9` | commit/arming races are bridge state, not engine state; spike before fix |
+| Config file (user-owned) | Node round-trip + dot-prefix temp + rename; watcher stat-poll + synchronous fold | QuoteMeta identities; cap 64; concurrent clicks need one mutex |
+| a11y bus (appid) | existing observer; new start trigger (menu attach) | silent a11y (wezterm may not be in the tree) ⇒ identity "" ⇒ disabled item / fail-closed gate |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
-|----------|---------------|-------|
-| engine/ ↔ session | typed `EngineEvent` chan in, `EngineAction` returns/calls out | only godbus-touching package on this side |
-| session ↔ correct/layouts | direct function calls (pure) | golden-tested without any bus |
-| config → all | `atomic.Pointer[Config]` snapshots | reload never mutates in place |
-| ctlsvc ↔ session | in-process method calls | serialized through the actor's mailbox for mutations |
-| layoutset ↔ session | async results channel | gsettings subprocess latency (10–50 ms) off the key path |
-
-## Build Order Implications (for roadmap phasing)
-
-Dependency-ordered foundation → derived:
-
-```
-layouts/ (pure, golden tests)              ← foundation A (no deps)
-hotkey/ FSM (pure, stream tests)           ← foundation B (no deps)
-        ↓
-engine/ wire adapter (godbus)              ← integrates A? no — B only later;
-test/e2e MINIMAL skeleton (ydotool→log)      │  M1 gate = "hotkey visible in log"
-        ↓                                     │  needs engine/ + a log line
-correct/ (uses layouts/)                   ← M2: word correction in an editor
-        ↓                                   │  e2e grows AT-SPI readback + matrix v1
-session actor integration (buffer+FSM+caps) ↗ (evolves through M1–M3)
-        ↓
-layoutset/ two-engine switching            ← M2/M3 (phrase/selection/regs + switch combos)
-config/ + ctlsvc/ + goswitchctl             ← M3 (hot reload gate)
-macros (Super→Ctrl per-app, §4.4b)          ← last functional layer: needs app-identity
-                                              (FocusInId client string / AT-SPI) — riskiest,
-                                              schedule behind core or descope to v2 via spec-delta
-install/unit/docs/ADRs                      ← M4
-```
-
-Rationale for ordering:
-
-1. **Pure packages first** (layouts, hotkey FSM): zero integration risk, unblock everything, CI-green from day one.
-2. **engine/ + minimal e2e next**: this is the M1 gate and the spike that retires spec Q1/Q4 (engine viability, hotkey interception at engine level). If the two-engine layout pattern misbehaves, it surfaces here while the fallback (single-engine internal mode) is still cheap to adopt.
-3. **Correction before switching**: word correction is the core value; switching integration (gsettings, MRU) is orthogonal and can lag.
-4. **Config/ctlsvc after behavior**: reload semantics stabilize once there is something worth reloading.
-5. **Macro layer last or out**: per-app Super→Ctrl remap needs focused-app identity, which the engine layer exposes only weakly (FocusInId's client string on 1.5.29) — flag as research item, candidate for spec-delta to v2.
-
-## Research Flags for Phases
-
-- **Phase engine-adapter (M1):** verify two-engine source activation end-to-end on target; confirm UpdatePreeditText arity and DeleteSurroundingText signal acceptance on the installed 1.5.29-rc2 (monitor traffic with dbus-monitor on the ibus socket).
-- **Phase correction (M2):** per-app caps matrix (GTK4 editor, Firefox, Chromium/Electron) — decides fallback prevalence; terminals (wezterm) are spec Q3 with wl-clipboard fallback or documented refusal.
-- **Phase macros (if kept):** app-identity mechanism needs its own spike.
-
-## Confidence Assessment
-
-| Area | Level | Basis |
-|------|-------|-------|
-| IBus lifecycle & wire surface | HIGH | live introspection on target + end-to-end engine activation performed during research |
-| Engine method/signal signatures | HIGH | introspected; cross-checked with ibus main source and goibus |
-| DeleteSurroundingText no-ack semantics | MEDIUM | read in ibus main source; installed 1.5.29-rc2 is an rc — verify on target in M1 |
-| Two-engine layout switching | HIGH | gnome-shell keyboard.js source read directly (activateInputSource applies engine layout then sets engine) |
-| Chromium surrounding-text breakage | MEDIUM | upstream issue #2354 (primary repo) — behavior version-dependent |
-| Go/godbus viability (spec Q1) | HIGH | sarim/goibus exists as working pure-godbus engine implementation; patterns reproduced above |
-| gsettings-subprocess integration | MEDIUM | standard practice; dconf-direct alternative undocumented (web tier per seam) |
-| Mouse-click buffer reset | LOW (feasibility) | engines cannot see pointer events; approximation via surrounding-cursor jumps only |
-| Per-app macro layer (§4.4b) | LOW | app identity at engine layer is weakly exposed; needs spike |
+|---|---|---|
+| session ↔ correct | pure function calls only | terminal helpers stay pure; no time/D-Bus imports (depguard) |
+| session ↔ clipboard | `Save/Set/Clear/Restore` + new `ReadPrimary/SetPrimary/ClearPrimary` | Runner seam for tests; content never logged |
+| indicator ↔ session/cmd | `Callbacks` in, `SetX` pushes out | new: `BlocklistTarget`/`AddToBlocklist`/`SetBlocklistTarget` |
+| cmd ↔ config | pure writer funcs + reload/fold composition | the configToggle order is the contract |
 
 ## Sources
 
-Primary (read directly during this research):
-- Live D-Bus introspection of ibus-daemon 1.5.29-rc2 on the target machine (org.freedesktop.IBus, InputContext, Engine, Factory interfaces), 2026-09-10
-- Owner prototypes: `/home/nil/.local/share/punto-switcher/punto_engine.py` (438 lines, full IBus engine in Python GI), `/home/nil/.local/share/ibus-test/test_shift.py`
-- ibus upstream source (main): `src/ibusengine.c` (DeleteSurroundingText/ForwardKeyEvent emit paths), `src/ibustypes.h` (RELEASE_MASK=1<<30, CapabilityFlags) — raw.githubusercontent.com/ibus/ibus
-- gnome-shell (main): `js/ui/status/keyboard.js` (`_getXkbId`, `activateInputSource`, MRU handling) — gitlab.gnome.org/GNOME/gnome-shell
-- sarim/goibus (GitHub): bus/factory/engine/component/engineDesc/common.go — pure-godbus libibus implementation
-
-Secondary (web, seam tier LOW):
-- [ibus issue #2354 — delete surrounding text broken in Chromium-based apps](https://github.com/ibus/ibus/issues/2354)
-- [ibus issue #2054 — get_surrounding_text not working in Firefox](https://github.com/ibus/ibus/issues/2054)
-- [keyd — kernel-level remapping daemon](https://github.com/rvaiya/keyd) and [Mouseless app-conflicts notes](https://mouseless.click/docs/app_conflicts.html) (uinput feedback-loop caveat)
-- [The Input Stack on Linux — venam.net](https://venam.net/blog/unix/2025/11/27/input_devices_linux.html) (layering)
-- [splondkie/wayland-accessibility-notes](https://github.com/splondkie/wayland-accessibility-notes/blob/main/README.md), [Fedora Magazine: Automation through accessibility](https://fedoramagazine.org/automation-through-accessibility/) (AT-SPI read/actuate pattern for e2e)
+- **Codebase (HIGH — read directly, live-proven in v1.0.0):** `internal/session/actor.go` (rung discipline WR-01, forwardCtrlV, MACR clean-modifier lesson, pending*/verify-epoch, flipCredit, gate sites, Status), `internal/clipboard/clipboard.go` (Runner, 1500 ms, no-pipes wl-copy, empty-vs-error), `internal/config/writer.go` (rewriteAtomically/writeAtomically, temp dot-prefix), `cmd/goswitchd/main.go` (configToggle.flip order, Callbacks composition, editor no-pipes precedent), `internal/indicator/menu.go` + `indicator.go` (item ids, revision/ItemsPropertiesUpdated, AboutToShow, Callbacks), `internal/appid/appid.go` (bridge identity, RoleTerminal=60, lazy start), `internal/correct/plan.go`/`verify.go` (BuildPlan level-2 math), `internal/config/config.go` (blocklist validation, cap 64)
+- **Owner live spike 2026-10-08 (HIGH for this desktop):** external injector fails, daemon ForwardKeyEvent channel works in wezterm; wezterm caps `0x9` (PROJECT.md milestone record)
+- Red Hat Bugzilla [1847347 — VTE surrounding-text false advertising](https://bugzilla.redhat.com/show_bug.cgi?id=1847347) / GNOME vte#214 — **MEDIUM** (upstream bug, corroborated by repo observations)
+- [wezterm use_ime docs](https://wezterm.org/config/lua/config/use_ime), [wezterm#1772 text-input-v3](https://github.com/wezterm/wezterm/issues/1772), GNOME GitLab IME-after-unlock report — **LOW-MEDIUM** (web; live-confirm in Phase 1)
+- [ibus-bamboo mode ladder (Pre-edit/Surrounding/ForwardKeyEvent/XTest)](https://github.com/BambooEngine/ibus-bamboo/blob/master/README_EN.md), Arch BBS ForwardKeyEvent-in-GNOME-Wayland thread, [ghostty#2392 ForwardKeyEvent segfault](https://github.com/ghostty-org/ghostty/issues/2392) — **LOW-MEDIUM** (production precedent; per-terminal verification mandatory)
+- [Arch Wiki — copying text from a terminal](https://wiki.archlinux.org/title/Copying_text_from_a_terminal) (primary vs clipboard; Ctrl+Shift+C) — **LOW-MEDIUM**
 
 ---
-*Architecture research for: goswitch — IBus-engine layout corrector for GNOME Wayland*
-*Researched: 2026-09-10*
+*Architecture research for: goswitch v1.2 «Терминалы и видимость приложений»*
+*Researched: 2026-10-08*

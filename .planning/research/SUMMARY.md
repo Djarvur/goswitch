@@ -1,184 +1,168 @@
 # Project Research Summary
 
-**Project:** goswitch (Djarvur/goswitch)
-**Domain:** IBus input-method-engine daemon for GNOME Wayland — keyboard-layout switcher / mistyped-text corrector (Punto Switcher analog), written in Go
-**Researched:** 2026-09-10
-**Confidence:** HIGH for core viability and architecture; MEDIUM for per-app behavioral details (see Gaps)
+**Project:** goswitch — milestone v1.2 «Терминалы и видимость приложений»
+**Domain:** GNOME Wayland IBus input-method daemon (Go) — terminal text correction, dynamic tray-menu blocklist item, per-app accessibility enablement
+**Researched:** 2026-10-08
+**Confidence:** MEDIUM overall (HIGH for target-runtime live probes and in-repo code-read design; MEDIUM for cross-checked web findings on VTE/wezterm transport; LOW items are single-source upstream issues — all deliberately spike-gated)
 
 ## Executive Summary
 
-goswitch is a single Go daemon (`goswitchd`) operating as an IBus input-method engine over D-Bus: it sees keystrokes after XKB translation and after any keyd/xremap remap, buffers what the user types, and on a hotkey replaces exactly the wrong-layout range via IBus `CommitText`. The category is mature on Windows/macOS (Punto Switcher, Caramba, Mahou) and empty on GNOME Wayland precisely because every existing tool works at the evdev layer (root, EVIOCGRAB keyboard monopoly, remapper conflicts). The IBus-engine level is the only layer that coexists with remappers by construction, and research validated it end-to-end on the actual target machine: the IBus 1.5.29 daemon was introspected live over its private socket, an engine was registered and activated during research, and the owner's two Python prototypes prove the full key-receive/commit cycle on this hardware. Spec question Q1 (Go viability) is retired: godbus speaks the IBus socket protocol in production today (ibus-bamboo, Fedora-packaged 2026); the only real engineering is an in-repo `engine/` protocol adapter (~800–1,200 LOC), required solely because the existing Go bindings (`sarim/goibus` / `BambooEngine/goibus`) ship **no license file** and cannot be imported into an MIT project.
+goswitch v1.2 extends a shipped, live-proven IBus-engine daemon with three features: **TERM** — manual layout correction in terminals (word mandatory, whole line feasibility-gated; autocorrect in terminals is permanently off) plus a fix for the wezterm layout-switch defect in the owner's daily terminal; **MENU** — a dynamic tray item «Добавить ИмяПриложения в чёрный список»; **A11Y** — recipes enabling accessibility inside Telegram and ZCode so autocorrect reaches them, with the daemon itself unchanged (owner decision 2026-10-08). Terminal correction at the daemon level is genuinely novel on Linux — layout_corrector refuses terminals outright, xneur is dormant X11-only, shell plugins are per-shell/per-machine — so TERM is the milestone's differentiator, and Punto Switcher's 20-year select→convert→paste UX is the muscle memory the flow reproduces through the IBus engine channel.
 
-The recommended shape: a three-dependency stack (`godbus/dbus/v5` v5.2.2, `gopkg.in/yaml.v3` v3.0.1, `fsnotify` v1.10.1; `log/slog` for logging, `gsettings` subprocess for GNOME integration), a strict wire-adapter boundary (`engine/` is the only package touching godbus for IBus), a single session-actor goroutine owning all mutable state, and pure, headless-CI-testable packages beneath it (`layouts/` generated tables, `hotkey/` tap FSM, `correct/` scope+direction logic). Replacement follows a capability ladder per app class (surrounding-text delete where supported, Backspace×N fallback in runes elsewhere, clipboard round-trip for selections/terminals). Q6 (autostart) is retired: systemd user unit + programmatic `_RegisterComponent` + a reconnect/re-register loop, because IBus 1.5.29 loses engine registrations on daemon restart by design (ibus#2910, closed not-planned).
+The recommended approach is **spike-first with zero new Go dependencies**. Every mechanism rides existing in-repo packages: `internal/engine` ForwardKeyEvent bursts (the daemon's own injection channel, live-verified race-free on 2026-10-08), `internal/clipboard` wl-clipboard wrapper (adds a `--primary` flag), `internal/indicator` DBusMenu machinery, `internal/appid`, `internal/a11y`, and the atomic-rename config writer. The wezterm defect is live-diagnosed to its root: `enable_wayland = false` in the owner's config makes wezterm an **XWayland/XIM client**, and since ADR-006 makes both GNOME input sources goswitch engines, an engine flip never changes the X keymap the XIM client renders characters from — the flip is structurally invisible. Primary fix candidate is a config recipe (native Wayland, `zwp_text_input_v3`), with a daemon-side XIM workaround as fallback. The terminal **read channel is per-terminal**: VTE has no keyboard selection at all (VTE source-verified), so VTE word correction rides the daemon's own keystroke buffer + `commit_text` (no read channel needed), while wezterm gets a config-recipe selection (CopyMode) read back via `wl-paste --primary`. Write-back is always **N×BackSpace replay + `commit_text`** — never commit-over-selection (terminal selections are visual-only; VTE merely deselects), never a Ctrl+V paste (CLIPBOARD stays untouched; PRIMARY-only policy).
 
-Three risks dominate everything else. **First — the #1 architectural decision:** ARCHITECTURE recommends a *two-engine registration pattern* (`goswitch-en` layout=us + `goswitch-ru` layout=ru as `('ibus',…)` input sources; verified against gnome-shell `keyboard.js` source), while PITFALLS documents the owner's *working prototype* doing the opposite — a single engine with an internal en/ru mode flip — on the grounds that writing `gsettings … input-sources current` is ignored at runtime by GNOME Shell. These must be reconciled via ADR + an M1 kill-criterion spike before any buffer/correction code is written (details below). **Second:** single right shift (= switch, <50 ms NFR) and double/triple right shift (= correct) share one key; the standard 300–500 ms double-tap window cannot fit inside a <50 ms budget. Adopt Caramba-style semantics — fire the switch immediately on first tap; a second tap within the window corrects the pre-switch buffer — and pin it in requirements, not in code. **Third:** a panic escaping a D-Bus handler makes ibus-daemon kill itself, silencing typing desktop-wide; a `recover()` shim belongs in the first commit of the D-Bus layer.
+Key risks, in order: (1) per-terminal key semantics are unverified assumptions until the Phase 1 spike runs — VTE passes Shift+Home through to the shell, wezterm has a documented shifted-keys-lost hazard (#4615); (2) the Telegram **snap is structurally AppArmor-blocked** for inbound AT-SPI calls (live-probed: `GetRole` → "Access denied" despite correct env) — no env var or snap interface fixes this, so an owner decision (unconfined build vs daemon-side fallback) is required before that phase can plan; (3) the replay/focus race is a data-destruction class — tokenized abort, chunked bursts, and verify-before-the-destructive-point are design requirements, not hardening; (4) menu identity is only as good as the a11y tree (Electron identity exists only after a11y is enabled; snaps and wezterm are invisible) — the item must degrade to disabled, never guess. Mitigations are structural: D-55 spec-delta + ADR-008 before any code, spike verdict tables, two-consecutive-greens wezterm oracles, frozen autocorrect-negative matrix rows.
 
 ## Key Findings
 
 ### Recommended Stack
 
-Minimal by design — three external dependencies total, everything else stdlib. Verified against the Go module proxy (authoritative) and the live target system (Ubuntu 24.04, GNOME 46, IBus 1.5.29-rc2, Go 1.27.1).
+Zero new modules for v1.2 — `go.mod` is unchanged; everything is stdlib + godbus + existing in-repo packages (full detail in STACK.md).
 
-**Core technologies:**
-- **Go ≥ 1.23 (module), build with 1.27.x** — project constraint; `log/slog` covers structured logging with zero deps.
-- **`github.com/godbus/dbus/v5` v5.2.2** — all D-Bus, both the IBus private socket (service side: `Export`, signal channels) and the session bus (control service); the only maintained native Go D-Bus impl; proven against the IBus socket by ibus-bamboo in production.
-- **In-repo `engine/` adapter (~1k LOC)** — the IBus wire protocol (address discovery, `_RegisterComponent`, Factory, engine objects, Commit/Forward/DeleteSurrounding signals). Mandatory: both goibus repos have **no LICENSE** (GitHub-API-verified) — legally unusable as an import; legitimate as read-only behavioral reference. Truth sources installed locally: `/usr/include/ibus-1.0/*.h` + the owner's validated Python prototypes. This is the single real piece of engineering in the stack.
-- **`gopkg.in/yaml.v3` v3.0.1** — config parsing; frozen/stable is a feature under the audit constraint. (`goccy/go-yaml` is a mechanical swap if strict typing is later wanted.)
-- **`fsnotify` v1.10.1** — config hot reload, with the directory-watch + debounce + `atomic.Pointer[Config]` pattern (editors save via atomic rename, swapping the inode).
-- **systemd user unit** (off `graphical-session.target`, after the distro's IBus unit, `Restart=on-failure`) — autostart/supervision, no root anywhere; programmatic registration means zero files outside `$HOME`.
+**Core technologies (delta from v1.1):**
+- `github.com/godbus/dbus/v5` v5.2.2 — unchanged, still latest; engine service side, DBusMenu, a11y belt, appid.
+- In-repo `internal/engine` ForwardKeyEvent bursts — the injection channel for select chords and the BackSpace replay; adds keyval constants (Home/End/arrows) to `keys.go`; the level-2 replay emitter is wire-tested and becomes live in v1.2.
+- In-repo `internal/clipboard` + `--primary` — `ReadPrimary`/`SetPrimary`/`ClearPrimary` on the existing Runner (wl-clipboard 2.2.1, dpkg-verified); same empty-vs-error and no-pipes discipline.
+- In-repo `internal/indicator` (SNI + DBusMenu v3) + `internal/appid` — dynamic menu item id 16 with interpolated label via the existing `ItemsPropertiesUpdated` deltas.
+- In-repo `internal/a11y` (gsettings `toolkit-accessibility`) — ZCode/Electron a11y already works via this key (live-probed); the milestone adds a belt, not daemon code.
+- wezterm config recipe (owner's `wezterm.lua`) — SHIFT+Home → CopyMode `Multiple` sequence; version pinned at 20240203 (the **last tagged release ever**; upstream is nightlies-only).
+- User-local `~/.local/share/applications/zcode.desktop` override with `--force-renderer-accessibility` — deterministic Electron a11y belt, no root.
 
-**Critical version facts:** godbus must be the v5 module path (v4 is EOL); ydotool must be the distro 0.1.8 (opens `/dev/uinput` directly — no ydotoold daemon; upstream 1.0.x has a different architecture and is not in 24.04); IBus target pinned at 1.5.x (1.5.29 on target). Do **not** use: goibus (no license), Viper (~10+ transitive deps), cgo/libibus (breaks static binary + audit story), xdotool (X11-only), uinput anywhere in the product (e2e stand only).
+**Explicitly NOT:** any new Go module; `QT_LINUX_ACCESSIBILITY_ALWAYS_ON` as primary (perf cost, redundant); `GTK_MODULES=gail:atk-bridge` (GTK2-era); xclip/xsel (X11-only); snap-interface workarounds for Telegram (none exists); OSC-52 tricks; app-side wezterm Lua layout remaps (fights ADR-006 single-source).
 
 ### Expected Features
 
-**Must have (table stakes — every competitor has them):**
-- Correct last word by hotkey — the defining gesture of the category; the most-used feature
-- Correct whole phrase; correct selected text — standard second/third gestures
-- Switch layout by hotkey — a switcher that cannot switch is not a switcher
-- Case preservation per character (`Ghbdtn`→`Привет`); full tables incl. punctuation/digits; direction auto-detect by script majority
-- Mixed-text handling (convert only the wrong-layout span) — **highest-complexity table-stakes item**; needs explicit semantics ADR + golden corpus
-- Buffer reset rules; configurable hotkeys; no-root install; exact-range replacement with no visible jump — the core architectural bet that justifies IBus over uinput
+**Must have (table stakes — missing = milestone failed):**
+- **TERM-0** — layout flip works in wezterm (defect fix or verified recipe); prerequisite for all TERM work there.
+- **TERM-1** — manual word correction at the prompt in wezterm + GNOME Terminal/VTE; autocorrect stays off in terminals (invariant, not config).
+- **MENU-1** — dynamic «Добавить ИмяПриложения в чёрный список» with correct hide/disable-when-unknown behavior.
+- **A11Y-1** — recipes/docs/installer steps for Telegram + ZCode, verified against live AT-SPI trees; Telegram warning bar documented.
 
-**Should have (differentiators — no working GNOME Wayland competitor offers them):**
-- IBus-engine level with no keyboard grab → keyd/xremap coexistence by construction (the founding decision)
-- Automated e2e matrix (ydotool + AT-SPI, YAML cases) — unique in the entire category; the project's quality moat *and* acceptance gate
-- Multi-tap hotkeys (double/triple right shift — Caramba ergonomics); switch+correct combo (Shift+RightCtrl); YAML hot reload without restart
-- Terminal fallback via wl-clipboard paste (v1.x, after Q3); Super+Letter→Ctrl+Letter per-app macros (v1.x, needs app identity); single static MIT binary, zero telemetry; <50 ms measured hotkey reaction
+**Should have (stretch):**
+- **TERM-2** — whole-line correction with cursor restoration (feasibility-gated by the Phase 1 capability table).
+- XWayland identity fallback for MENU (wezterm in the menu) — P3, owner-annoyance-triggered.
 
-**Defer (v2+) / rejected:**
-- Exception heuristics (URL/e-mail/hex) — v2, unnecessary while correction is user-triggered
-- Additional layout pairs — data-only later; table interface stays generic
-- Autocorrect (owner-rejected: passwords, code, no reliable per-app exclusions on Wayland), GUI settings, typed-text diary, clipboard manager, transliteration, typo dictionaries, cloud hooks, tray indicator (GNOME Shell already shows one)
-
-**Feature dependency insights:** every correction feature hangs off engine interception + typed-text buffer; buffer-reset rules gate phrase correction (word can ship first — the natural M2/M3 seam); selection correction and terminal fallback share one clipboard transport (build it once either way); per-app context (from IBus focus events) unlocks both terminal detection and macros — one mechanism, two consumers; the e2e matrix grows with every milestone and is itself the acceptance criterion.
+**Anti-features (explicitly not building):**
+- **Autocorrect in terminals — never.** Hidden-input contexts (sudo/ssh passwords) are indistinguishable at key level; the veto lives in the autocorrect arming condition, never in `apps_blocklist` (D-53 collision).
+- Commit-over-selection (does nothing to the pty), fire-and-forget key bursts, per-app wezterm Lua layout switching, un-blacklist menu counterpart, selection preservation and «не трогать» URL/path heuristics (v2+/CORR-10).
 
 ### Architecture Approach
 
-A single daemon split into a thin D-Bus wire adapter and a pure, testable core; all state funneled into one actor goroutine. Layering verified live: engine sees keys *post-XKB and post-remap*, injects text via signals routed back through ibus-daemon — remapper coexistence holds by construction, never by effort.
+Orchestration lives in `internal/session` as a **`terminalOp` stepper** — a time-stepped, off-mutex rung following the `runClipboardRung` discipline (WR-01), because terminals never answer verify rounds (VTE falsely advertises surrounding text, RHBZ 1847347; wezterm caps `0x9`); pure helpers stay in `internal/correct` (`TerminalPayload` gate, select-chord geometry table, `BuildPlan` reused verbatim with caps forced to 0 — the level-2 backspace-replay math). No new packages; the pure/D-Bus boundary and depguard architecture are untouched. The flow has an explicit **safe point**: everything before the first forwarded BackSpace mutates nothing in the field, so abort is free; past it, one-way replay + commit with epoch-guarded per-phase deadlines and a verify-after suffix-compare that logs and stops, never auto-repairs. The gate is identity/role first (appid `RoleTerminal=60`), with verify-timeout fallback escalation (recommended ON for word). MENU is a third Callbacks-driven toggle composition: snapshot identity at menu-open, `config.AppendBlocklistEntry` (yaml.Node round-trip, `regexp.QuoteMeta`, dedupe, cap 64, pre-write validation, atomic rename), synchronous reload + fold.
 
-**Major components:**
-1. **`engine/` wire adapter** — owns the IBus private-socket connection (address discovery → Dial/Auth/Hello → RequestName single-instance guard → Factory export → `_RegisterComponent` → per-input-context engine objects); translates D-Bus ↔ typed events; the only godbus-for-IBus package. Includes the reconnect + re-register loop with backoff.
-2. **`internal/session` actor** — one goroutine owning ALL mutable state: per-IC keystroke buffers, tap FSM state, capability bitmaps; timers re-enter as synthetic events. Zero mutexes on the hot path.
-3. **`internal/hotkey`** — pure tap/combo state machine (single/double/triple RShift, Shift+RCtrl, modifier-use discrimination, configurable windows), unit-testable against synthetic event streams.
-4. **`internal/correct` + `layouts/`** — scope resolution (word/phrase/selection), direction detection, case-preserving conversion over generated positional tables (`go:generate` from `/usr/share/X11/xkb/symbols/{us,ru}` — kills the hand-transcription bug class the owner's prototype exhibited).
-5. **`internal/layoutset` / `internal/config` / `internal/ctlsvc`** — gsettings subprocess wrapper for input-sources; YAML schema + fsnotify hot reload publishing immutable snapshots; session-bus service for `goswitchctl`.
+### Critical Pitfalls (top 5 of 13 — full list in PITFALLS.md)
 
-**Key patterns:** reply to `ProcessKeyEvent` immediately (it is a synchronous daemon call — debounce waits happen *after* replying, via timers); capability-aware replacement strategy (SURROUNDING_TEXT cap → `DeleteSurroundingText`+`CommitText`, else `ForwardKeyEvent(BackSpace)×n`+`CommitText`; `DeleteSurroundingText` on 1.5.29 is a fire-and-forget **signal with no ack**); per-input-context buffers keyed by engine object path, reset on FocusOut; switch layouts via `gsettings` write, **never** by forwarding a synthetic Super+Space (compositor grabs sit above the IME path).
+1. **Selection-capture key assumptions.** VTE has no keyboard selection at all (open request since 2002); wezterm #4615 can drop Shift from forwarded keys (cursor-jump signature). Avoid: per-terminal capability table from the TERM-0 spike; the PRIMARY read-back is the only ground truth; abort on any mismatch with the daemon's buffer.
+2. **Focus change mid-burst = cross-app data destruction.** Remaining BackSpaces and the commit can land in the newly focused context. Avoid: token-per-sequence, context re-check between chunks (≤8 keys), abort cancels pending commit; dedicated e2e focus-flip row.
+3. **Triple pty erase semantics + Cyrillic IUTF8.** readline erases runes; canonical mode erases bytes unless IUTF8; TUI apps treat BackSpace as a command. Avoid: scope to shells as the contract; buffer-gate the replay span (boundaries: Enter/Tab/Escape/focus); verify after; Cyrillic bash+zsh e2e corpus; vim/htop witness rows.
+4. **Telegram snap AppArmor wall + Electron launch-time triggers.** The snap's profile denies inbound AT-SPI regardless of env (live-probed); Chromium/Electron a11y triggers apply only at process launch and key off the right property/flag. Avoid: snap-pinned A11Y-0 spike matrix (per-app minimal trigger, env verified in `/proc/<pid>/environ`); pre-agreed fallback ladder; restart + self-check in every recipe.
+5. **Regex injection and config integrity from menu writes.** App names are regex metacharacter bombs; the strict decoder rejects the whole config on a bad pattern; struct-marshal destroys comments. Avoid: unconditional `QuoteMeta` for menu-generated patterns, dedupe, cap 64 with refusal notification, round-trip decode before atomic rename, yaml.Node surgical edit, golden diff test (only the new line changes).
 
-### Critical Pitfalls
-
-1. **Engine crash = desktop-wide input death** — ibus-daemon suicides when an engine dies abnormally. Prevention: a `recover()` shim wrapping every exported D-Bus handler in the first commit of M1; guard every godbus variant type assertion (the #1 panic source); e2e case "kill -9 the engine, then type."
-2. **The engine sees keys ONLY as the active input source** — the single most dangerous assumption. Both viable designs require goswitch to *be* the input source (see Decision #1 below); the rejected Option (keep plain xkb sources and snoop) is impossible via IBus.
-3. **`gsettings set … current` may be a one-way mailbox at runtime** — Shell's in-process InputSourceManager holds live state; dconf writes change the value but not necessarily the layout (STACK verified the key is *writable* on GNOME 46; writability ≠ runtime effect). This is the crux of Decision #1.
-4. **Every key arrives twice (press + release, bit 30)** and keycode ≠ keyval — filter releases from buffer paths (else doubled letters); key the buffer on physical `keycode` + own tables; never consume bare modifier presses (breaks Shift+letter); tolerate ibus#2600-style modifier glitches without corrupting data.
-5. **Exact-range replacement is a capability ladder, not a given** — Chromium/Electron don't implement `DeleteSurroundingText` (ibus#2354); `commit_text` does not replace an active selection (prototype hit this → clipboard round-trip). Count deletions in runes, validate against surrounding text when available, and **abort rather than send a wrong-length Backspace burst**. Plus: registry-cache staleness and the root-owned component dir (no-root installer must dance around `IBUS_COMPONENT_PATH` / `ibus write-cache`); e2e stand rot (ydotool provisioning, Chromium a11y flags, wait-for-condition not sleeps, monthly canary).
+Plus the regression trap: opening terminals for *manual* correction must not re-admit *autocorrect* — the two-permission model (manual=on, auto=never) goes into the spec-delta, with frozen negative matrix rows as insurance.
 
 ## Implications for Roadmap
 
-Suggested phase structure mirrors the spec's milestones (M0–M4). M0 is a *decision* milestone, not a build milestone — fold it into requirements definition / first-phase planning. Four build phases follow, ordered by the dependency chain: pure packages → engine adapter + minimal e2e → correction → switching/config → install/acceptance.
+**Resolved cross-file tensions** (the roadmapper should carry these as decisions, not open questions):
 
-### Decision Pack (spec M0 — settle during requirements/plan, before any code)
+1. **Read channel is per-terminal, not universal select-via-keys.** The original "forward selection keys everywhere" design is dead for VTE: no keyboard selection exists (FEATURES/PITFALLS agree; VTE source-verified). Final shape: VTE word = daemon keystroke buffer + `commit_text` (no read channel); VTE line = gated by the **TERM-0 kill criterion** (no selection primitive ⇒ line scope shrinks to wezterm-only or the capture primitive is redesigned — the readline kill ring is not externally readable, so Ctrl+U capture is a different design needing its own spike); wezterm = config-recipe CopyMode selection + `wl-paste --primary`, with the #4615 Shift-lost signature as an explicit spike checkpoint. The per-terminal capability table from Phase 1 is the gating artifact.
+2. **Telegram snap a11y is structurally blocked; the owner's "enable accessibility in the apps" decision needs one more input.** STACK live-probed the wall: env is already correct (`QT_ACCESSIBILITY=1` in the process), the app registers on the a11y bus, and AppArmor still denies all inbound AT-SPI calls; no snap interface exists. The A11Y phase must not plan until the owner picks: (a) an unconfined Telegram build — official tarball or flatpak `org.telegram.desktop` (flatpak a11y reachability needs a one-off live check first), or (b) the owner's reserved daemon-side fallback. Ladder: snap → deb/flatpak → daemon fallback; the snap has no rung.
+3. **Write-back is backspace-replay + `commit_text`, never commit-over-selection, never a clipboard paste.** Terminal selections are visual-only (VTE deselects on incoming content; the shell never learns), and a forwarded paste chord would need a CLIPBOARD/PRIMARY write of possibly-secret content plus bracketed-paste uncertainty (plain Ctrl+C is SIGINT). FEATURES' anti-feature objection to backspace-replay ("blind N backspaces") is answered by design: the count comes from the verified read-back/buffer span, the safe-point rule makes pre-replay abort free, and verify-after catches mismatch — the replay is never blind. Paste-over remains a parked fallback only if a spike shows `commit_text` not landing in some terminal.
+4. **A11Y-0 spike runs early even though A11Y execution is last/parallel.** ARCHITECTURE places the A11Y phase fifth; PITFALLS correctly notes Electron identity (needed by MENU) exists only after a11y is enabled. Resolution: run the cheap A11Y-0 spike matrix during the Phase 1 window; its verdicts feed the Phase 3 identity design and the Telegram decision; Phase 5 execution stays parallelizable.
 
-**Rationale:** Five semantics are contested or unobservable-in-v1 and each caused a documented failure elsewhere; discovering them in code is the most expensive possible path.
-**Delivers:** ADRs for: (1) layout-switching mechanism — **Decision #1**, see below; (2) multi-tap semantics vs the <50 ms NFR — recommend Caramba-style "fire switch on first tap; second tap within window corrects the pre-switch buffer; triple cancels pending double and corrects the phrase," with release-based decision points; (3) replacement capability ladder per app class (Q2); (4) buffer-reset triggers spec-delta — mouse clicks are NOT observable at the IME layer; redefine as Enter/Tab/Escape/focus-out/`Reset()`/caret-jump-inferred; (5) per-app macro scope — global with kill-switch for v1, `FocusInfo` seam for later.
-**Avoids:** Pitfalls 2, 3, 7, 8, 9, 10, 12 — all of which map "decide at M0" as their prevention phase.
+### Phase 1: Спайк + дефект wezterm (spec-delta, ADR-008, flip fix)
+**Rationale:** the owner's daily defect, and the only phase that produces the transport evidence every later terminal phase consumes. D-55 is absolute: the spec-delta (TERM scope — word mandatory, line feasibility-gated, автокоррекция в терминалах off; two-permission model; latency-budget completion clause: reaction <50 ms, completion best-effort with per-phase deadlines) and ADR-008 (terminal transport, Proposed) precede all code; ADR-008 is driven to Accepted by the spike's evidence.
+**Delivers:** per-terminal capability verdict table (caps, `ProcessKeyEvent` arrival, `commit_text` landing, select chord → PRIMARY read-back, a11y identity presence); wezterm flip fixed — config recipe `enable_wayland = true` first candidate, upstream build bump if #5125 bites on 20240203, daemon-side XIM workaround as the fallback branch; ADR-008 Accepted; e2e wezterm rows (two-consecutive-greens oracle); the TERM-2 kill-criterion verdict; the A11Y-0 spike matrix run (see tension 4).
+**Addresses:** TERM-0; unblocks TERM-1/TERM-2; feeds MENU identity design and the Telegram decision.
+**Avoids:** Pitfalls 1, 6, 8 (mechanism frozen only after the spike; two-permission model in spec first); Anti-Pattern 4 (no fix designed from the issue tracker).
 
-**Decision #1 — layout-switching mechanism (THE architectural fork):**
-- **Option A (ARCHITECTURE, recommended primary):** two engines in one component (`goswitch-en` layout=us, `goswitch-ru` layout=ru) as `('ibus',…)` sources. Verified from gnome-shell source: activating a source applies the engine's declared XKB layout *and* routes keys to goswitchd. Common path is pure passthrough; layout observation is free (FocusIn/FocusOut between our engines); native indicator; MRU cycling preserved. **Open sub-question:** "switch" then requires a *programmatic* source change — `gsettings set current N` — whose runtime efficacy on GNOME 46 is exactly what PITFALLS disputes (fallbacks: `org.gnome.Shell.Eval`, a tiny shell extension, or fold back to internal flip).
-- **Option B (PITFALLS/owner's prototype — proven working today):** single engine declaring layout=us with an internal en/ru mode flip. Instant switching with no GNOME round-trip; but per-keystroke `commit_text` in RU mode (ARCHITECTURE's documented anti-pattern: latency on 100% of typing to serve the correction path, broken app composition) and the indicator shows the engine symbol, not per-layout state.
-- **Resolution:** ADR at M0 + kill-criterion spike at the start of M1 — test two-engine activation via manual Super+Space, then empirically test programmatic switching (gsettings write first). If programmatic switching is unreliable, adopt Option B without architectural damage (buffer/correction logic is identical; isolate the choice behind the `layoutset` interface). Note the conflicting evidence on `gsettings current` (STACK: writable on GNOME 46, lore outdated; PITFALLS/SE-316998: ignored at runtime, pre-GNOME-46 era) — only a live test on the target settles it.
+### Phase 2: TERM-слово (обязательный)
+**Rationale:** the MVP core; the select→read→rewrite machinery is built once here and reused by the line phase with a chord swap.
+**Delivers:** `clipboard.ReadPrimary` + primary save/restore (PRIMARY-only policy: CLIPBOARD byte-untouched, `-n` everywhere, clobber documented); pure terminal helpers in `correct`; `terminalOp` stepper + failure vocabulary (`terminal-busy`, `terminal-read-empty`, `terminal-refused-*`, `terminal-interrupted`); gate (identity/role first, verify-timeout fallback for word); config knobs (`correction.terminal`, per-phase timeouts, settle delay); e2e matrix — wezterm + VTE word, Cyrillic bash+zsh, mid-line, focus-flip, vim-insert/vim-normal/htop witnesses, frozen autocorrect-negative rows, CLIPBOARD-unchanged row.
+**Uses:** ForwardKeyEvent bursts (`forwardShiftCtrlLeft`, BackSpace replay), `BuildPlan(caps=0)` level-2 math (first live client), `wl-paste --primary`, MACR clean-modifier rule.
+**Avoids:** Pitfalls 1–8.
 
-### Phase 1: Engine Skeleton & Architecture Validation (spec M1)
+### Phase 3: MENU — пункт чёрного списка (independent; may swap with Phase 2)
+**Rationale:** small, fully precedented in-repo, independent of terminal evidence; consumes the early A11Y-0 verdicts (Electron identity exists only post-a11y — sequencing matters for testing, not for code).
+**Delivers:** `config.AppendBlocklistEntry` (QuoteMeta, dedupe, cap 64, Node round-trip, pre-write validation, atomic rename with dot-prefix temp); indicator item 16 + `Callbacks.BlocklistTarget`/`AddToBlocklist`; `MenuSync.SetBlocklistTarget`; appid start-on-menu-attach; snapshot-at-menu-open protocol (label shows the exact name; disabled-with-explanation when unknown; never a junk `:1.NN` pattern); tray notification on success/refusal; e2e via DBusMenu Event; golden diff test (click changes only the new blocklist line).
+**Avoids:** Pitfalls 9, 10, 11.
 
-**Rationale:** Everything depends on the engine seeing keys as the active source; this is where Q1/Q4 are retired or the fallback is adopted cheaply. Pure packages first (zero integration risk, CI-green day one), then the wire adapter + minimal e2e.
-**Delivers:** `layouts/` generated tables + golden tests; `internal/hotkey` FSM with unit corpus; `engine/` adapter with address discovery, registration, Factory, reconnect/re-register loop, **recover() shim from the first commit**; two-engine registration spike (Decision #1 kill-criterion); systemd user unit (dev form); e2e skeleton (ydotool → engine log) with self-provisioning and fail-fast diagnostics.
-**Gate:** hotkey events visible in the log *while goswitch is the GNOME-active source* (not only standalone); `ibus restart` and engine kill -9 both leave desktop typing alive.
-**Addresses:** engine interception MVP item; e2e matrix foundation.
-**Avoids:** pitfalls 1, 2, 4, 5 (dev loop), 11 (skeleton), 12.
+### Phase 4: TERM-строка (если возможно — feasibility-gated)
+**Rationale:** enhances the proven word rung (`End` + `forwardShiftHome` instead of Ctrl+Shift+Left; cursor-restore replay `ArrowLeft` × len(right side)); explicitly gated by the Phase 1 capability table — the VTE kill criterion can shrink scope to wezterm-only or force a capture redesign; the owner may scope it out at the phase gate without failing the milestone.
+**Delivers:** line select + read on the surviving scope; End-normalization with documented side effect; verify-then-act mismatch branches (selected-length < buffer-length ⇒ defined branch, never guess); e2e line rows for the surviving scope, including the mid-line suffix-intact case.
+**Avoids:** Pitfalls 1, 2, 3.
 
-### Phase 2: Word Correction EN↔RU (spec M2)
-
-**Rationale:** The single most-used gesture and the validation of the core architectural bet (exact-range replacement). Buffer/reset semantics gate the phrase feature, so word ships first along this natural seam.
-**Delivers:** per-IC typed-text buffer keyed on keycode with release filtering; case-preserving conversion + direction auto-detect; replacement capability ladder tiers 1–2 (`DeleteSurroundingText`+`CommitText`, BackSpace×N fallback with rune counting and abort-not-garbage); single/double-tap wiring with tuned windows; `internal/correct` + session actor integration; e2e matrix v1 (gnome-text-editor + one Chromium case) with AT-SPI readback, per-case state reset, and failure output of observed text.
-**Addresses:** correct-last-word, tables, case, direction, exact-range replacement, buffer reset rules (empirical per-client check becomes an e2e case).
-**Avoids:** pitfalls 6, 7 (tiers 1–2), 9 (tuning), 10 (empirical click/reset verification).
-
-### Phase 3: Phrase, Selection, Config & Switching (spec M3)
-
-**Rationale:** Second-tier gestures plus the configurability layer; switching integration lands after correction because it is orthogonal to the core value and depends on Decision #1's outcome.
-**Delivers:** triple-tap phrase correction; selection correction (surrounding-text anchor where caps allow, clipboard transport otherwise — built once, shared with the future terminal fallback); mixed-text semantics per ADR with golden corpus; YAML config + hot reload + `goswitchctl` + `ctlsvc`; layout switching integrated per the M0 ADR (two-engine gsettings path or internal flip); switch+correct combo.
-**Addresses:** phrase/selection/multi-tap/combo/config/switching MVP items; mixed text (P1 semantics / P2 full — may slip to "whole buffer converts by majority" with documentation if needed).
-**Avoids:** pitfalls 3 (mechanism behind interface), 8 (`FocusInfo` seam), hot-reload traps (subprocess-per-event, parse-per-event).
-
-### Phase 4: Install, Docs & Acceptance (spec M4)
-
-**Rationale:** Hardening and the no-root story, once behavior is stable and there is something worth installing.
-**Delivers:** no-root installer (component XML under `$HOME`, `IBUS_COMPONENT_PATH` via `environment.d`, `ibus write-cache` + verify `ibus list-engine`, self-check, uninstaller); final systemd user unit(s) per the supervision ADR; full e2e matrix green **twice in a row** on an untouched session (gnome-text-editor, gedit, Chrome; per-capability-tier coverage incl. Chromium windowing modes); performance assertions (p95 <50 ms via ydotool→AT-SPI timestamps, RSS <50 MB); docs, README, monthly canary job.
-**Addresses:** no-root install MVP item; the e2e acceptance gate itself.
-**Avoids:** pitfalls 5 (installer dance), 11 (rot/canary), 12 (final units, double-spawn lock).
-
-### Post-v1 track (v1.x/v2 — do not schedule inside v1)
-
-Terminal fallback via wl-clipboard (after Q3 investigation, per-app enablement); Super→Ctrl per-app macros (needs the app-identity spike; candidate for spec-delta to v2); exception heuristics; performance telemetry in the e2e report; additional layout pairs.
+### Phase 5: A11Y — рецепты Telegram/ZCode (parallelizable with 2–4)
+**Rationale:** daemon unchanged (owner decision); recipes/docs/installer-side only; blocked only on the A11Y-0 spike verdicts and the Telegram build decision (tension 2). Includes the check-in gate «если Telegram не поддастся — вернуться к вопросу настройки демона».
+**Delivers:** ZCode user-local `.desktop` override (`--force-renderer-accessibility`) + "restart the app" docs + a user-runnable self-check one-liner; Telegram per the owner's ladder verdict (unconfined tarball/flatpak with a one-off flatpak a11y reachability check, or the daemon-side fallback); the yellow «Screen Reader mode» bar disclosed as a known consequence with owner acceptance recorded in the spec-delta; README residual-risk note (manual correction on hidden-input lines copies to PRIMARY).
+**Avoids:** Pitfalls 12, 13.
 
 ### Phase Ordering Rationale
 
-- **Dependency chain:** pure packages (layouts, hotkey FSM) unblock everything with zero integration risk; engine adapter + e2e skeleton is the M1 spike that retires the architecture questions while the fallback is still cheap; correction before switching (core value vs orthogonal integration); config after behavior (reload semantics stabilize once something is worth reloading); install last.
-- **Architecture grouping:** each phase completes a horizontal slice of the wire-adapter → actor → pure-logic stack, so the headless-CI fraction is maximal from day one and every phase's e2e growth matches spec §7.2 sequencing (M1 event-in-log → M2 word matrix → M3 full matrix).
-- **Pitfall avoidance:** the M0 decision pack exists because pitfalls 2/3/7/8/10/12 all name "M0 ADR" as their prevention phase; the recover() shim and reconnect loop are day-one M1 items, not retrofits; the kill-criterion spike makes the godbus dead-end (pitfall 4) cheap now, expensive later.
+- **Spec-delta + ADR-008 before code** (D-55 absolute); the spike is Phase 1 because it retires the most uncertainty per unit of work and is the evidence source ADR-008 needs to reach Accepted.
+- **Word → line:** same machinery, chord swap; line additionally gated by the kill criterion, so it must follow both the spike and the working word rung.
+- **MENU is independent** and fully precedented — it slots after TERM-word or swaps with it if terminal evidence slips; it needs only the early A11Y-0 spike output for its identity-degradation design.
+- **A11Y execution is last/parallel** because it is daemon-untouched; its real dependencies (spike verdicts, owner decision) are cheap and run early.
+- The ordering keeps the two data-destruction surfaces (terminal replay, config mutation) each behind their gating artifact: the capability table for TERM, spike verdicts + QuoteMeta/Node discipline for MENU.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning (`/gsd:plan-phase --research-phase`):
-- **Phase 1 (M1):** the engine adapter is niche-domain territory — private-bus handshake details, `UpdatePreeditText` arity on installed 1.5.29-rc2, `DeleteSurroundingText` signal acceptance, two-engine activation specifics; monitor traffic with dbus-monitor on the IBus socket.
-- **Phase 2 (M2):** per-app capability matrix (GTK4 vs Firefox vs Chromium/Electron windowing modes) decides fallback prevalence; empirical `reset()`-on-click behavior per client class.
-- **Phase 3 (M3) — partial:** mixed-text semantics corpus design and (if macros are kept in scope) the app-identity spike; the rest of M3 is standard patterns.
+- **Phase 2 (TERM-слово):** the most novel surface (time-stepped stepper, per-terminal quirks, gate escalation). Architecture research is already unusually detailed (code-read HIGH) — run research-phase only if Phase 1 verdicts introduce surprises (e.g., `commit_text` not landing in VTE, settle-delay behavior).
+- **Phase 4 (TERM-строка):** plan only after Phase 2 is green and the kill criterion is known; if any VTE-scope line path survives, its capture primitive needs its own spike before planning.
+- **Phase 5 (A11Y):** planning is blocked on the A11Y-0 spike matrix results and the Telegram owner decision; the recipe work itself is docs-level once verdicts exist.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 4 (M4):** installer/units/documentation — PITFALLS.md itself is the checklist; mechanisms are documented and verified.
-- Pure packages inside Phase 1 (layouts generation, hotkey FSM) and config hot reload inside Phase 3 — conventional, well-documented Go patterns.
+- **Phase 1:** it *is* the research — a live spike by design; web sources on wezterm transport are LOW confidence and should not be researched further, just probed. Planning should encode the kill criteria and the verdict-table format.
+- **Phase 3 (MENU):** every precedent is in-repo and live-proven (`configToggle.flip`, `writer.go` atomic rename, `menu.go` item ids/AboutToShow, appid) — HIGH-confidence code-read; standard patterns apply.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Verified against the Go module proxy and the live target system; versions pinned; license blocker on goibus confirmed via GitHub API |
-| Features | MEDIUM | Cross-checked across 10+ competitors; owner is the sole user (dogfooding), so risk is semantics, not demand; single-source claims marked in FEATURES.md |
-| Architecture | HIGH | Live D-Bus introspection of IBus 1.5.29 on target, end-to-end engine activation performed during research, gnome-shell + ibus upstream sources read directly |
-| Pitfalls | MEDIUM-HIGH | Upstream issues + empirical inspection of the owner's machine and prototype; several claims version-dependent (flagged inline) |
+| Stack | HIGH | Zero new dependencies; every component live-verified on the target (dpkg, gsettings, a11y probes, owner configs) and in-repo code is wire-tested and production-driven since v1.0/v1.1 |
+| Features | MEDIUM–HIGH | Table stakes are owner-defined and unambiguous; TERM-2 feasibility and Telegram autocorrect usefulness are empirical, spike-gated |
+| Architecture | HIGH in-repo / MEDIUM transport | Component design read directly from shipped code (live-proven v1.0.0); VTE/wezterm wire behavior cross-checked but not yet live-spiked — exactly what Phase 1 retires |
+| Pitfalls | MEDIUM | Project-ledger and live-probe facts HIGH; web findings LOW→MEDIUM (multi-source cross-checked); residual LOWs are all assigned to spike gates |
 
-**Overall confidence:** HIGH for the core bet (Go IBus engine viable, stack minimal and pinned, architecture verified live); MEDIUM for per-app behavioral details and the GNOME-switching mechanism, both of which have explicit in-phase validation planned.
+**Overall confidence:** MEDIUM — high wherever the target runtime and the codebase are the source; deliberately unproven wherever only a live spike can decide (wezterm transport, VTE select behavior, Telegram confinement workarounds, minimal a11y triggers).
 
 ### Gaps to Address
 
-- **Layout-switching mechanism (Decision #1):** conflicting evidence between two-engine pattern (gnome-shell source) and single-engine internal flip (working prototype), hinging on whether `gsettings set current` switches sources at runtime on GNOME 46. Handle: M0 ADR + M1 kill-criterion spike; keep both options implementable behind `internal/layoutset`.
-- **Multi-tap vs <50 ms:** semantics must be pinned in requirements (recommend fire-on-first-tap) before Phase 2 wires the FSM to actions.
-- **goibus characterization discrepancy:** STACK/ARCHITECTURE treat it as pure-godbus reference; PITFALLS calls it cgo. Immaterial to implementation (unlicensed either way, in-repo adapter required regardless; the live Python prototypes + godbus-in-production settle Q1 viability independently).
-- **Chromium/Electron surrounding-text support:** version-dependent (ibus#2354); resolve empirically in the Phase 2 capability matrix; one e2e case per claimed windowing mode.
-- **Terminals (Q3):** deferred to v1.x; detection mechanism (per-app context from focus events) lands with Phase 3's `FocusInfo` seam.
-- **Signal-arity details on the installed rc:** `UpdatePreeditText` 4-arg form and `DeleteSurroundingText` no-ack behavior to be confirmed with dbus-monitor during Phase 1.
-- **ydotool provisioning on other machines:** target's distro 0.1.8 needs no daemon (locally verified, HIGH); PITFALLS' ydotoold/socket-perms guidance applies to upstream 1.0.x — the e2e stand should auto-detect and fail fast either way; CI runner needs a self-hosted GNOME session.
-- **Mouse-click buffer reset:** unobservable at the IME layer; spec-delta at M0, approximate via caret-jump inference, verify per client in Phase 2.
+- **wezterm flip root cause/fix:** FEATURES' live-verified XIM explanation (`enable_wayland=false`) vs ARCHITECTURE's h1–h3 bridge-race hypotheses — the Phase 1 verdict table reconciles them; LOW confidence until run. Note the coupling: if wezterm moves to native Wayland for the flip fix, forwarded select chords travel the Wayland IM frontend where #4615 (Shift-lost) lives — the spike must test both under the new transport.
+- **VTE line capture:** the kill criterion may scope the line path to wezterm-only; Ctrl+U kill-ring capture is not externally readable and would be a different design needing its own spike.
+- **Telegram build decision (owner, blocking Phase 5 planning):** unconfined tarball vs flatpak (a11y reachability unverified) vs daemon-side fallback; no snap interface exists.
+- **Minimal a11y trigger per app:** IsEnabled vs ScreenReaderEnabled vs launch flag vs env — the A11Y-0 matrix decides; if `ScreenReaderEnabled=true` is the trigger, that is a session-wide semantic change requiring explicit owner acceptance. All triggers apply only at launch.
+- **wezterm word select chord:** whether Ctrl+Shift+Left selects by default in wezterm was not established in research (only Shift+Home absence was) — the capability table pins the word chord too.
+- **PRIMARY settle timing:** selection update after injected keys is asynchronous; settle-delay knob spike-pinned (start ~50–100 ms), per-phase deadlines as wedge guards.
+- **Buffer+commit in VTE:** "may already be close to working" is untested — a cheap Phase 1 spike check that could simplify the VTE word path.
+- **Telegram a11y quality:** even unconfined, upstream a11y is poor; verify the input field is actually exposed in the tree before promising autocorrect there.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Live target-system verification (Ubuntu 24.04 / GNOME 46 / IBus 1.5.29-rc2, 2026-09-10): D-Bus introspection of ibus-daemon over its private socket, end-to-end engine registration + activation, `gsettings` probes, systemd user units, component XMLs, `/usr/include/ibus-1.0/` headers, dpkg versions (ydotool 0.1.8, python3-gi 3.48.2, at-spi 2.52.0)
-- Owner prototypes: `/home/nil/.local/share/punto-switcher/punto_engine.py` (full working Python IBus engine), `/home/nil/.local/share/ibus-test/test_shift.py` — prior art for handshake, tap timing, replacement fallbacks
-- Go module proxy — godbus v5.2.2, fsnotify v1.10.1, yaml.v3 v3.0.1; GitHub API license check (goibus: none)
-- Upstream source read directly: ibus/ibus (`ibusengine.c`, `ibustypes.h`), gnome-shell (`js/ui/status/keyboard.js`), sarim/goibus
+- Live target-system probes, 2026-10-08 (all four research files): owner `~/.wezterm.lua` (`enable_wayland=false`), wezterm 20240203 + WM_CLASS on XWayland, gsettings input-sources (both sources goswitch engines), dpkg versions (wl-clipboard 2.2.1, VTE 0.76.0, gnome-terminal 3.52.0), telegram-desktop snap 7.2.9 process environ, a11y-bus AppArmor denial probes (`GetRole` denied on telegram/chromium snaps; 'zcode' visible), daemon-channel race-free spike
+- Codebase (read directly; live-proven in v1.0.0): `internal/session/actor.go` (WR-01 rungs, forwardCtrlV, MACR lesson, flipCredit), `internal/clipboard/clipboard.go` (Runner, empty-vs-error, no-pipes), `internal/config/writer.go` (atomic rename, Node round-trip), `internal/indicator/menu.go`, `internal/appid/appid.go` (RoleTerminal=60), `internal/correct/plan.go` (BuildPlan level-2), `cmd/goswitchd/main.go`
+- VTE 0.76.0 source read (GitLab tag): `src/vte.cc` widget_key_press (no keyboard selection), deselect-only incoming-contents, `src/keymap.cc` modifier encoding
+- Project ledgers: `.planning/WINDOWS.md`, `.planning/PROJECT.md` (spike record, caps 0x9, D-53, two-greens oracle), `docs/SPEC.md`, `docs/CONFIG.md`
+- wl-clipboard man pages (`--primary`, `-n`) + local 2.2.1; `/usr/include/ibus-1.0/` headers
 
 ### Secondary (MEDIUM confidence)
-- ibus issues: #2910 (registrations lost on daemon restart), #2354 (Chromium DeleteSurroundingText broken), #2054 (Firefox surrounding text), #2600 (fast-shift modifier loss), #2423 (surrounding-text staleness)
-- Competitor primary READMEs/docs: WaylandSwitcher, Mahou, SimpleSwitcher, langSwitcher, autokbisw; Caramba (App Store + AutoHotkey forum); Grokipedia Punto Switcher; wezterm `use_ime` docs + issues #1772/#5125
-- TUX IM dev log (2026) — engine crashes killing ibus-daemon; press/release doubling
-- ydotool version/daemon facts (RH bugzilla 2250692, Debian manpage) — superseded by local dpkg where they conflict
-- systemd.io desktop integration; graphical-session.target design materials; godbus signal-channel-close semantics
+- RHBZ 1847347 / GNOME vte#214 — VTE surrounding-text false advertising
+- wezterm: #1772 (text-input-v3), #5125 (IME broken with IBus on exactly 20240203, fixed in nightly), #4615 (forwarded shifted keys register unshifted), default-keys docs, releases (20240203 = last tagged), #6341, #4358
+- gnome-terminal#588 — keyboard selection requested since 2002
+- Chromium/Electron/Qt accessibility docs — startup detection, `--force-renderer-accessibility`, `app.setAccessibilitySupportEnabled`, `QT_ACCESSIBILITY`; freedesktop AT-SPI2 ScreenReaderEnabled docs; crbug/1449855
+- pty erase semantics / IUTF8 — SlackWiki, LKML, man7 utf-8(7), Manjaro reports; raw-mode/readline sources; bracketed paste references
+- Clipboard managers (Clipboard Indicator, GPaste, CopyQ) recording PRIMARY/CLIPBOARD
+- go-yaml#132 — comments survive only via yaml.Node
+- Telegram: tdesktop Screen Reader warning-bar issue (Apr 2026), Ubuntu docs on snap AT-SPI sandboxing, Zendalona fork
+- Competitors: layout_corrector README («terminal not supported», archived 2022), xneur (X11-only, dormant), Punto Switcher Shift+Break/Alt+Break mechanics
 
-### Tertiary (LOW confidence)
-- AskUbuntu / unix.stackexchange lore on `gsettings current` (read-only / runtime-ignored) — pre-GNOME-46 era, partially superseded by live writability verification; runtime effect still unverified (Gap #1)
-- DeepWiki ibus pages, venam.net input-stack overview, wayland-input blog, Fedora Magazine AT-SPI automation — corroborating context only
+### Tertiary (LOW confidence — all spike-gated)
+- GNOME GitLab «IME in wezterm dies after screen unlock» — same family as the defect; live-confirm in Phase 1
+- ghostty#2392 ForwardKeyEvent segfault — motivates mandatory per-terminal verification
+- Snapcraft forum AT-SPI-in-snaps threads — superseded for the verdict by the live AppArmor probe
+- AskUbuntu gsettings lore — superseded by local `gsettings writable` verification
 
 ---
-*Research completed: 2026-09-10*
+*Research completed: 2026-10-08*
 *Ready for roadmap: yes*

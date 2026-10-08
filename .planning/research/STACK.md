@@ -1,175 +1,190 @@
-# Stack Research
+# Stack Research — goswitch v1.2 «Терминалы и видимость приложений»
 
-**Domain:** IBus input-method-engine daemon (layout switcher / mistyped-text corrector) for GNOME Wayland, written in Go
-**Researched:** 2026-09-10
-**Confidence:** HIGH for core stack (verified against the Go module proxy — the authoritative version registry — and against the live target system: Ubuntu 24.04, GNOME 46, IBus 1.5.29, ydotool 0.1.8, Go 1.27.1, where two validated Python IBus-engine prototypes exist and one was the *active* engine during research)
+**Domain:** GNOME Wayland IBus input-method daemon (Go) — terminal correction, dynamic tray-menu item, per-app accessibility enablement
+**Researched:** 2026-10-08 (live probes on the target: Ubuntu 24.04, GNOME 46, wezterm 20240203, Telegram snap 7.2.9 rev 7150, ZCode /opt/ZCode Electron)
+**Confidence:** MEDIUM–HIGH (local target-runtime probes = HIGH; cross-checked web = MEDIUM; single-source web = LOW)
 
-## What This Stack Must Satisfy
+## Headline Finding
 
-Fixed constraints from `PROJECT.md` / `SPEC.md` §5: Go ≥ 1.23, stdlib + `godbus/dbus` + minimal deps, no root for install/operation, systemd user unit, hot-reloadable YAML config, e2e testing via physical input path (uinput) + AT-SPI reading. Spec open questions directly addressed by this file: **Q1** (IBus engine viability in Go) and **Q6** (autostart scheme); stack-relevant notes for Q2/Q3/Q4 at the end.
-
----
+**Zero new Go dependencies.** All three v1.2 features ride the existing stack: godbus v5.2.2 (unchanged, still latest on the proxy), the in-repo `internal/engine` ForwardKeyEvent emitter (wire-tested AND already live-driven by the clipboard rung's Ctrl+V forward burst, D-28), the in-repo `internal/clipboard` wl-clipboard wrapper (needs only a `--primary` flag), the in-repo `internal/indicator` DBusMenu label-delta machinery, and the in-repo `internal/a11y` + `internal/appid` packages. The only "new stack" is: a few in-repo keyval constants, external-tool recipes (wezterm config, .desktop override, docs), and one structural discovery that reshapes the Telegram plan (AppArmor wall, below).
 
 ## Recommended Stack
 
-### Core Technologies
+### Core Technologies (delta from v1.1 — everything else unchanged)
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| Go | ≥ 1.23 (go.mod), build with current 1.27.x | Language/toolchain | Project constraint. Local toolchain is go1.27.1. Keep `go 1.23` as the module language version so prebuilt release binaries and `go install` remain compatible with older distro toolchains. `log/slog` (stdlib since 1.21) covers the structured/leveled logging requirement of SPEC §5 with zero deps. |
-| `github.com/godbus/dbus/v5` | **v5.2.2** (2025-12-29; verified via `proxy.golang.org`) | All D-Bus: IBus engine socket (service side), session bus, a11y bus if needed | The only maintained native Go D-Bus implementation (BSD-2-Clause, ~1.2k stars). Needed in both client *and service* mode: `Export` publishes the engine/factory object paths on the IBus connection, signal channels receive `NameOwnerChanged` for daemon-restart detection. Proven against the IBus socket in production by ibus-bamboo (built on godbus v5.1.0, actively maintained 2026, packaged in Fedora by Red Hat's IBus maintainer). API stable across v5.x. |
-| In-repo `engine/` package (IBus protocol adapter) — **no external dependency** | n/a (approx. 800–1,200 LOC) | Implements `org.freedesktop.IBus` engine side: `_RegisterComponent`, factory `CreateEngine`, engine object with `ProcessKeyEvent`, signals `CommitText` / `ForwardKeyEvent` / `UpdatePreeditText` / `DeleteSurroundingText` / `RequireSurroundingText` | The only existing Go bindings (`sarim/goibus` 2018, fork `BambooEngine/goibus` 2024) have **NO LICENSE FILE** in either repo (verified via GitHub API) — legally unusable inside an MIT project. The protocol surface needed is small (goibus is 832 LOC total). Primary sources for the wire format are installed on the target system: `/usr/include/ibus-1.0/*.h` (ibusregistry.h, ibuscomponent.h, ibusengine.h, ibustext.h) plus the owner's two validated Python prototypes (see below). This is the single real piece of engineering in the stack; everything else is off-the-shelf. |
-| `gopkg.in/yaml.v3` | **v3.0.1** (2022-05-27; frozen but stable) | YAML config parsing | Ecosystem-default YAML 1.2 parser, zero external dependencies, known-DoS issues fixed in v3.0.1. Frozen status is a *feature* under the minimal-dep/audit constraint: no churn, tiny audit surface. Hot reload is orthogonal (fsnotify's job). Alternative: `github.com/goccy/go-yaml` v1.19.2 (2026-01-08, active, also zero-dep) if stricter typing or better error messages become desirable — swap is mechanical. |
-| `github.com/fsnotify/fsnotify` | **v1.10.1** (2026-05-04; verified via `proxy.golang.org`) | Config hot reload (SPEC §4.1 "without restart") | The standard Go inotify wrapper. Must be used with the directory-watch + debounce pattern (see Patterns section) because editors save config files via atomic rename, which swaps the inode. |
-| systemd **user** units | systemd 255 (Ubuntu 24.04) | Autostart / supervision (Q6) | The distro itself starts ibus-daemon this way: `org.freedesktop.IBus.session.GNOME.service` (`Type=dbus`, `BusName=org.freedesktop.IBus`, `WantedBy=gnome-session.target`, `After=gnome-session-initialized.target`, `Restart=on-abnormal` — read from `/usr/lib/systemd/user/` on the target). `goswitchd.service` (user) hooks into the same chain. No root required anywhere. |
-
-### The IBus Protocol Layer (the load-bearing detail)
-
-Verified facts that shape the implementation, all confirmed on the target system (IBus 1.5.29) unless noted:
-
-1. **Connection handoff:** ibus-daemon does *not* serve the engine API on the session bus (probed: `gdbus call ... /org/freedesktop/IBus` on the session bus → "Object does not exist"). It embeds its own D-Bus server on a dedicated unix socket whose address is published in `~/.config/ibus/bus/<machine-id>-unix[-wayland]-<display>` files and via the `ibus address` CLI (returns `unix:path=/home/nil/.cache/ibus/dbus-XXXX,guid=...`). `goswitchd` reads that file (or `IBUS_ADDRESS` env override) and `godbus` dials it directly — exactly what `IBus.Bus()` does in Python and what goibus/ibus-bamboo do from Go.
-2. **No introspection:** the IBus connection publishes no standard introspection data (probed: empty node). Method names, signatures, and the GVariant serialization of IBus objects (`IBusText` = struct with string + attribute array, etc.) must be hand-coded. Truth sources, in order: `/usr/include/ibus-1.0/` headers (installed), `ibus.github.io/docs/ibus-1.5` reference manual, the owner's validated prototypes at `/home/nil/.local/share/punto-switcher/punto_engine.py` and `/home/nil/.local/share/ibus-test/test_shift.py` (both register, receive `process_key_event` with keyval/keycode/state, and commit text successfully on this machine — `ibus engine` returned `test-shift`, i.e. a prototype was the live engine), and goibus source as a cross-check only.
-3. **Registration, two paths:** (a) component XML in a scanned directory — how the distro engines do it (`/usr/share/ibus/component/*.xml` verified: `<component>` with name/exec/version/license + nested `<engines><engine>` with name/language/layout/symbol/rank); `IBUS_COMPONENT_PATH` (colon-separated) adds custom dirs, documented in the installed `ibusregistry.h` — but it must be set in *ibus-daemon's* environment, i.e. a user-unit override, still root-free; (b) **programmatic `_RegisterComponent` at daemon startup** — what both Python prototypes do (connect → request component name → `_RegisterComponent`) and the recommended primary path for goswitchd: zero files outside `$HOME`, immediately active, matches the no-root constraint.
-4. **Key delivery:** the engine receives `ProcessKeyEvent(keyval, keycode, state) → bool` (return `true` = consumed). Keyvals are X11 keysyms — a static Go table generated by `go:generate` (SPEC §8 `layouts/`), no runtime library needed. Modifier/release bit (0x40000000) semantics demonstrated in the prototypes.
-5. **Text replacement surface (Q2-relevant):** engine signals `CommitText(text)` and `DeleteSurroundingText(offset_from_cursor, nchars)`; the client pushes `SetSurroundingText(text, cursor, anchor)` when the app's IM module supports it and the engine called `RequireSurroundingText`. The punto prototype's `delete_surrounding_text(-n, n)` + fallback to forwarding Backspace is the validated pattern; actual per-app precision (GTK vs Chromium vs terminals) is phase-research territory, not a stack dependency.
-
-### GNOME Integration (layout read/switch)
-
-| Mechanism | Status on target | Use |
-|---|---|---|
-| `gsettings get/set org.gnome.desktop.input-sources current` | **verified writable** (`gsettings writable ... current` → `true`; `sources` = `[('xkb','us'), ('xkb','ru')]`) | Primary layout switch/read: subprocess `gsettings` via `os/exec` — zero new deps, robust against dconf backend details. The AskUbuntu lore that `current` is read-only is outdated for GNOME 46 — verified live. |
-| `gsettings monitor org.gnome.desktop.input-sources` | std subprocess | Reactive layout-change observation: parse its line output. (The alternative — direct `ca.desrt.dconf` D-Bus — is fragile and buys nothing.) |
-| `ibus engine <name>` / `org.freedesktop.IBus.SetGlobalEngine` | available | Fallback/activation of the goswitch engine itself. |
-| GNOME keybindings | `switch-input-source` = `['<Alt>Shift_L','<Super>space']` (verified) | Reference only; the engine intercepts its own hotkeys inside `ProcessKeyEvent`, no keybinding registration needed. |
+| In-repo `internal/engine` — ForwardKeyEvent bursts | existing (go.mod `go 1.23`) | Deliver injected keys (BackSpace, Home, modifiers) into the focused terminal through the daemon's OWN IBus input context — the channel the 2026-10-08 spike validated as race-free | The emitter exists and its wire contract is pinned by `emitter_wire_test.go`; the Ctrl+V forward burst of the clipboard rung (D-28) already drives this exact path in production. v1.2 adds keyval constants to `internal/engine/keys.go` from `/usr/include/ibus-1.0/ibuskeysyms.h` in the file's established verified-verbatim pattern: `KeyHome = 0xff50`, `KeyEnd = 0xff57`, `KeyLeft/Up/Right/Down = 0xff51–0xff54`. `MaskShift = 1<<0` already exists; `CapSurroundingText = 1<<5` (0x20) is the bit terminals lack (wezterm caps 0x9 = Preedit|Focus). |
+| `wl-clipboard` (`wl-paste`/`wl-copy`) via in-repo `internal/clipboard` | 2.2.1 (dpkg-verified on target) | Read the selection produced by injected keys: `wl-paste --primary --no-newline` | GNOME/mutter implements the primary-selection protocol; `--primary` exists in wl-clipboard 2.x. The existing wrapper already has the security discipline (content only via stdin pipe, flag-only argv, 1.5 s timeout) — adding `--primary` is a flag-level extension. Write-back to the clipboard is NOT needed: correction text enters via `commit_text`, and restoring the user's clipboard is the existing save/restore rung (D-28/D-29). |
+| `gsettings org.gnome.desktop.interface toolkit-accessibility` via in-repo `internal/a11y` | GNOME 46 (existing Phase 8 code) | Enable a11y in ZCode (Electron/Chromium reads this key **at startup**) and trigger the Telegram snap's own `QT_ACCESSIBILITY=1` export | The daemon already sets it (default ON) plus the `org.a11y.Status.IsEnabled` belt. Live probe: ZCode is visible and nameable in the a11y tree today ('zcode' in the desktop children list). Chromium honors the key only for apps launched after it is set — the milestone work is relaunch guidance/docs, not new daemon code. |
+| In-repo `internal/indicator` (SNI + DBusMenu v3) + `internal/appid` | existing | Dynamic «Добавить {ИмяПриложения} в чёрный список» menu item | `menu.go` already pushes dynamic labels through `ItemsPropertiesUpdated` (`SetMode`/`SetKeys`/`SetCorrections`/`SetVersion` precedents) and routes `Event` clicks; a new item id + interpolated label builder + callback rides the existing machinery. `appid` supplies the focused app's bridge-namespace identity over the a11y bus. No Go library would do this better — the DBusMenu v3 subset is already implemented and live-verified. |
+| wezterm config recipe (owner's `~/.config/wezterm/wezterm.lua`) | wezterm 20240203-110809-5046fc22 | Enable keyboard select-to-line-start in wezterm | wezterm 20240203's default key tables have **no Shift+Home/End bindings at all** (only Shift+PageUp/PageDown scroll; Ctrl+Shift+X ActivateCopyMode). Keyboard selection exists only via CopyMode sequences — and the owner's config is already built on `wezterm.gui.default_keys()` + CopyMode `Multiple` sequences (the Cmd+A recipe). The enabling entry: `SHIFT+Home` → `Multiple{ ActivateCopyMode, CopyMode{SetSelectionMode='Cell'}, CopyMode'MoveToStartOfLineContent', CopyMode'Close' }` (Close leaves the selection active). Note: 20240203 is the **last tagged release ever** (upstream ships nightlies only since Feb 2024; issue #6341 tracks the next release) — the recipe targets the installed version. |
+| User-local `.desktop` override for ZCode | `~/.local/share/applications/zcode.desktop` (new file; `/usr/share/applications/zcode.desktop` is root/dpkg-owned, `Exec=/opt/ZCode/zcode %U`) | Deterministic Electron a11y belt: `--force-renderer-accessibility` | Removes the launch-order dependency on the gsettings key. User-local entries shadow system ones — the same mechanism the Telegram snap entry already uses on this machine. Electron/Chromium documents automatic a11y on AT detection; the flag forces the renderer tree regardless of startup timing. |
 
 ### Supporting Libraries
 
-None beyond the two above — that is the point of the constraint. Deliberate non-additions:
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| `github.com/godbus/dbus/v5` | v5.2.2 (still latest — proxy verified 2025-12-29) | Engine service side, a11y belt, DBusMenu, appid | Unchanged; no bump. |
+| `gopkg.in/yaml.v3` | v3.0.1 | Config (blocklist regex list already there) | Unchanged. |
+| `github.com/fsnotify/fsnotify` | v1.10.1 (latest 2026-05-04) | Config hot reload | Unchanged. |
+| `github.com/jfreymuth/pulse` (+ oggvorbis) | v0.1.3 / v1.0.5 (both latest) | Sounds | Unchanged. |
+| VTE 0.76.0 / gnome-terminal 3.52.0 | dpkg-verified on target | Target terminal #2 — read-only integration facts below | No package to add; e2e stand covers it. |
+| telegram-desktop snap | 7.2.9 rev 7150 | Target app whose a11y is **structurally blocked** (see Telegram finding) | No package change inside the milestone; decision needed (Alternatives). |
+| `ibus` CLI (`ibus engine`, `ibus address`, `ibus restart`) | 1.5.29 | Debug/verification of engine state, wezterm-defect diagnosis | Already used. |
 
-| Need | Resolution without a new dependency |
-|---|---|
-| Structured logging (SPEC §5) | stdlib `log/slog` |
-| CLI for `goswitchctl` | stdlib `flag` (or `os.Args` dispatch); a CLI framework would violate the constraint |
-| Layout tables EN↔RU | static data + `go:generate` generator (SPEC §8); no xkb parser needed for ЙЦУКЕН↔QWERTY |
-| Asserts in unit tests | stdlib `testing` + golden files (SPEC §7.1); add `stretchr/testify` only if the owner relaxes the constraint — not recommended now |
-| Terminal fallback (Q3, v1-optional) | `wl-copy`/`wl-paste` subprocess — no Go Wayland client dep |
+### Development Tools (e2e stand — additions only)
 
-### Development Tools (e2e stand, SPEC §7.2–7.3)
-
-| Tool | Version on target | Purpose | Notes |
-|------|-------------------|---------|-------|
-| ydotool | **0.1.8-3build1** (Ubuntu 24.04 archive) | Physical-path key injection | Distro 0.1.8 opens `/dev/uinput` directly — no `ydotoold` daemon needed (verified: no socket/service on target, yet the binary is installed and `/dev/uinput` exists root:input 0660). Test user is already in the `input` group (verified). Do **not** chase upstream 1.0.4: it requires the ydotoold daemon + socket setup and is not packaged in 24.04. Fallback if injection semantics prove insufficient: a ~150-LOC Go uinput injector via stdlib `syscall` ioctls. |
-| AT-SPI reader | `python3-gi` 3.48.2, `gir1.2-atspi-2.0` 2.52.0, `at-spi2-core` 2.52.0 — all installed (verified) | Reading editor content + focusing windows (`org.a11y.atspi.Text.getText`, `Component.grabFocus`) | SPEC §7.3 already prescribes `at-spi` via python3-gi. There is **no established standalone Go AT-SPI library** (searched; only `m31labs.dev/fluffyui`'s atspi package, part of a heavier UI-automation module — LOW confidence, avoid). Pragmatic split: e2e orchestrator and YAML case matrix in Go; text-reading/focusing step as a small `/usr/bin/python3` helper script using gi. Note: unlike IBus, **AT-SPI2 is fully introspectable D-Bus** (`org.a11y.Bus` on the session bus hands out the a11y bus address), so a pure-Go godbus reader remains a clean later option. |
-| `gdbus` / `busctl --user` / `gsettings` | ships with the OS | Manual verification of every D-Bus claim during development | Used to produce the verifications in this file. |
-| `ibus engine`, `ibus list-engine`, `ibus address`, `ibus restart` | IBus 1.5.29 CLI | Debugging engine state, simulating daemon restarts | Used extensively in this research. |
-| GitHub Actions | unit on push (headless), e2e on manual dispatch with a self-hosted GNOME runner | CI per SPEC §8 | e2e runner needs: GNOME session, user in `input` group, python3-gi + at-spi gir packages. |
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| a11y-tree probe (existing `python3-gi` 3.48.2 + `gir1.2-atspi-2.0`, or raw `busctl --address=$(org.a11y.Bus GetAddress)`) | Assert app visibility in e2e: list desktop children, `Accessible.GetRole` per app; also the tool that produced the AppArmor finding | Already installed on target; no new packages. |
+| `gdbus`/`busctl --user` introspection of `com.canonical.dbusmenu` | Verify dynamic-label deltas land (GetLayout/GetGroupProperties before/after) | Ships with OS. |
+| `wezterm show-keys` (20240203 has it) | Assert the Shift+Home recipe binds, in CI | No install; binary present. |
 
 ## Installation
 
 ```bash
-# Go dependencies — the complete external dependency set
-go get github.com/godbus/dbus/v5@v5.2.2
-go get gopkg.in/yaml.v3@v3.0.1
-go get github.com/fsnotify/fsnotify@v1.10.1
+# go.mod: NO CHANGES — zero new modules for v1.2.
+# (existing: godbus/dbus v5.2.2, yaml.v3 v3.0.1, fsnotify v1.10.1, jfreymuth/pulse v0.1.3)
 
-# e2e stand packages (Ubuntu 24.04, once per machine)
-sudo apt install ydotool python3-gi gir1.2-atspi-2.0 at-spi2-core
-sudo usermod -aG input "$USER"   # uinput access for injection (already true on target)
+# System packages (already installed on target; formalize as install-deps):
+sudo apt install wl-clipboard   # 2.2.1 — already required since the v1.1 clipboard rung
+
+# No new e2e stand packages: python3-gi + gir1.2-atspi-2.0 + ydotool already present.
 ```
 
-Autostart (Q6) — user units, no root:
-
-```ini
-# ~/.config/systemd/user/goswitchd.service
-[Unit]
-Description=goswitch IBus engine daemon
-PartOf=graphical-session.target
-After=graphical-session.target org.freedesktop.IBus.session.GNOME.service
-# ibus-daemon may not be up yet, or may restart out from under us:
-Restart=on-failure
-RestartSec=2
-
-[Service]
-ExecStart=%h/go/bin/goswitchd
-# daemon internal loop: connect to ibus socket -> request name ->
-# _RegisterComponent -> (re)activate engine; retry until ibus-daemon answers
-
-[Install]
-WantedBy=graphical-session.target
+```lua
+-- wezterm recipe (owner's ~/.config/wezterm/wezterm.lua, appended to the keys table):
+table.insert(keys, {
+  key = 'Home', mods = 'SHIFT',
+  action = wezterm.action.Multiple{
+    wezterm.action.ActivateCopyMode,
+    wezterm.action.CopyMode { SetSelectionMode = 'Cell' },
+    wezterm.action.CopyMode 'MoveToStartOfLineContent',
+    wezterm.action.CopyMode 'Close',   -- Close LEAVES the selection active
+  },
+})
+-- wezterm copy_on_select defaults to ClipboardAndPrimarySelection: the
+-- selection lands in BOTH buffers -> wl-paste --primary can read it.
 ```
 
-`systemctl --user enable --now goswitchd` completes the install. Component XML in `/usr/share/ibus/component/` is *not* required (programmatic registration); it becomes relevant only for later distro packaging, or set `IBUS_COMPONENT_PATH=%h/.local/share/ibus/component` via a user-unit override on `org.freedesktop.IBus.session.GNOME.service` if persistent XML-based registration is ever wanted.
+```desktop
+# ~/.local/share/applications/zcode.desktop (user-local override; installer drop)
+[Desktop Entry]
+Name=ZCode
+Exec=/opt/ZCode/zcode --force-renderer-accessibility %U
+Terminal=false
+Type=Application
+Icon=zcode
+StartupWMClass=ZCode
+MimeType=x-scheme-handler/zcode;
+Categories=Development;
+```
+
+## Load-Bearing Findings (what the stack must account for)
+
+### (a) Terminal correction
+
+1. **Terminal selections are visual only — `commit_text` does NOT erase the selected pty text.** VTE 0.76's incoming-contents handler only *deselects* when contents change (source-verified, `src/vte.cc` ~line 3937); the `widget_key_press` path (src/vte.cc:4972) has zero selection logic. Consequence: the write-back in terminals is exactly the built-but-never-live-driven **backspace-replay** (ADR-003 level 2): `N × ForwardKeyEvent(KeyBackSpace)` then `commit_text(corrected)`; N comes from the daemon keystroke buffer or the read-back length. v1.2 takes level-2 live — its wire behavior is already pinned by tests.
+2. **Select-to-line-start via injected Shift+Home does NOT work out of the box in either target terminal.**
+   - **VTE 0.76 / gnome-terminal 3.52: keyboard selection does not exist.** `Terminal::widget_key_press` goes IM-filter → context menu → keymap; Shift+Home falls to `_vte_keymap` and is sent to the child app as `CSI 1;2H` (xterm modifier-parameter encoding; keymap.cc source-verified). No user-configurable binding can change this — gnome-terminal has no "select" action to bind.
+   - **wezterm 20240203: no default Shift+Home binding** (default-keys docs); keyboard selection only via CopyMode, enabled by the config recipe above.
+   - Consequence for scope: the injected-keys + clipboard read channel is **wezterm-only, and conditional on a user config recipe**. For VTE, the whole-line read must come from the daemon's own keystroke buffer (already exists for phrase correction; resets on Enter/Tab/focus/Escape); word correction in VTE needs no read channel at all. Do not gate VTE acceptance on a clipboard read-back.
+3. **The ForwardKeyEvent channel itself is production-proven** — the clipboard rung already forwards a Ctrl+V burst through it (D-28); the 2026-10-08 spike additionally confirmed the daemon's IBus channel has no focus race (external injectors could not manage window focus on the live desktop).
+4. **wezterm layout-switch defect (flip via SetGlobalEngine does not take effect):** no stack addition fixes it — it is in-repo engine work plus a diagnosis spike. Verified context: wezterm on GNOME Wayland is a text-input-v3 client bridged to IBus by mutter (no direct IBus client on Wayland); the fragility class is documented (GNOME: "IME does not work in wezterm after unlock screen"; wezterm #4358 "keeps switching keyboard layout" on focus; nightlies reworked winit keyboard handling while 20240203 is pinned). Candidate mechanisms for the spike: stale client xkb keymap after `wl_keyboard.keymap` change vs input context not re-armed after `SetGlobalEngine`. LOW→MEDIUM confidence until the spike runs.
+5. **Clipboard side effect worth a pitfalls entry:** wezterm's `copy_on_select` default (`ClipboardAndPrimarySelection`) clobbers the user's CLIPBOARD on every selection — interacts with the existing clipboard save/restore rung in the terminal path.
+
+### (b) Dynamic blocklist menu item
+
+- Zero new dependencies: `menu.go` label deltas + `appid` observer cover it. The item is one more `menuID` with a label built from the focused app's bridge-namespace name; `ItemsPropertiesUpdated` pushes the change (the renderer refreshes an open menu).
+- **Identity reach = a11y visibility.** `appid` sees only apps on the a11y bus: GTK, unconfined Electron/Qt. It can never see: wezterm (no a11y at all — irrelevant: terminals are not autocorrected), and **any strictly confined snap** (Telegram, Chromium — see below). The menu item must degrade gracefully (hidden, or a generic «Неизвестное приложение») when the name is unavailable; the D-53 fail-closed precedent applies.
+
+### (c) Accessibility in Telegram (Qt snap) and ZCode (Electron)
+
+- **ZCode — works today, add a belt.** Live probe 2026-10-08: 'zcode' is in the a11y desktop children and nameable. Mechanism: Chromium/Electron reads `toolkit-accessibility` **at startup** (chromium.org Linux Accessibility docs) — the daemon already sets it with default ON (Phase 8), so every fresh ZCode launch is covered; the owner's D-8-6 manual precedent validated the lever. The `.desktop` override with `--force-renderer-accessibility` removes the only failure mode (app launched before the key was set). Milestone work = recipe/installer drop + relaunch docs.
+- **Telegram — structurally blocked by snap confinement; NO environment recipe can fix it.** Live-probed 2026-10-08: the snap wrapper already exports `QT_ACCESSIBILITY=1` (sourced from `toolkit-accessibility` by the desktop-launch helper — verified in the running process's environ); the process **is registered on the a11y bus** (it appears as a live bus destination), but the snap's AppArmor profile denies **all inbound AT-SPI method calls** from unconfined clients: `org.a11y.atspi.Cache.GetItems` → policy-denied; raw `org.a11y.atspi.Accessible.GetRole` on `/org/a11y/atspi/accessible/root` → **"Access denied"**. The Chromium snap shows the same denial class. Consequence: the daemon's role-gate can never see Telegram-snap, by confinement — this is the "если Telegram не поддастся" branch materializing at the stack level. Options, in order: (1) an unconfined Telegram build — the official tarball (telegram.org) or flatpak `org.telegram.desktop` — where Qt reads the same gsettings key and the a11y tree becomes readable (flatpak's a11y reachability needs a one-off live check before committing); (2) the owner's stated daemon-side fallback. Telegram is Qt6: auto-activation via `org.a11y.Status.IsEnabled` (which the existing belt sets) plus `QT_ACCESSIBILITY=1` covers the toolkit side once confinement is out of the way.
+- **`QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`** forces the Qt at-spi bridge regardless of detection — works (qaccessible.cpp), but carries a measurable Qt performance cost (community-reported) and is redundant while the belt + wrapper path functions. Docs-level last resort only.
+- **`GTK_MODULES=gail:atk-bridge`** is GTK2-era; GTK3+ auto-loads the bridge from `toolkit-accessibility`. Not needed for any v1.2 target.
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| godbus/dbus v5.2.2 | `linuxdeepin/go-dbus` (2014), `carnegierobotics/go-dbus` (stale godbus v4 fork) | Never — both abandonware (module proxy: 2014 / dead). |
-| In-repo `engine/` adapter | `BambooEngine/goibus` v0.0.0-20240724 | Never as an import (no LICENSE — legal blocker for MIT code). Legitimate as a *read-only behavioral reference* for the GVariant wire format. |
-| In-repo `engine/` adapter | cgo bindings to `libibus` (`gir1.2-ibus-1.0` + gotk3 stack) | Never for this project — cgo breaks the static-binary/audit story and drags in GLib. |
-| `gopkg.in/yaml.v3` | `github.com/goccy/go-yaml` v1.19.2 | If config validation needs its strict decoder, better line/col errors, or comment round-tripping (comment-preserving config rewrites in v2+). Both are zero-dep; migration is mechanical. |
-| `gsettings` subprocess | direct `ca.desrt.dconf.Writer` D-Bus calls via godbus | Only if subprocess overhead in the hot path ever measurably matters — unlikely (switch actions are user-paced, <50 ms budget is generous). |
-| ydotool 0.1.8 (distro) | own Go uinput injector | If ydotool's timing/behavior proves flaky in CI; ~150 LOC of stdlib ioctls is a contained fallback. Upstream ydotool 1.0.4 + ydotoold is a third option only on distros that package it. |
-| python3-gi reader helper | pure-Go AT-SPI client on godbus | If the e2e stand must shed the python dependency; AT-SPI is introspectable so godbus generated/hand stubs are viable. Keep python for v1 — it is installed, spec-prescribed, and the least code. |
-| fsnotify v1.10.1 | polling `os.Stat` mtime every 500 ms | Genuinely acceptable for a single config file (simpler than handling rename semantics); keep fsnotify only because it is already tiny and standard. |
+| wl-clipboard subprocess (+ `--primary`) | Pure-Go Wayland client implementing `wp_primary_selection_unstable_v1` (e.g. `rajveermalviya/go-wayland`) | Never for v1.2 — a heavyweight new dep against the audit constraint; the subprocess path is validated in production since v1.1. |
+| Daemon ForwardKeyEvent bursts | External injectors driven by the daemon (ydotool/wtype) or uinput in-process | Never: the 2026-10-08 spike showed the external path loses the focus race on a live desktop, and uinput in the daemon violates the architecture axiom (keyd/xremap coexistence). |
+| Daemon keystroke buffer as the VTE line-read channel | OSC 52 emission from a shell hook into the clipboard | If a future milestone needs whole-line in VTE and the buffer proves insufficient — requires shell cooperation (precmd hook) and VTE does not even support OSC 52 clipboard writes; heavy user setup. |
+| `appid` bridge-namespace identity | /proc/wm-based window identity | Never on Wayland — no root-free stable identity source outside the a11y bus; silent degradation is the designed behavior. |
+| User-local `.desktop` override for ZCode | Editing `/usr/share/applications/zcode.desktop` | Never — dpkg-owned, clobbered on app updates. |
+| Unconfined Telegram (tarball/flatpak) | `snap connect`/interface tweaks for the Telegram snap | Flatpak/tarball only; there is **no** user-fixable interface for the AppArmor AT-SPI denial (the rule lives in snapd's generated profile). |
+| gsettings + relaunch for Electron a11y | `--force-renderer-accessibility` only, or in-app `app.setAccessibilitySupportEnabled(true)` | In-app API requires patching ZCode; flag-only works but keeps the gsettings dependency implicit — belt-and-suspenders (both) is the cheap deterministic choice. |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `sarim/goibus` / `BambooEngine/goibus` as a dependency | **No LICENSE file in either repo** (verified via GitHub API) — default "all rights reserved"; cannot ship inside MIT-licensed goswitch. Also pins godbus v5.1.0 and is idle since 2024-07. | In-repo `engine/` package; read their source only as protocol reference. |
-| Viper (spf13/viper) for config | ~10+ transitive deps (including its own YAML/FS abstraction layers) — direct violation of the "stdlib + godbus + minimal deps" constraint for a config file with 3 concerns (keys, mappings, hot reload). | yaml.v3 + fsnotify (~50 LOC of glue). |
-| cgo / libibus / GLib bindings | Loses static cross-compilable binary, complicates `go install` distribution, audit surface balloons. | godbus pure-Go wire protocol. |
-| godbus/dbus **v4** (2017) or un-versioned import path | EOL, missing v5 fixes (split of introspect/propgen, `dbus.Variant` typing). | `github.com/godbus/dbus/v5` module path. |
-| xdotool for e2e | X11-only — dead on Wayland (would only "work" via XWayland apps, invalidating the test premise). | ydotool (uinput = compositor-independent physical path). |
-| uinput injection **inside goswitchd** for text correction | Architecture axiom (SPEC §3.1): uinput conflicts with keyd/xremap at the evdev layer and breaks the no-monopoly requirement. IBus `commit_text` is the injection mechanism. | IBus engine signals; uinput stays in the e2e stand only, where it *simulates the human*. |
-| GUI settings frameworks / GTK | Out of scope v1 (YAML suffices, SPEC §10); any GUI dep would dwarf the daemon itself. | YAML + `goswitchctl`. |
-| `stretchr/testify` (optional stance) | Test-only sugar not worth breaking the "auditable in an afternoon" property; golden-file tests are more valuable for layout tables anyway. | stdlib `testing` + golden files. |
+| Any new Go module for v1.2 (clipboard libs, Wayland client libs, menu/DBusMenu libs, AT-SPI bindings) | Every v1.2 capability is already covered by stdlib + godbus + subprocess + in-repo packages; additions dilute the "auditable in an afternoon" property | Existing `internal/clipboard`, `internal/engine`, `internal/indicator`, `internal/appid`, `internal/a11y` |
+| `m31labs.dev/fluffyui` atspi package | Part of a heavy UI-automation module, not a maintained standalone AT-SPI client (carried from v1.0 research) | godbus calls per `internal/appid` |
+| `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1` as the primary recipe | Measurable Qt perf cost; redundant with toolkit-accessibility + IsEnabled belt | gsettings key (existing Phase 8 series) + relaunch guidance; ALWAYS_ON documented as last resort |
+| `GTK_MODULES=gail:atk-bridge` in recipes | GTK2-era; GTK3+ auto-loads; meaningless for Qt/Electron | Nothing — omit from docs |
+| `xclip`/`xsel` | X11-only, dead on Wayland | wl-clipboard |
+| Expecting `commit_text` over a terminal selection to replace it | Terminal selections are visual-only (VTE source-verified); the shell never learns about the erase | Backspace-replay (level 2) then commit |
+| Building the VTE whole-line read on injected selection keys | VTE has no keyboard selection at all (source-verified) | Daemon keystroke buffer; wezterm gets the config-recipe channel |
+| Snap-confinement workarounds for Telegram a11y | Denial lives in snapd's generated AppArmor profile; no interface/slot exists | Unconfined Telegram build or the daemon-side fallback decision |
 
 ## Stack Patterns by Variant
 
-**Config hot reload (atomic-rename trap):**
-Watch the config file's *parent directory* with fsnotify, match events against the file name, debounce 150–300 ms, then re-parse fully and swap atomically (`atomic.Pointer[Config]`). Re-adding the watch on rename is not needed when watching the directory. Rationale: vim/kwrite/gedit save via `write temp + rename`, which replaces the inode a file-path watch points at.
+**If target = wezterm (owner's daily):**
+- Read: config-recipe CopyMode selection → `wl-paste --primary --no-newline` (in-repo clipboard pkg + `--primary` flag).
+- Write-back: N×BackSpace replay + `commit_text` (selections are visual; never rely on commit-over-selection).
+- Layout-switch defect: in-repo engine work + diagnosis spike; ForwardKeyEvent hotkeys are the unaffected path.
 
-**ibus-daemon restart resilience (Q6 core risk):**
-Registrations die with ibus-daemon and the global engine reverts to default (IBus 1.5.29, issue ibus/ibus#2910, closed as not planned — no upstream fix coming). Pattern: `goswitchd` watches the IBus connection (godbus signal `NameOwnerChanged`, plus socket-file replacement detection); on loss it re-enters the connect → `_RegisterComponent` → reactivate loop with ~2 s retries, mirroring the workaround validated in that issue.
+**If target = VTE / gnome-terminal:**
+- Read: daemon keystroke buffer only. Word correction needs no read channel.
+- No clipboard read-back; no keyboard-selection recipes possible. Acceptance criteria must not reference clipboard reads for VTE.
 
-**Terminal applications (Q3):**
-If IBus preedit/commit misbehaves in specific terminals (wezterm), the fallback is `wl-copy`/`wl-paste` subprocess + `ForwardKeyEvent` paste emulation — the exact pattern in the punto prototype's `_convert_selection`. No Go Wayland dependency required.
+**If app = unconfined Electron (ZCode):**
+- gsettings toolkit-accessibility (existing) covers fresh launches; `.desktop` override with `--force-renderer-accessibility` as the deterministic belt; docs say "restart the app after enabling".
 
-**Hotkey layer (Q4):**
-The engine *is* the hotkey layer: while goswitch is the active input source, all keys traverse `ProcessKeyEvent` with full modifier state (proven by the shift-capture prototype logging every event). Cost: goswitch must remain the active engine across layouts, which the "engine as the only input source, layouts handled inside the engine" model (used by the punto prototype) provides without any extra dependency.
+**If app = Qt snap (Telegram):**
+- Stack-blocked for a11y visibility regardless of env. Decide: unconfined build (tarball/flatpak — flatpak needs a one-off a11y reachability check) or daemon-side fallback (owner's stated contingency).
 
-**If distro packaging arrives later (beyond v1):**
-Install component XML to `/usr/share/ibus/component/goswitch.xml` (schema verified from live distro files), run `ibus write-cache`, ship a system package — the runtime code does not change.
+**If app is a11y-invisible (any reason):**
+- Role-gate fail-closed stays silent (validated design); manual correction chords still work wherever the input context delivers keys.
 
 ## Version Compatibility
 
 | Component | Version | Compatible With | Notes |
 |-----------|---------|-----------------|-------|
-| `github.com/godbus/dbus/v5` | v5.2.2 | Go 1.17+; IBus 1.5.x wire protocol | go.mod `go` directive satisfies 1.23 constraint. ibus-bamboo runs godbus v5.1.0 in production 2026 — v5.x API stable; protocol unchanged 2018→2026 (goibus worked across that span unmodified). |
-| `gopkg.in/yaml.v3` | v3.0.1 | Go 1.11+ | Last release 2022 (maintenance mode); no known open CVEs post-v3.0.1; zero transitive deps. |
-| `github.com/fsnotify/fsnotify` | v1.10.1 | Go 1.17+, Linux/inotify | Linux-only usage; no macOS/Windows concerns for this daemon. |
-| IBus protocol (target) | 1.5.29 (Ubuntu 24.04) | engines written against any 1.5.x | `IBUS_COMPONENT_PATH` documented in installed `ibusregistry.h`; `_RegisterComponent` takes a variant-wrapped serialized component (arg type `v` confirmed in daemon strings). |
-| ydotool | 0.1.8 (24.04 archive) | kernel uinput; needs `input` group | Upstream 1.0.4 has a different daemon architecture — do not mix docs/versions. |
+| `github.com/godbus/dbus/v5` | v5.2.2 (latest, 2025-12-29) | Go 1.17+; IBus 1.5.x | Unchanged; ForwardKeyEvent wire contract pinned by in-repo tests. |
+| `gopkg.in/yaml.v3` / `github.com/fsnotify/fsnotify` | v3.0.1 / v1.10.1 (both latest) | — | Unchanged. |
+| `github.com/jfreymuth/pulse` | v0.1.3 (latest, 2026-08-17) | — | Unchanged. |
+| wl-clipboard | 2.2.1 (target dpkg) | Wayland primary-selection protocol via mutter | `--primary` supported; flags pinned in `internal/clipboard`. |
+| wezterm | 20240203-110809-5046fc22 (installed = latest tagged release; nightlies-only upstream) | CopyMode `SetSelectionMode`/`MoveToStartOfLineContent`/`Close` exist in this version (owner config already uses them) | Re-verify key tables if the owner ever moves to a nightly. |
+| VTE | 0.76.0 (gnome-terminal 3.52.0, target dpkg) | Keyboard-path facts source-verified at tag 0.76.0 | Re-verify if Ubuntu backports keyboard selection (none announced). |
+| Electron/Chromium (ZCode) | `/opt/ZCode` current | Reads `toolkit-accessibility` at startup; `--force-renderer-accessibility` honored | Flag is stable Chromium surface. |
+| Telegram desktop snap | 7.2.9 rev 7150 | AppArmor denies inbound AT-SPI (live-probed) | Re-test confinement if the snap ships changed profiles. |
+| IBus | 1.5.29 | engine registration, SetGlobalEngine flip | Unchanged from v1.0 research. |
 
 ## Direct Answers Feeding the Roadmap
 
-- **Q1 — IBus engine on Go: VIABLE, HIGH confidence.** Evidence chain: (1) goibus/ibus-bamboo proves Go engines on modern distros (Fedora-packaged 2025–2026); (2) godbus speaks the IBus socket protocol in production today; (3) on this exact machine, Python prototypes registered via pure D-Bus calls and received/committed keys — the only Go-specific work is the in-repo protocol adapter (~1k LOC) because the existing bindings are unlicensed. Risks are behavioral (per-app surrounding-text support), not stack-level.
-- **Q6 — Autostart: systemd user unit + programmatic re-registration, HIGH confidence.** Unit hangs off `graphical-session.target` after the distro's IBus unit; registration is a runtime D-Bus call (no root, no files outside `$HOME`); daemon-restart resilience is mandatory because 1.5.29 loses registrations by design (#2910).
+- **(a) Terminal correction stack:** no new deps. Read = injected keys (in-repo ForwardKeyEvent; add Home/End/arrows keyvals to keys.go) + `wl-paste --primary` (in-repo clipboard pkg + `--primary`); write-back = N×BackSpace replay + commit (level-2 goes live — the built replay emitter is the mechanism; terminal selections are visual-only so commit-over-selection is a dead end, source-verified). wezterm needs a user config recipe for Shift+Home (version pinned at 20240203); VTE cannot do keyboard selection at all — whole-line there rides the keystroke buffer. The wezterm layout-switch defect is in-repo engine work, not a stack addition; plan a diagnosis spike (two named candidate mechanisms, LOW confidence until probed).
+- **(b) Dynamic blocklist menu item:** zero deps — one menuID + interpolated label through the existing `ItemsPropertiesUpdated` delta machinery; appid supplies the name. Design for invisible apps (snaps, wezterm): degrade, never guess.
+- **(c) Telegram/ZCode a11y:** ZCode — already working via toolkit-accessibility (live-probed); add the `--force-renderer-accessibility` desktop override as belt + relaunch docs. Telegram snap — **structurally blocked by AppArmor** (env already correct; GetRole denied live): the milestone decision is unconfined Telegram build vs the owner's daemon-side fallback; no dependency or env var changes this.
+- **What NOT to add:** any new Go module; `QT_LINUX_ACCESSIBILITY_ALWAYS_ON` as primary; `GTK_MODULES`; xclip/xsel; snap-interface workarounds; OSC-52 tricks.
 
 ## Sources
 
-- Go module proxy (authoritative version registry) — godbus v5.2.2, fsnotify v1.10.1, yaml.v3 v3.0.1, goccy v1.19.2, BambooEngine/goibus v0.0.0-20240724 — **HIGH** (primary registry)
-- Local target-system verification (Ubuntu 24.04 / GNOME 46 / IBus 1.5.29): component XMLs in `/usr/share/ibus/component/`, systemd units in `/usr/lib/systemd/user/`, `ibus address` output, `gsettings writable ... current`, `dpkg` versions (ydotool 0.1.8, python3-gi 3.48.2, gir1.2-atspi-2.0 2.52.0), `/usr/include/ibus-1.0/ibusregistry.h`, D-Bus probes of the IBus connection, live prototypes `/home/nil/.local/share/punto-switcher/punto_engine.py` and `/home/nil/.local/share/ibus-test/test_shift.py` — **HIGH** (the target runtime itself)
-- [github.com/godbus/dbus](https://github.com/godbus/dbus) + [releases](https://github.com/godbus/dbus/releases) — cross-check of v5.2.2 — **MEDIUM** (web, cross-verified)
-- [sarim/goibus](https://github.com/sarim/goibus), [BambooEngine/ibus-bamboo](https://github.com/BambooEngine/ibus-bamboo), [BambooEngine org](https://github.com/BambooEngine), [Fedora packaging](https://src.fedoraproject.org/rpms/ibus-bamboo) — production-Go-engine evidence; GitHub API license check (both goibus repos: license = None) — **MEDIUM→HIGH** (API-verified)
-- [IBus 1.5 reference manual](http://ibus.github.io/docs/ibus-1.5/) ([IBusInputContext](http://ibus.github.io/docs/ibus-1.5/IBusInputContext.html)), [IBus.Engine class docs](https://lazka.github.io/pgi-docs/IBus-1.0/classes/Engine.html) — method/signal names — **MEDIUM** (cross-verified against headers + prototypes)
-- [ibus/ibus#2910 — global engine not persisted across daemon restarts](https://github.com/ibus/ibus/issues/2910) — Q6 re-registration requirement — **MEDIUM** (single issue, closed as not planned; behavior locally plausible, re-test in M1)
-- [ydotool on Ubuntu/Fedora Wayland](https://github.com/ReimuNotMoe/ydotool/issues/285), [Debian ydotool 1.0.4-3 manpage](https://manpages.debian.org/testing/ydotool/ydotool.1.en.html) — version/daemon differences; resolved authoritatively by local `dpkg` (0.1.8) — **MEDIUM**
-- [AT-SPI2 project](https://www.freedesktop.org/wiki/Accessibility/AT-SPI2/), [Ubuntu AT-SPI D-Bus interface docs](https://ubuntu.com/desktop/docs/en/latest/reference/accessibility/dbus/), [fluffyui atspi package](https://pkg.go.dev/m31labs.dev/fluffyui) — no established Go AT-SPI lib; introspectable D-Bus route — **MEDIUM** (negative claim cross-checked across searches + local gir packages)
-- [AskUbuntu — switch layout by CLI](https://askubuntu.com/questions/1176703/switch-between-keyboard-languages-by-cli-in-gnome) — superseded by local `gsettings writable` verification (true on GNOME 46) — **LOW for the lore, HIGH for the locally verified fact**
+- Live target-system probes (2026-10-08, HIGH — the target runtime itself): dpkg versions (wezterm 20240203, wl-clipboard 2.2.1, VTE 0.76.0, gnome-terminal 3.52.0, python3-gi 3.48.2); snap list + connections (telegram-desktop 7.2.9 rev 7150: desktop/desktop-legacy/gsettings plugged); Telegram process environ (`QT_ACCESSIBILITY=1` present); a11y-bus probes (`org.a11y.Bus.GetAddress`; AppArmor denial of `Cache.GetItems` and `Accessible.GetRole` into telegram-desktop/chromium snap; 'zcode' visible+nameable in the desktop children); owner configs (`~/.config/wezterm/wezterm.lua` CopyMode patterns, `/usr/share/applications/zcode.desktop`, user-local Telegram desktop entry).
+- VTE 0.76.0 source (GitLab tag 0.76.0, HIGH — primary source read): `src/vte.cc` `Terminal::widget_key_press` (no keyboard selection), incoming-contents deselect-only behavior, `src/keymap.cc` modifier-parameter encoding; `src/widget.cc` thin GTK dispatch.
+- [WezTerm default key assignments](https://wezterm.org/config/default-keys.html) — no Shift+Home default, Ctrl+Shift+X CopyMode — **MEDIUM** (docs, live-config cross-check)
+- [WezTerm CopyTo destinations](https://wezterm.org) + copy_on_select default `ClipboardAndPrimarySelection` — **MEDIUM** (docs via search; mechanism cross-checked against owner config)
+- [WezTerm releases](https://github.com/wezterm/wezterm/releases), [#6341 next-release checklist](https://github.com/wezterm/wezterm/issues/6341), [#4358 layout switching on focus](https://github.com/wezterm/wezterm/issues/4358) — release cadence, layout-bug class — **MEDIUM**
+- [Chromium Linux Accessibility](https://www.chromium.org) — startup toolkit-accessibility detection — **MEDIUM** (official docs, owner-precedent cross-check)
+- [Electron accessibility tutorial](https://www.electronjs.org/docs/latest/tutorial/accessibility) — AT auto-detection, `app.setAccessibilitySupportEnabled` — **MEDIUM**
+- Qt accessibility: `QT_ACCESSIBILITY` / `QT_LINUX_ACCESSIBILITY_ALWAYS_ON` (qtatspi, qaccessible.cpp via codebrowser; KDE UserBase; Manjaro forum perf report) — **MEDIUM**
+- [wl-clipboard manual](https://man.freebsd.org/cgi/man.cgi?query=wl-clipboard) (`--primary`), wp_primary_selection_unstable_v1 context — **MEDIUM**, dpkg 2.2.1 local cross-check
+- Snap a11y confinement: [Snapcraft forum — AT-SPI in snaps](https://forum.snapcraft.io), AskUbuntu socket-denial reports — **LOW/MEDIUM**, superseded for the verdict by the live AppArmor probe (HIGH)
 
 ---
-*Stack research for: GNOME Wayland IBus layout-switcher daemon in Go*
-*Researched: 2026-09-10*
+*Stack research for: goswitch v1.2 — terminals, tray-menu dynamism, per-app accessibility*
+*Researched: 2026-10-08*
