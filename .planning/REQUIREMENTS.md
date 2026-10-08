@@ -47,20 +47,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TERM-01 | — | Pending |
-| TERM-02 | — | Pending |
-| TERM-03 | — | Pending |
-| TERM-04 | — | Pending |
-| MENU-01 | — | Pending |
-| A11Y-01 | — | Pending |
-| A11Y-02 | — | Pending |
-| A11Y-03 | — | Pending |
+| TERM-01 | Phase 9 | Pending |
+| TERM-04 | Phase 9 | Pending |
+| TERM-02 | Phase 10 | Pending |
+| MENU-01 | Phase 11 | Pending |
+| TERM-03 | Phase 12 | Pending |
+| A11Y-01 | Phase 13 | Pending |
+| A11Y-02 | Phase 13 | Pending |
+| A11Y-03 | Phase 13 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 8 total
-- Mapped to phases: 0
-- Unmapped: 8 ⚠️ (заполняется роадмаппером)
+- Mapped to phases: 8
+- Unmapped: 0 ✓ (роадмап от 2026-10-08: фазы 9-13)
 
 ---
 *Requirements defined: 2026-10-08*
-*Last updated: 2026-10-08 after initial definition*
+*Last updated: 2026-10-08 — traceability заполнена роадмапом вехи (фазы 9-13)*
