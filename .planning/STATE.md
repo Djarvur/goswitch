@@ -19,10 +19,10 @@ current_phase: 8
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-15)
+See: .planning/PROJECT.md (updated 2026-10-08)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 8 — a11y-магия приложений, документация и конфиг-skill
+**Current focus:** Веха v1.0.0 закрыта — планирование следующей вехи (кандидаты v2 в архиве REQUIREMENTS)
 
 ## Current Position
 
@@ -328,8 +328,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T05:43:37.608Z
-Stopped at: Phase 8 complete — all phases complete
+Last session: 2026-10-08T02:30:00.000Z
+Stopped at: Milestone v1.0.0 complete and archived
 Resume file: None
 
 ## Operator Next Steps
