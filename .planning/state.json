@@ -1,12 +1,38 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.2",
-  "phases": [],
+  "milestone": "v1.2 — Терминалы и видимость приложений",
+  "phases": [
+    {
+      "number": "9",
+      "name": "Спайк и дефект wezterm",
+      "status": "pending"
+    },
+    {
+      "number": "10",
+      "name": "TERM-слово",
+      "status": "pending"
+    },
+    {
+      "number": "11",
+      "name": "MENU — пункт «в чёрный список»",
+      "status": "pending"
+    },
+    {
+      "number": "12",
+      "name": "TERM-строка",
+      "status": "pending"
+    },
+    {
+      "number": "13",
+      "name": "A11Y — рецепты Telegram/ZCode",
+      "status": "pending"
+    }
+  ],
   "next": {
-    "command": "/gsd:discuss-phase",
-    "label": "Discuss the first phase",
-    "reason": "Project initialized — plan your first phase"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 09 of 5 · 0% · executing"
   },
-  "updated_at": "2026-10-08T11:17:31.912Z"
+  "updated_at": "2026-10-08T19:51:52.931Z"
 }
