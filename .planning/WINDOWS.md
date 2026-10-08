@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
-waived_count: 3
-fixed_count: 5
+open_count: 2
+waived_count: 4
+fixed_count: 7
 total_count: 13
-last_updated: 2026-10-02T18:01:54.918Z
+last_updated: 2026-10-08T10:49:36.953Z
 ---
 
 # Broken Windows Ledger
@@ -21,13 +21,13 @@ last_updated: 2026-10-02T18:01:54.918Z
 | 4 | 3 | unmet-truth | test/e2e/case_macr.go | 595 | GTK4-Wayland (GNOME 46) does not apply IBus-forwarded key events: the relay reaches the focused InputContext (dbus-monitor pinned) but the widget never acts — MACR's Ctrl+letter remap, the ADR-003 level-2 Backspace replay and the D-28 Ctrl+V burst all stop at the client boundary (03-05 Deviation 3) | waived | owner accepted GTK4-Wayland forwarded-events platform limitation (UAT 2026-09-15, REQUIREMENTS MACR-01 caveat) | 2026-09-15T13:23:14.477Z | 2026-09-16T14:53:16.148Z |
 | 5 | 04 | unmet-truth | test/e2e/perf.go | 1 | INST-03 latency budget verdict is FAIL under the prescribed ydotool→AT-SPI window (p95 190-205ms >= 50ms over two full runs): the window is dominated by ydotool 0.1.8 per-event injection overhead (~80-125ms/event), daemon reaction is 0.2-1.8ms; owner methodology decision required before the D-46 README table publishes latency numbers | waived | owner accepted the ydotool-injector-dominated stand numbers as-is (decision (в), 2026-09-16): publish v1.0.0 with the real ydotool→AT-SPI p50/p95/p99 and the budget-fail status stated honestly in the README perf table; daemon reaction is sub-millisecond, the window overhead is the stand's ydotool 0.1.8 injector | 2026-09-16T13:51:53.747Z | 2026-09-16T17:36:37.077Z |
 | 6 | 04 | deviation | test/e2e/main.go | 201 | 04-04 (1b443eb) turned the matrix path's zero watchdog limit into a literal time.After(0): every matrix case (v1/v2/v3) failed instantly with 'did not complete within 0s' — live-caught by the first D-48 double-run dispatch (run 35107406144); fixed structurally by watchdogLimit resolving 0 to caseTimeout inside runCaseWatchdog (9f2fd75, RED->GREEN tests) | fixed |  | 2026-09-16T14:35:30.840Z | 2026-09-16T14:35:35.768Z |
-| 7 | 04 | deviation | test/e2e/focus_helper.py |  | 04-08 live smoke: INPUT-hit-through-focused-frame not drivable from background context (mutter denies activation; FLAGGED focus-lag case) — witness answered frame-fallback arm in budget; in-situ proof rides the owner's D-48 dispatch | open |  | 2026-09-17T11:53:10.594Z |  |
+| 7 | 04 | deviation | test/e2e/focus_helper.py |  | 04-08 live smoke: INPUT-hit-through-focused-frame not drivable from background context (mutter denies activation; FLAGGED focus-lag case) — witness answered frame-fallback arm in budget; in-situ proof rides the owner's D-48 dispatch | waived | Владелец закрыл как принятую особенность стенда (2026-10-08): запись нужна только автотестам (вывод тестового окна на передний план из фона mutter запрещает), продукт не затрагивает; прогоны сейчас ручные — при возврате автоматических ночных прогонов завести заново | 2026-09-17T11:53:10.594Z | 2026-10-08T10:49:36.953Z |
 | 8 | quick-260927-sy8 | unrun-verify | .planning/quick/260927-sy8-engine-self-reactivation-re-activate-the |  | Task 3 live desktop restart-and-type human-check deferred to orchestrator (automated grep gates + README edits done) | fixed |  | 2026-09-27T18:28:09.875Z | 2026-09-27T18:57:43.384Z |
 | 9 | 05 | unrun-verify | mise.toml | 153 | plan 05-02: mise run e2e-install-cycle full-case PASS deferred — live run proved the new two-source assertions (install wrapper machine-check, selfcheck ok input-source, verbatim restore) but the zenity correction step was focus-refused with the owner active; rerun consolidates in plan 05-05 | open |  | 2026-09-29T20:37:58.257Z |  |
 | 10 | 05 | unmet-truth | docs/adr/ADR-006-two-engine-revision.md |  | plan 05-01: P3 XKB-truth unresolved — spike entry surface focus-refused both runs (witness gnome-shell:WINDOW:chars=-1); re-opens at 05-05 live proofs (ADR-006 unresolved row) | fixed |  | 2026-09-29T21:28:22.157Z | 2026-09-30T00:22:44.944Z |
-| 11 | 05 | unmet-truth | docs/adr/ADR-006-two-engine-revision.md |  | plan 05-01: indicator verdict unknown (owner 'не разглядел') — routes to UAT/verify-work; criterion-2 semantics fixed by spec-delta regardless | open |  | 2026-09-29T21:28:22.438Z |  |
-| 12 | 05 | unmet-truth | test/e2e/cases/matrix-v3.yaml |  | plan 05-05: word-mixed + phrase-mixed rows expect a correction ACROSS a flip boundary — under ADR-006 the two-source flip churns FocusOut/FocusIn and the designed context reset (05-CONTEXT: «переключение раскладки сбрасывает контекст») drops the pre-flip buffer; the daemon then corrects only the post-flip word (word-mixed: buffer привет → wholesale ru→en → gfbghbdtn; phrase-mixed → ghbdtn ghbdtn). Rows frozen (v3, CASES-FROZEN); the owner owns the verdict at the phase verify gate: either the rows re-shape to the reset semantics (new plan) or the reset semantics get revisited (architectural) | open |  | 2026-09-30T00:21:32.095Z |  |
-| 13 | 06 | unrun-verify | test/e2e/cases/matrix-v4.yaml |  | plan 06-07: full mise run e2e-matrix-v4 green NOT achieved on this session — first-key-after-mode-flip session drift (each row typing right after a SetGlobalEngine flip loses exactly one leading char/mode record); control experiment: pre-phase-6 tree d96dcb2 fails BYTE-IDENTICALLY (/tmp/matrix-v3-oldtree.log, worktree /tmp/goswitch-0505) — environmental, phase-6 diff exonerated; autocorrect rows (fires/off/oov) green x2 and all three live cases green; formal fresh-session D-48 double-run rides plan 06-08 (checkpoint accept & defer 2026-10-02). **06-08 verdict (2026-10-02): drift CONFIRMED REAL and STICKY** — the formal back-to-back double-run on the relogged-in session (ages 2h03m/2h08m) went 23/35 and 24/35 with the SAME row set (9 drift rows byte-similar to 06-07, +1 ibus-activation transient in run 1); autocorrect rows and word/phrase manual-contract carriers green x2 in the same runs (3rd independent exoneration of the phase diff); NEW diagnostic: the drift SURVIVES `ibus restart` (24/35, identical set — /tmp/06-08-matrix-post-ibus-restart.log) — not the documented-cure class, lives in the login state; the formal <=30-min fresh_session=true gate (docs/ci-runner.md) remains the owner's machine-checked instrument at verify-work; ADR-007 Acceptance Evidence row 5 carries the full record | open |  | 2026-10-02T18:01:54.918Z |  |
+| 11 | 05 | unmet-truth | docs/adr/ADR-006-two-engine-revision.md |  | plan 05-01: indicator verdict unknown (owner 'не разглядел') — routes to UAT/verify-work; criterion-2 semantics fixed by spec-delta regardless | fixed |  | 2026-09-29T21:28:22.438Z | 2026-10-08T10:39:18.770Z |
+| 12 | 05 | unmet-truth | test/e2e/cases/matrix-v3.yaml |  | plan 05-05: word-mixed + phrase-mixed rows expect a correction ACROSS a flip boundary — under ADR-006 the two-source flip churns FocusOut/FocusIn and the designed context reset (05-CONTEXT: «переключение раскладки сбрасывает контекст») drops the pre-flip buffer; the daemon then corrects only the post-flip word (word-mixed: buffer привет → wholesale ru→en → gfbghbdtn; phrase-mixed → ghbdtn ghbdtn). Rows frozen (v3, CASES-FROZEN); the owner owns the verdict at the phase verify gate: either the rows re-shape to the reset semantics (new plan) or the reset semantics get revisited (architectural) | fixed |  | 2026-09-30T00:21:32.095Z | 2026-10-08T10:39:18.940Z |
+| 13 | 06 | unrun-verify | test/e2e/cases/matrix-v4.yaml |  | plan 06-07: full mise run e2e-matrix-v4 green NOT achieved on this session — first-key-after-mode-flip session drift (each row typing right after a SetGlobalEngine flip loses exactly one leading char/mode record); control experiment: pre-phase-6 tree d96dcb2 fails BYTE-IDENTICALLY (/tmp/matrix-v3-oldtree.log, worktree /tmp/goswitch-0505) — environmental, phase-6 diff exonerated; autocorrect rows (fires/off/oov) green x2 and all three live cases green; formal fresh-session D-48 double-run rides plan 06-08 (checkpoint accept & defer 2026-10-02). 06-08 verdict (2026-10-02): drift CONFIRMED REAL and STICKY — the formal back-to-back double-run on the relogged-in session (ages 2h03m/2h08m) went 23/35 and 24/35 with the SAME row set (9 drift rows byte-similar to 06-07, +1 ibus-activation transient in run 1); autocorrect rows and word/phrase manual-contract carriers green x2 in the same runs (3rd independent exoneration of the phase diff); NEW diagnostic: the drift SURVIVES 'ibus restart' (24/35, identical set — /tmp/06-08-matrix-post-ibus-restart.log) — not the documented-cure class, lives in the login state; the formal <=30-min fresh_session=true gate (docs/ci-runner.md) remains the owner's machine-checked instrument at verify-work; ADR-007 Acceptance Evidence row 5 carries the full record | open |  | 2026-10-02T18:01:54.918Z |  |
 
 ````json
 [
@@ -110,10 +110,10 @@ last_updated: 2026-10-02T18:01:54.918Z
     "file": "test/e2e/focus_helper.py",
     "line": null,
     "description": "04-08 live smoke: INPUT-hit-through-focused-frame not drivable from background context (mutter denies activation; FLAGGED focus-lag case) — witness answered frame-fallback arm in budget; in-situ proof rides the owner's D-48 dispatch",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "Владелец закрыл как принятую особенность стенда (2026-10-08): запись нужна только автотестам (вывод тестового окна на передний план из фона mutter запрещает), продукт не затрагивает; прогоны сейчас ручные — при возврате автоматических ночных прогонов завести заново",
     "recorded_at": "2026-09-17T11:53:10.594Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-08T10:49:36.953Z"
   },
   {
     "id": 8,
@@ -158,10 +158,10 @@ last_updated: 2026-10-02T18:01:54.918Z
     "file": "docs/adr/ADR-006-two-engine-revision.md",
     "line": null,
     "description": "plan 05-01: indicator verdict unknown (owner 'не разглядел') — routes to UAT/verify-work; criterion-2 semantics fixed by spec-delta regardless",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-29T21:28:22.438Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-08T10:39:18.770Z"
   },
   {
     "id": 12,
@@ -170,10 +170,10 @@ last_updated: 2026-10-02T18:01:54.918Z
     "file": "test/e2e/cases/matrix-v3.yaml",
     "line": null,
     "description": "plan 05-05: word-mixed + phrase-mixed rows expect a correction ACROSS a flip boundary — under ADR-006 the two-source flip churns FocusOut/FocusIn and the designed context reset (05-CONTEXT: «переключение раскладки сбрасывает контекст») drops the pre-flip buffer; the daemon then corrects only the post-flip word (word-mixed: buffer привет → wholesale ru→en → gfbghbdtn; phrase-mixed → ghbdtn ghbdtn). Rows frozen (v3, CASES-FROZEN); the owner owns the verdict at the phase verify gate: either the rows re-shape to the reset semantics (new plan) or the reset semantics get revisited (architectural)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-30T00:21:32.095Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-08T10:39:18.940Z"
   },
   {
     "id": 13,
