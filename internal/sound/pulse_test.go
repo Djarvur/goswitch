@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"testing"
 	"time"
+
+	"github.com/jfreymuth/pulse/proto"
 )
 
 // toneOf builds one tone's byte payload: frames of int16-LE pairs.
@@ -34,6 +36,32 @@ func readWithBudget(t *testing.T, r *toneReader, n int) ([]byte, bool) {
 		return got, true
 	case <-time.After(pollBudget):
 		return nil, false
+	}
+}
+
+// TestLatencyOption_CapsStreamBuffer pins the tone stream's server-side
+// buffer at the toneLatency quantum: the default negotiation let
+// pipewire-pulse choose 8192 samples (~186 ms), and the persistent stream
+// queues every tone BEHIND the buffered silence — the owner's by-ear gate
+// (261006-squ HV-1) heard the old spawn delay again. The option reads the
+// rate and channel count the preceding options pinned (the library's
+// option-order contract); int16-LE is the stream's only wire format.
+func TestLatencyOption_CapsStreamBuffer(t *testing.T) {
+	var req proto.CreatePlaybackStream
+	req.Rate = 44100
+	req.Channels = 2
+	latencyOption()(&req)
+
+	want := uint32(toneLatency.Seconds()*float64(req.Rate)) * uint32(req.Channels) * 2
+	if req.BufferTargetLength != want {
+		t.Errorf("BufferTargetLength = %d bytes, want %d (%v of stereo int16 at %d Hz)",
+			req.BufferTargetLength, want, toneLatency, req.Rate)
+	}
+	if req.BufferMaxLength != 2*want {
+		t.Errorf("BufferMaxLength = %d, want twice the target (%d)", req.BufferMaxLength, 2*want)
+	}
+	if !req.AdjustLatency {
+		t.Error("AdjustLatency must stay on — the server may tighten the buffer, never widen it")
 	}
 }
 

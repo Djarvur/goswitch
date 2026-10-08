@@ -167,3 +167,78 @@ The single gap from the initial verification — the PD-1 event-sounds arm leaki
 
 _Verified: 2026-10-06T19:46:16Z_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## Addendum 2026-10-08: HV-1 failed live — stream buffer cap fix (13b140a)
+
+The owner's first live HV-1 attempt **FAILED by ear**: «запаздывание звука не
+изменилось» against the pre-fix build. The automatable gates could not hear
+this defect:
+
+- **Root cause:** `openStream` passed no buffer attributes, and the default
+  negotiation let pipewire-pulse grant the stream
+  `node.latency = 8192/44100` (~186 ms). The persistent stream plays silence
+  continuously, so every tone queued BEHIND the buffered silence — the old
+  per-tone spawn delay (100–330 ms class) reborn inside the new transport.
+- **Fix:** `13b140a` — `latencyOption` pins `BufferTargetLength` at
+  `toneLatency` (30 ms, the prototype's stable quantum) through the library's
+  `PlaybackRawOption` form, applied after rate/channels per the option-order
+  contract; `TestLatencyOption_CapsStreamBuffer` pins the wire shape
+  (RED→GREEN). Lint 0 issues; `internal/sound` green under -race.
+- **Live evidence (green106):** after the fix the pipewire node reported
+  `node.latency = 331/44100` (~7.5 ms — the server tightened the buffer to
+  its quantum); two tones played through the capped stream via menu-driven
+  flips (`com.canonical.dbusmenu.Event` ids 2→1, mode ru→en round trip,
+  `switch_engine` journal records present).
+- **Suite note:** the local full -race run on this date carried four
+  inotify-class failures (EMFILE at `fs.inotify.max_user_instances=128`,
+  exhausted by the live desktop) — environmental, delta-exonerated by a
+  stash control run; green locally after the owner raised the limit to 512.
+- **HV-1 re-arms:** the owner re-listens against a post-13b140a build;
+  HV-2/HV-3 unchanged.
+
+### HV-1 re-listen 2026-10-08 (post-13b140a)
+
+The owner re-listened on the fixed build and reported: **«задержка стала
+меньше»** — the delay is audibly smaller. Objective corroboration on the same
+session (green106): pipewire monitor tap of the default sink recorded with
+`pw-record` while menu-driven flips fired the tone; `pw-play --latency 0.02`
+anchor for the wall-clock origin, `ffmpeg silencedetect -60 dB` for onsets:
+
+- `switch_engine` journal record → tone in the output monitor: **71 ms on
+  both transitions** (ru and en), log-vs-wav interval consistency 3.019 s in
+  both domains. Detector slop (threshold on the bell attack, ±10–20 ms)
+  puts the audible pipeline at ~50–70 ms — the prototype's class, against
+  the pre-fix 186 ms buffer the owner heard as «не изменилось».
+- Method note: an earlier attempt mis-recorded (this `pw-record` has no
+  `--monitor`; the `@DEFAULT_MONITOR@` form fell back to the capture
+  source) — superseded by the targeted-serial run above.
+
+HV-1 closure (and merge) remains the owner's word.
+
+### Owner acceptance 2026-10-08: HV-1/2/3 closed — ACCEPTED
+
+The owner's verdicts on the fixed build (13b140a), by ear, with machine
+corroboration captured live on green106 the same hour:
+
+- **HV-1 (latency) — PASSED.** Owner: «задержка стала меньше»; the
+  measured 71 ms switch→monitor stands (see the re-listen section).
+  The residual perceived delay is the tap disambiguation window, not
+  sound. Owner also tuned `timeouts.tap_window_ms` 300→220 in the live
+  config on the same rhythm measurements (singles ≥949 ms, doubles
+  154–194 ms) — config-side, out of this task's diff.
+- **HV-2 (live theme retune) — PASSED.** Owner: tones sounded «другим»
+  after the watcher picked up a `theme-name` change (Yaru→freedesktop→Yaru
+  live, no daemon restart).
+- **HV-3 (muted = no connection) — PASSED, both arms.** Config arm, live:
+  `sound.enabled: false` → the owner's next keypress folded the switch
+  (status `sound_enabled=false`) AND the pulse socket closed
+  (`pulse_fd: None`); flips during the mute were silent; re-enable →
+  next keypress re-dialed (`sound_enabled=true`, fd back). The watcher's
+  per-event fold succession (03-04) is what applies a config change on
+  the following keypress — the harness initially probed it through the
+  menu path, which bypasses the fold; the live proof uses real keypresses.
+
+**Status: ACCEPTED** — all three inherently-manual gates closed by the
+owner on the fixed build; the PR is merge-ready.
