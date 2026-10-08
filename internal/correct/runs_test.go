@@ -6,11 +6,19 @@ import (
 	"github.com/Djarvur/goswitch/internal/correct"
 )
 
-// The golden mixed-text corpus of Phase 3 (03-CONTEXT specifics, D-22/D-23)
-// plus the homogeneous and refusal families. Every case names its decision.
-func TestConvertRuns_GoldenCorpus(t *testing.T) {
-	t.Parallel()
+// whyNeutral names the spec-delta's neutral-rule clause for the corpus
+// cases that pin it (goconst: one literal, named like the word fixtures).
+const whyNeutral = "spec-delta 2026-10-06: the neutral rule"
 
+// The golden mixed-text corpus (spec-delta 2026-10-06; owner verdict, UAT
+// of phase 6, 2026-10-03, commit 7dd46e9): mixed text corrects by
+// PER-CHARACTER layout inversion — every Latin letter maps through ENToRU,
+// every Cyrillic letter through RUToEN, no anchor, no last-letter rule
+// (the D-22/D-23 anchor semantics are superseded; the WINDOWS-12 readback
+// freeze was rejected by the owner). The homogeneous and refusal families
+// below carry the preserved behavior.
+func TestConvertRuns_MixedInvertsPerChar(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   string
@@ -18,44 +26,41 @@ func TestConvertRuns_GoldenCorpus(t *testing.T) {
 		why  string
 	}{
 		{
-			// D-22: якорь RU от последней буквы (…вет) — чужой прогон ghbdtn
-			// конвертируется, свой не трогается (D-23).
-			name: "latin then cyrillic, anchor RU",
+			// Every letter inverts: ghbdtn→привет AND привет→ghbdtn — the
+			// "flip every character" intent (supersedes the D-22 anchor).
+			name: "latin then cyrillic, both invert",
 			in:   wordEN + wordRU,
-			want: wordRU + wordRU,
-			why:  "D-22/D-23",
+			want: wordRU + wordEN,
+			why:  "spec-delta 2026-10-06 (supersedes D-22/D-23)",
 		},
+		// The owner-verdict case: gfb→паи AND привет→ghbdtn in one pass —
+		// each letter through its own script's table.
+		{name: "short latin run inverts", in: "gfb" + wordRU, want: "паиghbdtn", why: "spec-delta 2026-10-06"},
 		{
-			// D-23: granular per-run conversion — gfb→паи by key position.
-			name: "short latin run, anchor RU",
-			in:   "gfb" + wordRU,
-			want: "паи" + wordRU,
-			why:  "D-23",
-		},
-		{
-			// D-22: якорь EN — теперь чужой прогон русский, конвертируется он.
-			name: "cyrillic then latin, anchor EN",
+			// Mirror direction: the Cyrillic head inverts to Latin, the
+			// Latin tail to Cyrillic — no anchor on the last letter.
+			name: "cyrillic then latin, both invert",
 			in:   wordRU + wordEN,
-			want: wordEN + wordEN,
-			why:  "D-22",
+			want: wordEN + wordRU,
+			why:  "spec-delta 2026-10-06 (supersedes D-22/D-23)",
 		},
 		{
-			// D-15/D-22: цифры нейтральны и якорь не сдвигают — якорь RU от
-			// последней буквы, конвертируется только ghbdtn.
-			name: "digits are neutral to the anchor",
+			// Digits are self-inverse ('5'→'5' in both tables) — they ride
+			// while every letter around them inverts.
+			name: "digits ride, letters all invert",
 			in:   wordEN + "2026" + wordRU,
-			want: wordRU + "2026" + wordRU,
-			why:  "D-15/D-22",
+			want: wordRU + "2026" + wordEN,
+			why:  whyNeutral,
 		},
-		{
-			// Owner decision 1 (260927-vu8): '[' stays scriptNeutral — it
-			// shifts no anchor and rides as typed in a MIXED range; only a
-			// wholesale single-script range converts it.
-			name: "allow-set bracket is neutral to the mixed anchor",
-			in:   "gfb" + wordRU + "[",
-			want: "паи" + wordRU + "[",
-			why:  "owner decision 1 (260927-vu8): bracket-row neutrality",
-		},
+		// Owner decision 1 (260927-vu8): '[' has no per-character direction
+		// — in a MIXED range it rides as typed; only wholesale converts it.
+		{name: "bracket rides in a mixed range", in: "gfb" + wordRU + "[", want: "паиghbdtn[", why: whyNeutral},
+		// Register is preserved per rune through the generated tables
+		// (CORR-05): G→П, f→а, b→и, and привет→ghbdtn back.
+		{name: "register per rune", in: "Gfb" + wordRU, want: "Паиghbdtn", why: "CORR-05"},
+		// Space has no key position — its inversion is itself; the letters
+		// on both sides still invert.
+		{name: "space rides, letters invert", in: "gfb " + wordRU, want: "паи ghbdtn", why: whyNeutral},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,7 +70,7 @@ func TestConvertRuns_GoldenCorpus(t *testing.T) {
 				t.Fatalf("ConvertRuns(%q) ok = false, want true (%s)", tc.in, tc.why)
 			}
 			if !changed {
-				t.Fatalf("ConvertRuns(%q) changed = false, want true — a foreign run exists (%s)", tc.in, tc.why)
+				t.Fatalf("ConvertRuns(%q) changed = false, want true — a mixed range inverts (%s)", tc.in, tc.why)
 			}
 			if got := string(out); got != tc.want {
 				t.Errorf("ConvertRuns(%q) = %q, want %q (%s)", tc.in, got, tc.want, tc.why)
@@ -74,22 +79,20 @@ func TestConvertRuns_GoldenCorpus(t *testing.T) {
 	}
 }
 
-// TestConvertRuns_HomogeneousWholesale pins the уточнение D-22 (2026-09-15):
-// the anchor governs ONLY mixed text — a single-script range converts
-// WHOLESALE by its composition, the Phase 2 behavior that keeps matrix v1
-// green (ghbdtn→привет, привет→ghbdtn). Register is preserved per rune
-// through the same generated tables (CORR-05).
+// TestConvertRuns_HomogeneousWholesale pins the single-script half of the
+// conversion (уточнение D-22, 2026-09-15; carried over byte-identically by
+// the spec-delta of 2026-10-06): a single-script range converts WHOLESALE
+// by its composition — the Phase 2 behavior that keeps matrix v1 green
+// (ghbdtn→привет, привет→ghbdtn). Register is preserved per rune through
+// the same generated tables (CORR-05); punctuation converts with the token
+// — the wholesale surface the mixed range's neutral rule deliberately does
+// not share.
 //
-// D-24 resolution (deviation, plan 03-01 task 2): the plan's
-// nothing-to-convert example ("привет", якорь RU → out==input) presumes the
-// strict anchor applying to homogeneous ranges — the exact reading the
-// уточнение D-22 rejects ("строгий якорь везде превращает базовый кейс
-// ghbdtn→привет в no-op"). Under the locked semantics every word/phrase
-// range resolves to a conversion, so ConvertRuns's changed=false success
-// surface is reserved for ranges anchored from outside their own
-// composition (the selection path of plan 03-03); it is implemented, and
-// the D-20 refusal family stays reserved for no-letters and unmapped
-// letters alone — pinned by TestConvertRuns_Refusals below.
+// D-24: ConvertRuns's changed=false success surface is reserved for ranges
+// arriving from outside their own composition (the selection path of plan
+// 03-03); it is implemented, and the D-20 refusal family stays reserved
+// for no-letters and unmapped letters alone — pinned by
+// TestConvertRuns_Refusals below.
 func TestConvertRuns_HomogeneousWholesale(t *testing.T) {
 	t.Parallel()
 
@@ -101,9 +104,6 @@ func TestConvertRuns_HomogeneousWholesale(t *testing.T) {
 		{name: "latin word converts wholesale", in: wordEN, want: wordRU},
 		{name: "cyrillic word converts wholesale", in: wordRU, want: wordEN},
 		{name: "digits ride along", in: wordENDigits, want: wordRU + "2026"},
-		// The register pin on a MIXED range: the foreign run converts with
-		// its own per-rune register (G→П, f→а, b→и).
-		{name: "register per rune on the foreign run", in: "Gfb" + wordRU, want: "Паи" + wordRU},
 		// Full by-position conversion (owner directive 2026-09-28): the
 		// token's punctuation converts with it — the comma is the 'б' key.
 		{name: "punctuation converts with the token", in: wordENComma, want: wordRU + "б"},

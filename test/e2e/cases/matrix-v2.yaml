@@ -50,7 +50,7 @@ steps:
   - {tap: single}      # script flip EN→RU (mode record gated, Pitfall 5)
   - {type: "ghbdtn"}   # committed as привет through the engine
   - {tap: triple}
-expect_text: "привет привет"  # D-26: the phrase converts by the same run semantics as the word
+expect_text: "привет ghbdtn"  # D-26 under spec-delta 2026-10-06: the phrase inverts per character, same as the word
 ---
 name: phrase-registers
 surface: zenity
@@ -100,7 +100,7 @@ steps:
   - {tap: single}
   - {type: "ghbdtn"}   # committed as привет
   - {tap: double}
-expect_text: "паипривет"  # CORR-06/D-23 succession: anchor RU from the last letter, the foreign run converts
+expect_text: "паиghbdtn"  # spec-delta 2026-10-06 (supersedes D-22/D-23): every letter inverts per character — gfb→паи, привет→ghbdtn
 ---
 name: select-all-zenity
 surface: zenity
@@ -125,7 +125,7 @@ steps:
   - {type: "ghbdtn"}   # the field holds the mixed "ghbdtn привет"
   - {select: "ctrl+a"} # GTE pushes cursor=0/anchor=len (the spike's LTR geometry)
   - {tap: double}
-expect_text: "привет привет"  # CORR-03: exactly the selected range converts, nothing outside moves
+expect_text: "привет ghbdtn"  # CORR-03 + spec-delta 2026-10-06: the whole mixed field inverts per character, nothing outside moves
 expect_sel_step: delete-commit
 ---
 name: select-all-chromium
@@ -138,7 +138,7 @@ steps:
   - {type: "ghbdtn"}   # the field holds the mixed "ghbdtn привет"
   - {select: "ctrl+a"} # chromium pushes cursor=len/anchor=0 — the INVERTED geometry
   - {tap: double}
-expect_text: "привет привет"  # the commit REPLACES the active selection (the spike's chromium rung)
+expect_text: "привет ghbdtn"  # the commit REPLACES the active selection; the whole field inverts per character (spec-delta 2026-10-06)
 expect_sel_step: commit-replaces
 ---
 name: select-partial-gte

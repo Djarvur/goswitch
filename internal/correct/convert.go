@@ -3,7 +3,7 @@ package correct
 import (
 	"unicode"
 
-	"github.com/Djarvur/goswitch/layouts"
+	"github.com/Djarvur/goswitch/internal/layouts"
 )
 
 // Convert maps EVERY table-mapped rune of the token through the

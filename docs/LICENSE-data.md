@@ -2,14 +2,14 @@
 
 The autocorrect detector's dictionary data (D-52, plan 06-02) is derived from
 the hunspell dictionaries installed on the dev machine and baked as committed
-golden Go sources by `layouts/dictgen`:
+golden Go sources by `internal/layouts/dictgen`:
 
-- `layouts/dict_ru.go` — `DictRU` (hunspell ru_RU)
-- `layouts/dict_en.go` — `DictEN` (hunspell en_US)
-- `layouts/trigrams.go` — `TriRU`/`TriEN` (trained on the same two word lists)
+- `internal/layouts/dict_ru.go` — `DictRU` (hunspell ru_RU)
+- `internal/layouts/dict_en.go` — `DictEN` (hunspell en_US)
+- `internal/layouts/trigrams.go` — `TriRU`/`TriEN` (trained on the same two word lists)
 
 Baked: 2026-10-01, from hunspell-ru 1:24.2.1-1 and hunspell-en-us
-1:2020.12.07-2 (Ubuntu 24.04). The generator (`go generate ./layouts`) is the
+1:2020.12.07-2 (Ubuntu 24.04). The generator (`go generate ./internal/layouts`) is the
 only path the data may travel; the verbatim upstream notices are preserved
 below per the licensing verdict table of 06-RESEARCH (Q3).
 
@@ -90,4 +90,4 @@ preserved in `/usr/share/doc/hunspell-en-us/copyright`.
 Frequency lists from OpenCorpora are NOT used (license never verified —
 06-RESEARCH A1); the baked dictionaries are the FULL hunspell word lists. No
 code was copied from the GPL donors (xneur, Easy Switcher — read-only
-algorithmic references, ADR-007); `layouts/dictgen` is written from scratch.
+algorithmic references, ADR-007); `internal/layouts/dictgen` is written from scratch.

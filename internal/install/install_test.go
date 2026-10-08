@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/engine"
 	"github.com/Djarvur/goswitch/internal/install"
 )
 

@@ -1,44 +1,41 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 4
-current_phase_name: Поставка и приёмка
-status: planning
-stopped_at: Phase 8 complete, ready to plan Phase 4
-last_updated: "2026-10-06T05:59:22.276Z"
-last_activity: 2026-10-06
-last_activity_desc: Phase 8 complete, transitioned to Phase 4
-state_head: 2ca9187521fe3f5093b6d697ade77b097f6905b4
+status: Awaiting next milestone
+stopped_at: Phase 8 complete — all phases complete
+last_updated: "2026-10-08T06:25:49.855Z"
+last_activity: 2026-10-08
+last_activity_desc: Milestone v1.0.0 completed and archived
+state_head: 2f938476fd838464303fd8aa30fc81ab89f10819
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 6
   total_plans: 61
   completed_plans: 61
+current_phase: 8
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-15)
+See: .planning/PROJECT.md (updated 2026-10-08)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 8 — a11y-магия приложений, документация и конфиг-skill
+**Current focus:** Веха v1.0.0 закрыта — планирование следующей вехи (кандидаты v2 в архиве REQUIREMENTS)
 
 ## Current Position
 
-Phase: 4 — Поставка и приёмка
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-06 — Completed quick task 261006-squ: sound persistent PulseAudio stream + GNOME theme playback (backlog todo sound-latency)
-
-Progress: [████████░░] 75%
+Phase: Milestone v1.0.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-08 — Milestone v1.0.0 completed and archived
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 47
+- Total plans completed: 61
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -56,6 +53,8 @@ Progress: [████████░░] 75%
 | 6 | 10 | - | - |
 | 7 | 8 | - | - |
 | 8 | 10 | - | - |
+| 4 | 9 | - | - |
+| 5 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -306,13 +305,6 @@ None yet.
 
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
-| 260927-sy8 | engine self-reactivation: re-activate the global IBus engine on daemon (re)registration when goswitch owns the current input source | 2026-09-27 | c543d2b | Needs Review | [260927-sy8-engine-self-reactivation-re-activate-the](./quick/260927-sy8-engine-self-reactivation-re-activate-the/) |
-| 260927-vu8 | correction UX batch A: convert the bracket-row punctuation during correction (allow-set, SPEC §4.2, owner decision 1 revised) + flip the script mode after a changed correction (flip_after_correction, default ON, owner decision 2) | 2026-09-27 | f679b95 | Needs Review | [260927-vu8-correction-ux-batch-a-convert-letter-map](./quick/260927-vu8-correction-ux-batch-a-convert-letter-map/) |
-| 260930-nxd | fix: switchTimeout 40→150ms (actor.go, live RTT 41–45 ms made the 40 ms deadline WARN on every flip) + installer leaves GNOME switch-input-source/-backward bindings untouched (ADR-006 two-source: external flips synced by 05-04 listener; uninstall restore kept) | 2026-09-30 | 65670b8 | Needs Review | [260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst](./quick/260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst/) |
-| 260930-pf6 | feat: tray indicator (SNI/AppIndicator) — goswitchd publishes an EN/RU icon on its existing ctl connection, ModeDisplay seam observer-last in flipTo/syncMode, one-WARN degradations, Menu /NO_DBUSMENU sentinel (checker PASSED, verifier gap fixed); owner pixel check pending | 2026-09-30 | 9063703 | Verified | [260930-pf6-feat-tray-indicator-statusnotifieritem-a](./quick/260930-pf6-feat-tray-indicator-statusnotifieritem-a/) |
-| 260930-toa | feat: single-source input model — installer/selfcheck accept 1..N goswitch-wrapped sources (foreign residue still refused, atomic-refusal gate fixed in saveState), e2e oracle count-agnostic, README user-model rewrite + ADR-006 amendment; live machine on [('ibus','goswitch-en')], selfcheck 6×ok; owner visual check pending | 2026-09-30 | 0e34a83 | Verified (human_needed) | [260930-toa-feat-single-source-input-model-selfcheck](./quick/260930-toa-feat-single-source-input-model-selfcheck/) |
-| 261001-fg3 | feat: interactive tray — supervisor re-attaches on watcher appearance (NameOwnerChanged) + ~30 s health check (owner-requested silent-eviction self-heal, proven live twice), DBusMenu (com.canonical.dbusmenu, toggle-first/status/reload), SNI Activate; interface-name gap caught in live leg and fixed with a literal wire-name pin; owner confirmed the menu | 2026-10-01 | e8dae38 | Verified | [261001-fg3-feat-interactive-tray-daemon-re-attaches](./quick/261001-fg3-feat-interactive-tray-daemon-re-attaches/) |
-| 261006-squ | feat: sound — persistent PulseAudio stream (jfreymuth/pulse v0.1.3 + oggvorbis v1.0.5, vorbis v1.0.2 via oggvorbis) + GNOME sound-theme playback with XDG resolver and PCM cache replaces canberra subprocess (~150 ms → ~30 ms tone); spec-delta SPEC §5/§11 BEFORE code (D-55); mute = zero server connections incl. event-sounds arm (verifier gap found and fixed); synthesized tone stays as never-wait fallback; SoundSink seam unchanged; owner by-ear check pending | 2026-10-06 | 38f892a | Needs Review | [261006-squ-sound-persistent-pulseaudio-stream-gnome](./quick/261006-squ-sound-persistent-pulseaudio-stream-gnome/) |
 
 ## Deferred Items
 
@@ -320,10 +312,26 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
-| *(none)* | | | | |
+| deferred_items | 02/deferred-items.md: Persistent AT-SPI tree wedge after repeated surface SIGKILLs (bus-restart remedy; CI-runner book candidate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: Daemon verify-after round settles on a stale first push (grace-window candidate fix, daemon-side plan) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: closeEntrySurface ydotool "Escape" name → physical E (one-word "esc" fix when shell path next touched) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 04/deferred-items.md: combo-word-layout post-reload tap flake under unusual desktop focus state (surface-hold candidate remedy) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 05/deferred-items.md: Preflight injection-selftest tap is a real flip on an installed desktop (stale assumption, comment/touch-up) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-05 — pre-existing ctlsvc OnConnHook flake under full-suite load (stabilized later by 08b598a) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-07 — OnConnHook root cause (assert-before-wait) + first-key-after-flip session drift (WINDOWS #13, environmental) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-08 — session drift verdict (23-24/35 double-run, third diff exoneration; D-48 nightly is the machine gate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: 07-03 — watch_test BrokenBlocklistPattern ~1/15 flake (lastErr-settled wait candidate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: pre-existing-flake TestRun_OnConnHookCalledOnce — RESOLVED in place by quick 261007-0yg (08b598a) | resolved-in-place | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: post-release-tuning sound latency — RESOLVED in place by quick 261006-squ (persistent PulseAudio stream) | resolved-in-place | 2026-10-08 | v1.0.0 |
+| deferred_items | 08/deferred-items.md: 08-01 — ctlsvc/config flakes under load (bus-isolation hardening todo for owner) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 08/deferred-items.md: 08-06 — same environmental class (extend bus isolation to appid close-verdict test) | acknowledged | 2026-10-08 | v1.0.0 |
 
 ## Session Continuity
 
-Last session: 2026-10-06T05:43:37.608Z
-Stopped at: Phase 8 complete, ready to plan Phase 4
+Last session: 2026-10-08T02:30:00.000Z
+Stopped at: Milestone v1.0.0 complete and archived
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

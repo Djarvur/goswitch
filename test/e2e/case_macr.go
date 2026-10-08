@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Djarvur/goswitch/engine"
 	"github.com/Djarvur/goswitch/internal/appid"
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // MACR spike artifacts of plan 03-05 (MACR-01/A7, ADR-005, Pitfall 7): the

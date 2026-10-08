@@ -11,7 +11,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/Djarvur/goswitch/engine"
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // Switch-spike (plan 05-01, SWCH-03 criterion 2): the live reversible
