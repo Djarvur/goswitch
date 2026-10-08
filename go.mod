@@ -3,7 +3,6 @@ module github.com/Djarvur/goswitch
 go 1.23
 
 require (
-	github.com/fsnotify/fsnotify v1.10.1
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/jfreymuth/oggvorbis v1.0.5
 	github.com/jfreymuth/pulse v0.1.3

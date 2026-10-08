@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
-
 	"github.com/Djarvur/goswitch/internal/config"
 )
 
@@ -21,80 +19,84 @@ import (
 // strict lint: no dynamically created error values).
 var (
 	errFixtureDecode  = errors.New("decode config: unknown field")
-	errFixtureInotify = errors.New("inotify queue overflow")
+	errFixtureNoStamp = errors.New("stat: no stamp scripted for the path")
 )
 
-// fakeSource feeds synthetic events without inotify — the EventSource seam
-// (Wave 0 gap note: the corpus runs headless, no real filesystem watch).
-type fakeSource struct {
-	events     chan fsnotify.Event
-	errors     chan error
-	addedDirs  []string
-	closeGuard sync.Mutex
-	closed     bool
+// fakeStat scripts the stat seam: per-path fingerprints, absence = the
+// stat error. bump moves a path's stamp the way a real edit moves mtime.
+type fakeStat struct {
+	mu     sync.Mutex
+	stamps map[string]config.FileStamp
 }
 
-func newFakeSource() *fakeSource {
-	return &fakeSource{
-		events: make(chan fsnotify.Event, 16),
-		errors: make(chan error, 16),
+func newFakeStat(paths ...string) *fakeStat {
+	s := &fakeStat{stamps: map[string]config.FileStamp{}}
+	for _, p := range paths {
+		s.stamps[p] = config.FileStamp{ModTime: time.Unix(0, 0), Size: 10}
 	}
+
+	return s
 }
 
-func (s *fakeSource) Events() <-chan fsnotify.Event { return s.events }
-func (s *fakeSource) Errors() <-chan error          { return s.errors }
+func (s *fakeStat) stat(path string) (config.FileStamp, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-func (s *fakeSource) Add(dir string) error {
-	s.closeGuard.Lock()
-	defer s.closeGuard.Unlock()
-	s.addedDirs = append(s.addedDirs, dir)
+	st, ok := s.stamps[path]
+	if !ok {
+		return config.FileStamp{}, errFixtureNoStamp
+	}
 
-	return nil
+	return st, nil
 }
 
-func (s *fakeSource) Close() error {
-	s.closeGuard.Lock()
-	defer s.closeGuard.Unlock()
-	s.closed = true
+func (s *fakeStat) set(path string, st config.FileStamp) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	return nil
+	s.stamps[path] = st
 }
 
-func (s *fakeSource) isClosed() bool {
-	s.closeGuard.Lock()
-	defer s.closeGuard.Unlock()
+func (s *fakeStat) bump(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	return s.closed
+	st := s.stamps[path]
+	st.ModTime = st.ModTime.Add(time.Second)
+	st.Size++
+	s.stamps[path] = st
 }
 
-// send delivers one synthetic event without blocking (buffered channel).
-func (s *fakeSource) send(name string, op fsnotify.Op) {
-	s.events <- fsnotify.Event{Name: name, Op: op}
+// pollFixture wires a watcher over the fake stat with a scripted loader
+// and an owned tick channel; the path never touches the real filesystem.
+type pollFixture struct {
+	stat   *fakeStat
+	ticks  chan time.Time
+	loads  atomic.Int32
+	cancel context.CancelFunc
 }
 
-// watchFixture wires a watcher over the fake source with a scripted
-// loader; the path never touches the real filesystem.
-type watchFixture struct {
-	src   *fakeSource
-	loads atomic.Int32
-}
-
-// newWatcher starts a watcher on a fast debounce over synthetic plumbing.
-func newWatchFixture(t *testing.T, results func(call int32) (*config.Config, error)) (*watchFixture, *config.Watcher) {
+func newPollFixture(
+	t *testing.T, path string, results func(call int32) (*config.Config, error),
+) (*pollFixture, *config.Watcher) {
 	t.Helper()
 
-	fx := &watchFixture{src: newFakeSource()}
+	fx := &pollFixture{
+		stat:  newFakeStat(path),
+		ticks: make(chan time.Time, 8),
+	}
 	loader := func(path string) (*config.Config, error) {
 		return results(fx.loads.Add(1))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	fx.cancel = cancel
 	t.Cleanup(cancel)
 
-	w, err := config.NewWatcher(ctx, "/tmp/goswitch-test/goswitch.yaml",
-		config.WithSource(func() (config.EventSource, error) { return fx.src, nil }),
+	w, err := config.NewWatcher(ctx, path,
+		config.WithStat(fx.stat.stat),
 		config.WithLoader(loader),
-		config.WithDebounce(10*time.Millisecond),
+		config.WithTicks(fx.ticks),
 	)
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
@@ -102,6 +104,9 @@ func newWatchFixture(t *testing.T, results func(call int32) (*config.Config, err
 
 	return fx, w
 }
+
+// tick delivers one poll tick.
+func (fx *pollFixture) tick() { fx.ticks <- time.Now() }
 
 // docWith returns a valid config with the given tap window.
 func docWith(tapWindowMs int) *config.Config {
@@ -161,13 +166,13 @@ func captureLogs(t *testing.T) *syncBuffer {
 	return buf
 }
 
-// TestWatch_ValidRewritePublishes pins the happy reload path (CONF-02):
-// a Write event for the watched file, after the debounce, publishes the
-// NEW config through Snapshot.
-func TestWatch_ValidRewritePublishes(t *testing.T) {
+// TestPoll_ChangePublishes pins the happy reload path (CONF-02, the
+// polling form): a stat whose fingerprint moved publishes the NEW config
+// through Snapshot on the next tick.
+func TestPoll_ChangePublishes(t *testing.T) {
 	t.Parallel()
 
-	fx, w := newWatchFixture(t, func(call int32) (*config.Config, error) {
+	fx, w := newPollFixture(t, "/tmp/goswitch-test/goswitch.yaml", func(call int32) (*config.Config, error) {
 		if call == 1 {
 			return docWith(300), nil
 		}
@@ -178,39 +183,167 @@ func TestWatch_ValidRewritePublishes(t *testing.T) {
 		t.Fatalf("initial snapshot tap_window_ms = %d, want 300", got)
 	}
 
-	fx.src.send("/tmp/goswitch-test/goswitch.yaml", fsnotify.Write)
+	fx.stat.bump("/tmp/goswitch-test/goswitch.yaml")
+	fx.tick()
 
 	if !waitUntil(func() bool { return w.Snapshot().Timeouts.TapWindowMs == 450 }) {
-		t.Fatalf("snapshot tap_window_ms = %d after rewrite, want 450", w.Snapshot().Timeouts.TapWindowMs)
+		t.Fatalf("snapshot tap_window_ms = %d after the change, want 450", w.Snapshot().Timeouts.TapWindowMs)
 	}
 	if err := w.LastError(); err != nil {
 		t.Errorf("LastError = %v after a valid reload, want nil", err)
 	}
 }
 
-// TestWatch_InvalidRewriteKeepsLastGood pins D-32: a broken edit WARNs
-// ("config reload rejected"), the last-good snapshot keeps serving and
-// LastError carries the rejection for the status surface (plan 03-06).
-func TestWatch_InvalidRewriteKeepsLastGood(t *testing.T) {
+// TestPoll_UnchangedStampSkips pins the poll's economy: ticks over an
+// unchanged fingerprint never parse — the stat compare is the whole cost
+// of a quiet config.
+func TestPoll_UnchangedStampSkips(t *testing.T) {
+	t.Parallel()
+
+	fx, _ := newPollFixture(t, "/tmp/goswitch-test/goswitch.yaml", func(int32) (*config.Config, error) {
+		return docWith(300), nil
+	})
+
+	for range 3 {
+		fx.tick()
+	}
+	time.Sleep(50 * time.Millisecond) // a late re-parse would land
+
+	if got := fx.loads.Load(); got != 1 {
+		t.Errorf("loads after 3 quiet ticks = %d, want 1 (the initial load only)", got)
+	}
+}
+
+// TestPoll_InvalidChangeKeepsLastGoodAndRecovers pins D-32 end to end: a
+// rejected fingerprint consumes itself (ONE WARN, no per-tick chorus),
+// the last-good keeps serving, and the repaired document applies on the
+// next tick without a restart.
+func TestPoll_InvalidChangeKeepsLastGoodAndRecovers(t *testing.T) {
 	buf := captureLogs(t)
 
-	fx, w := newWatchFixture(t, func(call int32) (*config.Config, error) {
-		if call == 1 {
+	fx, w := newPollFixture(t, "/tmp/goswitch-test/goswitch.yaml", func(call int32) (*config.Config, error) {
+		switch call {
+		case 1:
 			return docWith(300), nil
+		case 2:
+			return nil, errFixtureDecode
+		default:
+			return docWith(500), nil
 		}
-
-		return nil, errFixtureDecode
 	})
-	fx.src.send("/tmp/goswitch-test/goswitch.yaml", fsnotify.Write)
 
+	fx.stat.bump("/tmp/goswitch-test/goswitch.yaml")
+	fx.tick()
 	if !waitUntil(func() bool { return w.LastError() != nil }) {
-		t.Fatal("LastError never set after an invalid rewrite")
+		t.Fatal("LastError never set after the rejected change")
 	}
 	if got := w.Snapshot().Timeouts.TapWindowMs; got != 300 {
-		t.Errorf("snapshot tap_window_ms = %d after a rejected reload, want the last-good 300", got)
+		t.Errorf("snapshot tap_window_ms = %d after the rejection, want the last-good 300", got)
 	}
 	if !strings.Contains(buf.String(), `"msg":"config reload rejected"`) {
 		t.Errorf("log %q misses the WARN record config reload rejected", buf.String())
+	}
+
+	// The rejected fingerprint is consumed: quiet ticks add no attempts.
+	before := fx.loads.Load()
+	fx.tick()
+	time.Sleep(30 * time.Millisecond)
+	if got := fx.loads.Load(); got != before {
+		t.Errorf("loads after a quiet tick over the rejected fingerprint = %d, want %d", got, before)
+	}
+
+	// The repair applies without a restart.
+	fx.stat.bump("/tmp/goswitch-test/goswitch.yaml")
+	fx.tick()
+	if !waitUntil(func() bool { return w.Snapshot().Timeouts.TapWindowMs == 500 }) {
+		t.Fatalf("snapshot tap_window_ms = %d after the repair, want 500", w.Snapshot().Timeouts.TapWindowMs)
+	}
+	if err := w.LastError(); err != nil {
+		t.Errorf("LastError = %v after the repaired reload, want nil", err)
+	}
+}
+
+// TestPoll_AbsentFileQuietThenAppears pins the adopt path's lifecycle:
+// a document that is absent at construction (the green defaults start)
+// polls quietly, and its later appearance applies on the next tick.
+func TestPoll_AbsentFileQuietThenAppears(t *testing.T) {
+	t.Parallel()
+
+	path := "/tmp/goswitch-test/late.yaml"
+	fx := &pollFixture{
+		stat:  newFakeStat(), // the path is absent: no stamp registered
+		ticks: make(chan time.Time, 8),
+	}
+	loader := func(string) (*config.Config, error) {
+		fx.loads.Add(1)
+
+		return docWith(370), nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	w, err := config.NewWatcher(ctx, path,
+		config.WithStat(fx.stat.stat),
+		config.WithLoader(loader),
+		config.WithTicks(fx.ticks),
+	)
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+
+	fx.tick()
+	time.Sleep(30 * time.Millisecond) // an absent-document poll must stay quiet
+	if got := fx.loads.Load(); got != 1 {
+		t.Fatalf("loads over an absent document = %d, want 1 (the initial load only)", got)
+	}
+
+	fx.stat.set(path, config.FileStamp{ModTime: time.Unix(1, 0), Size: 10})
+	fx.tick()
+	if !waitUntil(func() bool { return w.Snapshot().Timeouts.TapWindowMs == 370 }) {
+		t.Fatalf("snapshot tap_window_ms = %d after the document appeared, want 370", w.Snapshot().Timeouts.TapWindowMs)
+	}
+}
+
+// TestWatch_ReloadRefreshesFingerprint pins the ctl-path contract on the
+// poller: Reload answers for the document's current fingerprint, so the
+// next tick over the SAME content adds no re-parse.
+func TestWatch_ReloadRefreshesFingerprint(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "goswitch.yaml")
+	if err := os.WriteFile(path, []byte(autocorrectDocYAML("2.0")), 0o600); err != nil {
+		t.Fatalf("write initial config: %v", err)
+	}
+
+	ticks := make(chan time.Time, 8)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	w, err := config.NewWatcher(ctx, path,
+		config.WithLoader(config.Load),
+		config.WithTicks(ticks),
+	)
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+
+	// The document changes under the served snapshot; Reload answers
+	// without waiting for a tick.
+	if err := os.WriteFile(path, []byte(autocorrectDocYAML("2.5")), 0o600); err != nil {
+		t.Fatalf("write changed config: %v", err)
+	}
+	if _, err := w.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if got := w.Snapshot().Autocorrect.TrigramMargin; got != 2.5 {
+		t.Fatalf("snapshot trigram_margin after Reload = %v, want 2.5", got)
+	}
+
+	ticks <- time.Now()
+	time.Sleep(50 * time.Millisecond) // a double answer would land
+	if got := w.Snapshot().Autocorrect.TrigramMargin; got != 2.5 {
+		t.Errorf("snapshot trigram_margin drifted after the tick: %v", got)
 	}
 }
 
@@ -258,14 +391,13 @@ func TestWatch_BrokenAutocorrectBlockKeepsLastGood(t *testing.T) {
 		t.Fatalf("write initial config: %v", err)
 	}
 
-	fx := newFakeSource()
+	ticks := make(chan time.Time, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
 	w, err := config.NewWatcher(ctx, path,
-		config.WithSource(func() (config.EventSource, error) { return fx, nil }),
 		config.WithLoader(config.Load),
-		config.WithDebounce(10*time.Millisecond),
+		config.WithTicks(ticks),
 	)
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
@@ -278,7 +410,7 @@ func TestWatch_BrokenAutocorrectBlockKeepsLastGood(t *testing.T) {
 	if err := os.WriteFile(path, []byte(autocorrectDocYAML("0.5")), 0o600); err != nil {
 		t.Fatalf("write broken config: %v", err)
 	}
-	fx.send(path, fsnotify.Write)
+	ticks <- time.Now()
 	if !waitUntil(func() bool { return w.LastError() != nil }) {
 		t.Fatal("LastError never set after a broken autocorrect edit")
 	}
@@ -293,7 +425,7 @@ func TestWatch_BrokenAutocorrectBlockKeepsLastGood(t *testing.T) {
 	if err := os.WriteFile(path, []byte(autocorrectDocYAML("2.5")), 0o600); err != nil {
 		t.Fatalf("write repaired config: %v", err)
 	}
-	fx.send(path, fsnotify.Write)
+	ticks <- time.Now()
 	if !waitUntil(func() bool { return w.Snapshot().Autocorrect.TrigramMargin == 2.5 }) {
 		t.Fatalf("snapshot trigram_margin = %v after the repair, want 2.5", w.Snapshot().Autocorrect.TrigramMargin)
 	}
@@ -347,14 +479,13 @@ func TestWatch_BrokenBlocklistPatternKeepsLastGood(t *testing.T) {
 		t.Fatalf("write initial config: %v", err)
 	}
 
-	fx := newFakeSource()
+	ticks := make(chan time.Time, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
 	w, err := config.NewWatcher(ctx, path,
-		config.WithSource(func() (config.EventSource, error) { return fx, nil }),
 		config.WithLoader(config.Load),
-		config.WithDebounce(10*time.Millisecond),
+		config.WithTicks(ticks),
 	)
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
@@ -367,7 +498,7 @@ func TestWatch_BrokenBlocklistPatternKeepsLastGood(t *testing.T) {
 	if err := os.WriteFile(path, []byte(blocklistDocYAML("[")), 0o600); err != nil {
 		t.Fatalf("write broken config: %v", err)
 	}
-	fx.send(path, fsnotify.Write)
+	ticks <- time.Now()
 	if !waitUntil(func() bool { return w.LastError() != nil }) {
 		t.Fatal("LastError never set after a broken blocklist edit")
 	}
@@ -382,7 +513,7 @@ func TestWatch_BrokenBlocklistPatternKeepsLastGood(t *testing.T) {
 	if err := os.WriteFile(path, []byte(blocklistDocYAML("chrom")), 0o600); err != nil {
 		t.Fatalf("write repaired config: %v", err)
 	}
-	fx.send(path, fsnotify.Write)
+	ticks <- time.Now()
 	if !waitUntil(func() bool {
 		got := w.Snapshot().Autocorrect.AppsBlocklist
 
@@ -411,14 +542,13 @@ func TestWatch_A11yUnknownKeyKeepsLastGood(t *testing.T) {
 		t.Fatalf("write initial config: %v", err)
 	}
 
-	fx := newFakeSource()
+	ticks := make(chan time.Time, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
 	w, err := config.NewWatcher(ctx, path,
-		config.WithSource(func() (config.EventSource, error) { return fx, nil }),
 		config.WithLoader(config.Load),
-		config.WithDebounce(10*time.Millisecond),
+		config.WithTicks(ticks),
 	)
 	if err != nil {
 		t.Fatalf("NewWatcher: %v", err)
@@ -431,7 +561,7 @@ func TestWatch_A11yUnknownKeyKeepsLastGood(t *testing.T) {
 	if err := os.WriteFile(path, []byte(a11yDocYAML("  enabled: true\n  per_app_levels: wat\n")), 0o600); err != nil {
 		t.Fatalf("write broken config: %v", err)
 	}
-	fx.send(path, fsnotify.Write)
+	ticks <- time.Now()
 	if !waitUntil(func() bool { return w.LastError() != nil }) {
 		t.Fatal("LastError never set after a broken a11y edit")
 	}
@@ -446,7 +576,7 @@ func TestWatch_A11yUnknownKeyKeepsLastGood(t *testing.T) {
 	if err := os.WriteFile(path, []byte(a11yDocYAML("  enabled: false\n")), 0o600); err != nil {
 		t.Fatalf("write repaired config: %v", err)
 	}
-	fx.send(path, fsnotify.Write)
+	ticks <- time.Now()
 	if !waitUntil(func() bool { return !w.Snapshot().A11y.EffectiveEnabled() }) {
 		t.Fatalf("snapshot a11y effective switch = %v after the repair, want false",
 			w.Snapshot().A11y.EffectiveEnabled())
@@ -456,126 +586,25 @@ func TestWatch_A11yUnknownKeyKeepsLastGood(t *testing.T) {
 	}
 }
 
-// TestWatch_IgnoresIrrelevantEvents pins the filters: events for other
-// file names in the watched directory and non-trigger operations on the
-// watched file (Chmod) never cause a re-parse.
-func TestWatch_IgnoresIrrelevantEvents(t *testing.T) {
+// TestWatch_ContextCancelStopsPolling pins goroutine hygiene: after ctx
+// cancellation the loop is gone — ticks over a changed fingerprint
+// produce no work, no panic, no leak under -race.
+func TestWatch_ContextCancelStopsPolling(t *testing.T) {
 	t.Parallel()
 
-	fx, _ := newWatchFixture(t, func(int32) (*config.Config, error) {
+	fx, _ := newPollFixture(t, "/tmp/goswitch-test/goswitch.yaml", func(int32) (*config.Config, error) {
 		return docWith(300), nil
 	})
 
-	fx.src.send("/tmp/goswitch-test/other.yaml", fsnotify.Write)
-	fx.src.send("/tmp/goswitch-test/goswitch.yaml", fsnotify.Chmod)
+	fx.cancel()
+	time.Sleep(20 * time.Millisecond) // the loop's exit lands
 
-	time.Sleep(80 * time.Millisecond) // 8x debounce: any re-parse would land
+	fx.stat.bump("/tmp/goswitch-test/goswitch.yaml")
+	fx.tick()
+	time.Sleep(30 * time.Millisecond) // a live loop would re-parse here
+
 	if got := fx.loads.Load(); got != 1 {
-		t.Errorf("re-parses = %d after irrelevant events, want 1 (the initial load only)", got)
-	}
-}
-
-// TestWatch_DebounceCoalesces pins the debounce contract: three events in
-// one window coalesce into exactly ONE re-parse (the counter pin).
-func TestWatch_DebounceCoalesces(t *testing.T) {
-	t.Parallel()
-
-	fx, _ := newWatchFixture(t, func(int32) (*config.Config, error) {
-		return docWith(300), nil
-	})
-
-	for range 3 {
-		fx.src.send("/tmp/goswitch-test/goswitch.yaml", fsnotify.Write)
-	}
-
-	if !waitUntil(func() bool { return fx.loads.Load() >= 2 }) {
-		t.Fatalf("re-parse never fired: loads = %d", fx.loads.Load())
-	}
-	time.Sleep(80 * time.Millisecond) // 8x debounce: a second re-parse would land
-	if got := fx.loads.Load(); got != 2 {
-		t.Errorf("re-parses after a 3-event burst = %d, want exactly 2 (initial + one coalesced)", got)
-	}
-}
-
-// TestWatch_RemoveAndRenameTrigger pins the atomic-rename coverage: Remove
-// and Rename events for the watched name each trigger a re-parse (an
-// editor's save is a Rename inside the same directory).
-func TestWatch_RemoveAndRenameTrigger(t *testing.T) {
-	t.Parallel()
-
-	fx, _ := newWatchFixture(t, func(int32) (*config.Config, error) {
-		return docWith(300), nil
-	})
-
-	fx.src.send("/tmp/goswitch-test/goswitch.yaml", fsnotify.Remove)
-	if !waitUntil(func() bool { return fx.loads.Load() == 2 }) {
-		t.Fatalf("loads after Remove = %d, want 2", fx.loads.Load())
-	}
-
-	fx.src.send("/tmp/goswitch-test/goswitch.yaml", fsnotify.Rename)
-	if !waitUntil(func() bool { return fx.loads.Load() == 3 }) {
-		t.Fatalf("loads after Rename = %d, want 3", fx.loads.Load())
-	}
-}
-
-// TestWatch_SourceErrorWarns pins the Errors-channel drain: a source error
-// is a WARN, never a crash of the watch loop.
-func TestWatch_SourceErrorWarns(t *testing.T) {
-	buf := captureLogs(t)
-
-	fx, _ := newWatchFixture(t, func(int32) (*config.Config, error) {
-		return docWith(300), nil
-	})
-
-	fx.src.errors <- errFixtureInotify
-
-	if !waitUntil(func() bool { return strings.Contains(buf.String(), `"msg":"config watch error"`) }) {
-		t.Error("log misses the WARN record config watch error")
-	}
-}
-
-// TestWatch_WatchesDirectoryNotFile pins the STACK pattern: the watch is
-// added on filepath.Dir (atomic-rename editors swap the inode).
-func TestWatch_WatchesDirectoryNotFile(t *testing.T) {
-	t.Parallel()
-
-	fx, _ := newWatchFixture(t, func(int32) (*config.Config, error) {
-		return docWith(300), nil
-	})
-
-	fx.src.closeGuard.Lock()
-	defer fx.src.closeGuard.Unlock()
-	if len(fx.src.addedDirs) != 1 || fx.src.addedDirs[0] != "/tmp/goswitch-test" {
-		t.Errorf("watched dirs = %v, want exactly the config's directory /tmp/goswitch-test", fx.src.addedDirs)
-	}
-}
-
-// TestWatch_ContextCancelClosesSource pins goroutine hygiene: canceling
-// the context stops the loop and closes the source — no leak under -race.
-func TestWatch_ContextCancelClosesSource(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	fx := &fakeSource{
-		events: make(chan fsnotify.Event, 16),
-		errors: make(chan error, 16),
-	}
-	loader := func(string) (*config.Config, error) { return docWith(300), nil }
-
-	w, err := config.NewWatcher(ctx, "/tmp/goswitch-test/goswitch.yaml",
-		config.WithSource(func() (config.EventSource, error) { return fx, nil }),
-		config.WithLoader(loader),
-		config.WithDebounce(10*time.Millisecond),
-	)
-	if err != nil {
-		t.Fatalf("NewWatcher: %v", err)
-	}
-	_ = w
-
-	cancel()
-
-	if !waitUntil(fx.isClosed) {
-		t.Error("source not closed after ctx cancel — the loop goroutine leaked")
+		t.Errorf("loads after cancel + changed fingerprint + tick = %d, want 1 (the initial load)", got)
 	}
 }
 
@@ -585,11 +614,13 @@ func TestWatch_ContextCancelClosesSource(t *testing.T) {
 func TestWatch_InitialLoadFailureRefuses(t *testing.T) {
 	t.Parallel()
 
+	ticks := make(chan time.Time, 1)
 	_, err := config.NewWatcher(context.Background(), "/tmp/goswitch-test/goswitch.yaml",
-		config.WithSource(func() (config.EventSource, error) { return newFakeSource(), nil }),
+		config.WithStat(newFakeStat("/tmp/goswitch-test/goswitch.yaml").stat),
 		config.WithLoader(func(string) (*config.Config, error) {
 			return nil, errFixtureDecode
 		}),
+		config.WithTicks(ticks),
 	)
 	if err == nil {
 		t.Fatal("NewWatcher succeeded on an unloadable config, want a construction refusal")

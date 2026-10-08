@@ -191,7 +191,7 @@ func newReloadSvc(t *testing.T) (*ctlsvc.Svc, *config.Watcher, string) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	w, err := config.NewWatcher(ctx, cfgPath, config.WithDebounce(time.Hour))
+	w, err := config.NewWatcher(ctx, cfgPath, config.WithInterval(time.Hour))
 	if err != nil {
 		t.Fatalf("new watcher: %v", err)
 	}
