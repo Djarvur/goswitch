@@ -4,65 +4,60 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"path/filepath"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/fsnotify/fsnotify"
 )
 
-// defaultDebounce coalesces an editor's save burst (write-temp + rename +
-// chained writes) into one re-parse — 200 ms, inside the STACK 150–300 ms
-// band.
-const defaultDebounce = 200 * time.Millisecond
+// defaultPollInterval paces the config re-read (D-32 REV, the owner's
+// 2026-10-08 decision): inotify is retired. The desktop's Electron apps
+// exhaust the system inotify-instance budget — a daemon that loses the
+// init race silently loses hot reload — and the rename-semantics watch
+// (directory + debounce) existed solely to survive editors. A 2 s stat
+// poll has no such failure mode, drops the fsnotify dependency, and the
+// application model is unchanged: the fold still rides the next keypress
+// (03-04), so the interval never lands inside a gesture.
+const defaultPollInterval = 2 * time.Second
 
-// EventSource is the filesystem-event surface the watcher consumes — an
-// interface so the corpus drives the loop with synthetic events headlessly
-// (no real inotify; the Wave 0 gap note of the phase research).
-type EventSource interface {
-	Events() <-chan fsnotify.Event
-	Errors() <-chan error
-	Add(dir string) error
-	Close() error
+// FileStamp is the change fingerprint of the watched document: mtime plus
+// size. A human-paced edit always moves both; a poll that sees an equal
+// stamp skips the parse entirely.
+type FileStamp struct {
+	ModTime time.Time
+	Size    int64
 }
 
-// inotifySource adapts the real fsnotify.Watcher to EventSource.
-type inotifySource struct{ w *fsnotify.Watcher }
+// stater is the stat seam: production os.Stat, the corpus scripts stamps
+// (the EventSource seam's replacement — the headless corpus owns the
+// clock and the fingerprints, no real filesystem timing involved).
+type stater func(path string) (FileStamp, error)
 
-func (s inotifySource) Events() <-chan fsnotify.Event { return s.w.Events }
-func (s inotifySource) Errors() <-chan error          { return s.w.Errors }
-
-func (s inotifySource) Add(dir string) error {
-	if err := s.w.Add(dir); err != nil {
-		return fmt.Errorf("fsnotify add %s: %w", dir, err)
+// statStamp is the production stater.
+func statStamp(path string) (FileStamp, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return FileStamp{}, err //nolint:wrapcheck // the caller's error paths wrap their own contexts
 	}
 
-	return nil
-}
-
-func (s inotifySource) Close() error {
-	if err := s.w.Close(); err != nil {
-		return fmt.Errorf("fsnotify close: %w", err)
-	}
-
-	return nil
+	return FileStamp{ModTime: fi.ModTime(), Size: fi.Size()}, nil
 }
 
 // watchOpts carry the constructor's knobs; the zero value is filled with
-// the daemon defaults (real inotify source, Load parser, 200 ms debounce).
+// the daemon defaults (production stat, Load parser, 2 s poll).
 type watchOpts struct {
-	debounce time.Duration
+	interval time.Duration
 	load     func(path string) (*Config, error)
-	source   func() (EventSource, error)
+	stat     stater
+	ticks    <-chan time.Time // the test clock; nil = the production ticker
 }
 
 // Option customizes NewWatcher (the test seams ride the same surface).
 type Option func(*watchOpts)
 
-// WithDebounce overrides the reload debounce.
-func WithDebounce(d time.Duration) Option {
-	return func(o *watchOpts) { o.debounce = d }
+// WithInterval overrides the poll period.
+func WithInterval(d time.Duration) Option {
+	return func(o *watchOpts) { o.interval = d }
 }
 
 // WithLoader replaces the parse function (counted loads, scripted results).
@@ -70,67 +65,62 @@ func WithLoader(load func(path string) (*Config, error)) Option {
 	return func(o *watchOpts) { o.load = load }
 }
 
-// WithSource replaces the real inotify source (synthetic event feeding).
-func WithSource(makeSource func() (EventSource, error)) Option {
-	return func(o *watchOpts) { o.source = makeSource }
+// WithStat replaces the production stat (scripted fingerprints).
+func WithStat(stat func(path string) (FileStamp, error)) Option {
+	return func(o *watchOpts) { o.stat = stat }
 }
 
-// Watcher publishes the last-good config: fsnotify watches the config's
-// DIRECTORY (atomic-rename editors swap the file's inode — watching the
-// path itself loses the file), events for other names are ignored, and a
-// debounce timer coalesces bursts into one full re-parse. A valid parse is
-// stored atomically; a rejected one keeps the last-good snapshot serving
-// (D-32) with the error exposed for status.
+// WithTicks injects the poll clock: every receive is one poll attempt.
+// Production leaves it nil and owns a real ticker.
+func WithTicks(ticks <-chan time.Time) Option {
+	return func(o *watchOpts) { o.ticks = ticks }
+}
+
+// Watcher publishes the last-good config: a stat poll (mtime + size)
+// re-reads the document when its fingerprint moves, at most once per
+// interval. A valid parse is stored atomically; a rejected one keeps the
+// last-good snapshot serving (D-32) with the error exposed for status —
+// and the rejected fingerprint is consumed too, so one broken edit is
+// ONE WARN, not a per-tick chorus.
 type Watcher struct {
 	path     string
-	fileName string
 	opts     watchOpts
-	reloadMu sync.Mutex // serializes debounce re-parses
+	reloadMu sync.Mutex // serializes re-parses (poll, Reload)
+	seenMu   sync.Mutex // guards seen against the poll/Reload race
+	seen     FileStamp  // the fingerprint the served snapshot matches
 	current  atomic.Pointer[Config]
 	lastErr  atomic.Pointer[error]
-	timer    *time.Timer // event-loop goroutine only (the armTimer discipline)
 }
 
 // NewWatcher loads the config at path once (a refusal fails construction —
-// an explicit -config must yield a working config) and then watches the
-// file's directory until ctx is done.
+// an explicit -config must yield a working config) and then polls the
+// document until ctx is done. An absent file at construction is legal
+// (the adopt path's green defaults): the poll picks the document up when
+// it appears.
 func NewWatcher(ctx context.Context, path string, opts ...Option) (*Watcher, error) {
 	o := watchOpts{
-		debounce: defaultDebounce,
+		interval: defaultPollInterval,
 		load:     Load,
-		source: func() (EventSource, error) {
-			fw, err := fsnotify.NewWatcher()
-			if err != nil {
-				return nil, err //nolint:wrapcheck // plain construction error, wrapped by the caller
-			}
-
-			return inotifySource{w: fw}, nil
-		},
+		stat:     statStamp,
 	}
 	for _, opt := range opts {
 		opt(&o)
 	}
 
-	w := &Watcher{path: path, fileName: filepath.Base(path), opts: o}
+	w := &Watcher{path: path, opts: o}
 	cfg, err := o.load(path)
 	if err != nil {
 		return nil, fmt.Errorf("initial config load: %w", err)
 	}
 	w.current.Store(cfg)
+	w.seen, _ = o.stat(path) // absent at start is legal: zero stamp, the poll catches the appearance
 
-	src, err := o.source()
-	if err != nil {
-		return nil, fmt.Errorf("create fsnotify watcher: %w", err)
+	if o.ticks != nil {
+		go w.loop(ctx, o.ticks, nil)
+	} else {
+		t := time.NewTicker(o.interval)
+		go w.loop(ctx, t.C, t.Stop)
 	}
-	// The DIRECTORY, not the file: vim/kwrite/gedit save via write-temp +
-	// rename, so the watched inode changes under a file watch (STACK).
-	if err := src.Add(filepath.Dir(path)); err != nil {
-		_ = src.Close()
-
-		return nil, fmt.Errorf("watch config directory: %w", err)
-	}
-
-	go w.loop(ctx, src)
 
 	return w, nil
 }
@@ -152,7 +142,7 @@ func (w *Watcher) LastError() error {
 	return nil
 }
 
-// ConfigPath returns the path the watcher serves and watches — the actor's
+// ConfigPath returns the path the watcher serves and polls — the actor's
 // status snapshot lifts it into the D-32 fields (INST-02).
 func (w *Watcher) ConfigPath() string {
 	return w.path
@@ -162,66 +152,84 @@ func (w *Watcher) ConfigPath() string {
 // the control surface's reload (INST-02): a valid document is published
 // (the reply names the applied change), a rejected one keeps the last-good
 // snapshot serving (D-32) with the error returned and exposed through
-// LastError. Shares the parse-and-publish core with the debounce path
-// under the same mutex — no race with a pending timer-driven reload.
+// LastError. The polled fingerprint is refreshed either way, so the next
+// tick never re-parses what this call already answered for.
 func (w *Watcher) Reload() (string, error) {
 	w.reloadMu.Lock()
 	defer w.reloadMu.Unlock()
 
-	return w.reparse()
+	reply, err := w.reparse()
+	w.refreshSeen()
+
+	return reply, err
 }
 
-// loop drains the event source until ctx is done; every goroutine has an
+// loop drains the poll clock until ctx is done; every goroutine has an
 // exit condition (go-ultimate concurrency hygiene).
-func (w *Watcher) loop(ctx context.Context, src EventSource) {
-	defer func() { _ = src.Close() }() // teardown: the close error carries no signal
+func (w *Watcher) loop(ctx context.Context, ticks <-chan time.Time, stop func()) {
+	if stop != nil {
+		defer stop()
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			if w.timer != nil {
-				w.timer.Stop()
-			}
-
 			return
-		case err, ok := <-src.Errors():
+		case _, ok := <-ticks:
 			if !ok {
 				return
 			}
-			slog.Warn("config watch error", "error", err)
-		case ev, ok := <-src.Events():
-			if !ok {
-				return
-			}
-			w.handle(ev)
+			w.poll()
 		}
 	}
 }
 
-// handle re-arms the debounce timer for events of the watched file only:
-// other names in the directory and non-trigger operations are ignored, a
-// fresh event inside the window recharges the timer (the armTimer
-// discipline of actor.go:572-577 — stop the old AfterFunc, arm a new one).
-func (w *Watcher) handle(ev fsnotify.Event) {
-	if filepath.Base(ev.Name) != w.fileName {
-		return
-	}
-	if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
-		return
-	}
-	if w.timer != nil {
-		w.timer.Stop()
-	}
-	w.timer = time.AfterFunc(w.opts.debounce, w.reload)
-}
+// poll is one tick: a stat whose fingerprint moved since the served
+// snapshot triggers exactly one re-parse; an equal stamp, a stat error
+// (an absent document between edits is normal for the adopt path) and an
+// in-flight Reload are all quiet no-ops.
+func (w *Watcher) poll() {
+	w.seenMu.Lock()
+	seen := w.seen
+	w.seenMu.Unlock()
 
-// reload is the debounce callback: the synchronous outcome is the log
-// record and LastError, both written inside the shared core.
-func (w *Watcher) reload() {
+	stamp, err := w.opts.stat(w.path)
+	if err != nil || stamp == seen {
+		return
+	}
+
 	w.reloadMu.Lock()
 	defer w.reloadMu.Unlock()
 
+	// Reload may have answered for this change while the stat ran.
+	w.seenMu.Lock()
+	unchanged := w.seen == stamp
+	w.seenMu.Unlock()
+	if unchanged {
+		return
+	}
+
 	_, _ = w.reparse() // the outcome is observable state, not a return value here
+	w.remember(stamp)
+}
+
+// remember publishes the fingerprint of the document the current snapshot
+// answers for.
+func (w *Watcher) remember(stamp FileStamp) {
+	w.seenMu.Lock()
+	defer w.seenMu.Unlock()
+
+	w.seen = stamp
+}
+
+// refreshSeen re-stats and publishes the fingerprint under the reload
+// lock's caller — Reload's twin of remember (the file may not stat, e.g.
+// the document vanished between the ctl call and the read: the poll picks
+// it up on its next tick).
+func (w *Watcher) refreshSeen() {
+	if stamp, err := w.opts.stat(w.path); err == nil {
+		w.remember(stamp)
+	}
 }
 
 // reparse is the ONE reload core: a valid document replaces the served
