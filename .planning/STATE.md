@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 Phase: 4 — Поставка и приёмка
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-06 — Phase 8 complete, transitioned to Phase 4
+Last activity: 2026-10-06 — Completed quick task 261006-squ: sound persistent PulseAudio stream + GNOME theme playback (backlog todo sound-latency)
 
 Progress: [████████░░] 75%
 
@@ -312,6 +312,7 @@ None yet.
 | 260930-pf6 | feat: tray indicator (SNI/AppIndicator) — goswitchd publishes an EN/RU icon on its existing ctl connection, ModeDisplay seam observer-last in flipTo/syncMode, one-WARN degradations, Menu /NO_DBUSMENU sentinel (checker PASSED, verifier gap fixed); owner pixel check pending | 2026-09-30 | 9063703 | Verified | [260930-pf6-feat-tray-indicator-statusnotifieritem-a](./quick/260930-pf6-feat-tray-indicator-statusnotifieritem-a/) |
 | 260930-toa | feat: single-source input model — installer/selfcheck accept 1..N goswitch-wrapped sources (foreign residue still refused, atomic-refusal gate fixed in saveState), e2e oracle count-agnostic, README user-model rewrite + ADR-006 amendment; live machine on [('ibus','goswitch-en')], selfcheck 6×ok; owner visual check pending | 2026-09-30 | 0e34a83 | Verified (human_needed) | [260930-toa-feat-single-source-input-model-selfcheck](./quick/260930-toa-feat-single-source-input-model-selfcheck/) |
 | 261001-fg3 | feat: interactive tray — supervisor re-attaches on watcher appearance (NameOwnerChanged) + ~30 s health check (owner-requested silent-eviction self-heal, proven live twice), DBusMenu (com.canonical.dbusmenu, toggle-first/status/reload), SNI Activate; interface-name gap caught in live leg and fixed with a literal wire-name pin; owner confirmed the menu | 2026-10-01 | e8dae38 | Verified | [261001-fg3-feat-interactive-tray-daemon-re-attaches](./quick/261001-fg3-feat-interactive-tray-daemon-re-attaches/) |
+| 261006-squ | feat: sound — persistent PulseAudio stream (jfreymuth/pulse v0.1.3 + oggvorbis v1.0.5, vorbis v1.0.2 via oggvorbis) + GNOME sound-theme playback with XDG resolver and PCM cache replaces canberra subprocess (~150 ms → ~30 ms tone); spec-delta SPEC §5/§11 BEFORE code (D-55); mute = zero server connections incl. event-sounds arm (verifier gap found and fixed); synthesized tone stays as never-wait fallback; SoundSink seam unchanged; owner by-ear check pending | 2026-10-06 | 38f892a | Needs Review | [261006-squ-sound-persistent-pulseaudio-stream-gnome](./quick/261006-squ-sound-persistent-pulseaudio-stream-gnome/) |
 
 ## Deferred Items
 

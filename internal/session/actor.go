@@ -903,6 +903,17 @@ type SoundSink interface {
 	SetAutocorrectEvent(event string)
 }
 
+// SoundStopper is the mute lifecycle's optional capability (261006-squ,
+// requirement 3): the sound switch's ON→OFF fold transition stops the
+// sink — muted sound holds NO sound-server connection; re-enabling dials
+// lazily on the first tone. Optional by design: a sink without it folds
+// silently (the type-assertion miss is a no-op). Defined at the point of
+// use, next to SoundSink; Stop must be quick and re-entrant-safe under
+// the actor's mutex (the actor.mu → sink.mu one-way ordering holds).
+type SoundStopper interface {
+	Stop()
+}
+
 // SetSoundSink installs the sound seam — the SetMenuSync mirror (plan
 // 07-08). nil = no sink: every tone stays a silent no-op (the menu nil
 // form — a degradation, never an error). A non-nil install self-syncs the
@@ -1312,9 +1323,25 @@ func (a *Actor) applySnapshot() {
 	// precedent): the owner's default ON is the EffectiveEnabled truth —
 	// an absent section reads ON, only an explicit enabled: false mutes,
 	// and the next gesture carries the change (the D-32 hot reload).
-	a.opts.SoundEnabled = snap.Sound.EffectiveEnabled()
+	a.foldSound(snap.Sound.EffectiveEnabled())
 	a.pushA11y(snap) // the a11y-magic fold rides the same per-fold push chain (plan 08-05)
 	a.pushMenuSync(snap)
+}
+
+// foldSound applies the snapshot's sound switch (plan 07-08's fold, the
+// 261006-squ mute lifecycle): the owner's default ON is the
+// EffectiveEnabled truth, and the ON→OFF TRANSITION is the close trigger
+// — the installed sink stops (muted sound holds no sound-server
+// connection; the lazy redial rides the next tone). The gate in
+// soundSinkFor keeps its exact nil form — the fold transition closes,
+// the gate remains the single play gate. The caller holds the mutex.
+func (a *Actor) foldSound(enabled bool) {
+	if a.opts.SoundEnabled && !enabled {
+		if stopper, ok := a.soundSink.(SoundStopper); ok {
+			stopper.Stop() // quick and re-entrant-safe under the sink's own mutex
+		}
+	}
+	a.opts.SoundEnabled = enabled
 }
 
 // pushA11y hands the reconciler the folded a11y state (plan 08-05, D-8-3
