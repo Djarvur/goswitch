@@ -380,6 +380,8 @@ table.insert(keys, {
 
 ## Open Questions (owner input points)
 
+> **Resolved-by-plan (2026-10-08, планирование Фазы 9):** все шесть вопросов закреплены за чекпойнт-гейтами планов и НЕ решаются исполнителем молча: OQ 1 (правка `~/.wezterm.lua`) → checkpoint Task 1 плана `09-03`; OQ 4 (ветка фикса при сломанном нативном IME 20240203) → checkpoint Task 1 плана `09-03`; OQ 6 (пред-вердикт сужения строки VTE) → checkpoint Task 1 плана `09-03`; OQ 3 (судьба probe-глагола) → checkpoint Task 3 плана `09-03`; OQ 2 (flatpak-согласие) → checkpoint Task 2 плана `09-04`; OQ 5 (ScreenReaderEnabled-семантика) → checkpoint Task 2 плана `09-04` (условный — открывается только при сессионно-семантическом триггере). Формулировки вопросов ниже оставлены дословно как исходник; вердикты владельца фиксируются строками журналов спайка (`adr-008-spike-log.md`, `d09-a11y-probe-log.md`).
+
 1. **May plan 9-C edit `~/.wezterm.lua` directly** (backup + apply recipe) once the stand-owned config proves green ×2, or does the owner apply the final recipe manually and confirm the daily flow? (The owner's daily-driver config; mutation discipline favors explicit consent.)
 2. **Flatpak probe consent:** may Phase 9 `flatpak install org.telegram.desktop` on this machine for the A11Y reachability row (~100+ MB, a second Telegram), or is that row deferred to Phase 13 planning?
 3. **Probe-verb fate:** keep the debug-gated `goswitchctl probe-forward` after the phase (debug harness for future terminal work) or remove at phase close?
