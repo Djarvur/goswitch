@@ -378,7 +378,7 @@ table.insert(keys, {
 | A6 | ydotool can drive the flip gesture and typing into the wezterm fixture window for the oracle | Oracle | Already precedented: the terminal-silent case injects into wezterm today [VERIFIED: test/e2e/case_autocorrect.go:825-833]; focus proof helper exists |
 | A7 | ZCode's a11y trigger today is `toolkit-accessibility` at startup (daemon-set), and the override test adds the deterministic belt | A11Y matrix | If ZCode needs `ScreenReaderEnabled` instead, Phase 13's recipe changes and the session-wide-semantic owner acceptance fires (PITFALLS #12) — the probe exists precisely to decide this |
 
-## Open Questions (owner input points)
+## Open Questions (owner input points) (RESOLVED)
 
 > **Resolved-by-plan (2026-10-08, планирование Фазы 9):** все шесть вопросов закреплены за чекпойнт-гейтами планов и НЕ решаются исполнителем молча: OQ 1 (правка `~/.wezterm.lua`) → checkpoint Task 1 плана `09-03`; OQ 4 (ветка фикса при сломанном нативном IME 20240203) → checkpoint Task 1 плана `09-03`; OQ 6 (пред-вердикт сужения строки VTE) → checkpoint Task 1 плана `09-03`; OQ 3 (судьба probe-глагола) → checkpoint Task 3 плана `09-03`; OQ 2 (flatpak-согласие) → checkpoint Task 2 плана `09-04`; OQ 5 (ScreenReaderEnabled-семантика) → checkpoint Task 2 плана `09-04` (условный — открывается только при сессионно-семантическом триггере). Формулировки вопросов ниже оставлены дословно как исходник; вердикты владельца фиксируются строками журналов спайка (`adr-008-spike-log.md`, `d09-a11y-probe-log.md`).
 
