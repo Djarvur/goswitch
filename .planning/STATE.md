@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 8
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 8 complete — all phases complete
-last_updated: "2026-10-07T23:29:52.241Z"
+last_updated: "2026-10-08T06:25:49.855Z"
 last_activity: 2026-10-08
-last_activity_desc: Phase 8 complete
-state_head: 7579794e9c5c772747fbf23770120214359ff62a
+last_activity_desc: Milestone v1.0.0 completed and archived
+state_head: 2f938476fd838464303fd8aa30fc81ab89f10819
 progress:
   total_phases: 8
-  completed_phases: 8
+  completed_phases: 6
   total_plans: 61
   completed_plans: 61
+current_phase: 8
 ---
 
 # Project State
@@ -26,12 +26,10 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: All phases complete
-Last activity: 2026-10-08 — Phase 8 complete
-
-Progress: [████████░░] 75%
+Phase: Milestone v1.0.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-08 — Milestone v1.0.0 completed and archived
 
 ## Performance Metrics
 
@@ -307,16 +305,6 @@ None yet.
 
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
-| 260927-sy8 | engine self-reactivation: re-activate the global IBus engine on daemon (re)registration when goswitch owns the current input source | 2026-09-27 | c543d2b | Needs Review | [260927-sy8-engine-self-reactivation-re-activate-the](./quick/260927-sy8-engine-self-reactivation-re-activate-the/) |
-| 260927-vu8 | correction UX batch A: convert the bracket-row punctuation during correction (allow-set, SPEC §4.2, owner decision 1 revised) + flip the script mode after a changed correction (flip_after_correction, default ON, owner decision 2) | 2026-09-27 | f679b95 | Needs Review | [260927-vu8-correction-ux-batch-a-convert-letter-map](./quick/260927-vu8-correction-ux-batch-a-convert-letter-map/) |
-| 260930-nxd | fix: switchTimeout 40→150ms (actor.go, live RTT 41–45 ms made the 40 ms deadline WARN on every flip) + installer leaves GNOME switch-input-source/-backward bindings untouched (ADR-006 two-source: external flips synced by 05-04 listener; uninstall restore kept) | 2026-09-30 | 65670b8 | Needs Review | [260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst](./quick/260930-nxd-fix-switchtimeout-40-150ms-actor-go-inst/) |
-| 260930-pf6 | feat: tray indicator (SNI/AppIndicator) — goswitchd publishes an EN/RU icon on its existing ctl connection, ModeDisplay seam observer-last in flipTo/syncMode, one-WARN degradations, Menu /NO_DBUSMENU sentinel (checker PASSED, verifier gap fixed); owner pixel check pending | 2026-09-30 | 9063703 | Verified | [260930-pf6-feat-tray-indicator-statusnotifieritem-a](./quick/260930-pf6-feat-tray-indicator-statusnotifieritem-a/) |
-| 260930-toa | feat: single-source input model — installer/selfcheck accept 1..N goswitch-wrapped sources (foreign residue still refused, atomic-refusal gate fixed in saveState), e2e oracle count-agnostic, README user-model rewrite + ADR-006 amendment; live machine on [('ibus','goswitch-en')], selfcheck 6×ok; owner visual check pending | 2026-09-30 | 0e34a83 | Verified (human_needed) | [260930-toa-feat-single-source-input-model-selfcheck](./quick/260930-toa-feat-single-source-input-model-selfcheck/) |
-| 261001-fg3 | feat: interactive tray — supervisor re-attaches on watcher appearance (NameOwnerChanged) + ~30 s health check (owner-requested silent-eviction self-heal, proven live twice), DBusMenu (com.canonical.dbusmenu, toggle-first/status/reload), SNI Activate; interface-name gap caught in live leg and fixed with a literal wire-name pin; owner confirmed the menu | 2026-10-01 | e8dae38 | Verified | [261001-fg3-feat-interactive-tray-daemon-re-attaches](./quick/261001-fg3-feat-interactive-tray-daemon-re-attaches/) |
-| 261006-squ | feat: sound — persistent PulseAudio stream (jfreymuth/pulse v0.1.3 + oggvorbis v1.0.5, vorbis v1.0.2 via oggvorbis) + GNOME sound-theme playback with XDG resolver and PCM cache replaces canberra subprocess (~150 ms → ~30 ms tone); spec-delta SPEC §5/§11 BEFORE code (D-55); mute = zero server connections incl. event-sounds arm (verifier gap found and fixed); synthesized tone stays as never-wait fallback; SoundSink seam unchanged; owner by-ear check pending | 2026-10-06 | efe6cd3 | Needs Review | [261006-squ-sound-persistent-pulseaudio-stream-gnome](./quick/261006-squ-sound-persistent-pulseaudio-stream-gnome/) |
-| 261006-vqw | feat(correct): per-character layout inversion as THE mixed-text semantics (owner verdict, UAT phase 6; D-22/D-23 revised; WINDOWS-12 freeze rejected) — spec-delta SPEC §4.2 before code (D-55, a24afa9), golden corpus re-pinned RED (3c7f564), invertPerChar in the run pipeline (4da90d8), 13 matrix rows v1..v4 re-pinned + case_word.go oracle (f9ed497); refusals/homogeneous byte-identical; owner live-matrix + gedit check pending | 2026-10-06 | f9ed497 | Needs Review | [261006-vqw-mixed-text-per-character-layout-inversio](./quick/261006-vqw-mixed-text-per-character-layout-inversio/) |
-| 261007-0yg | refactor: move engine/ and layouts/ under internal/ (owner decision 2026-10-07, SPEC §8 rev; D-55 spec-delta 649c00f before the move 5427d7a — 42 files, renames R98-R100, zero logic edits); .golangci.yml/mise.toml/LICENSE-data.md re-pointed, generator parity byte-identical; verifier reproduced a PRE-EXISTING flaky test (TestRun_OnConnHookCalledOnce read-once race) — stabilized with deadline-polled waits incl. the same-class sound test (08b598a), 9× green -race series; verification passed 5/5 | 2026-10-07 | 08b598a | Verified | [261007-0yg-move-engine-and-layouts-under-internal-o](./quick/261007-0yg-move-engine-and-layouts-under-internal-o/) |
-| 261008-00m | milestone-close owner fixes: G-2-3 own-engine flip keeps the correction buffer (ADR-004 amendment + flipCredit; live matrix v1 16/16, word-mixed → паиghbdtn) + G-5-5 half-wrapped sources auto-wrap-then-refuse (ADR-006/SPEC §4.3-4.4 deltas, owner verbatim) + matrix stand hermeticity (plain cases pin base config, no owner-config adoption) | 2026-10-08 | 4dc4877 | Verified | [261008-00m-milestone-close-owner-fixes-batch-1-g-2-](./quick/261008-00m-milestone-close-owner-fixes-batch-1-g-2-/) |
 
 ## Deferred Items
 
@@ -324,10 +312,26 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
-| *(none)* | | | | |
+| deferred_items | 02/deferred-items.md: Persistent AT-SPI tree wedge after repeated surface SIGKILLs (bus-restart remedy; CI-runner book candidate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: Daemon verify-after round settles on a stale first push (grace-window candidate fix, daemon-side plan) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: closeEntrySurface ydotool "Escape" name → physical E (one-word "esc" fix when shell path next touched) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 04/deferred-items.md: combo-word-layout post-reload tap flake under unusual desktop focus state (surface-hold candidate remedy) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 05/deferred-items.md: Preflight injection-selftest tap is a real flip on an installed desktop (stale assumption, comment/touch-up) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-05 — pre-existing ctlsvc OnConnHook flake under full-suite load (stabilized later by 08b598a) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-07 — OnConnHook root cause (assert-before-wait) + first-key-after-flip session drift (WINDOWS #13, environmental) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: 06-08 — session drift verdict (23-24/35 double-run, third diff exoneration; D-48 nightly is the machine gate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: 07-03 — watch_test BrokenBlocklistPattern ~1/15 flake (lastErr-settled wait candidate) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: pre-existing-flake TestRun_OnConnHookCalledOnce — RESOLVED in place by quick 261007-0yg (08b598a) | resolved-in-place | 2026-10-08 | v1.0.0 |
+| deferred_items | 07/deferred-items.md: post-release-tuning sound latency — RESOLVED in place by quick 261006-squ (persistent PulseAudio stream) | resolved-in-place | 2026-10-08 | v1.0.0 |
+| deferred_items | 08/deferred-items.md: 08-01 — ctlsvc/config flakes under load (bus-isolation hardening todo for owner) | acknowledged | 2026-10-08 | v1.0.0 |
+| deferred_items | 08/deferred-items.md: 08-06 — same environmental class (extend bus isolation to appid close-verdict test) | acknowledged | 2026-10-08 | v1.0.0 |
 
 ## Session Continuity
 
 Last session: 2026-10-06T05:43:37.608Z
 Stopped at: Phase 8 complete — all phases complete
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
