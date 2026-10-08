@@ -167,3 +167,36 @@ The single gap from the initial verification — the PD-1 event-sounds arm leaki
 
 _Verified: 2026-10-06T19:46:16Z_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## Addendum 2026-10-08: HV-1 failed live — stream buffer cap fix (13b140a)
+
+The owner's first live HV-1 attempt **FAILED by ear**: «запаздывание звука не
+изменилось» against the pre-fix build. The automatable gates could not hear
+this defect:
+
+- **Root cause:** `openStream` passed no buffer attributes, and the default
+  negotiation let pipewire-pulse grant the stream
+  `node.latency = 8192/44100` (~186 ms). The persistent stream plays silence
+  continuously, so every tone queued BEHIND the buffered silence — the old
+  per-tone spawn delay (100–330 ms class) reborn inside the new transport.
+- **Fix:** `13b140a` — `latencyOption` pins `BufferTargetLength` at
+  `toneLatency` (30 ms, the prototype's stable quantum) through the library's
+  `PlaybackRawOption` form, applied after rate/channels per the option-order
+  contract; `TestLatencyOption_CapsStreamBuffer` pins the wire shape
+  (RED→GREEN). Lint 0 issues; `internal/sound` green under -race.
+- **Live evidence (green106):** after the fix the pipewire node reported
+  `node.latency = 331/44100` (~7.5 ms — the server tightened the buffer to
+  its quantum); two tones played through the capped stream via menu-driven
+  flips (`com.canonical.dbusmenu.Event` ids 2→1, mode ru→en round trip,
+  `switch_engine` journal records present).
+- **Suite note:** the local full -race run on this date carried four
+  inotify-class failures (EMFILE at `fs.inotify.max_user_instances=128`,
+  exhausted by the live desktop) — environmental, delta-exonerated by a
+  stash control run; green locally after the owner raised the limit to 512.
+- **HV-1 re-arms:** the owner re-listens against a post-13b140a build;
+  HV-2/HV-3 unchanged.
+
+**Status: human_needed** (unchanged — HV-1 pending the owner's re-listen on
+the fixed build).
