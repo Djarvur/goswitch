@@ -198,5 +198,24 @@ this defect:
 - **HV-1 re-arms:** the owner re-listens against a post-13b140a build;
   HV-2/HV-3 unchanged.
 
+### HV-1 re-listen 2026-10-08 (post-13b140a)
+
+The owner re-listened on the fixed build and reported: **«задержка стала
+меньше»** — the delay is audibly smaller. Objective corroboration on the same
+session (green106): pipewire monitor tap of the default sink recorded with
+`pw-record` while menu-driven flips fired the tone; `pw-play --latency 0.02`
+anchor for the wall-clock origin, `ffmpeg silencedetect -60 dB` for onsets:
+
+- `switch_engine` journal record → tone in the output monitor: **71 ms on
+  both transitions** (ru and en), log-vs-wav interval consistency 3.019 s in
+  both domains. Detector slop (threshold on the bell attack, ±10–20 ms)
+  puts the audible pipeline at ~50–70 ms — the prototype's class, against
+  the pre-fix 186 ms buffer the owner heard as «не изменилось».
+- Method note: an earlier attempt mis-recorded (this `pw-record` has no
+  `--monitor`; the `@DEFAULT_MONITOR@` form fell back to the capture
+  source) — superseded by the targeted-serial run above.
+
+HV-1 closure (and merge) remains the owner's word.
+
 **Status: human_needed** (unchanged — HV-1 pending the owner's re-listen on
 the fixed build).
