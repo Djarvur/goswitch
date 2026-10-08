@@ -217,5 +217,28 @@ anchor for the wall-clock origin, `ffmpeg silencedetect -60 dB` for onsets:
 
 HV-1 closure (and merge) remains the owner's word.
 
-**Status: human_needed** (unchanged — HV-1 pending the owner's re-listen on
-the fixed build).
+### Owner acceptance 2026-10-08: HV-1/2/3 closed — ACCEPTED
+
+The owner's verdicts on the fixed build (13b140a), by ear, with machine
+corroboration captured live on green106 the same hour:
+
+- **HV-1 (latency) — PASSED.** Owner: «задержка стала меньше»; the
+  measured 71 ms switch→monitor stands (see the re-listen section).
+  The residual perceived delay is the tap disambiguation window, not
+  sound. Owner also tuned `timeouts.tap_window_ms` 300→220 in the live
+  config on the same rhythm measurements (singles ≥949 ms, doubles
+  154–194 ms) — config-side, out of this task's diff.
+- **HV-2 (live theme retune) — PASSED.** Owner: tones sounded «другим»
+  after the watcher picked up a `theme-name` change (Yaru→freedesktop→Yaru
+  live, no daemon restart).
+- **HV-3 (muted = no connection) — PASSED, both arms.** Config arm, live:
+  `sound.enabled: false` → the owner's next keypress folded the switch
+  (status `sound_enabled=false`) AND the pulse socket closed
+  (`pulse_fd: None`); flips during the mute were silent; re-enable →
+  next keypress re-dialed (`sound_enabled=true`, fd back). The watcher's
+  per-event fold succession (03-04) is what applies a config change on
+  the following keypress — the harness initially probed it through the
+  menu path, which bypasses the fold; the live proof uses real keypresses.
+
+**Status: ACCEPTED** — all three inherently-manual gates closed by the
+owner on the fixed build; the PR is merge-ready.
