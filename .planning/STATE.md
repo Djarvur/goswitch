@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-08)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Веха v1.2 «Терминалы и видимость приложений» — Phase 9 «Спайк и дефект wezterm» (роадмап создан, готова к планированию)
+**Current focus:** Веха v1.2 «Терминалы и видимость приложений» — Phase 9 «Спайк и дефект wezterm» (спланирована и проверена, готова к исполнению)
 
 ## Current Position
 
 Phase: 9 of 13 (Спайк и дефект wezterm — первая из 5 фаз вехи v1.2: фазы 9-13)
-Plan: — (фаза не планировалась)
-Status: Roadmap created — ждёт одобрения владельца, затем /gsd:plan-phase 9
-Last activity: 2026-10-08 — Роадмап v1.2 создан: 5 фаз, 8/8 требований покрыто (TERM-01/04→9, TERM-02→10, MENU-01→11, TERM-03→12, A11Y-01..03→13)
+Plan: 09-01..09-04 — 4 плана в 3 волнах (09-01 spec-delta+ADR-008 → 09-02 живой спайк → 09-03 фикс wezterm ∥ 09-04 A11Y-зонд)
+Status: Phase 9 planned и проверена (3 раунда plan-checker, 0 блокеров) — готова к /gsd:execute-phase 9
+Last activity: 2026-10-08 — Планы фазы 9 созданы, проверены и закоммичены (99d29f3 → 8d48cf7 → a50d50e → b67430b)
 
 Progress: [░░░░░░░░░░] 0%
 
