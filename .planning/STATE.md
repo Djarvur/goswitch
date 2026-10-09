@@ -5,8 +5,8 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 09
 current_phase_name: Спайк и дефект wezterm
 status: executing
-stopped_at: "09-02 blocked at live-session gate: 4th probe (13:21, bitwarden removed, idle desk) still fails; next rung is owner-side: bitwarden autostart off + relogin"
-last_updated: "2026-10-09T09:30:00.000Z"
+stopped_at: "09-02 manual-activation live run: the wezterm fixture window awaited the owner's click 19:53-19:56 (3-min budget) — no click arrived; case failed honestly, unit restored; owner presence needed for live runs"
+last_updated: "2026-10-09T16:58:00.000Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 09 execution started
 state_head: bbd463d61c84aafa925f12dd2379c3723c374f69
@@ -74,6 +74,7 @@ None yet.
 - [Phase 10]: пер-терминальная семантика клавиш (VTE пропускает Shift+Home в шелл, wezterm #4615 может терять Shift) — истина только в живой capability-таблице Фазы 9, не в веб-источниках
 - [Phase 9 / 09-02] Live-session gate STILL BLOCKED after four probes: relogin 10:13 applied the formal fresh-session cure; probes 1 (10:39, age 25 min = within D-48 gate), 2 (10:48), 3 (11:01, idle desk, confound removed) and 4 (13:21, prime suspect REMOVED — owner closed all 7 bitwarden processes with explicit approval; bitwarden was autostarting headless `--ozone-platform=x11` every session, which explains why the relogin did not cure) all reproduce the identical ground truth: AT-SPI witness pinned at gnome-shell:WINDOW:chars=-1 through 30× grabFocus pokes, focused-inputs=(none), zenity dialog immune to ydotool Enter, stdout empty. Probe 4 microdelta: focus_out/focus_in pairs DID fire at zenity spawn (13:21:08, absent in probes 2–3) — removing bitwarden changed the map dynamics, but focus still does not stick (no stable zenity:TEXT frame, Enter undelivered). Focus machinery alive (owner typing through the daemon 10:14:20/10:33:02). NEXT RUNG IS OWNER-SIDE (executor forbidden): disable bitwarden autostart, relogin with it NOT running, then one witness probe. All four spike cases + TERM-04 regression still need working injection surfaces; running them now would write false verdicts into adr-008-spike-log.md and risk typing into owner windows (T-09-02-03). Committed RED (c21e043) + GREEN (bbd463d) verified (unit corpus, mise run ci green, keys verbatim vs ibuskeysyms.h, go.mod untouched); drafted fixture/case files stay uncommitted in-tree pending the live smoke run.
 - [Phase 9 / 09-02] LIVE BISECT VERDICTS (orchestrator, 2026-10-09 ~20:00, all live/no reboot, state restored after each): (1) daemon out of input loop (goswitchd stop + `ibus engine xkb:us::eng`) → probe FAIL — daemon cleared; (2) ALL 6 GNOME extensions disabled → probe FAIL — extensions cleared; (3) client path cleared (GDK_BACKEND=x11 zenity via XWayland FAILS same as native Wayland); (4) /dev/input per-device capture blocked by uaccess for this shell — phantom-event capture not possible non-root. Probe harness rebuilt inline (zenity entry + Atspi StateType walk + ydotool key 28) — reproduces the defect (rc=124, AT-SPI witness pinned gnome-shell|FOCUSED). Conclusion: map-time focus-grant is yanked at compositor level; with userspace exonerated live, kernel 7.2.9-2 (T2, updated Oct 8 00:24) remains the only delta — fix requires reboot/kernel update (owner declines). ADAPTATION DECISION (owner-authorized 2026-10-09 «справиться без шаманства»): 09-02 proceeds in MANUAL-ACTIVATION mode — machine maps fixture windows, OWNER CLICKS the window (the production gesture anyway: users focus terminals by clicking), machine waits for a stable-focus marker (daemon focus_in / AT-SPI ACTIVE on the fixture), then injects/observes. Every verdict line in adr-008-spike-log.md gets `activation: manual-click` so the evidence stays honest; caps-table rows record per-terminal whether the yank affects them at all (all probes so far were zenity — terminals are genuinely untested). If even owner-clicked surfaces reject injected keys → deeper defect, STOP with evidence (that would threaten the phase, not just its convenience).
+- [Phase 9 / 09-02] Manual-activation harness is LIVE and honest (19:52-19:56 run): spike-smoke built its manual gates into the drafted cases (waitManualClick: AT-SPI witness OR fresh daemon focus_in pair above post-settle base; await logged every 15 s; activation: manual-click marker auto-prepended to every journal row; per-run map-time auto-grant observation row), fixture window mapped and the case waited the FULL 3-minute budget — NO CLICK ARRIVED (owner apparently away), so the case FAILED at the gate exactly as designed: no injection into the unfocused surface, journal abort row written, unit daemon restored to active. The harness itself needs no further work; live runs need the OWNER PRESENT and clicking each mapped window (zenity removed from the spike flow — the click replaces it).
 
 ## Deferred Items
 
@@ -91,8 +92,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T09:30:00.000Z
-Stopped at: 09-02 blocked at live-session gate: 4th probe (13:21, bitwarden removed, idle desk) still fails; next rung is owner-side: bitwarden autostart off + relogin
+Last session: 2026-10-09T16:58:00.000Z
+Stopped at: 09-02 manual-activation live run: the wezterm fixture window awaited the owner's click 19:53-19:56 (3-min budget) — no click arrived; case failed honestly, unit restored; owner presence needed for live runs
 Resume file: .planning/phases/09-spayk-i-defekt-wezterm/09-02-PLAN.md
 
 ## Operator Next Steps
