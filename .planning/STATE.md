@@ -5,11 +5,11 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 09
 current_phase_name: Спайк и дефект wezterm
 status: executing
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-10-08T19:52:17.681Z"
+stopped_at: "09-02 blocked at live-session gate: session focus drift; RED/GREEN committed, drafts in tree"
+last_updated: "2026-10-09T06:41:57.511Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 09 execution started
-state_head: 2a6e67a9f0d5fac3116e99e5664f0584cf5bcb2b
+state_head: bbd463d61c84aafa925f12dd2379c3723c374f69
 progress:
   total_phases: 5
   completed_phases: 0
@@ -72,6 +72,7 @@ None yet.
 - [Phase 13]: planning blocked on Telegram owner decision (лестница: snap → deb/flatpak с разовой проверкой a11y-reachability → демон-fallback)
 - [Phase 12]: feasibility-gated — VTE kill-критерий может сузить строку до wezterm-only; вердикт о сужении за владельцем; фаза может быть снята без провала вехи
 - [Phase 10]: пер-терминальная семантика клавиш (VTE пропускает Shift+Home в шелл, wezterm #4615 может терять Shift) — истина только в живой capability-таблице Фазы 9, не в веб-источниках
+- [Phase 9 / 09-02] Live-session gate BLOCKED: the GNOME session's keyboard-focus machinery is drifted — no window can take focus (map-activation denied; AT-SPI FOCUSED dead for GTK3+GTK4; zenity Enter-test keystrokes go nowhere; witness stuck at gnome-shell:WINDOW:chars=-1). Precedented WINDOWS class (rows 7/10; fresh-session/login-state family; survives ibus restart). Formal cure: owner relogin (fresh-session gate, docs/ci-runner.md). All four spike cases + TERM-04 regression need working injection surfaces; running them now would write false verdicts into adr-008-spike-log.md. Committed RED (c21e043) + GREEN (bbd463d) verified (unit corpus, mise run ci green, keys verbatim vs ibuskeysyms.h, go.mod untouched); drafted fixture/case files stay uncommitted in-tree pending the live smoke run.
 
 ## Deferred Items
 
@@ -89,9 +90,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T19:51:53.689Z
-Stopped at: Completed 09-01-PLAN.md
-Resume file: None
+Last session: 2026-10-09T06:41:45.023Z
+Stopped at: 09-02 blocked at live-session gate: session focus drift; RED/GREEN committed, drafts in tree
+Resume file: .planning/phases/09-spayk-i-defekt-wezterm/09-02-PLAN.md
 
 ## Operator Next Steps
 
