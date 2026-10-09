@@ -5,8 +5,8 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 09
 current_phase_name: Спайк и дефект wezterm
 status: executing
-stopped_at: "09-02 blocked at live-session gate: focus drift sticky across relogin — 3rd probe (idle desk, 11:01) reproduced; owner eyeball of the desktop needed"
-last_updated: "2026-10-09T08:05:00.000Z"
+stopped_at: "09-02 blocked at live-session gate: 4th probe (13:21, bitwarden removed, idle desk) still fails; next rung is owner-side: bitwarden autostart off + relogin"
+last_updated: "2026-10-09T09:30:00.000Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 09 execution started
 state_head: bbd463d61c84aafa925f12dd2379c3723c374f69
@@ -72,7 +72,7 @@ None yet.
 - [Phase 13]: planning blocked on Telegram owner decision (лестница: snap → deb/flatpak с разовой проверкой a11y-reachability → демон-fallback)
 - [Phase 12]: feasibility-gated — VTE kill-критерий может сузить строку до wezterm-only; вердикт о сужении за владельцем; фаза может быть снята без провала вехи
 - [Phase 10]: пер-терминальная семантика клавиш (VTE пропускает Shift+Home в шелл, wezterm #4615 может терять Shift) — истина только в живой capability-таблице Фазы 9, не в веб-источниках
-- [Phase 9 / 09-02] Live-session gate STILL BLOCKED — now proven on an IDLE desk: owner relogged 10:13:59–10:14:12; three executor probes on 2026-10-09 all reproduced the identical focus-drift signature (probe 1, 10:39, session age 25 min = within the D-48 fresh_session ≤30-min gate; probe 2, 10:48, 30 s budget, grabFocus poke every second; probe 3, 11:01, identical protocol with the owner-input confound REMOVED — zero key-derived daemon records in the 15 min before it): AT-SPI witness pinned at gnome-shell:WINDOW:chars=-1 throughout, focused-inputs=(none), zenity dialog immune to ydotool Enter (stdout empty), ZERO daemon focus_in from any probe window (IM context never engaged = real keyboard focus never landed). Focus machinery itself is alive: owner typing flowed through the daemon at 10:14:20 and 10:33:02. Classification: WINDOWS rows 7/10 family, sticky across the fresh-session remedy — the login state itself carries the defect (row-13 class «survives ibus restart», now also «survives relogin»); candidates for the owner's eyeball: Activities overview stuck open, shell modal (bitwarden unlock/autofill overlay), pointer-focus wedged on a hidden surface. All four spike cases + TERM-04 regression still need working injection surfaces; running them now would write false verdicts into adr-008-spike-log.md and risk typing into owner windows (T-09-02-03). Committed RED (c21e043) + GREEN (bbd463d) verified (unit corpus, mise run ci green, keys verbatim vs ibuskeysyms.h, go.mod untouched); drafted fixture/case files stay uncommitted in-tree pending the live smoke run.
+- [Phase 9 / 09-02] Live-session gate STILL BLOCKED after four probes: relogin 10:13 applied the formal fresh-session cure; probes 1 (10:39, age 25 min = within D-48 gate), 2 (10:48), 3 (11:01, idle desk, confound removed) and 4 (13:21, prime suspect REMOVED — owner closed all 7 bitwarden processes with explicit approval; bitwarden was autostarting headless `--ozone-platform=x11` every session, which explains why the relogin did not cure) all reproduce the identical ground truth: AT-SPI witness pinned at gnome-shell:WINDOW:chars=-1 through 30× grabFocus pokes, focused-inputs=(none), zenity dialog immune to ydotool Enter, stdout empty. Probe 4 microdelta: focus_out/focus_in pairs DID fire at zenity spawn (13:21:08, absent in probes 2–3) — removing bitwarden changed the map dynamics, but focus still does not stick (no stable zenity:TEXT frame, Enter undelivered). Focus machinery alive (owner typing through the daemon 10:14:20/10:33:02). NEXT RUNG IS OWNER-SIDE (executor forbidden): disable bitwarden autostart, relogin with it NOT running, then one witness probe. All four spike cases + TERM-04 regression still need working injection surfaces; running them now would write false verdicts into adr-008-spike-log.md and risk typing into owner windows (T-09-02-03). Committed RED (c21e043) + GREEN (bbd463d) verified (unit corpus, mise run ci green, keys verbatim vs ibuskeysyms.h, go.mod untouched); drafted fixture/case files stay uncommitted in-tree pending the live smoke run.
 
 ## Deferred Items
 
@@ -90,8 +90,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T08:05:00.000Z
-Stopped at: 09-02 blocked at live-session gate: focus drift sticky across relogin — 3rd probe (idle desk, 11:01) reproduced; owner eyeball of the desktop needed
+Last session: 2026-10-09T09:30:00.000Z
+Stopped at: 09-02 blocked at live-session gate: 4th probe (13:21, bitwarden removed, idle desk) still fails; next rung is owner-side: bitwarden autostart off + relogin
 Resume file: .planning/phases/09-spayk-i-defekt-wezterm/09-02-PLAN.md
 
 ## Operator Next Steps
