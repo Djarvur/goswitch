@@ -5,8 +5,8 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 09
 current_phase_name: Спайк и дефект wezterm
 status: executing
-stopped_at: "09-02 manual activation EXHAUSTED: owner-clicked fixture windows never mint an IM context (clean run 21:37-21:41: 0 caps records of any kind in 3 min; owner confirmed seeing+clicking every window) — the focus-yank defeats clicks too; kernel 7.2.9-1 reboot probe is the remaining rung"
-last_updated: "2026-10-09T18:45:00.000Z"
+stopped_at: "09-02 minimal-click batch armed: all case code headless-green (build/vet/lint/test/ci), batch plan checkpointed — 7 clicks (smoke 1, flip oracle 2, wayland recipe 1, VTE caps 1, TERM-04 zenity+wezterm 2); owner picks the start moment"
+last_updated: "2026-10-09T19:40:00.000Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 09 execution started
 state_head: bbd463d61c84aafa925f12dd2379c3723c374f69
