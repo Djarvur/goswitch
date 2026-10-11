@@ -331,7 +331,7 @@ func runTerm04Negative(ctx context.Context, s *stand) error {
 
 	// The negative surface: owner-launched plain wezterm (the owner's daily
 	// transport). No markers exist by design — the negative expects NO
-	// engagement — so the round waits a fixed cued grace for the owner to
+	// engagement — so the round waits a fixed, silent grace for the owner to
 	// launch and click it, states the assumption, and injects.
 	if err := s.t04NegativeGrace(ctx, caseName); err != nil {
 		return err
@@ -357,20 +357,21 @@ func runTerm04Negative(ctx context.Context, s *stand) error {
 		"Verdict: автокоррекция молчит в терминале (негатив жив, TERM-04 не деградировал)")
 }
 
-// t04NegativeGrace is the fixed cued grace before the negative injection:
-// the owner launches and clicks the plain wezterm window while the cue
-// sounds; no markers exist for this surface by design.
+// t04NegativeGrace is the fixed silent grace before the negative
+// injection: the owner launches and clicks the plain wezterm window while
+// the case waits (console notes only — the 2026-10-12 no-sound directive);
+// no markers exist for this surface by design.
 func (s *stand) t04NegativeGrace(ctx context.Context, caseName string) error {
 	fmt.Printf("%s: OWNER-LAUNCH — вставить в СВОЙ терминал:\n  wezterm start --always-new-process\n", caseName)
-	fmt.Printf("%s: окно wezterm должно быть НАЖАТО в течение %v (cue звучит); инъекция после паузы\n",
+	fmt.Printf("%s: окно wezterm должно быть НАЖАТО в течение %v; инъекция после паузы\n",
 		caseName, t04Grace)
 	deadline := time.Now().Add(t04Grace)
-	cue := newCueGate()
+	notes := newNoteGate()
 	for {
 		if time.Now().After(deadline) {
 			return nil
 		}
-		if cue.due() {
+		if notes.due() {
 			fmt.Printf("%s: негативная поверхность: окно wezterm запущено и нажато? инъекция через %v\n",
 				caseName, time.Until(deadline).Round(time.Second))
 		}
@@ -383,7 +384,7 @@ func (s *stand) t04NegativeGrace(ctx context.Context, caseName string) error {
 // waitMarker waits for a launch marker file (the owner's paste created it).
 func (s *stand) waitMarker(ctx context.Context, caseName, path, what string) error {
 	deadline := time.Now().Add(spikeClickWait)
-	cue := newCueGate()
+	notes := newNoteGate()
 	for {
 		if _, err := os.Stat(path); err == nil {
 			return nil
@@ -392,7 +393,7 @@ func (s *stand) waitMarker(ctx context.Context, caseName, path, what string) err
 			return fmt.Errorf("%s: awaiting OWNER LAUNCH of %s: no marker %s within %v",
 				caseName, what, path, spikeClickWait)
 		}
-		if cue.due() {
+		if notes.due() {
 			fmt.Printf("%s: awaiting owner launch of %s (marker %s)\n", caseName, what, path)
 		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {
@@ -403,8 +404,8 @@ func (s *stand) waitMarker(ctx context.Context, caseName, path, what string) err
 
 // controlWithRetries proves the control surface's key flow: bounded "x"
 // injections until ONE lands in the key trace (each try is one boundary-free
-// letter — a miss types a single harmless character wherever focus is, and
-// the cue keeps the owner on the dialog).
+// letter — a miss types a single harmless character wherever focus is; the
+// console notes keep the owner on the dialog).
 func (s *stand) controlWithRetries(ctx context.Context, caseName string) error {
 	if err := sleepCtx(ctx, t04Grace); err != nil {
 		return err
@@ -415,7 +416,6 @@ func (s *stand) controlWithRetries(ctx context.Context, caseName string) error {
 			return fmt.Errorf("%s: control inject: %w", caseName, err)
 		}
 		if werr := s.waitForNew(ctx, keyTraceMark, base+1, keyWait); werr == nil {
-			playCue()
 			fmt.Printf("%s: control keystroke visible — zenity focused and routing\n", caseName)
 
 			return nil

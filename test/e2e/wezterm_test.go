@@ -78,6 +78,29 @@ func TestWaitForArmingProbe_AbortStopsTheWait(t *testing.T) {
 	}
 }
 
+// TestNoteGate_FreshGateHoldsTheFirstInterval pins the wait-gate progress
+// contract after the sound-cue removal (the owner's 2026-10-12 directive:
+// silence is the default): a fresh gate holds its note interval — the
+// waits start quiet, the console note is the only progress signal.
+func TestNoteGate_FreshGateHoldsTheFirstInterval(t *testing.T) {
+	if g := newNoteGate(); g.due() {
+		t.Fatal("fresh noteGate.due = true, want quiet for the first interval")
+	}
+}
+
+// TestNoteGate_NoteCadence pins the note half of the gate: once the note
+// interval has elapsed exactly one due() fires and the interval re-arms —
+// the 15 s console cadence the long waits keep.
+func TestNoteGate_NoteCadence(t *testing.T) {
+	g := noteGate{nextNote: time.Now().Add(-time.Second)}
+	if !g.due() {
+		t.Fatal("noteGate.due = false with the interval elapsed, want one note")
+	}
+	if g.due() {
+		t.Fatal("noteGate.due = true twice in a row, want the interval re-armed")
+	}
+}
+
 // TestClassifyArm pins the arming gate's verdict semantics (the live-smoke
 // finding, 2026-10-12: the engine traced every probe while the fixture pty
 // stayed empty — the engine→stale-context desync IS the TERM-01 defect

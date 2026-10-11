@@ -230,21 +230,19 @@ func (s *stand) waitZenityEntry(ctx context.Context) error {
 	pid := strconv.Itoa(s.zenity.Process.Pid)
 	deadline := time.Now().Add(spikeClickWait)
 	nextGrab := time.Now().Add(zenityGrabGrace)
-	cue := newCueGate()
+	notes := newNoteGate()
 	for {
 		now, err := s.focusWitness(ctx)
 		if err != nil {
 			return err
 		}
 		if strings.HasPrefix(now, "zenity:") && strings.Contains(now, ":TEXT") {
-			playCue()
-
 			return nil
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("zenity entry did not take focus (witness %q)", now)
 		}
-		_ = cue.due()
+		_ = notes.due()
 		if time.Now().After(nextGrab) {
 			// Best-effort poke: a no-op while the window tree is not up.
 			_, _ = runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "grab-input-pid", pid)

@@ -161,18 +161,13 @@ const (
 	// is broken (the journal's environment block), so fixture windows are
 	// focused by the OWNER'S CLICK — the production gesture. spikeClickWait
 	// bounds the per-surface wait for that click — 30 minutes: a timeout is
-	// a pause, not a failure (the owner clicks when the sound cue fires,
-	// no sustained watching); manualFocusSettle lets map-time focus bounces
-	// pass before the click-marker base is taken.
+	// a pause, not a failure (the owner clicks when the console note names
+	// the window; the 2026-10-12 directive removed the sound cues — silence
+	// is the default); manualFocusSettle lets map-time focus bounces pass
+	// before the click-marker base is taken.
 	spikeClickWait     = 30 * time.Minute
 	manualFocusSettle  = 3 * time.Second
 	mapAutoGrantBudget = 12 * time.Second
-
-	// Click-request sound cue (the ergonomics amendment): while a surface
-	// awaits its click the cue fires every cueEvery; the click is the
-	// cue's own stop.
-	cueEvery = 25 * time.Second
-	cueSound = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
 
 	// weztermCapsMark is the wezterm client fingerprint in the SetCapabilities
 	// record — caps 0x9 (preedit+focus, NO surrounding bit; the 2026-10-02
@@ -281,43 +276,29 @@ func (s *stand) watchWeztermAutoGrant(ctx context.Context, caseName string, budg
 	}
 }
 
-// playCue fires the click-request sound (non-blocking; the player is
-// reaped in the background).
-func playCue() {
-	//nolint:noctx // fire-and-forget cue; reaped in a goroutine
-	cmd := exec.Command("canberra-gtk-play", "-f", cueSound)
-	if err := cmd.Start(); err != nil {
-		return
-	}
-	go func() { _ = cmd.Wait() }()
-}
-
-// cueGate is the shared await progress for the click gates: the note every
-// clickNoteEvery on the console and the sound every cueEvery until the
-// click lands (the sound IS the owner's prompt — no watching required).
-type cueGate struct {
+// noteGate is the shared await progress of the click/launch gates: the
+// console note every clickNoteEvery until the wait resolves (the owner
+// sees the window's name in the output while waiting). The former sound
+// cue is gone at the owner's request (2026-10-12: the beeps fired while
+// merely awaiting the paste — silence is the default); the notes carry the
+// progress alone.
+type noteGate struct {
 	nextNote time.Time
-	nextCue  time.Time
 }
 
-func newCueGate() cueGate {
-	return cueGate{nextNote: time.Now().Add(clickNoteEvery), nextCue: time.Now().Add(cueEvery)}
+func newNoteGate() noteGate {
+	return noteGate{nextNote: time.Now().Add(clickNoteEvery)}
 }
 
-// due fires the sound when its slot elapsed and reports whether the
-// console note is due.
-func (g *cueGate) due() bool {
-	note := false
+// due reports whether the console note is due, re-arming the interval.
+func (g *noteGate) due() bool {
 	if time.Now().After(g.nextNote) {
-		note = true
 		g.nextNote = time.Now().Add(clickNoteEvery)
-	}
-	if time.Now().After(g.nextCue) {
-		playCue()
-		g.nextCue = time.Now().Add(cueEvery)
+
+		return true
 	}
 
-	return note
+	return false
 }
 
 // focusWitnessSafe is the witness read that never fails the caller — a
@@ -345,10 +326,9 @@ func (s *stand) waitWeztermClick(ctx context.Context, caseName, surface string) 
 	base := s.countSub(weztermCapsMark)
 	baseAllCaps := s.countSub(capsMark)
 	deadline := time.Now().Add(spikeClickWait)
-	cue := newCueGate()
+	notes := newNoteGate()
 	for {
 		if s.countSub(weztermCapsMark) > base {
-			playCue()
 			fmt.Printf("%s: %s focused via caps-0x9 context fingerprint — owner click registered\n",
 				caseName, surface)
 
@@ -362,7 +342,7 @@ func (s *stand) waitWeztermClick(ctx context.Context, caseName, surface string) 
 				" (foreign caps records since arming: %d; witness %q)",
 				caseName, surface, spikeClickWait, s.countSub(capsMark)-baseAllCaps, s.focusWitnessSafe(ctx))
 		}
-		if cue.due() {
+		if notes.due() {
 			fmt.Printf("%s: awaiting owner click on %s (witness %q)\n", caseName, surface, s.focusWitnessSafe(ctx))
 		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {
@@ -570,13 +550,12 @@ func (s *stand) waitSurfaceClick(ctx context.Context, caseName, surface, witness
 	}
 	baseAllCaps := s.countSub(capsMark)
 	deadline := time.Now().Add(spikeClickWait)
-	cue := newCueGate()
+	notes := newNoteGate()
 	for {
 		witness, werr := s.focusWitness(ctx)
 		named := werr == nil && witnessPrefix != "" && strings.HasPrefix(witness, witnessPrefix)
 		minted := s.countSub(capsMark) > baseAllCaps
 		if named || minted {
-			playCue()
 			marker := "fresh context mint"
 			if named {
 				marker = "a11y witness"
@@ -589,7 +568,7 @@ func (s *stand) waitSurfaceClick(ctx context.Context, caseName, surface, witness
 			return fmt.Errorf("%s: awaiting owner click on %s: no focus marker within %v (witness %q)",
 				caseName, surface, spikeClickWait, witness)
 		}
-		if cue.due() {
+		if notes.due() {
 			fmt.Printf("%s: awaiting owner click on %s (witness %q)\n", caseName, surface, witness)
 		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {
@@ -742,7 +721,7 @@ func (s *stand) awaitOwnerFixture(
 		caseName, runbookCmd(configPath, clickLabel, readyPath, ptyPath))
 
 	deadline := time.Now().Add(spikeClickWait)
-	cue := newCueGate()
+	notes := newNoteGate()
 	for {
 		if _, err := os.Stat(readyPath); err == nil {
 			break
@@ -751,7 +730,7 @@ func (s *stand) awaitOwnerFixture(
 			return nil, fmt.Errorf("%s: awaiting OWNER LAUNCH of %s: no ready marker within %v",
 				caseName, clickLabel, spikeClickWait)
 		}
-		if cue.due() {
+		if notes.due() {
 			fmt.Printf("%s: awaiting owner launch (ready marker %s)\n", caseName, readyPath)
 		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {
@@ -760,7 +739,6 @@ func (s *stand) awaitOwnerFixture(
 	}
 	for {
 		if s.countSub(focusInMark) > focusBase {
-			playCue()
 			fmt.Printf("%s: %s engaged (daemon focus_in above case-start baseline) — owner click registered\n",
 				caseName, clickLabel)
 
@@ -772,7 +750,7 @@ func (s *stand) awaitOwnerFixture(
 				caseName, clickLabel, spikeClickWait,
 				s.countSub(focusInMark)-focusBase, s.focusWitnessSafe(ctx))
 		}
-		if cue.due() {
+		if notes.due() {
 			fmt.Printf("%s: awaiting owner click on %s (daemon focus_in is the click signal)\n", caseName, clickLabel)
 		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {

@@ -860,20 +860,19 @@ func (s *stand) acControlKeystroke(ctx context.Context, caseName string) error {
 // session — the 5 s automation-era budget cannot contain a human click).
 func (s *stand) acWaitWeztermFocus(ctx context.Context, caseName string) error {
 	deadline := time.Now().Add(spikeClickWait)
-	cue := newCueGate()
+	notes := newNoteGate()
 	for {
 		witness, werr := s.focusWitness(ctx)
 		if werr != nil {
 			return werr
 		}
 		if !strings.HasPrefix(witness, "zenity:") {
-			playCue()
 			fmt.Printf("%s: witness %q — wezterm is off the a11y bus, the negative witness is the expected actual\n",
 				caseName, witness)
 
 			break
 		}
-		_ = cue.due()
+		_ = notes.due()
 		if time.Now().After(deadline) {
 			return fmt.Errorf("%s: our zenity still holds focus — the terminal did not take it (witness %q)",
 				caseName, witness)
