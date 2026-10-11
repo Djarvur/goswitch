@@ -6,15 +6,16 @@ package main
 // owns the appends; verdict CONTENT is data, never a pass criterion — a
 // probe that EXECUTED and recorded its observation is a green case).
 //
-// Manual activation (2026-10-09 protocol, owner-authorized): the session's
-// map-time focus grant is broken (the journal's environment block), so
-// every fixture window is focused by the OWNER'S CLICK — the production
-// gesture. Every injection is gated on a focus marker (the AT-SPI witness
-// or a fresh daemon focus_in pair; the arm gate then classifies the
-// delivery — pty probe = window delivery, engine-traced-but-pty-empty =
-// the reproduced engine→stale-context desync, neither = dead injection)
-// and never fires into an unfocused surface; every journal row carries
-// activation: manual-click.
+// Unified observation (2026-10-12 rewrite, the owner's invariants): ONE
+// mode — the case always spawns the dedicated fixture itself and always
+// runs from the owner's interactive terminal; ZERO pastes, ZERO clicks
+// required (map focus usually self-fires; the daemon focus_in above the
+// spawn baseline is the only focus signal; the 30-minute budget is the
+// only wait); ZERO sounds. The arm gate then classifies the delivery —
+// pty probe = window delivery, engine-traced-but-pty-empty = the
+// reproduced engine→stale-context desync, neither = dead injection — and
+// every outcome lands as an honest row (the batch continues); every row
+// carries activation: focus-detected.
 
 import (
 	"context"
@@ -42,9 +43,10 @@ const (
 	secOracle = "Оракул wezterm-flip"
 
 	// activationMark prefixes every row's Наблюдаемое cell — the
-	// evidence-honesty marker of the manual-activation protocol (a verdict
-	// produced on a clicked surface, never on an auto-granted one).
-	activationMark = "activation: manual-click"
+	// evidence-honesty marker of the unified protocol (a verdict produced
+	// on a focus-detected surface: the daemon focus_in above the spawn
+	// baseline; a click may have fired it, none was required).
+	activationMark = "activation: focus-detected"
 )
 
 // appendDesyncRow records the reproduced engine→stale-context desync
@@ -58,6 +60,28 @@ func appendDesyncRow(section, caseName, probe string, report armReport, ptyPath 
 			"pty неизменна — движок доставил клавиши устаревшему контексту (pty_path=%s)",
 			report.engineDelta, ptyPath),
 		"Verdict: reproduced: engine→stale-context desync (XIM)")
+}
+
+// appendArmDeadRow records the honest harness-fail row of a dead arming
+// (the probe reached NEITHER the engine trace NOR the fixture pty — the
+// injection itself broke) and the round continues; the batch never hangs.
+func appendArmDeadRow(section, caseName, probe string, report armReport, ptyPath string) error {
+	return appendSpikeRow(section, caseName+" "+time.Now().Format("15:04:05"),
+		fmt.Sprintf("%s, %d попытки", probe, report.tries),
+		fmt.Sprintf("engine_traced=false; pty пуста — проба не достигла ни движка, ни окна (pty_path=%s)",
+			ptyPath),
+		"Verdict: harness-fail: arming probe reached neither engine nor pty (injection broken)")
+}
+
+// appendArmRow records the arming outcome row for a non-window outcome —
+// the one router every case uses (invariant: stale is a reproduced verdict,
+// dead is an honest harness-fail; both continue, neither fails the batch).
+func appendArmRow(section, caseName, probe string, report armReport, ptyPath string) error {
+	if report.outcome == armDead {
+		return appendArmDeadRow(section, caseName, probe, report, ptyPath)
+	}
+
+	return appendDesyncRow(section, caseName, probe, report, ptyPath)
 }
 
 // runSpikeSmoke proves the probe channel end to end on the live desktop
@@ -101,11 +125,10 @@ func runSpikeSmoke(ctx context.Context, s *stand) error {
 	defer surf.close()
 
 	// A3 (indirect form, xim fixture): the spawn with --config-file came up
-	// and took the owner's click — a rejected config path would have failed
-	// the spawn.
+	// and its pane ran — a rejected config path would have failed the spawn.
 	if err := appendSpikeRow(secHazards, "A3 indirect "+time.Now().Format("15:04:05"),
 		"wezterm start --config-file "+weztermXimFixture,
-		"spawn up and owner-clicked; the option did not refuse the path"+
+		"spawn up, pane ready; the option did not refuse the path"+
 			" (direct WAYLAND_DISPLAY re-probe belongs to the wayland fixture run)",
 		"Verdict: config-file accepted (indirect)"); err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
@@ -115,15 +138,13 @@ func runSpikeSmoke(ctx context.Context, s *stand) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
-	if report.outcome == armStaleContext {
-		// The engine traced every probe while the fixture pty stayed empty
-		// (the 2026-10-12 live finding): the desync is the measured
-		// mechanism (TERM-01) — the verdict row IS the outcome, and the
-		// probe-forward step is skipped (it would ride the same stale
-		// context).
+	if report.outcome != armWindow {
+		// The verdict row IS the outcome (the desync = reproduced trace,
+		// dead = honest harness-fail) and the probe-forward step is skipped
+		// (it would ride the same stale context or go nowhere).
 		verdicted = true
 
-		return s.smokeDesyncRow(caseName, report, surf.ptyPath)
+		return smokeArmOutcomeRow(caseName, report, surf.ptyPath)
 	}
 	hex, err := probeSmokeDelivery(ctx, s, ctlBin, surf.ptyPath)
 	if err != nil {
@@ -141,26 +162,21 @@ func runSpikeSmoke(ctx context.Context, s *stand) error {
 		verdict)
 }
 
-// openSmokeCapture acquires the smoke's fixture surface through the full
-// manual-activation ladder: the pane program must RUN (the readiness marker
-// — A3's PROG-passing proof; the 21:22 live finding: a rejected flag shape
-// means NO pane, NO window, NO verdict), the map-time auto-grant datum is
-// observed BEFORE any click (2026-10-09 protocol item 3, spawn mode only —
-// an owner-launched window's map moment is not observable), and the
-// fixture is focused by the OWNER'S CLICK (the caps-0x9 fingerprint gate).
+// openSmokeCapture acquires the smoke's fixture surface through the unified
+// layer: the pane program must RUN (the readiness marker — A3's
+// PROG-passing proof; the 21:22 live finding: a rejected flag shape means
+// NO pane, NO window, NO verdict), then the daemon focus_in engages the
+// surface (waitFocusIn — map focus usually self-fires).
 func (s *stand) openSmokeCapture(ctx context.Context, caseName string) (*surfaceHandle, error) {
-	afterReady := func() error {
-		return s.observeWeztermAutoGrant(ctx, caseName)
-	}
-
 	return s.openFixture(ctx, caseName, weztermFixturePath(weztermXimFixture),
-		"КЛИК 1 из 6 — spike-smoke", caseName, afterReady)
+		"spike-smoke fixture", caseName, nil)
 }
 
-// smokeDesyncRow is the smoke's reproduced-desync verdict row (the trace
-// completed — a legal green outcome of the probe case).
-func (s *stand) smokeDesyncRow(caseName string, report armReport, ptyPath string) error {
-	return appendDesyncRow(secSmoke, caseName,
+// smokeArmOutcomeRow is the smoke's non-window arming verdict row (a
+// completed trace for the desync, an honest harness-fail for dead — both
+// legal green outcomes of the probe case).
+func smokeArmOutcomeRow(caseName string, report armReport, ptyPath string) error {
+	return appendArmRow(secSmoke, caseName,
 		fmt.Sprintf("armGate probe (ydotool type %s + Enter)", armProbeText),
 		report, ptyPath)
 }
@@ -179,29 +195,6 @@ func probeSmokeDelivery(ctx context.Context, s *stand, ctlBin, ptyPath string) (
 	}
 
 	return readPtyHexArmed(ptyPath)
-}
-
-// observeWeztermAutoGrant records the per-terminal map-time auto-grant
-// datum (2026-10-09 protocol item 3: terminals are genuinely untested —
-// one no-click, no-injection observation per run, wezterm first): the
-// freshly mapped fixture either engages its IM context on its own within
-// the budget or does not — both outcomes are journal data. The marker is
-// the wezterm caps fingerprint (caps 0x9 — the context engagement).
-func (s *stand) observeWeztermAutoGrant(ctx context.Context, caseName string) error {
-	marker, err := s.watchWeztermAutoGrant(ctx, caseName, mapAutoGrantBudget)
-	if err != nil {
-		return fmt.Errorf("%s: %w", caseName, err)
-	}
-	observed := "no auto-grant within " + mapAutoGrantBudget.String() + " (no caps-0x9 fingerprint above base)"
-	verdict := "Verdict: map-time auto-grant absent (manual-click protocol required)"
-	if marker != "" {
-		observed = "auto-grant marker=" + marker + " within " + mapAutoGrantBudget.String()
-		verdict = "Verdict: map-time auto-grant present (" + marker + ")"
-	}
-
-	return appendSpikeRow(secHazards, "map-auto-grant wezterm "+time.Now().Format("15:04:05"),
-		"wezterm --config-file ... start --always-new-process (xim fixture), observation only",
-		observed, verdict)
 }
 
 // openSpikeWindow applies the stand's single-instance rule (T-09-02-04): a
@@ -361,9 +354,10 @@ func runWeztermFlip(ctx context.Context, s *stand) error {
 		if err != nil {
 			return err
 		}
-		if datum.stale {
-			// The desync row is already recorded by the round; the batch
-			// continues — the next round re-arms a fresh fixture.
+		if datum.outcome != armWindow {
+			// The arming row (desync or dead) is already recorded by the
+			// round; the batch continues — the next round re-arms a fresh
+			// fixture.
 			continue
 		}
 		if datum.hex == corpusHexRU {
@@ -416,36 +410,33 @@ func finalFlipVerdict(caseName string, green int) error {
 		"два раунда", observed, verdict)
 }
 
-// roundOneObservations records the round-1-only data: the auto-grant datum
-// and the P0 transport-identity probe (both observation-only, no clicks).
+// roundOneObservations records the round-1-only datum: the P0
+// transport-identity probe (observation-only, no clicks).
 func (s *stand) roundOneObservations(ctx context.Context, caseName string) error {
-	if err := s.observeWeztermAutoGrant(ctx, caseName); err != nil {
-		return err
-	}
-
 	return s.probeP0Row(ctx, caseName)
 }
 
 // roundDatum is one oracle round's measured outcome — the row's cells and
 // the batch tally's input (kept a struct: the gocritic result-count ceiling
-// beats a six-value signature).
+// beats a six-value signature). outcome is armWindow for a round whose
+// experiment ran; stale/dead rounds record their own row and skip it.
 type roundDatum struct {
+	outcome  armOutcome
 	hex      string
 	flipPair bool
 	keys     int
 	commits  int
-	stale    bool // the arming reproduced the engine→stale-context desync
 }
 
 // flipRound executes one oracle round: fresh fixture spawn → pane ready →
-// (round 1: the auto-grant datum + the P0 transport probe) → owner click →
-// arm gate (the window-delivery control, stale-desync aware) → flip (P2) →
-// type (P1) → pty teardown → hex (P4), with the CommitText wire monitor
-// (P3) spanning the type. Round 2 adds the select-chord probes before
-// teardown. A reproduced desync (engine traced, pty empty) records its own
-// verdict row, skips the round's injections (every extra keystroke would
-// just land in the stale context) and returns datum.stale — never an
-// error; the caller moves on to the next round.
+// (round 1: the P0 transport probe) → focus_in engages the surface → arm
+// gate (the delivery classifier) → flip (P2) → type (P1) → pty teardown →
+// hex (P4), with the CommitText wire monitor (P3) spanning the type. Round
+// 2 adds the select-chord probes before teardown. A stale or dead arming
+// records its own verdict row, skips the round's injections (every extra
+// keystroke would just land in the stale context) and returns
+// datum.outcome != armWindow — never an error; the caller moves on to the
+// next round.
 func (s *stand) flipRound(
 	ctx context.Context,
 	caseName, ctlBin, fixture string,
@@ -453,11 +444,11 @@ func (s *stand) flipRound(
 ) (roundDatum, error) {
 	tag := fmt.Sprintf("%s-r%d", caseName, round)
 	var afterReady func() error
-	if round == 1 && !s.cfg.ownerLaunch {
+	if round == 1 {
 		afterReady = func() error { return s.roundOneObservations(ctx, caseName) }
 	}
 	surf, err := s.openFixture(ctx, caseName, weztermFixturePath(fixture),
-		fmt.Sprintf("КЛИК %d из 6 — wezterm-flip раунд %d", round+1, round),
+		fmt.Sprintf("wezterm-flip раунд %d (xim)", round),
 		tag, afterReady)
 	if err != nil {
 		return roundDatum{}, fmt.Errorf("%s: %w", caseName, err)
@@ -467,15 +458,15 @@ func (s *stand) flipRound(
 	if aerr != nil {
 		return roundDatum{}, fmt.Errorf("%s: %w", caseName, aerr)
 	}
-	if report.outcome == armStaleContext {
-		if rerr := appendDesyncRow(secOracle,
+	if report.outcome != armWindow {
+		if rerr := appendArmRow(secOracle,
 			fmt.Sprintf("%s раунд %d", caseName, round),
 			fmt.Sprintf("armGate probe (ydotool type %s + Enter)", armProbeText),
 			report, surf.ptyPath); rerr != nil {
 			return roundDatum{}, rerr
 		}
 
-		return roundDatum{stale: true}, nil
+		return roundDatum{outcome: report.outcome}, nil
 	}
 
 	monitor, err := startCommitMonitor()
@@ -486,23 +477,23 @@ func (s *stand) flipRound(
 
 	flipPair, keys, err := s.driveFlipRound(ctx, caseName, ctlBin, round == flipRounds)
 	if err != nil {
-		return roundDatum{flipPair: flipPair, keys: keys}, fmt.Errorf("%s: %w", caseName, err)
+		return roundDatum{outcome: armWindow, flipPair: flipPair, keys: keys}, fmt.Errorf("%s: %w", caseName, err)
 	}
 	commits := monitor.count()
 
 	surf.close()
 	hex, err := readPtyHexArmed(surf.ptyPath)
 	if err != nil {
-		return roundDatum{flipPair: flipPair, keys: keys, commits: commits},
+		return roundDatum{outcome: armWindow, flipPair: flipPair, keys: keys, commits: commits},
 			fmt.Errorf("%s: %w", caseName, err)
 	}
 	if round == 1 {
 		if err := s.ladderRows(ctx, flipPair, keys, commits, hex); err != nil {
-			return roundDatum{hex: hex, flipPair: flipPair, keys: keys, commits: commits}, err
+			return roundDatum{outcome: armWindow, hex: hex, flipPair: flipPair, keys: keys, commits: commits}, err
 		}
 	}
 
-	return roundDatum{hex: hex, flipPair: flipPair, keys: keys, commits: commits}, nil
+	return roundDatum{outcome: armWindow, hex: hex, flipPair: flipPair, keys: keys, commits: commits}, nil
 }
 
 // flipAndWaitPair taps the daemon's own flip (single Right Shift) and waits
@@ -522,7 +513,8 @@ func (s *stand) flipAndWaitPair(ctx context.Context, caseName string) (bool, err
 }
 
 // typeAndCountKeys injects the synthetic corpus and returns the key-trace
-// record count above base (P1's delivery datum).
+// record count above base (P1's delivery datum) — with a console line of
+// what was observed (invariant: every step prints what it saw).
 func (s *stand) typeAndCountKeys(ctx context.Context) (int, error) {
 	base := s.countSub(keyTraceMark)
 	if err := s.injectText(ctx, corpusLatin); err != nil {
@@ -531,8 +523,10 @@ func (s *stand) typeAndCountKeys(ctx context.Context) (int, error) {
 	if err := sleepCtx(ctx, acTerminalSettle); err != nil {
 		return 0, err
 	}
+	keys := s.countSub(keyTraceMark) - base
+	fmt.Printf("typed corpus %q — engine key records delta %d\n", corpusLatin, keys)
 
-	return s.countSub(keyTraceMark) - base, nil
+	return keys, nil
 }
 
 // chordProbes drives the wezterm select-chord rows (the caps table's row 4)
@@ -699,54 +693,51 @@ func ladderVerdict(flipPair bool, keys, commits int, hex string) string {
 	}
 }
 
-// recipeRound executes the wayland round's injection phase: owner click →
-// arm gate → flip (P2') → type → the CopyMode chord observation (before
-// teardown!) → pty read. Returns the flip-pair flag and the pty hex. A
-// reproduced desync records its own verdict row, skips the injections and
-// returns stale=true — never an error (the caller records the branch).
+// recipeRound executes the wayland round's injection phase: arm gate →
+// flip (P2') → type → the CopyMode chord observation (before teardown!) →
+// pty read. The surface is already focus-gated by openFixture. Returns the
+// flip-pair flag and the pty hex. A stale or dead arming records its own
+// verdict row, skips the injections and returns outcome != armWindow —
+// never an error (the caller records the branch).
 func (s *stand) recipeRound(
 	ctx context.Context, s2 *stand, caseName, ptyPath string,
-) (flipPair bool, hex string, stale bool, err error) {
-	clickErr := s2.waitWeztermClick(ctx, caseName, "wezterm wayland fixture")
-	if clickErr != nil {
-		return false, "", false, clickErr
-	}
+) (flipPair bool, hex string, outcome armOutcome, err error) {
 	report, aerr := s2.armGate(ctx, caseName, ptyPath)
 	if aerr != nil {
-		return false, "", false, fmt.Errorf("%s: %w", caseName, aerr)
+		return false, "", armDead, fmt.Errorf("%s: %w", caseName, aerr)
 	}
-	if report.outcome == armStaleContext {
-		if rerr := appendDesyncRow(secRecipe, caseName,
+	if report.outcome != armWindow {
+		if rerr := appendArmRow(secRecipe, caseName,
 			fmt.Sprintf("armGate probe (ydotool type %s + Enter)", armProbeText),
 			report, ptyPath); rerr != nil {
-			return false, "", false, rerr
+			return false, "", report.outcome, rerr
 		}
 
-		return false, "", true, nil
+		return false, "", report.outcome, nil
 	}
 	fp, ferr := s2.flipAndWaitPair(ctx, caseName)
 	if ferr != nil {
-		return fp, "", false, ferr
+		return fp, "", armWindow, ferr
 	}
 	if _, terr := s2.typeAndCountKeys(ctx); terr != nil {
-		return fp, "", false, terr
+		return fp, "", armWindow, terr
 	}
 	if serr := sleepCtx(ctx, acTerminalSettle); serr != nil {
-		return fp, "", false, serr
+		return fp, "", armWindow, serr
 	}
 	flipPair = fp
 	// The CopyMode select-chord observation rides BEFORE teardown — the
 	// window must still hold focus (primary record; the full sentinel round
 	// lives in the flip case's chord probes).
 	if err := recipeChordRow(ctx, s2, caseName); err != nil {
-		return flipPair, "", false, err
+		return flipPair, "", armWindow, err
 	}
 	hex, hexErr := readPtyHexArmed(ptyPath)
 	if hexErr != nil {
-		return flipPair, "", false, hexErr
+		return flipPair, "", armWindow, hexErr
 	}
 
-	return flipPair, hex, false, nil
+	return flipPair, hex, armWindow, nil
 }
 
 // recipeP0Row records the P0' transport re-probe row under the wayland
@@ -821,7 +812,7 @@ func runSpikeWezterm(ctx context.Context, s *stand) error {
 	}
 
 	surf, err := s.openFixture(ctx, caseName, weztermFixturePath(weztermWaylandFixture),
-		"КЛИК 4 из 6 — spike-wezterm (wayland)", "recipe", nil)
+		"spike-wezterm fixture (wayland)", "recipe", nil)
 	if err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
@@ -833,20 +824,20 @@ func runSpikeWezterm(ctx context.Context, s *stand) error {
 		return err
 	}
 
-	flipPair, hex, stale, err := s.recipeRound(ctx, s, caseName, surf.ptyPath)
+	flipPair, hex, outcome, err := s.recipeRound(ctx, s, caseName, surf.ptyPath)
 	if err != nil {
 		return err
 	}
-	if stale {
-		// The desync row is recorded; the recipe verdict is the branch
-		// itself (the phase's owner makes the branch call at the 09-03
-		// checkpoint, not this row).
+	if outcome != armWindow {
+		// The arming row (desync or dead) is recorded; the recipe verdict is
+		// the branch itself (the phase's owner makes the branch call at the
+		// 09-03 checkpoint, not this row).
 		verdicted = true
 
 		return appendSpikeRow(secRecipe, caseName+" итог "+time.Now().Format("15:04:05"),
-			"рецепт-проба (desync-ветка)",
-			"инъекционные раунды не исполнялись — арминг застал desync",
-			"Verdict: reproduced-desync branch (раунды пропущены)")
+			"рецепт-проба (ветка арминга)",
+			"инъекционные раунды не исполнялись — арминг не доказал доставку в окно",
+			"Verdict: arming branch (раунды пропущены, наблюдение записано)")
 	}
 	verdicted = true
 

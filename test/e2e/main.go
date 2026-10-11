@@ -53,7 +53,6 @@ type config struct {
 	helper        string
 	matrixPath    string
 	weztermConfig string
-	ownerLaunch   bool
 }
 
 // caseSpec is one registry entry: the case body plus the stand-shape flag.
@@ -126,12 +125,11 @@ func parseFlags(cfg *config) {
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
-	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py", "path to the AT-SPI helper script")
+	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py",
+		"path to the AT-SPI helper script (legacy pre-09-02 cases only;"+
+			" the spike family never calls it)")
 	flag.StringVar(&cfg.matrixPath, "matrix", "",
 		"YAML case matrix to run (multi-doc cases; every case gets a fresh daemon)")
-	flag.BoolVar(&cfg.ownerLaunch, "owner-launch", false,
-		"fixture windows are launched by the OWNER (launch-attribution protocol):"+
-			" the case prints the runbook command and waits for the markers instead of spawning")
 	flag.StringVar(&cfg.weztermConfig, "wezterm-config", "",
 		"fixture config for wezterm-flip (default: gs-e2e-wezterm-xim.lua;"+
 			" the wayland fixture re-targets the oracle without touching the registry)")
