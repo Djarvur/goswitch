@@ -5,7 +5,8 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 09
 current_phase_name: Спайк и дефект wezterm
 status: executing
-stopped_at: "09-02 minimal-click batch armed: all case code headless-green (build/vet/lint/test/ci), batch plan checkpointed — 7 clicks (smoke 1, flip oracle 2, wayland recipe 1, VTE caps 1, TERM-04 zenity+wezterm 2); owner picks the start moment"
+stopped_at: "09-02 live batch HALTED by owner 2026-10-11 evening: attach-mode R1 reached click-confirmed + visible injected input, but daemon key-trace empty (arming gate FAIL) — layer-3 client↔engine break; R2-R6 pending owner-runbook, blocked on the arming/trace gating fix"
+last_updated: "2026-10-11T16:15:00.000Z"
 last_updated: "2026-10-09T19:40:00.000Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 09 execution started
@@ -101,3 +102,4 @@ Resume file: .planning/phases/09-spayk-i-defekt-wezterm/09-02-PLAN.md
 ## Operator Next Steps
 
 - Одобрить роадмап (оркестратор презентует); затем /gsd:plan-phase 9
+- [Phase 9 / 09-02] HALT (owner, 2026-10-11 вечер): attach-батч остановлен после R1 — клик подтверждён (focus_in демона, AT-SPI-свидетель исключён из гейта), инъекция ВИДИМА в окне владельцем, но key-trace демона пуст (armGate FAIL 5/5) — слой (3) клиент↔движок разорван; R2–R6 не исполнялись. Окруженческие находки стоят: лаунч-атрибуция (фон-спавн мёртв, owner-launch печатает), пути активации (grab/EWMH/auto-grant ✗). Возобновление: owner-runbook R2–R6 (готов, команды в журнале батча) после чина арм/трейс-гейтинга; всё записано в adr-008-spike-log.md (HALT-запись).
