@@ -146,6 +146,29 @@ run = "go run ./test/e2e -case external-flip-sync"
 description = "e2e: 06-10 G-6-1 live proof — after a daemon flip the FIRST letter injected with no pause lands in the field (en→ru 'в', ru→en 'd'), both directions ×3, paired journal order D-36 + zero deadline-abort WARNs in the rounds (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case flip-keystroke"
 
+# Live spike cases (09-02, TERM-01): the phase's evidence program drives the
+# owner's desktop (dedicated stand surfaces only) and appends verdict rows to
+# docs/adr/adr-008-spike-log.md — deliberately NOT part of `mise run ci`.
+[tasks.e2e-spike-smoke]
+description = "e2e: 09-02 spike-smoke — the debug-gated probe-forward channel end to end (ctl→ctlsvc→actor→engine) into a dedicated wezterm pty capture, emission + delivery verdict row to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case spike-smoke"
+
+[tasks.e2e-spike-wezterm]
+description = "e2e: 09-02 spike-wezterm — the native-Wayland recipe trial on the wayland stand fixture (P0' WAYLAND_DISPLAY re-probe, flip→type→pty hex, CopyMode select-chord), rows to adr-008-spike-log.md; ONE owner click, manual-activation protocol (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case spike-wezterm"
+
+[tasks.e2e-spike-caps]
+description = "e2e: 09-02 spike-caps — the gnome-terminal/VTE capability round (caps fingerprint, delivery, commit-landing shortcut check, select-chord kill criterion, a11y witness form), rows to adr-008-spike-log.md; ONE owner click, manual-activation protocol (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case spike-caps"
+
+[tasks.e2e-term04-negative]
+description = "e2e: 09-02 term04-negative — the TERM-04 frozen negative under the attach-mode family discipline (autocorrect ENABLED, owner-launched zenity control + plain wezterm surface, fired=0 oracle), rows to adr-008-spike-log.md; TWO owner launches+clicks (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term04-negative -owner-launch"
+
+[tasks.e2e-wezterm-flip]
+description = "e2e: 09-02 wezterm-flip — the two-round flip oracle in the honest RED state (defect-reproduced expected), carrying the P0-P4 ladder instruments and the wezterm select-chord probes; rows to adr-008-spike-log.md; TWO owner clicks (fresh spawn per round), manual-activation protocol (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case wezterm-flip"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"

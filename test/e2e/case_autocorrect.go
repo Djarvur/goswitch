@@ -854,20 +854,26 @@ func (s *stand) acControlKeystroke(ctx context.Context, caseName string) error {
 
 // acWaitWeztermFocus is the focus proof: the witness must stop naming our
 // zenity (stale AT-SPI FOCUSED bits clear within beats — the 02-06
-// lesson) — a blind injection into an unknown surface is forbidden.
+// lesson) — a blind injection into an unknown surface is forbidden. The
+// deadline rides the manual-activation budget (2026-10-09/10 protocol:
+// the owner's click is the only working focus grant on the drifted
+// session — the 5 s automation-era budget cannot contain a human click).
 func (s *stand) acWaitWeztermFocus(ctx context.Context, caseName string) error {
-	deadline := time.Now().Add(witnessWait)
+	deadline := time.Now().Add(spikeClickWait)
+	cue := newCueGate()
 	for {
 		witness, werr := s.focusWitness(ctx)
 		if werr != nil {
 			return werr
 		}
 		if !strings.HasPrefix(witness, "zenity:") {
+			playCue()
 			fmt.Printf("%s: witness %q — wezterm is off the a11y bus, the negative witness is the expected actual\n",
 				caseName, witness)
 
 			break
 		}
+		_ = cue.due()
 		if time.Now().After(deadline) {
 			return fmt.Errorf("%s: our zenity still holds focus — the terminal did not take it (witness %q)",
 				caseName, witness)

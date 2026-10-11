@@ -47,11 +47,13 @@ const (
 
 // config is the stand's CLI surface.
 type config struct {
-	caseName   string
-	pacing     int
-	logPath    string
-	helper     string
-	matrixPath string
+	caseName      string
+	pacing        int
+	logPath       string
+	helper        string
+	matrixPath    string
+	weztermConfig string
+	ownerLaunch   bool
 }
 
 // caseSpec is one registry entry: the case body plus the stand-shape flag.
@@ -111,6 +113,8 @@ func caseListUsage() string {
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
 		" | macr-per-app | ctl-smoke | switch-spike | two-source-flip | external-flip-sync" +
 		" | flip-keystroke" +
+		" | spike-smoke" +
+		" | spike-wezterm | spike-caps | wezterm-flip | term04-negative" +
 		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
 		" | autocorrect-blocklist-silent | menu-v2" +
 		" | install-cycle | perf | perf-autocorrect"
@@ -125,6 +129,12 @@ func parseFlags(cfg *config) {
 	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py", "path to the AT-SPI helper script")
 	flag.StringVar(&cfg.matrixPath, "matrix", "",
 		"YAML case matrix to run (multi-doc cases; every case gets a fresh daemon)")
+	flag.BoolVar(&cfg.ownerLaunch, "owner-launch", false,
+		"fixture windows are launched by the OWNER (launch-attribution protocol):"+
+			" the case prints the runbook command and waits for the markers instead of spawning")
+	flag.StringVar(&cfg.weztermConfig, "wezterm-config", "",
+		"fixture config for wezterm-flip (default: gs-e2e-wezterm-xim.lua;"+
+			" the wayland fixture re-targets the oracle without touching the registry)")
 	flag.Parse()
 }
 
@@ -270,9 +280,14 @@ func pickCase(name string) (caseSpec, error) {
 		"two-source-flip":              {fn: runTwoSourceFlip, standalone: true},
 		"external-flip-sync":           {fn: runExternalFlipSync, standalone: true},
 		"flip-keystroke":               {fn: runFlipKeystroke, standalone: true},
+		"spike-smoke":                  {fn: runSpikeSmoke, standalone: true, watchdog: spikeSmokeWatchdog},
+		"spike-wezterm":                {fn: runSpikeWezterm, standalone: true, watchdog: recipeWatchdog},
+		"term04-negative":              {fn: runTerm04Negative, watchdog: recipeWatchdog},
+		"spike-caps":                   {fn: runSpikeCaps, standalone: true, watchdog: capsWatchdog},
+		"wezterm-flip":                 {fn: runWeztermFlip, standalone: true, watchdog: flipWatchdog},
 		"autocorrect-fires":            {fn: runAutocorrectFires},
 		"autocorrect-password-silent":  {fn: runAutocorrectPasswordSilent},
-		"autocorrect-terminal-silent":  {fn: runAutocorrectTerminalSilent},
+		"autocorrect-terminal-silent":  {fn: runAutocorrectTerminalSilent, watchdog: autocorrectWatchdog},
 		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
 		"menu-v2":                      {fn: runMenuV2},
 		"install-cycle":                {fn: runInstallCycle, standalone: true},
@@ -287,6 +302,7 @@ func pickCase(name string) (caseSpec, error) {
 			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
 			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, flip-keystroke,"+
+			" spike-smoke, spike-wezterm, spike-caps, wezterm-flip, term04-negative,"+
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
 			" autocorrect-blocklist-silent, menu-v2,"+
 			" install-cycle, perf, perf-autocorrect)", name)
