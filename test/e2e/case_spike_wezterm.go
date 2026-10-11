@@ -166,7 +166,7 @@ func runSpikeSmoke(ctx context.Context, s *stand) error {
 // layer: the pane program must RUN (the readiness marker — A3's
 // PROG-passing proof; the 21:22 live finding: a rejected flag shape means
 // NO pane, NO window, NO verdict), then the daemon focus_in engages the
-// surface (waitFocusIn — map focus usually self-fires).
+// surface (waitFocusInFrom — map focus usually self-fires).
 func (s *stand) openSmokeCapture(ctx context.Context, caseName string) (*surfaceHandle, error) {
 	return s.openFixture(ctx, caseName, weztermFixturePath(weztermXimFixture),
 		"spike-smoke fixture", caseName, nil)

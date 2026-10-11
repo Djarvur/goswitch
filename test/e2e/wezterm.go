@@ -271,32 +271,38 @@ func (g *noteGate) due() bool {
 	return false
 }
 
-// waitFocusIn is THE focus detector of the unified observation layer (the
-// only one, spawn and every surface alike): the surface is proven engaged
-// when a fresh daemon focus_in lands above the post-settle baseline, read
-// from the pinned -log journal. No AT-SPI, no caps fingerprint, no click
-// REQUIRED — a terminal-child window usually self-focuses on map; the
-// owner's click fires the pair when it does not; the 30-minute budget is
-// the only wait (invariant: a timeout is a pause, never a failure of the
-// experiment protocol). The await is logged every 15 s so a timeout names
-// the surface that was waiting.
-func (s *stand) waitFocusIn(ctx context.Context, caseName, surface string) error {
-	if err := sleepCtx(ctx, manualFocusSettle); err != nil {
-		return err
-	}
-	focusBase := s.countSub(focusInMark)
+// focusBaseline snapshots the focus_in record count — the SPAWN baseline
+// of the focus detector. It must be captured BEFORE the fixture spawns: a
+// terminal-child window usually self-focuses within milliseconds and an
+// owner click lands seconds later, and a baseline taken after the wait
+// starts would sit above the very pairs it waits for (the 2026-10-14 live
+// finding: the zenity control's pairs at T+1 s sat under the post-settle
+// baseline and the case hung on its own marker for the whole budget).
+func (s *stand) focusBaseline() int {
+	return s.countSub(focusInMark)
+}
+
+// waitFocusInFrom is THE focus detector of the unified observation layer
+// (the only one): the surface is proven engaged when a fresh daemon
+// focus_in lands ABOVE the caller-captured spawn baseline, read from the
+// pinned -log journal. No AT-SPI, no caps fingerprint, no click REQUIRED —
+// the pair arriving IS the proceed signal; the 30-minute budget is the
+// only wait (a timeout is a pause, never a failure of the experiment
+// protocol). The await is logged every 15 s so a timeout names the
+// surface that was waiting.
+func (s *stand) waitFocusInFrom(ctx context.Context, caseName, surface string, focusBase int) error {
 	deadline := time.Now().Add(spikeClickWait)
 	notes := newNoteGate()
 	for {
 		if s.countSub(focusInMark) > focusBase {
-			fmt.Printf("%s: %s engaged (daemon focus_in above baseline) — proceeding\n",
+			fmt.Printf("%s: %s engaged (daemon focus_in above the spawn baseline) — proceeding\n",
 				caseName, surface)
 
 			return nil
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("%s: awaiting focus for %s: no daemon focus_in within %v"+
-				" (focus_in since baseline: %d; a click on the window would fire it)",
+				" above the spawn baseline (focus_in since baseline: %d; a click on the window would fire it)",
 				caseName, surface, spikeClickWait, s.countSub(focusInMark)-focusBase)
 		}
 		if notes.due() {
@@ -616,7 +622,7 @@ type surfaceHandle struct {
 // always spawns the dedicated wezterm window itself (the case runs from
 // the owner's interactive terminal, the only supported invocation). The
 // pane's readiness is proven, then the surface is engaged by the daemon
-// focus_in (waitFocusIn — map focus usually self-fires, the owner's click
+// focus_in (waitFocusInFrom — map focus usually self-fires, the owner's click
 // fires it when it does not); the caller runs the arm gate before any
 // injection.
 func (s *stand) openFixture(
@@ -624,6 +630,7 @@ func (s *stand) openFixture(
 ) (*surfaceHandle, error) {
 	readyPath := filepath.Join(s.tmpDir, tag+"-ready")
 	ptyPath := filepath.Join(s.tmpDir, tag+"-in")
+	focusBase := s.focusBaseline()
 	wcap, err := startWeztermCapture(ctx, configPath, clickLabel,
 		"bash", "-c", "echo ready > "+readyPath+"; cat > "+ptyPath)
 	if err != nil {
@@ -644,7 +651,7 @@ func (s *stand) openFixture(
 	}
 	fmt.Printf("%s: awaiting daemon focus_in for %s (map focus usually self-fires; a click fires it; budget %v)\n",
 		caseName, clickLabel, spikeClickWait)
-	if err := s.waitFocusIn(ctx, caseName, clickLabel); err != nil {
+	if err := s.waitFocusInFrom(ctx, caseName, clickLabel, focusBase); err != nil {
 		wcap.close()
 
 		return nil, fmt.Errorf("%s: %w", caseName, err)

@@ -217,6 +217,7 @@ func (s *stand) openVTERound(ctx context.Context, caseName string) (armOutcome, 
 
 	ptyPath := filepath.Join(s.tmpDir, caseName+"-in")
 	readyPath := filepath.Join(s.tmpDir, caseName+"-ready")
+	focusBase := s.focusBaseline()
 	vcap, err := startVTECapture(ctx, readyPath, ptyPath)
 	if err != nil {
 		return armDead, fmt.Errorf("%s: %w", caseName, err)
@@ -227,7 +228,7 @@ func (s *stand) openVTERound(ctx context.Context, caseName string) (armOutcome, 
 	}
 
 	fmt.Printf("%s: awaiting daemon focus_in for the gnome-terminal fixture (map focus usually self-fires)\n", caseName)
-	if err := s.waitFocusIn(ctx, caseName, "gnome-terminal window"); err != nil {
+	if err := s.waitFocusInFrom(ctx, caseName, "gnome-terminal window", focusBase); err != nil {
 		return armDead, fmt.Errorf("%s: %w", caseName, err)
 	}
 
@@ -388,8 +389,14 @@ func startTerm04Daemon(ctx context.Context, s *stand, caseName string) error {
 // spawnZenityControl spawns the deafness control's zenity entry (ONE mode:
 // the case owns the process; the teardown reaps it) and engages it through
 // the unified focus detector.
+//
+//nolint:noctx // the dialog must outlive the case context: the teardown reaps s.zenity
 func (s *stand) spawnZenityControl(ctx context.Context, caseName string) error {
-	//nolint:noctx // the dialog must outlive the case context: the teardown reaps s.zenity
+	// The baseline rides BEFORE the spawn: the dialog self-focuses within
+	// milliseconds and its pairs must sit above the marker's baseline (the
+	// 2026-10-14 live finding: a post-settle baseline sat above them and
+	// the case hung on its own marker).
+	focusBase := s.focusBaseline()
 	cmd := exec.Command("zenity", "--entry",
 		"--title=TERM-04 control (goswitch-e2e)", "--text=goswitch-e2e")
 	cmd.Stdout = &bytes.Buffer{}
@@ -399,14 +406,16 @@ func (s *stand) spawnZenityControl(ctx context.Context, caseName string) error {
 	s.zenity = cmd
 	fmt.Printf("%s: zenity control spawned — awaiting daemon focus_in (map focus usually self-fires)\n", caseName)
 
-	return s.waitFocusIn(ctx, caseName, "zenity control dialog")
+	return s.waitFocusInFrom(ctx, caseName, "zenity control dialog", focusBase)
 }
 
 // t04NegativeSurface spawns the negative surface itself: plain wezterm —
 // the owner's daily transport (no stand config; the pane is the default
 // shell), engaged through the unified focus detector.
+//
+//nolint:noctx // the window must outlive the case context: the teardown reaps s.wezterm
 func (s *stand) t04NegativeSurface(ctx context.Context, caseName string) error {
-	//nolint:noctx // the window must outlive the case context: the teardown reaps s.wezterm
+	focusBase := s.focusBaseline()
 	cmd := exec.Command(weztermBin, "start", "--always-new-process")
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("%s: spawn negative wezterm: %w", caseName, err)
@@ -414,7 +423,7 @@ func (s *stand) t04NegativeSurface(ctx context.Context, caseName string) error {
 	s.wezterm = cmd
 	fmt.Printf("%s: negative wezterm spawned — awaiting daemon focus_in (map focus usually self-fires)\n", caseName)
 
-	return s.waitFocusIn(ctx, caseName, "negative wezterm (owner transport)")
+	return s.waitFocusInFrom(ctx, caseName, "negative wezterm (owner transport)", focusBase)
 }
 
 // controlWithRetries proves the control surface's key flow: bounded "x"
