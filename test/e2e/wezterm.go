@@ -157,17 +157,25 @@ const (
 	// window obvious from across the room (the ergonomics amendment).
 	fixtureFontSize = "20"
 
-	// Manual-activation knobs (2026-10-09 protocol, owner-authorized; the
-	// 2026-10-10 ergonomics amendment): the session's map-time focus grant
-	// is broken (the journal's environment block), so fixture windows are
-	// focused by the OWNER'S CLICK — the production gesture. spikeClickWait
-	// bounds the per-surface wait for that click — 30 minutes: a timeout is
-	// a pause, not a failure (the owner clicks when the console note names
-	// the window; the 2026-10-12 directive removed the sound cues — silence
-	// is the default); manualFocusSettle lets map-time focus bounces pass
-	// before the click-marker base is taken.
+	// Focus-wait knobs (the unified observation layer): the fixture is
+	// engaged when the daemon focus_in lands — a terminal-child window
+	// usually self-focuses on map, the owner's click fires it when it does
+	// not. spikeClickWait bounds that wait — 30 minutes: a timeout is a
+	// pause, not a failure (the console note names the awaited surface;
+	// the 2026-10-12 directive removed the sound cues — silence is the
+	// default); manualFocusSettle lets map-time focus bounces pass before
+	// the baseline is taken.
 	spikeClickWait    = 30 * time.Minute
 	manualFocusSettle = 3 * time.Second
+
+	// daemonReleaseWait bounds the pre-spawn wait for the component name to
+	// become claimable — generous (60s+) because the previous case's daemon
+	// releases slowly (ibus-daemon + D-Bus teardown lag; the live finding
+	// of 2026-10-13: term04's daemon died with "another goswitchd instance
+	// already registered" 17 s into the previous case's shutdown, and
+	// spike-wezterm timed out of the old fixed 15 s budget into a 0-byte
+	// journal).
+	daemonReleaseWait = 90 * time.Second
 
 	// focusInMark is the daemon's client-context focus record — THE focus
 	// signal of the unified observation layer (the 2026-10-11/12 findings:

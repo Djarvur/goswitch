@@ -23,6 +23,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // Spike identifiers: the journal the cases append to (Evidence-правило
@@ -49,12 +51,9 @@ const (
 	activationMark = "activation: focus-detected"
 )
 
-// appendDesyncRow records the reproduced engine→stale-context desync
-// verdict row into the named journal section (the 2026-10-12 semantics:
-// the desync is a completed trace, never a failure) — the evidence triple:
-// the probe attempts, the engine trace counts, the untouched pty path.
-func appendDesyncRow(section, caseName, probe string, report armReport, ptyPath string) error {
-	return appendSpikeRow(section, caseName+" "+time.Now().Format("15:04:05"),
+// appendDesyncRowTo is the path-parameterized core of appendDesyncRow.
+func appendDesyncRowTo(journalPath, section, caseName, probe string, report armReport, ptyPath string) error {
+	return appendSpikeRowTo(journalPath, section, caseName+" "+time.Now().Format("15:04:05"),
 		fmt.Sprintf("%s, %d попытки", probe, report.tries),
 		fmt.Sprintf("engine_traced=true (probe-key records delta %d); "+
 			"pty неизменна — движок доставил клавиши устаревшему контексту (pty_path=%s)",
@@ -62,11 +61,9 @@ func appendDesyncRow(section, caseName, probe string, report armReport, ptyPath 
 		"Verdict: reproduced: engine→stale-context desync (XIM)")
 }
 
-// appendArmDeadRow records the honest harness-fail row of a dead arming
-// (the probe reached NEITHER the engine trace NOR the fixture pty — the
-// injection itself broke) and the round continues; the batch never hangs.
-func appendArmDeadRow(section, caseName, probe string, report armReport, ptyPath string) error {
-	return appendSpikeRow(section, caseName+" "+time.Now().Format("15:04:05"),
+// appendArmDeadRowTo is the path-parameterized core of appendArmDeadRow.
+func appendArmDeadRowTo(journalPath, section, caseName, probe string, report armReport, ptyPath string) error {
+	return appendSpikeRowTo(journalPath, section, caseName+" "+time.Now().Format("15:04:05"),
 		fmt.Sprintf("%s, %d попытки", probe, report.tries),
 		fmt.Sprintf("engine_traced=false; pty пуста — проба не достигла ни движка, ни окна (pty_path=%s)",
 			ptyPath),
@@ -77,11 +74,16 @@ func appendArmDeadRow(section, caseName, probe string, report armReport, ptyPath
 // the one router every case uses (invariant: stale is a reproduced verdict,
 // dead is an honest harness-fail; both continue, neither fails the batch).
 func appendArmRow(section, caseName, probe string, report armReport, ptyPath string) error {
+	return appendArmRowTo(spikeJournal, section, caseName, probe, report, ptyPath)
+}
+
+// appendArmRowTo is the path-parameterized core of appendArmRow.
+func appendArmRowTo(journalPath, section, caseName, probe string, report armReport, ptyPath string) error {
 	if report.outcome == armDead {
-		return appendArmDeadRow(section, caseName, probe, report, ptyPath)
+		return appendArmDeadRowTo(journalPath, section, caseName, probe, report, ptyPath)
 	}
 
-	return appendDesyncRow(section, caseName, probe, report, ptyPath)
+	return appendDesyncRowTo(journalPath, section, caseName, probe, report, ptyPath)
 }
 
 // runSpikeSmoke proves the probe channel end to end on the live desktop
@@ -213,16 +215,71 @@ func openSpikeWindow(ctx context.Context, caseName string) (string, error) {
 	return unit, nil
 }
 
+// stopStaleStandDaemon stops a LIVE previous stand daemon, if any — a
+// previous run of the family left it holding the component name (stand
+// daemons always run -debug; the user's unit daemon never does, and
+// openSpikeWindow has already stopped the unit by the time this runs).
+// The stop half of the lifecycle: the await lives in awaitNameFree.
+func stopStaleStandDaemon(ctx context.Context) error {
+	out, err := runCmd(ctx, "pgrep", "-f", "goswitchd -debug")
+	if err != nil {
+		fmt.Printf("no live stand daemon found — nothing to stop\n")
+
+		return nil //nolint:nilerr // pgrep exit 1 = no live stand daemon — the good outcome
+	}
+	for _, pid := range strings.Fields(out) {
+		fmt.Printf("stale stand daemon pid %s — SIGTERM\n", pid)
+		_, _ = runCmd(ctx, "kill", pid)
+	}
+
+	return nil
+}
+
+// awaitNameFree blocks until the component's well-known name is claimable —
+// the non-destructive DoNotQueue probe of waitNameFree with a caller-set
+// budget (the spike cases' patient replacement for the fixed 15 s budget
+// the slow-releasing previous daemon outlived). The start half of the
+// lifecycle: after this returns nil, the spawn cannot lose a name race.
+func awaitNameFree(ctx context.Context, budget time.Duration, why string) error {
+	addr, err := engine.Discover()
+	if err != nil {
+		return fmt.Errorf("discover ibus bus (%s): %w", why, err)
+	}
+	deadline := time.Now().Add(budget)
+	for {
+		free, perr := probeNameFree(addr)
+		if perr != nil {
+			return fmt.Errorf("name probe (%s): %w", why, perr)
+		}
+		if free {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s still held after %v (%s) — the previous holder has not released the component name",
+				goswitchComponentName, budget, why)
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return err
+		}
+	}
+}
+
 // startSpikeDaemon brings the stand's own daemon up inside the spike
-// window: the ctl client is built first (the case drives it), the component
-// name must be free, and the -debug daemon must reach its registered mark
-// (the switch-spike spawn ladder).
+// window: the ctl client is built first (the case drives it), the full
+// lifecycle runs (stop any stale stand daemon, await the component name
+// release with the generous budget), and the -debug daemon must reach its
+// registered mark (the switch-spike spawn ladder).
 func startSpikeDaemon(ctx context.Context, s *stand, caseName string) (string, error) {
 	ctlBin, err := s.buildCtl(ctx)
 	if err != nil {
 		return "", err
 	}
-	if err := waitNameFree(ctx); err != nil {
+	if err := stopStaleStandDaemon(ctx); err != nil {
+		return "", fmt.Errorf("%s: %w", caseName, err)
+	}
+	fmt.Printf("%s: awaiting the component name release (budget %v) before the spawn\n",
+		caseName, daemonReleaseWait)
+	if err := awaitNameFree(ctx, daemonReleaseWait, "before the stand daemon spawn"); err != nil {
 		return "", fmt.Errorf("%s: %w", caseName, err)
 	}
 	if err := s.startDaemonRegistered(ctx); err != nil {
@@ -233,23 +290,30 @@ func startSpikeDaemon(ctx context.Context, s *stand, caseName string) (string, e
 }
 
 // appendSpikeRow inserts one verdict row at the END of the named journal
-// section (the d01-log precedent, section-scoped: the journal carries
-// several tables and each case family appends only its own). Every row
-// carries the activation: manual-click marker (the 2026-10-09 protocol's
-// evidence-honesty rule).
+// section of the phase journal (the d01-log precedent, section-scoped: the
+// journal carries several tables and each case family appends only its
+// own). Every row carries the activation marker (the evidence-honesty
+// marker of the unified protocol).
 func appendSpikeRow(section, probe, cmd, observed, verdict string) error {
-	data, err := os.ReadFile(spikeJournal)
+	return appendSpikeRowTo(spikeJournal, section, probe, cmd, observed, verdict)
+}
+
+// appendSpikeRowTo is the path-parameterized core of appendSpikeRow (the
+// seam the journal corpus pins): read the journal, find the section, insert
+// the row under the section's last line.
+func appendSpikeRowTo(journalPath, section, probe, cmd, observed, verdict string) error {
+	data, err := os.ReadFile(journalPath)
 	if err != nil {
-		return fmt.Errorf("open journal %s: %w", spikeJournal, err)
+		return fmt.Errorf("open journal %s: %w", journalPath, err)
 	}
 	text := string(data)
 	head := strings.Index(text, "## "+section)
 	if head < 0 {
-		return fmt.Errorf("journal %s has no section %q", spikeJournal, section)
+		return fmt.Errorf("journal %s has no section %q", journalPath, section)
 	}
 	headerEnd := strings.Index(text[head:], "\n")
 	if headerEnd < 0 {
-		return fmt.Errorf("journal %s section %q is malformed", spikeJournal, section)
+		return fmt.Errorf("journal %s section %q is malformed", journalPath, section)
 	}
 	headerEnd += head + 1
 	tail := strings.Index(text[head:], "\n## ")
@@ -269,7 +333,7 @@ func appendSpikeRow(section, probe, cmd, observed, verdict string) error {
 	row := fmt.Sprintf("| %s | %#q | %s | %s |\n", probe, cmd, observed, verdict)
 	out := text[:insert] + "\n" + row + text[insert:]
 	//nolint:gosec // G703 false positive: the journal path is a repo-relative constant
-	if werr := os.WriteFile(spikeJournal, []byte(out), probeFilePerm); werr != nil {
+	if werr := os.WriteFile(journalPath, []byte(out), probeFilePerm); werr != nil {
 		return fmt.Errorf("append journal row: %w", werr)
 	}
 

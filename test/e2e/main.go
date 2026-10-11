@@ -185,6 +185,8 @@ func run() (exit int) {
 		return 1
 	}
 
+	fmt.Printf("=== e2e case %s (daemon journal %s) ===\n", cfg.caseName, s.logPath)
+
 	// Zero watchdog means the default: runCaseWatchdog resolves it
 	// (watchdogLimit) — the same convention the matrix path relies on.
 	if err := runCaseWatchdog(ctx, cfg.caseName, spec.fn, s, spec.watchdog); err != nil {
@@ -329,7 +331,9 @@ func setupStand(ctx context.Context, cfg config, standalone bool) (*stand, error
 	}
 	s.logFile = logFile
 	s.logPath = logFile.Name()
+	fmt.Printf("stand setup: daemon journal %s\n", s.logPath)
 
+	fmt.Printf("stand setup: building goswitchd...\n")
 	if err := buildDaemon(ctx, s.daemonBin); err != nil {
 		s.discardLog(logFile)
 
@@ -343,8 +347,10 @@ func setupStand(ctx context.Context, cfg config, standalone bool) (*stand, error
 		return nil, err
 	}
 	s.snap = snap
+	fmt.Printf("stand setup: desktop state snapshotted\n")
 
 	if !standalone {
+		fmt.Printf("stand setup: spawning the -debug daemon...\n")
 		if err := s.startDaemon(); err != nil {
 			s.discardLog(logFile)
 
@@ -494,7 +500,16 @@ func (s *stand) teardown() {
 	defer cancel()
 
 	s.restoreGsettings(ctx)
+	hadDaemon := s.daemon != nil
 	s.stopDaemon()
+	if hadDaemon {
+		// The shutdown half of the daemon lifecycle: reap any lingering
+		// stand daemon (always -debug; the user's unit daemon never is) so
+		// the next case never inherits a holder — the release lag beyond
+		// the process death is covered by the next start's patient
+		// awaitNameFree.
+		reapStaleStandDaemons(ctx)
+	}
 	s.restoreEngine(ctx)
 	s.reapZenity()
 	s.closeChromium()
@@ -511,6 +526,20 @@ func (s *stand) teardown() {
 // cleanupFiles removes the stand's temp directory (daemon binary).
 func (s *stand) cleanupFiles() {
 	_ = os.RemoveAll(s.tmpDir)
+}
+
+// reapStaleStandDaemons SIGTERMs any lingering stand daemon — the
+// shutdown-path half of the daemon lifecycle (the pid-точечный discipline:
+// stand daemons always run -debug and live under a temp dir, so the
+// pattern never matches the user's unit daemon).
+func reapStaleStandDaemons(ctx context.Context) {
+	out, err := runCmd(ctx, "pgrep", "-f", "goswitchd -debug")
+	if err != nil {
+		return
+	}
+	for _, pid := range strings.Fields(out) {
+		_, _ = runCmd(ctx, "kill", pid)
+	}
 }
 
 // snapshotDesktop captures the live-desktop state: both gsettings

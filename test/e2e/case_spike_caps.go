@@ -22,7 +22,13 @@ import (
 // Knobs of the TERM-04 negative round.
 const (
 	controlRetries = 3
-	secTerm04      = "TERM-04 негатив (unified layer, rev D-55 §7.2)"
+	// secTerm04 names the journal section — the HEADER TEXT IS THE
+	// CONTRACT (data owned by docs/adr/adr-008-spike-log.md, where the
+	// section was created): a cosmetic code-side rename silently routes
+	// the case's rows to a "no section" error and the evidence never
+	// lands (the 2026-10-13 finding). TestSpikeJournalSectionsExist pins
+	// it.
+	secTerm04 = "TERM-04 негатив (attach-семейство, rev D-55 §7.2)"
 )
 
 // runSpikeCaps drives the VTE round: a fresh gnome-terminal window running
@@ -291,8 +297,9 @@ func runTerm04Negative(ctx context.Context, s *stand) error {
 	}()
 
 	// The ENABLED layer (the frozen document — active state, empty
-	// blocklist).
-	if err := startAutocorrectConfigDaemon(ctx, s, autocorrectConfigDoc); err != nil {
+	// blocklist): the stand daemon restarted WITH the autocorrect config.
+	// The full lifecycle precedes the spawn (see startTerm04Daemon).
+	if err := startTerm04Daemon(ctx, s, caseName); err != nil {
 		return err
 	}
 	ctlBin, err := s.buildCtl(ctx)
@@ -337,6 +344,45 @@ func runTerm04Negative(ctx context.Context, s *stand) error {
 		"autocorrect enabled + обычный wezterm (транспорт владельца): набор ghbdtn",
 		"fired=0; correction-записей 0; статус активного слоя зелёный (контроль глухоты: zenity-клавиша видима)",
 		"Verdict: автокоррекция молчит в терминале (негатив жив, TERM-04 не деградировал)")
+}
+
+// startTerm04Daemon is the TERM-04 daemon lifecycle: the user unit is
+// stopped (the single-instance rule, restored at teardown), any stale stand
+// daemon is stopped, the component name must be claimable with the generous
+// budget, and the stand daemon restarts WITH the autocorrect config (the
+// ENABLED layer of the frozen document). The 2026-10-13 finding: this path
+// had NO name wait and NO unit stop, so the daemon died with "another
+// goswitchd instance already registered" 17 s into the previous case's
+// shutdown. Registration precedes activation — the zenity control engages
+// the freshly registered engine when it spawns.
+func startTerm04Daemon(ctx context.Context, s *stand, caseName string) error {
+	unit, err := openSpikeWindow(ctx, caseName)
+	if err != nil {
+		return err
+	}
+	defer func() { s.restoreSpikeWindow(ctx, unit) }()
+	if err := stopStaleStandDaemon(ctx); err != nil {
+		return err
+	}
+	fmt.Printf("%s: awaiting the component name release (budget %v) before the spawn\n",
+		caseName, daemonReleaseWait)
+	if err := awaitNameFree(ctx, daemonReleaseWait, "before the stand daemon spawn"); err != nil {
+		return err
+	}
+	cfgPath := filepath.Join(s.tmpDir, "autocorrect.yaml")
+	if err := os.WriteFile(cfgPath, []byte(autocorrectConfigDoc), configFilePerm); err != nil {
+		return fmt.Errorf("%s: write temp config: %w", caseName, err)
+	}
+	if err := s.restartDaemonWithArgs("-config", cfgPath); err != nil {
+		return err
+	}
+	for _, mark := range []string{configLoadedMark, componentRegisteredMark, ctlListeningMark} {
+		if err := s.waitForLog(ctx, mark, registrationWait); err != nil {
+			return fmt.Errorf("%s: daemon -config spawn (%s): %w", caseName, mark, err)
+		}
+	}
+
+	return nil
 }
 
 // spawnZenityControl spawns the deafness control's zenity entry (ONE mode:
