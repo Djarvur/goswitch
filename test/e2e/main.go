@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -20,6 +21,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/godbus/dbus/v5"
+
+	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // Stand timing knobs: every value is a behavioral constant of the stand,
@@ -78,24 +83,25 @@ type desktopSnapshot struct {
 // stand owns the per-run environment: the daemon subprocess, its log file,
 // the stand's input surface and the captured desktop state.
 type stand struct {
-	cfg          config
-	daemonBin    string
-	tmpDir       string
-	logPath      string
-	logFile      *os.File
-	daemon       *exec.Cmd
-	standalone   bool // no stand daemon: the case owns the bus (install-cycle)
-	zenity       *exec.Cmd
-	zenityOut    *bytes.Buffer
-	chromium     *exec.Cmd
-	chromiumX11  *exec.Cmd // the x11/XWayland window-mode instance (04-05)
-	gte          *exec.Cmd
-	gedit        *exec.Cmd // the GTK3-generation editor instance (04-05)
-	pwFixture    *exec.Cmd // the GTK4 password-entry fixture (06-07)
-	pwFixtureOut *bytes.Buffer
-	wezterm      *exec.Cmd // the spawned terminal of the terminal-silent negative (06-07)
-	snap         desktopSnapshot
-	caseCfgPath  string // the matrix case's -config doc ("" until a reload step establishes it)
+	cfg           config
+	daemonBin     string
+	tmpDir        string
+	logPath       string
+	logFile       *os.File
+	daemon        *exec.Cmd
+	standalone    bool // no stand daemon: the case owns the bus (install-cycle)
+	unitWasActive bool // the setup lifecycle stopped an active user unit — teardown restores it
+	zenity        *exec.Cmd
+	zenityOut     *bytes.Buffer
+	chromium      *exec.Cmd
+	chromiumX11   *exec.Cmd // the x11/XWayland window-mode instance (04-05)
+	gte           *exec.Cmd
+	gedit         *exec.Cmd // the GTK3-generation editor instance (04-05)
+	pwFixture     *exec.Cmd // the GTK4 password-entry fixture (06-07)
+	pwFixtureOut  *bytes.Buffer
+	wezterm       *exec.Cmd // the spawned terminal of the terminal-silent negative (06-07)
+	snap          desktopSnapshot
+	caseCfgPath   string // the matrix case's -config doc ("" until a reload step establishes it)
 }
 
 func main() {
@@ -351,7 +357,7 @@ func setupStand(ctx context.Context, cfg config, standalone bool) (*stand, error
 
 	if !standalone {
 		fmt.Printf("stand setup: spawning the -debug daemon...\n")
-		if err := s.startDaemon(); err != nil {
+		if err := s.startSetupDaemon(ctx); err != nil {
 			s.discardLog(logFile)
 
 			return nil, err
@@ -488,6 +494,37 @@ func (s *stand) waitDaemonExit() {
 	s.daemon = nil
 }
 
+// startSetupDaemon is the setup daemon's full lifecycle (the pre-preflight
+// spawn every non-standalone case depends on): stop any stale stand daemon
+// from a previous run, stop the user unit when it is active (its daemon
+// holds the component name and never allows replacement — the stand daemon
+// could never register over it; the teardown restores it), await the name
+// release with the generous budget, and only then spawn — with the
+// registered-mark retry ladder, because registration is retry-until-ready,
+// never a single attempt (the 2026-10-13 preflight finding: an unguarded
+// spawn died with "another goswitchd instance already registered" and the
+// preflight burned its whole budget on a dead daemon).
+func (s *stand) startSetupDaemon(ctx context.Context) error {
+	if err := stopStaleStandDaemon(ctx); err != nil {
+		return err
+	}
+	unit := unitState(ctx)
+	s.unitWasActive = unit == unitActiveState
+	if s.unitWasActive {
+		fmt.Printf("stand setup: the user unit goswitchd is active — stopping it (restored at teardown)\n")
+		if _, err := runCmd(ctx, "systemctl", "--user", "stop", "goswitchd"); err != nil {
+			return fmt.Errorf("stop unit daemon: %w", err)
+		}
+	}
+	fmt.Printf("stand setup: awaiting the component name release (budget %v) before the spawn\n",
+		daemonReleaseWait)
+	if err := awaitNameFree(ctx, daemonReleaseWait, "before the setup daemon spawn"); err != nil {
+		return err
+	}
+
+	return s.startDaemonRegistered(ctx)
+}
+
 // teardown is the ALWAYS-run cleanup (T-03-01/T-03-03): gsettings are
 // restored (only the keys the stand actually changed), the daemon is
 // stopped, and the global engine is re-asserted AFTER the daemon dies —
@@ -510,6 +547,9 @@ func (s *stand) teardown() {
 		// awaitNameFree.
 		reapStaleStandDaemons(ctx)
 	}
+	if s.unitWasActive {
+		restoreUnit(ctx, unitActiveState)
+	}
 	s.restoreEngine(ctx)
 	s.reapZenity()
 	s.closeChromium()
@@ -526,6 +566,284 @@ func (s *stand) teardown() {
 // cleanupFiles removes the stand's temp directory (daemon binary).
 func (s *stand) cleanupFiles() {
 	_ = os.RemoveAll(s.tmpDir)
+}
+
+// holdAction is the await's routing for one poll where the name did not
+// probe free: which remediation the state calls for.
+type holdAction int
+
+const (
+	holdProbeAgain holdAction = iota // the name is absent from the bus — free, re-probe
+	holdWait                         // a live owner is releasing (or the restart already fired) — wait
+	holdRestart                      // the poisoned entry: listed, ownerless, unclaimable — restart ibus once
+)
+
+// nameHoldDecision routes one held poll from the bus facts. A listed name
+// with NO owner is the poisoned-entry signature (the 2026-10-13 finding:
+// every flag set returned queued/exists while GetNameOwner reported no
+// owner — no spawn could ever register on that ibus generation), and one
+// bounded ibus restart is the cure; a live owner is the ordinary slow
+// release. The caller's budget stays in charge either way — this is a
+// pure routing decision, never a deadline change.
+func nameHoldDecision(listed bool, ownerPID string, restarted bool) (holdAction, bool) {
+	switch {
+	case !listed:
+		return holdProbeAgain, false
+	case ownerPID != "":
+		return holdWait, false
+	case !restarted:
+		return holdRestart, true
+	default:
+		return holdWait, false
+	}
+}
+
+// daemonAlive reports whether the stand daemon process still exists
+// (signal 0 probes existence without disturbing it). No daemon = not alive.
+func (s *stand) daemonAlive() bool {
+	return s.daemon != nil && s.daemon.Process != nil &&
+		s.daemon.Process.Signal(syscall.Signal(0)) == nil
+}
+
+// lastErrorLineBound caps one journal error record's length in the
+// fail-fast diagnostic (a full record with a long field would flood the
+// console).
+const lastErrorLineBound = 300
+
+// lastErrorLine returns the journal's last ERROR-level record (bounded),
+// or "" when the journal holds none — the diagnostic the fail-fast wait
+// carries so a daemon death names its own cause.
+func lastErrorLine(journal string) string {
+	var found string
+	for _, ln := range strings.Split(journal, "\n") {
+		if strings.Contains(ln, `"level":"ERROR"`) {
+			found = ln
+		}
+	}
+	if len(found) > lastErrorLineBound {
+		found = found[:lastErrorLineBound]
+	}
+
+	return found
+}
+
+// waitForLogWhileAlive blocks until the daemon journal contains mark — and
+// fails FAST when the daemon process exits first, carrying the journal's
+// last error record (the name-conflict death) instead of a generic timeout
+// after the full budget (the 2026-10-13 preflight finding).
+func (s *stand) waitForLogWhileAlive(ctx context.Context, mark string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if s.countSub(mark) >= 1 {
+			return nil
+		}
+		if !s.daemonAlive() {
+			journal, rerr := os.ReadFile(s.logPath)
+			lastErr := ""
+			if rerr == nil {
+				lastErr = lastErrorLine(string(journal))
+			}
+			if lastErr == "" {
+				return fmt.Errorf("the daemon process exited before %q landed (journal %s)", mark, s.logPath)
+			}
+
+			return fmt.Errorf("the daemon process exited before %q landed — last journal error: %s",
+				mark, lastErr)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout after %v: daemon log has %d occurrences of %q, want >= 1",
+				timeout, s.countSub(mark), mark)
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return fmt.Errorf("wait for %q aborted: %w", mark, err)
+		}
+	}
+}
+
+// ibusRestartSettle is the pause after an ibus restart before the next
+// probe: the fresh generation needs a beat to write its address files and
+// export its bus.
+const ibusRestartSettle = 2 * time.Second
+
+// staleStopGrace is how long a SIGTERM'd stale daemon gets to exit on its
+// own before the SIGKILL escalation (the socket close is what releases the
+// component name — a stalled shutdown holds it indefinitely).
+const staleStopGrace = 10 * time.Second
+
+// stopStaleStandDaemon stops a LIVE previous stand daemon, if any — a
+// previous run left it holding the component name (stand daemons always
+// run -debug; the user's unit daemon never does). The stop half of the
+// setup lifecycle: the await lives in awaitNameFree.
+func stopStaleStandDaemon(ctx context.Context) error {
+	return stopStaleStandDaemonWith(ctx, staleStopGrace)
+}
+
+// stopStaleStandDaemonWith is the escalated core: every matching holder is
+// SIGTERM'd, and after the grace the survivors are SIGKILLed — a daemon
+// stalled in its own shutdown keeps the name held until its socket closes,
+// so waiting forever behind it is the bug this escalation exists to kill.
+func stopStaleStandDaemonWith(ctx context.Context, grace time.Duration) error {
+	out, err := runCmd(ctx, "pgrep", "-f", "goswitchd -debug")
+	if err != nil {
+		fmt.Printf("no live stand daemon found — nothing to stop\n")
+
+		return nil //nolint:nilerr // pgrep exit 1 = no live stand daemon — the good outcome
+	}
+	for _, pid := range strings.Fields(out) {
+		fmt.Printf("stale stand daemon pid %s — SIGTERM\n", pid)
+		_, _ = runCmd(ctx, "kill", pid)
+	}
+	deadline := time.Now().Add(grace)
+	for {
+		out, err := runCmd(ctx, "pgrep", "-f", "goswitchd -debug")
+		if err != nil {
+			return nil //nolint:nilerr // no match = every holder exited
+		}
+		if time.Now().After(deadline) {
+			for _, pid := range strings.Fields(out) {
+				fmt.Printf("stale stand daemon pid %s — SIGKILL (stuck past the grace)\n", pid)
+				_, _ = runCmd(ctx, "kill", "-9", pid)
+			}
+
+			return nil
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return err
+		}
+	}
+}
+
+// awaitNameFree blocks until the component's well-known name is claimable —
+// the non-destructive DoNotQueue probe of waitNameFree with a caller-set
+// budget (the spike cases' patient replacement for the fixed 15 s budget
+// the slow-releasing previous daemon outlived). The start half of the
+// lifecycle: after this returns nil, the spawn cannot lose a name race.
+func awaitNameFree(ctx context.Context, budget time.Duration, why string) error {
+	deadline := time.Now().Add(budget)
+	restarted := false
+	for {
+		// Re-discover on every iteration: an ibus restart (below) mints a
+		// fresh generation and address — a cached one would probe a dead
+		// bus forever.
+		free, perr := probeNameFreeAt()
+		if perr != nil {
+			return fmt.Errorf("name probe (%s): %w", why, perr)
+		}
+		if free {
+			return nil
+		}
+		listed, ownerPID, qerr := ibusNameState(ctx)
+		if qerr != nil {
+			return fmt.Errorf("name state probe (%s): %w", why, qerr)
+		}
+		action, doRestart := nameHoldDecision(listed, ownerPID, restarted)
+		if doRestart {
+			fmt.Printf("the component name is POISONED on this ibus generation (listed, ownerless, "+
+				"unclaimable under every flag set) — restarting ibus once (%s)\n", why)
+			if _, rerr := runCmd(ctx, "ibus", "restart"); rerr != nil {
+				return fmt.Errorf("ibus restart (%s): %w", why, rerr)
+			}
+			restarted = true
+			if err := sleepCtx(ctx, ibusRestartSettle); err != nil {
+				return err
+			}
+
+			continue
+		}
+		if action == holdProbeAgain {
+			if err := sleepCtx(ctx, logPollInterval); err != nil {
+				return err
+			}
+
+			continue
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s still held after %v (%s) — the previous holder has not released the component name",
+				goswitchComponentName, budget, why)
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return err
+		}
+	}
+}
+
+// probeNameFreeAt probes the component name claimable on the CURRENT ibus
+// generation (the address is re-discovered per call — never cached).
+func probeNameFreeAt() (bool, error) {
+	addr, err := engine.Discover()
+	if err != nil {
+		return false, fmt.Errorf("discover ibus bus: %w", err)
+	}
+
+	return probeNameFree(addr)
+}
+
+// ibusNameState reports whether the component's well-known name is listed
+// on the live ibus bus and, when owned, the owner's pid ("" when ownerless
+// — the poisoned-entry signature). ListNames is the presence oracle: the
+// poisoned entry appears there with NO owner while every claim attempt is
+// refused.
+func ibusNameState(ctx context.Context) (listed bool, ownerPID string, err error) {
+	addr, err := engine.Discover()
+	if err != nil {
+		return false, "", fmt.Errorf("discover ibus bus: %w", err)
+	}
+	conn, err := dbus.Dial(addr)
+	if err != nil {
+		return false, "", fmt.Errorf("dial ibus bus: %w", err)
+	}
+	defer func() {
+		if cerr := conn.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "e2e: close ibus name-state connection: %v\n", cerr)
+		}
+	}()
+	if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Getuid()))}); err != nil {
+		return false, "", fmt.Errorf("dbus auth: %w", err)
+	}
+	if err := conn.Hello(); err != nil {
+		return false, "", fmt.Errorf("dbus hello: %w", err)
+	}
+	obj := conn.Object("org.freedesktop.DBus", "/org/freedesktop/DBus")
+	namesCall := obj.CallWithContext(ctx, "org.freedesktop.DBus.ListNames", 0)
+	if namesCall.Err != nil {
+		return false, "", fmt.Errorf("ListNames: %w", namesCall.Err)
+	}
+	listed = bodyMentions(namesCall.Body, goswitchComponentName)
+	ownerCall := obj.CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, goswitchComponentName)
+	if ownerCall.Err != nil {
+		var dbusErr dbus.Error
+		if errors.As(ownerCall.Err, &dbusErr) && dbusErr.Name == "org.freedesktop.DBus.Error.NameHasNoOwner" {
+			return listed, "", nil
+		}
+
+		return listed, "", fmt.Errorf("GetNameOwner: %w", ownerCall.Err)
+	}
+	ownerPID = ownerPIDFromCall(ctx, obj, ownerCall)
+
+	return listed, ownerPID, nil
+}
+
+// ownerPIDFromCall resolves the unix pid of the unique name carried in a
+// successful GetNameOwner reply ("" when the reply shape surprises).
+func ownerPIDFromCall(ctx context.Context, obj dbus.BusObject, ownerCall *dbus.Call) string {
+	if len(ownerCall.Body) != 1 {
+		return ""
+	}
+	unique, ok := ownerCall.Body[0].(string)
+	if !ok {
+		return ""
+	}
+	pidCall := obj.CallWithContext(ctx,
+		"org.freedesktop.DBus.GetConnectionUnixProcessID", 0, unique)
+	if pidCall.Err != nil || len(pidCall.Body) != 1 {
+		return ""
+	}
+	pid, ok := pidCall.Body[0].(uint32)
+	if !ok {
+		return ""
+	}
+
+	return strconv.FormatUint(uint64(pid), 10)
 }
 
 // reapStaleStandDaemons SIGTERMs any lingering stand daemon — the

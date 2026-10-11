@@ -23,8 +23,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"github.com/Djarvur/goswitch/internal/engine"
 )
 
 // Spike identifiers: the journal the cases append to (Evidence-правило
@@ -213,55 +211,6 @@ func openSpikeWindow(ctx context.Context, caseName string) (string, error) {
 	}
 
 	return unit, nil
-}
-
-// stopStaleStandDaemon stops a LIVE previous stand daemon, if any — a
-// previous run of the family left it holding the component name (stand
-// daemons always run -debug; the user's unit daemon never does, and
-// openSpikeWindow has already stopped the unit by the time this runs).
-// The stop half of the lifecycle: the await lives in awaitNameFree.
-func stopStaleStandDaemon(ctx context.Context) error {
-	out, err := runCmd(ctx, "pgrep", "-f", "goswitchd -debug")
-	if err != nil {
-		fmt.Printf("no live stand daemon found — nothing to stop\n")
-
-		return nil //nolint:nilerr // pgrep exit 1 = no live stand daemon — the good outcome
-	}
-	for _, pid := range strings.Fields(out) {
-		fmt.Printf("stale stand daemon pid %s — SIGTERM\n", pid)
-		_, _ = runCmd(ctx, "kill", pid)
-	}
-
-	return nil
-}
-
-// awaitNameFree blocks until the component's well-known name is claimable —
-// the non-destructive DoNotQueue probe of waitNameFree with a caller-set
-// budget (the spike cases' patient replacement for the fixed 15 s budget
-// the slow-releasing previous daemon outlived). The start half of the
-// lifecycle: after this returns nil, the spawn cannot lose a name race.
-func awaitNameFree(ctx context.Context, budget time.Duration, why string) error {
-	addr, err := engine.Discover()
-	if err != nil {
-		return fmt.Errorf("discover ibus bus (%s): %w", why, err)
-	}
-	deadline := time.Now().Add(budget)
-	for {
-		free, perr := probeNameFree(addr)
-		if perr != nil {
-			return fmt.Errorf("name probe (%s): %w", why, perr)
-		}
-		if free {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("%s still held after %v (%s) — the previous holder has not released the component name",
-				goswitchComponentName, budget, why)
-		}
-		if err := sleepCtx(ctx, logPollInterval); err != nil {
-			return err
-		}
-	}
 }
 
 // startSpikeDaemon brings the stand's own daemon up inside the spike

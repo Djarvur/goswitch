@@ -21,8 +21,9 @@ import (
 const wOK = 0x2
 
 // registrationWait is how long the daemon may take from process start to
-// the component-registered log record.
-const registrationWait = 10 * time.Second
+// the component-registered log record — registration is retry-until-ready
+// (ibus-daemon restarts, slow releases), never a fixed cliff.
+const registrationWait = 30 * time.Second
 
 // preflight runs the fail-fast environment checks (TEST-02). Each check
 // carries a named diagnostic so a missing prerequisite prints one line a
@@ -109,10 +110,11 @@ func checkPythonGI(ctx context.Context, _ *stand) error {
 // checkEngineRegistered proves the component is registered daemon-side.
 // `ibus list-engine` cannot see programmatic registrations on IBus 1.5.29 —
 // it reads the XML registry only (01-01 live finding) — so this check waits
-// for the registration log line and then queries ListActiveEngines on the
-// private bus.
+// for the registration log line (failing fast if the daemon process dies —
+// the name-conflict death carries its cause in the journal) and then
+// queries ListActiveEngines on the private bus.
 func checkEngineRegistered(ctx context.Context, s *stand) error {
-	if err := s.waitForLog(ctx, componentRegisteredMark, registrationWait); err != nil {
+	if err := s.waitForLogWhileAlive(ctx, componentRegisteredMark, registrationWait); err != nil {
 		return fmt.Errorf("%w (did the daemon reach RegisterComponent?)", err)
 	}
 	found, err := listActiveEnginesContain(ctx, "goswitch-en")
@@ -251,6 +253,8 @@ func bodyMentions(body []any, want string) bool {
 			return slices.ContainsFunc(t, walk)
 		case []dbus.Variant:
 			return slices.ContainsFunc(t, func(item dbus.Variant) bool { return walk(item) })
+		case []string:
+			return slices.Contains(t, want)
 		}
 
 		return false
