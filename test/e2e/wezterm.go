@@ -70,9 +70,28 @@ const (
 	// does not — a gate, not an assumption).
 	armGateTries  = 5
 	armGateSettle = 300 * time.Millisecond
-	// armGateWait bounds the wait for ONE new key-trace record per attempt.
+	// armGateWait bounds the wait for the arming probe line to land in the
+	// fixture pty capture per attempt.
 	armGateWait = 2 * time.Second
 
+	// armProbeText is the arming probe: digits only — byte-identical on
+	// every layout, never consumed by the daemon's RU script, never an
+	// autocorrect candidate — so the probe measures ONLY the delivery
+	// channel. It is typed, then flushed out of the tty line discipline
+	// into the capture by an Enter: armProbeEnter (raw evdev codes,
+	// pressed/released form ydotool 0.1.8 speaks; KEY_ENTER=28,
+	// /usr/include/linux/input-event-codes.h:103 — transcribed verbatim,
+	// never from memory).
+	armProbeText = "1234"
+)
+
+// armProbeEnter is the Enter press/release pair of the arming probe (see
+// the armProbeText comment for the transcription discipline).
+//
+//nolint:gochecknoglobals // the raw-code Enter pair, cited verbatim (read-only)
+var armProbeEnter = []string{"28:1", "28:0"}
+
+const (
 	// captureFixedArgs is the fixed argument prefix of the capture spawn
 	// (--config-file, path, --config, font_size, value, start,
 	// --always-new-process, --): the config flags are TOP-LEVEL — after
@@ -360,30 +379,54 @@ func (w *weztermCapture) close() {
 	_ = reap.Run()
 }
 
-// readPtyHex returns the captured pty bytes hexlified — the encoding
+// readPtyHexArmed is the oracle read of a captured pty — the encoding
 // discipline: hex and verdicts go to journals and commits, raw captures
-// stay in tmp files and are never committed (Pitfall 6).
-func readPtyHex(path string) (string, error) {
+// stay in tmp files and are never committed (Pitfall 6) — for a capture
+// the arming gate has written into: the gate's probe is stripped from the
+// head before hexlification (stripArmingProbe), so the verdicts compare
+// exactly what the round under test typed — never the gate's own probe. A
+// capture without the probe is a named harness failure (the gate
+// guarantees it before any oracle read), never a plausible wrong hex.
+func readPtyHexArmed(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read pty capture %s: %w", path, err)
 	}
+	if !strings.Contains(string(data), armProbeText) {
+		return "", fmt.Errorf("read pty capture %s: no arming probe %q — the capture is not armed", path, armProbeText)
+	}
 
-	return hex.EncodeToString(data), nil
+	return hex.EncodeToString(stripArmingProbe(data)), nil
 }
 
-// armGate is the formal arming gate of the wezterm IME race: tap a bare
-// modifier (a modifier writes no pty bytes) and demand ONE new key-trace
-// record; bounded retries with settle — the race is a live finding
-// (autocorrect-terminal-silent, 2026-10-02), so the gate retries instead of
-// assuming.
-func (s *stand) armGate(ctx context.Context, caseName string) error {
+// armGate is the formal arming gate of the wezterm spike: inject the
+// arming probe line (armProbeText + Enter) and demand it land in the
+// FIXTURE's own pty capture — the injection-side proof that the
+// ydotool → compositor → focused-window channel reaches the very surface
+// the oracle reads. Bounded retries with settle — the race is a live
+// finding (autocorrect-terminal-silent, 2026-10-02), so the gate retries
+// instead of assuming.
+//
+// The daemon journal is deliberately NOT the gate (the R1 live finding,
+// 2026-10-11: the owner-launched XIM fixture showed the injected input in
+// the window while the -debug key-trace stayed empty — injected keys reach
+// the window through the compositor WITHOUT traversing the IM engine, so
+// an engine record is not a precondition of delivery). The key-trace delta
+// is printed as a diagnostic only.
+func (s *stand) armGate(ctx context.Context, caseName, ptyPath string) error {
+	base := s.countSub(keyTraceMark)
 	for range armGateTries {
-		base := s.countSub(keyTraceMark)
-		if err := s.injectKeys(ctx, "Shift_L"); err != nil {
-			return fmt.Errorf("%s: arm gate tap: %w", caseName, err)
+		if err := s.injectText(ctx, armProbeText); err != nil {
+			return fmt.Errorf("%s: arm gate probe: %w", caseName, err)
 		}
-		if werr := s.waitForNew(ctx, keyTraceMark, base+1, armGateWait); werr == nil {
+		if err := s.injectKeys(ctx, armProbeEnter...); err != nil {
+			return fmt.Errorf("%s: arm gate enter: %w", caseName, err)
+		}
+		if werr := waitForArmingProbe(ctx, ptyPath, armGateWait); werr == nil {
+			fmt.Printf("%s: arm gate passed — probe landed in the fixture pty %s"+
+				" (engine key-record delta %d, diagnostic only)\n",
+				caseName, ptyPath, s.countSub(keyTraceMark)-base)
+
 			return nil
 		}
 		if err := sleepCtx(ctx, armGateSettle); err != nil {
@@ -391,7 +434,57 @@ func (s *stand) armGate(ctx context.Context, caseName string) error {
 		}
 	}
 
-	return fmt.Errorf("%s: arming gate: no key-trace record after %d modifier taps", caseName, armGateTries)
+	return fmt.Errorf("%s: arming gate: probe %q never landed in the fixture pty %s after %d tries",
+		caseName, armProbeText, ptyPath, armGateTries)
+}
+
+// waitForArmingProbe blocks until the fixture's pty capture contains the
+// arming probe line — the file-based sibling of waitForNew (the fixture
+// pty capture is the arming gate's observable; the daemon journal is not).
+// The poll interval and the abortable-sleep discipline are shared with the
+// journal waits.
+func waitForArmingProbe(ctx context.Context, path string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if data, err := os.ReadFile(path); err == nil && strings.Contains(string(data), armProbeText) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout after %v: file %s has no %q", timeout, path, armProbeText)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return fmt.Errorf("wait for %q in %s aborted: %w", armProbeText, path, err)
+		}
+	}
+}
+
+// stripArmingProbe removes the arming-probe bytes from the head of a pty
+// capture: the gate writes strictly before the round's own content (arm
+// retries included), so every arming byte is prefix material — a repeated
+// run of the probe followed by a line ending. The ending differs with the
+// tty mode (canonical flush: \n; raw passthrough: \r), so the strip eats
+// the probe plus any run of CR/LF. Nothing after the run is touched: the
+// round's own content never starts with the digit probe.
+func stripArmingProbe(data []byte) []byte {
+	rest := string(data)
+	for {
+		trimmed := false
+		if after, ok := strings.CutPrefix(rest, armProbeText); ok {
+			rest, trimmed = after, true
+		}
+		for _, eol := range []string{"\r\n", "\n", "\r"} {
+			if after, ok := strings.CutPrefix(rest, eol); ok {
+				rest, trimmed = after, true
+
+				break
+			}
+		}
+		if !trimmed {
+			break
+		}
+	}
+
+	return []byte(rest)
 }
 
 // waitSurfaceClick gates an injection on the owner's click for a surface

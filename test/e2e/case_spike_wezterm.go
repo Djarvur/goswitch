@@ -10,9 +10,10 @@ package main
 // map-time focus grant is broken (the journal's environment block), so
 // every fixture window is focused by the OWNER'S CLICK — the production
 // gesture. Every injection is gated on a focus marker (the AT-SPI witness
-// or a fresh daemon focus_in pair; armGate stays the injection-side proof)
-// and never fires into an unfocused surface; every journal row carries
-// activation: manual-click.
+// or a fresh daemon focus_in pair; the arm gate then proves window
+// delivery through the fixture's own pty stream — the R1 finding: the
+// engine journal is not a delivery gate) and never fires into an unfocused
+// surface; every journal row carries activation: manual-click.
 
 import (
 	"context"
@@ -96,7 +97,7 @@ func runSpikeSmoke(ctx context.Context, s *stand) error {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
 
-	if err := s.armGate(ctx, caseName); err != nil {
+	if err := s.armGate(ctx, caseName, surf.ptyPath); err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
 	hex, err := probeSmokeDelivery(ctx, s, ctlBin, surf.ptyPath)
@@ -144,7 +145,7 @@ func probeSmokeDelivery(ctx context.Context, s *stand, ctlBin, ptyPath string) (
 		return "", fmt.Errorf("probe emission journal: %w", err)
 	}
 
-	return readPtyHex(ptyPath)
+	return readPtyHexArmed(ptyPath)
 }
 
 // observeWeztermAutoGrant records the per-terminal map-time auto-grant
@@ -391,9 +392,10 @@ func (s *stand) roundOneObservations(ctx context.Context, caseName string) error
 
 // flipRound executes one oracle round: fresh fixture spawn → pane ready →
 // (round 1: the auto-grant datum + the P0 transport probe) → owner click →
-// arm gate (the deafness control) → flip (P2) → type (P1) → pty teardown →
-// hex (P4), with the CommitText wire monitor (P3) spanning the type. Round
-// 2 adds the select-chord probes before teardown.
+// arm gate (the window-delivery control: the probe lands in the round's
+// pty) → flip (P2) → type (P1) → pty teardown → hex (P4), with the
+// CommitText wire monitor (P3) spanning the type. Round 2 adds the
+// select-chord probes before teardown.
 func (s *stand) flipRound(
 	ctx context.Context,
 	caseName, ctlBin, fixture string,
@@ -411,7 +413,7 @@ func (s *stand) flipRound(
 		return "", false, 0, 0, fmt.Errorf("%s: %w", caseName, err)
 	}
 	defer surf.close()
-	if err := s.armGate(ctx, caseName); err != nil {
+	if err := s.armGate(ctx, caseName, surf.ptyPath); err != nil {
 		return "", false, 0, 0, fmt.Errorf("%s: %w", caseName, err)
 	}
 
@@ -428,7 +430,7 @@ func (s *stand) flipRound(
 	commits = monitor.count()
 
 	surf.close()
-	hex, err = readPtyHex(surf.ptyPath)
+	hex, err = readPtyHexArmed(surf.ptyPath)
 	if err != nil {
 		return "", flipPair, keys, commits, fmt.Errorf("%s: %w", caseName, err)
 	}
@@ -566,14 +568,15 @@ func (s *stand) driveFlipRound(
 // matrix row from the oracle's own data.
 func (s *stand) ladderRows(ctx context.Context, flipPair bool, keys, commits int, hex string) error {
 	_ = ctx
-	keyVerdict := "Verdict: клавиши доставлены (keys+armGate)"
+	keyVerdict := "Verdict: клавиши доставлены в движок и окно (key-записи при pty-доказанной доставке)"
 	if keys == 0 {
-		keyVerdict = "Verdict: клавиши отсутствуют после settle" +
-			" (h1-класс; демонский фолбэк без input-контекста невозможен)"
+		keyVerdict = "Verdict: движок глух при доставке в окно" +
+			" (armGate-pty прошёл — разрыв движок↔клиент; h1/h3-класс," +
+			" R1-измерение: инъекция видима в окне, key-trace пуст)"
 	}
 	if err := appendSpikeRow(secLadder, "P1 "+time.Now().Format("15:04:05"),
 		"ydotool type ghbdtn, счётчик key-записей",
-		fmt.Sprintf("key_records=%d (armGate прошёл — подложка видит модификатор)", keys), keyVerdict); err != nil {
+		fmt.Sprintf("key_records=%d (armGate: probe в pty — инъекция доходит до окна)", keys), keyVerdict); err != nil {
 		return err
 	}
 
@@ -622,7 +625,8 @@ func ladderVerdict(flipPair bool, keys, commits int, hex string) string {
 	case hex == corpusHexRU:
 		return "fixed — дефект не воспроизведён в этом раунде"
 	case keys == 0:
-		return "h1: XIM-контекст армирования мёртв (keys absent) — демонский фолбэк невозможен, честная ветка — рецепт"
+		return "h1: движок глух при доставке в окно (keys absent, armGate-pty прошёл)" +
+			" — демонский фолбэк невозможен, честная ветка — рецепт"
 	case !flipPair:
 		return "h2: контекст wezterm не перечекался на новый движок — кандидат pre-arm/re-arm на focus_in"
 	case commits > 0:
@@ -643,7 +647,7 @@ func (s *stand) recipeRound(
 	if clickErr != nil {
 		return false, "", clickErr
 	}
-	if err := s2.armGate(ctx, caseName); err != nil {
+	if err := s2.armGate(ctx, caseName, ptyPath); err != nil {
 		return false, "", err
 	}
 	fp, ferr := s2.flipAndWaitPair(ctx, caseName)
@@ -663,7 +667,7 @@ func (s *stand) recipeRound(
 	if err := recipeChordRow(ctx, s2, caseName); err != nil {
 		return flipPair, "", err
 	}
-	hex, hexErr := readPtyHex(ptyPath)
+	hex, hexErr := readPtyHexArmed(ptyPath)
 	if hexErr != nil {
 		return flipPair, "", hexErr
 	}

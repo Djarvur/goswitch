@@ -69,7 +69,7 @@ func runSpikeCaps(ctx context.Context, s *stand) error {
 	if err := sleepCtx(ctx, acTerminalSettle); err != nil {
 		return err
 	}
-	hex, err := readPtyHex(filepath.Join(s.tmpDir, caseName+"-in"))
+	hex, err := readPtyHexArmed(filepath.Join(s.tmpDir, caseName+"-in"))
 	if err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
@@ -214,7 +214,7 @@ func (s *stand) openVTERound(ctx context.Context, caseName string) error {
 		return err
 	}
 
-	return s.armGate(ctx, caseName)
+	return s.armGate(ctx, caseName, ptyPath)
 }
 
 // vteDeliveryAndFlip runs the EN-mode delivery probe (row 2) and the flip
