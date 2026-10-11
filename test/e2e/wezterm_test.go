@@ -78,6 +78,32 @@ func TestWaitForArmingProbe_AbortStopsTheWait(t *testing.T) {
 	}
 }
 
+// TestClassifyArm pins the arming gate's verdict semantics (the live-smoke
+// finding, 2026-10-12: the engine traced every probe while the fixture pty
+// stayed empty — the engine→stale-context desync IS the TERM-01 defect
+// measured, not a harness failure): the pty probe wins whenever it lands
+// (window delivery proven, engine delta merely diagnostic), an engine trace
+// without pty bytes is the reproduced desync, and only the absence of BOTH
+// signals means the injection itself broke.
+func TestClassifyArm(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		ptyHasProbe bool
+		engineDelta int
+		want        armOutcome
+	}{
+		{"window delivery wins", true, 40, armWindow},
+		{"window delivery without engine trace", true, 0, armWindow},
+		{"engine traced, pty empty — desync", false, 40, armStaleContext},
+		{"engine traced once, pty empty", false, 2, armStaleContext},
+		{"neither signal — dead injection", false, 0, armDead},
+	} {
+		if got := classifyArm(tc.ptyHasProbe, tc.engineDelta); got != tc.want {
+			t.Fatalf("%s: classifyArm(%v, %d) = %v, want %v", tc.name, tc.ptyHasProbe, tc.engineDelta, got, tc.want)
+		}
+	}
+}
+
 // TestStripArmingProbe pins the oracle-read stripping: the gate's repeated
 // probe bytes plus their line endings go from the head of the capture
 // (retries included, canonical \n and raw \r endings alike), and the typed

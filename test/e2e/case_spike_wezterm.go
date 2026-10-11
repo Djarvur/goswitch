@@ -10,10 +10,11 @@ package main
 // map-time focus grant is broken (the journal's environment block), so
 // every fixture window is focused by the OWNER'S CLICK — the production
 // gesture. Every injection is gated on a focus marker (the AT-SPI witness
-// or a fresh daemon focus_in pair; the arm gate then proves window
-// delivery through the fixture's own pty stream — the R1 finding: the
-// engine journal is not a delivery gate) and never fires into an unfocused
-// surface; every journal row carries activation: manual-click.
+// or a fresh daemon focus_in pair; the arm gate then classifies the
+// delivery — pty probe = window delivery, engine-traced-but-pty-empty =
+// the reproduced engine→stale-context desync, neither = dead injection)
+// and never fires into an unfocused surface; every journal row carries
+// activation: manual-click.
 
 import (
 	"context"
@@ -45,6 +46,19 @@ const (
 	// produced on a clicked surface, never on an auto-granted one).
 	activationMark = "activation: manual-click"
 )
+
+// appendDesyncRow records the reproduced engine→stale-context desync
+// verdict row into the named journal section (the 2026-10-12 semantics:
+// the desync is a completed trace, never a failure) — the evidence triple:
+// the probe attempts, the engine trace counts, the untouched pty path.
+func appendDesyncRow(section, caseName, probe string, report armReport, ptyPath string) error {
+	return appendSpikeRow(section, caseName+" "+time.Now().Format("15:04:05"),
+		fmt.Sprintf("%s, %d попытки", probe, report.tries),
+		fmt.Sprintf("engine_traced=true (probe-key records delta %d); "+
+			"pty неизменна — движок доставил клавиши устаревшему контексту (pty_path=%s)",
+			report.engineDelta, ptyPath),
+		"Verdict: reproduced: engine→stale-context desync (XIM)")
+}
 
 // runSpikeSmoke proves the probe channel end to end on the live desktop
 // (Task 1's tracer slice): the stand daemon under -debug owns the ctl name,
@@ -97,8 +111,19 @@ func runSpikeSmoke(ctx context.Context, s *stand) error {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
 
-	if err := s.armGate(ctx, caseName, surf.ptyPath); err != nil {
+	report, err := s.armGate(ctx, caseName, surf.ptyPath)
+	if err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
+	}
+	if report.outcome == armStaleContext {
+		// The engine traced every probe while the fixture pty stayed empty
+		// (the 2026-10-12 live finding): the desync is the measured
+		// mechanism (TERM-01) — the verdict row IS the outcome, and the
+		// probe-forward step is skipped (it would ride the same stale
+		// context).
+		verdicted = true
+
+		return s.smokeDesyncRow(caseName, report, surf.ptyPath)
 	}
 	hex, err := probeSmokeDelivery(ctx, s, ctlBin, surf.ptyPath)
 	if err != nil {
@@ -130,6 +155,14 @@ func (s *stand) openSmokeCapture(ctx context.Context, caseName string) (*surface
 
 	return s.openFixture(ctx, caseName, weztermFixturePath(weztermXimFixture),
 		"КЛИК 1 из 6 — spike-smoke", caseName, afterReady)
+}
+
+// smokeDesyncRow is the smoke's reproduced-desync verdict row (the trace
+// completed — a legal green outcome of the probe case).
+func (s *stand) smokeDesyncRow(caseName string, report armReport, ptyPath string) error {
+	return appendDesyncRow(secSmoke, caseName,
+		fmt.Sprintf("armGate probe (ydotool type %s + Enter)", armProbeText),
+		report, ptyPath)
 }
 
 // probeSmokeDelivery drives the probe verb through the live daemon and
@@ -322,19 +355,22 @@ func runWeztermFlip(ctx context.Context, s *stand) error {
 		fixture = s.cfg.weztermConfig
 	}
 
-	green, latin := 0, 0
+	green := 0
 	for round := 1; round <= flipRounds; round++ {
-		hex, flipOK, keys, commits, err := s.flipRound(ctx, caseName, ctlBin, fixture, round)
+		datum, err := s.flipRound(ctx, caseName, ctlBin, fixture, round)
 		if err != nil {
 			return err
 		}
-		switch hex {
-		case corpusHexRU:
-			green++
-		case corpusHexLatin:
-			latin++
+		if datum.stale {
+			// The desync row is already recorded by the round; the batch
+			// continues — the next round re-arms a fresh fixture.
+			continue
 		}
-		if err := appendFlipRoundRow(caseName, round, flipOK, keys, commits, hex); err != nil {
+		if datum.hex == corpusHexRU {
+			green++
+		}
+		if err := appendFlipRoundRow(caseName, round,
+			datum.flipPair, datum.keys, datum.commits, datum.hex); err != nil {
 			return err
 		}
 	}
@@ -390,17 +426,31 @@ func (s *stand) roundOneObservations(ctx context.Context, caseName string) error
 	return s.probeP0Row(ctx, caseName)
 }
 
+// roundDatum is one oracle round's measured outcome — the row's cells and
+// the batch tally's input (kept a struct: the gocritic result-count ceiling
+// beats a six-value signature).
+type roundDatum struct {
+	hex      string
+	flipPair bool
+	keys     int
+	commits  int
+	stale    bool // the arming reproduced the engine→stale-context desync
+}
+
 // flipRound executes one oracle round: fresh fixture spawn → pane ready →
 // (round 1: the auto-grant datum + the P0 transport probe) → owner click →
-// arm gate (the window-delivery control: the probe lands in the round's
-// pty) → flip (P2) → type (P1) → pty teardown → hex (P4), with the
-// CommitText wire monitor (P3) spanning the type. Round 2 adds the
-// select-chord probes before teardown.
+// arm gate (the window-delivery control, stale-desync aware) → flip (P2) →
+// type (P1) → pty teardown → hex (P4), with the CommitText wire monitor
+// (P3) spanning the type. Round 2 adds the select-chord probes before
+// teardown. A reproduced desync (engine traced, pty empty) records its own
+// verdict row, skips the round's injections (every extra keystroke would
+// just land in the stale context) and returns datum.stale — never an
+// error; the caller moves on to the next round.
 func (s *stand) flipRound(
 	ctx context.Context,
 	caseName, ctlBin, fixture string,
 	round int,
-) (hex string, flipPair bool, keys, commits int, err error) {
+) (roundDatum, error) {
 	tag := fmt.Sprintf("%s-r%d", caseName, round)
 	var afterReady func() error
 	if round == 1 && !s.cfg.ownerLaunch {
@@ -410,37 +460,49 @@ func (s *stand) flipRound(
 		fmt.Sprintf("КЛИК %d из 6 — wezterm-flip раунд %d", round+1, round),
 		tag, afterReady)
 	if err != nil {
-		return "", false, 0, 0, fmt.Errorf("%s: %w", caseName, err)
+		return roundDatum{}, fmt.Errorf("%s: %w", caseName, err)
 	}
 	defer surf.close()
-	if err := s.armGate(ctx, caseName, surf.ptyPath); err != nil {
-		return "", false, 0, 0, fmt.Errorf("%s: %w", caseName, err)
+	report, aerr := s.armGate(ctx, caseName, surf.ptyPath)
+	if aerr != nil {
+		return roundDatum{}, fmt.Errorf("%s: %w", caseName, aerr)
+	}
+	if report.outcome == armStaleContext {
+		if rerr := appendDesyncRow(secOracle,
+			fmt.Sprintf("%s раунд %d", caseName, round),
+			fmt.Sprintf("armGate probe (ydotool type %s + Enter)", armProbeText),
+			report, surf.ptyPath); rerr != nil {
+			return roundDatum{}, rerr
+		}
+
+		return roundDatum{stale: true}, nil
 	}
 
 	monitor, err := startCommitMonitor()
 	if err != nil {
-		return "", false, 0, 0, fmt.Errorf("%s: %w", caseName, err)
+		return roundDatum{}, fmt.Errorf("%s: %w", caseName, err)
 	}
 	defer monitor.close()
 
-	flipPair, keys, err = s.driveFlipRound(ctx, caseName, ctlBin, round == flipRounds)
+	flipPair, keys, err := s.driveFlipRound(ctx, caseName, ctlBin, round == flipRounds)
 	if err != nil {
-		return "", flipPair, keys, 0, fmt.Errorf("%s: %w", caseName, err)
+		return roundDatum{flipPair: flipPair, keys: keys}, fmt.Errorf("%s: %w", caseName, err)
 	}
-	commits = monitor.count()
+	commits := monitor.count()
 
 	surf.close()
-	hex, err = readPtyHexArmed(surf.ptyPath)
+	hex, err := readPtyHexArmed(surf.ptyPath)
 	if err != nil {
-		return "", flipPair, keys, commits, fmt.Errorf("%s: %w", caseName, err)
+		return roundDatum{flipPair: flipPair, keys: keys, commits: commits},
+			fmt.Errorf("%s: %w", caseName, err)
 	}
 	if round == 1 {
 		if err := s.ladderRows(ctx, flipPair, keys, commits, hex); err != nil {
-			return hex, flipPair, keys, commits, err
+			return roundDatum{hex: hex, flipPair: flipPair, keys: keys, commits: commits}, err
 		}
 	}
 
-	return hex, flipPair, keys, commits, nil
+	return roundDatum{hex: hex, flipPair: flipPair, keys: keys, commits: commits}, nil
 }
 
 // flipAndWaitPair taps the daemon's own flip (single Right Shift) and waits
@@ -639,40 +701,52 @@ func ladderVerdict(flipPair bool, keys, commits int, hex string) string {
 
 // recipeRound executes the wayland round's injection phase: owner click →
 // arm gate → flip (P2') → type → the CopyMode chord observation (before
-// teardown!) → pty read. Returns the flip-pair flag and the pty hex.
+// teardown!) → pty read. Returns the flip-pair flag and the pty hex. A
+// reproduced desync records its own verdict row, skips the injections and
+// returns stale=true — never an error (the caller records the branch).
 func (s *stand) recipeRound(
 	ctx context.Context, s2 *stand, caseName, ptyPath string,
-) (flipPair bool, hex string, err error) {
+) (flipPair bool, hex string, stale bool, err error) {
 	clickErr := s2.waitWeztermClick(ctx, caseName, "wezterm wayland fixture")
 	if clickErr != nil {
-		return false, "", clickErr
+		return false, "", false, clickErr
 	}
-	if err := s2.armGate(ctx, caseName, ptyPath); err != nil {
-		return false, "", err
+	report, aerr := s2.armGate(ctx, caseName, ptyPath)
+	if aerr != nil {
+		return false, "", false, fmt.Errorf("%s: %w", caseName, aerr)
+	}
+	if report.outcome == armStaleContext {
+		if rerr := appendDesyncRow(secRecipe, caseName,
+			fmt.Sprintf("armGate probe (ydotool type %s + Enter)", armProbeText),
+			report, ptyPath); rerr != nil {
+			return false, "", false, rerr
+		}
+
+		return false, "", true, nil
 	}
 	fp, ferr := s2.flipAndWaitPair(ctx, caseName)
 	if ferr != nil {
-		return fp, "", ferr
+		return fp, "", false, ferr
 	}
 	if _, terr := s2.typeAndCountKeys(ctx); terr != nil {
-		return fp, "", terr
+		return fp, "", false, terr
 	}
 	if serr := sleepCtx(ctx, acTerminalSettle); serr != nil {
-		return fp, "", serr
+		return fp, "", false, serr
 	}
 	flipPair = fp
 	// The CopyMode select-chord observation rides BEFORE teardown — the
 	// window must still hold focus (primary record; the full sentinel round
 	// lives in the flip case's chord probes).
 	if err := recipeChordRow(ctx, s2, caseName); err != nil {
-		return flipPair, "", err
+		return flipPair, "", false, err
 	}
 	hex, hexErr := readPtyHexArmed(ptyPath)
 	if hexErr != nil {
-		return flipPair, "", hexErr
+		return flipPair, "", false, hexErr
 	}
 
-	return flipPair, hex, nil
+	return flipPair, hex, false, nil
 }
 
 // recipeP0Row records the P0' transport re-probe row under the wayland
@@ -759,10 +833,30 @@ func runSpikeWezterm(ctx context.Context, s *stand) error {
 		return err
 	}
 
-	flipPair, hex, err := s.recipeRound(ctx, s, caseName, surf.ptyPath)
+	flipPair, hex, stale, err := s.recipeRound(ctx, s, caseName, surf.ptyPath)
 	if err != nil {
 		return err
 	}
+	if stale {
+		// The desync row is recorded; the recipe verdict is the branch
+		// itself (the phase's owner makes the branch call at the 09-03
+		// checkpoint, not this row).
+		verdicted = true
+
+		return appendSpikeRow(secRecipe, caseName+" итог "+time.Now().Format("15:04:05"),
+			"рецепт-проба (desync-ветка)",
+			"инъекционные раунды не исполнялись — арминг застал desync",
+			"Verdict: reproduced-desync branch (раунды пропущены)")
+	}
+	verdicted = true
+
+	return finishRecipeRows(flipPair, hex)
+}
+
+// finishRecipeRows records the recipe's closing rows: the P1'–P4' verdict
+// from the round's datum and the honestly-deferred stability row (the
+// batch's click budget; two-greens stays the 09-03 contract).
+func finishRecipeRows(flipPair bool, hex string) error {
 	recipeVerdict := "Verdict: рецепт НЕ исправил (pty != привет — нативный IME 20240203 не работает," +
 		" hazard #5125-класса; выбор ветки — владелец, чекпойнт 09-03)"
 	if hex == corpusHexRU {
@@ -773,7 +867,6 @@ func runSpikeWezterm(ctx context.Context, s *stand) error {
 		fmt.Sprintf("flip_pair=%v; pty_hex=%s", flipPair, hex), recipeVerdict); err != nil {
 		return err
 	}
-	verdicted = true
 
 	return appendSpikeRow(secRecipe, "стабильность "+time.Now().Format("15:04:05"),
 		"второй раунд в одном запуске",

@@ -44,8 +44,22 @@ func runSpikeCaps(ctx context.Context, s *stand) error {
 		}
 	}()
 
-	if err := s.openVTERound(ctx, caseName); err != nil {
+	stale, err := s.openVTERound(ctx, caseName)
+	if err != nil {
 		return err
+	}
+	if stale {
+		// The desync row is recorded by the arming; the injection rounds
+		// are skipped (every keystroke would ride the stale context) — the
+		// case still closes honestly with the branch noted.
+		if err := appendSpikeRow(secCaps, "VTE итог "+time.Now().Format("15:04:05"),
+			"VTE раунд (desync-ветка)", "инъекционные раунды не исполнялись — арминг застал desync",
+			"Verdict: reproduced-desync branch (раунды пропущены)"); err != nil {
+			return err
+		}
+		verdicted = true
+
+		return nil
 	}
 
 	// Row 2 (ProcessKeyEvent delivery) and the flip for the landing round.
@@ -124,11 +138,12 @@ func (v *vteCapture) close() {
 	v.cmd = nil
 }
 
-// sendVTETeof delivers Ctrl+D to the focused pane (raw evdev codes: 29
-// left-ctrl, 32 d — ydotool 0.1.8 pressed/released form; the cat sees EOF
-// and exits, closing the window by the plan's own discipline).
+// sendVTETeof delivers Ctrl+D to the focused pane (the ydotool 0.1.8 named
+// sequence ctrl+d — the colon form typed "2332" instead, the live finding
+// shared with the owner-fixture close) so the cat sees EOF and exits,
+// closing the window by the plan's own discipline.
 func (s *stand) sendVTETeof(ctx context.Context, caseName string) error {
-	if _, err := runCmd(ctx, "ydotool", "key", "29:1", "32:1", "32:0", "29:0"); err != nil {
+	if _, err := runCmd(ctx, "ydotool", "key", "ctrl+d"); err != nil {
 		return fmt.Errorf("%s: VTE EOF: %w", caseName, err)
 	}
 
@@ -178,32 +193,34 @@ func (s *stand) vteLandingRow(flipPair bool, hex string) error {
 
 // openVTERound opens the VTE round's window: unit window, stand daemon,
 // the capture spawn, the pane-ready proof, the owner click gate and the
-// a11y identity row (the witness form for the focused GTK3 citizen).
-func (s *stand) openVTERound(ctx context.Context, caseName string) error {
+// a11y identity row (the witness form for the focused GTK3 citizen),
+// closing with the arming gate. A reproduced desync is reported as
+// stale=true (the caller records the branch) — never an error.
+func (s *stand) openVTERound(ctx context.Context, caseName string) (bool, error) {
 	unit, err := openSpikeWindow(ctx, caseName)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { s.restoreSpikeWindow(ctx, unit) }()
 
 	if _, err := startSpikeDaemon(ctx, s, caseName); err != nil {
-		return err
+		return false, err
 	}
 
 	ptyPath := filepath.Join(s.tmpDir, caseName+"-in")
 	readyPath := filepath.Join(s.tmpDir, caseName+"-ready")
 	vcap, err := startVTECapture(ctx, readyPath, ptyPath)
 	if err != nil {
-		return fmt.Errorf("%s: %w", caseName, err)
+		return false, fmt.Errorf("%s: %w", caseName, err)
 	}
 	defer vcap.close()
 	if err := waitPaneReady(ctx, caseName, readyPath); err != nil {
-		return fmt.Errorf("%s: %w", caseName, err)
+		return false, fmt.Errorf("%s: %w", caseName, err)
 	}
 
 	fmt.Printf("%s: fixture window mapped — awaiting owner click (gnome-terminal)\n", caseName)
 	if err := s.waitSurfaceClick(ctx, caseName, "gnome-terminal window", "gnome-terminal"); err != nil {
-		return fmt.Errorf("%s: %w", caseName, err)
+		return false, fmt.Errorf("%s: %w", caseName, err)
 	}
 	// Row 5 (a11y identity): the witness form for the VTE surface — the
 	// GTK3 citizen SHOULD be nameable while focused.
@@ -211,10 +228,24 @@ func (s *stand) openVTERound(ctx context.Context, caseName string) error {
 	if err := appendSpikeRow(secCaps, "VTE a11y "+time.Now().Format("15:04:05"),
 		"focus_helper.py witness при сфокусированном VTE",
 		"witness="+witness, "Verdict: форма идентичности записана (наблюдаемое выше)"); err != nil {
-		return err
+		return false, err
 	}
 
-	return s.armGate(ctx, caseName, ptyPath)
+	report, aerr := s.armGate(ctx, caseName, ptyPath)
+	if aerr != nil {
+		return false, fmt.Errorf("%s: %w", caseName, aerr)
+	}
+	if report.outcome == armStaleContext {
+		if rerr := appendDesyncRow(secCaps, caseName,
+			fmt.Sprintf("armGate probe (ydotool type %s + Enter)", armProbeText),
+			report, ptyPath); rerr != nil {
+			return false, rerr
+		}
+
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // vteDeliveryAndFlip runs the EN-mode delivery probe (row 2) and the flip

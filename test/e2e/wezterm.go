@@ -55,9 +55,17 @@ const (
 	corpusHexLatin = "67686264746e"             // ghbdtn
 	corpusHexRU    = "d0bfd180d0b8d0b2d0b5d182" // привет
 
-	// keyTraceMark is the -debug key-trace record prefix the arming gate and
-	// the delivery counters read.
+	// keyTraceMark is the -debug key-trace record prefix the delivery
+	// counters read (typeAndCountKeys, the arm gate's diagnostic).
 	keyTraceMark = `"msg":"key"`
+	// probeKeyMark is the key-trace record of the arming probe's FIRST
+	// digit (keyval 0x31 = '1'): the engine-traced signal of the arming
+	// gate (the live-smoke finding, 2026-10-12: the stale-context desync
+	// leaves the probe in the ENGINE trace while the fixture pty stays
+	// empty). Residual risk, documented honestly: an owner typing a '1'
+	// into an IM-routed window mid-gate would also grow this count — the
+	// rows print the numbers, the evidence stays auditable.
+	probeKeyMark = `"keyval":"0x31"`
 	// probeForwardMark is the probe verb's emission record (the smoke's
 	// emission contract).
 	probeForwardMark = `"msg":"probe forward"`
@@ -78,18 +86,63 @@ const (
 	// every layout, never consumed by the daemon's RU script, never an
 	// autocorrect candidate — so the probe measures ONLY the delivery
 	// channel. It is typed, then flushed out of the tty line discipline
-	// into the capture by an Enter: armProbeEnter (raw evdev codes,
-	// pressed/released form ydotool 0.1.8 speaks; KEY_ENTER=28,
-	// /usr/include/linux/input-event-codes.h:103 — transcribed verbatim,
-	// never from memory).
+	// into the capture by an Enter: armProbeEnter.
 	armProbeText = "1234"
 )
 
-// armProbeEnter is the Enter press/release pair of the arming probe (see
-// the armProbeText comment for the transcription discipline).
+// armProbeEnter is the Enter keystroke of the arming probe, in ydotool
+// 0.1.8's documented key-sequence form (its `key --help`: "modifiers and
+// keys, separated by plus"; the binary's table names it KEY_ENTER). The
+// 1.0-style colon form ("28:1") is NOT 0.1.8 syntax: the live-smoke finding
+// (2026-10-12) is that each colon arg typed its FIRST CHARACTER — the
+// owner's prompt collected "123422123422…" (probe + two '2's per try) and
+// the R1 teardown's "29:1 32:1 …" typed "2332" instead of the closing
+// Ctrl+D. A missing real Enter would leave a canonical tty unflushed and
+// misread a healthy round as stale, so the named form is load-bearing.
 //
-//nolint:gochecknoglobals // the raw-code Enter pair, cited verbatim (read-only)
-var armProbeEnter = []string{"28:1", "28:0"}
+//nolint:gochecknoglobals // the 0.1.8 named Enter sequence (read-only)
+var armProbeEnter = []string{"KEY_ENTER"}
+
+// armOutcome classifies the arming gate's result (the verdict semantics of
+// the 2026-10-12 live smoke: the engine→stale-context desync is the
+// TERM-01 defect honestly measured — a completed trace, not a failure).
+type armOutcome int
+
+const (
+	// armWindow: the probe landed in the fixture pty — window delivery
+	// proven (the engine delta is a diagnostic, present or not).
+	armWindow armOutcome = iota
+	// armStaleContext: the engine traced the probe but the fixture pty
+	// stayed empty — the engine delivered/forwarded the keys to a stale IM
+	// context instead of the freshly focused XIM fixture. A legitimate
+	// measured outcome: record it, keep the batch going.
+	armStaleContext
+	// armDead: the probe reached NEITHER the engine trace NOR the fixture
+	// pty — the injection itself broke. The only genuine harness FAIL.
+	armDead
+)
+
+// classifyArm decides the gate's outcome from its two observables: the
+// fixture pty's probe presence wins (window delivery), then the engine's
+// probe-class trace (stale-context desync), then nothing (dead injection).
+func classifyArm(ptyHasProbe bool, engineDelta int) armOutcome {
+	switch {
+	case ptyHasProbe:
+		return armWindow
+	case engineDelta > 0:
+		return armStaleContext
+	default:
+		return armDead
+	}
+}
+
+// armReport is the gate's classified outcome with its evidence counts —
+// what the verdict rows print (the evidence-honesty discipline).
+type armReport struct {
+	outcome     armOutcome
+	engineDelta int // probe-class (keyval 0x31) records the engine gained
+	tries       int // attempts actually made
+}
 
 const (
 	// captureFixedArgs is the fixed argument prefix of the capture spawn
@@ -400,42 +453,61 @@ func readPtyHexArmed(path string) (string, error) {
 }
 
 // armGate is the formal arming gate of the wezterm spike: inject the
-// arming probe line (armProbeText + Enter) and demand it land in the
-// FIXTURE's own pty capture — the injection-side proof that the
-// ydotool → compositor → focused-window channel reaches the very surface
-// the oracle reads. Bounded retries with settle — the race is a live
-// finding (autocorrect-terminal-silent, 2026-10-02), so the gate retries
-// instead of assuming.
+// arming probe line (armProbeText + Enter) and classify where it landed —
+// classifyArm pins the semantics. Bounded retries with settle — the race
+// is a live finding (autocorrect-terminal-silent, 2026-10-02), so the gate
+// retries instead of assuming; a stale-context signature stops the retries
+// after one clean demonstration (every extra try just types more junk into
+// the stale context, the 2026-10-12 "1234221234…" finding).
 //
-// The daemon journal is deliberately NOT the gate (the R1 live finding,
-// 2026-10-11: the owner-launched XIM fixture showed the injected input in
-// the window while the -debug key-trace stayed empty — injected keys reach
-// the window through the compositor WITHOUT traversing the IM engine, so
-// an engine record is not a precondition of delivery). The key-trace delta
-// is printed as a diagnostic only.
-func (s *stand) armGate(ctx context.Context, caseName, ptyPath string) error {
-	base := s.countSub(keyTraceMark)
-	for range armGateTries {
+// The three outcomes (the R1 + live-smoke findings):
+//   - armWindow: the probe landed in the FIXTURE's own pty capture — the
+//     injection-side proof that ydotool → compositor → focused-window
+//     reaches the very surface the oracle reads;
+//   - armStaleContext: the engine traced the probe but the fixture pty
+//     stayed empty — engine focus is desynchronized from real compositor
+//     focus for XIM clients and the keys went to a stale IM context. The
+//     TERM-01 defect mechanism, honestly measured — a verdict, not a
+//     failure;
+//   - armDead: neither signal — the injection itself broke. The only FAIL.
+//
+// The daemon journal is evidence and diagnostic here, never by itself a
+// gate: the R1 finding (engine deaf while the window showed input) and the
+// 2026-10-12 finding (engine tracing while the window got nothing) are the
+// two halves of the same desync, and neither journal state alone proves
+// delivery.
+func (s *stand) armGate(ctx context.Context, caseName, ptyPath string) (armReport, error) {
+	base := s.countSub(probeKeyMark)
+	for try := 1; try <= armGateTries; try++ {
 		if err := s.injectText(ctx, armProbeText); err != nil {
-			return fmt.Errorf("%s: arm gate probe: %w", caseName, err)
+			return armReport{outcome: armDead, tries: try}, fmt.Errorf("%s: arm gate probe: %w", caseName, err)
 		}
 		if err := s.injectKeys(ctx, armProbeEnter...); err != nil {
-			return fmt.Errorf("%s: arm gate enter: %w", caseName, err)
+			return armReport{outcome: armDead, tries: try}, fmt.Errorf("%s: arm gate enter: %w", caseName, err)
 		}
 		if werr := waitForArmingProbe(ctx, ptyPath, armGateWait); werr == nil {
+			report := armReport{outcome: armWindow, engineDelta: s.countSub(probeKeyMark) - base, tries: try}
 			fmt.Printf("%s: arm gate passed — probe landed in the fixture pty %s"+
-				" (engine key-record delta %d, diagnostic only)\n",
-				caseName, ptyPath, s.countSub(keyTraceMark)-base)
+				" (probe-key records delta %d)\n", caseName, ptyPath, report.engineDelta)
 
-			return nil
+			return report, nil
+		}
+		engineDelta := s.countSub(probeKeyMark) - base
+		if outcome := classifyArm(false, engineDelta); outcome == armStaleContext {
+			fmt.Printf("%s: arm gate: engine traced the probe (probe-key records delta %d)"+
+				" but the fixture pty %s stayed empty — engine→stale-context desync\n",
+				caseName, engineDelta, ptyPath)
+
+			return armReport{outcome: armStaleContext, engineDelta: engineDelta, tries: try}, nil
 		}
 		if err := sleepCtx(ctx, armGateSettle); err != nil {
-			return err
+			return armReport{outcome: armDead, engineDelta: engineDelta, tries: try}, err
 		}
 	}
 
-	return fmt.Errorf("%s: arming gate: probe %q never landed in the fixture pty %s after %d tries",
-		caseName, armProbeText, ptyPath, armGateTries)
+	return armReport{outcome: armDead, tries: armGateTries},
+		fmt.Errorf("%s: arming gate: probe %q reached neither the engine trace nor the fixture pty %s after %d tries",
+			caseName, armProbeText, ptyPath, armGateTries)
 }
 
 // waitForArmingProbe blocks until the fixture's pty capture contains the
@@ -709,14 +781,15 @@ func (s *stand) awaitOwnerFixture(
 	}
 }
 
-// close delivers the pane's EOF (raw evdev codes: 29 left-ctrl, 32 d) so
-// the owner-launched window closes itself — the pid-точечный discipline
-// without a process handle.
+// close delivers the pane's EOF (the ydotool 0.1.8 named sequence ctrl+d —
+// the colon form typed "2332" instead, the R1 finding: the window never
+// closed) so the owner-launched window closes itself — the pid-точечный
+// discipline without a process handle.
 func (o *ownerCapture) close(ctx context.Context, caseName string) {
 	if o == nil {
 		return
 	}
-	if _, err := runCmd(ctx, "ydotool", "key", "29:1", "32:1", "32:0", "29:0"); err != nil {
+	if _, err := runCmd(ctx, "ydotool", "key", "ctrl+d"); err != nil {
 		fmt.Fprintf(os.Stderr, "e2e: %s owner fixture EOF: %v (the window may need a manual close)\n", caseName, err)
 	}
 }
