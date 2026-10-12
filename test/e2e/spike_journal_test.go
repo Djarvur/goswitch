@@ -28,6 +28,7 @@ func spikeSections() map[string]string {
 		"secOracle":   secOracle,
 		"secTerm04":   secTerm04,
 		"secTermLive": secTermLive,
+		"secTermWez":  secTermWez,
 	}
 }
 

@@ -279,6 +279,28 @@
 
 
 
+## Фаза 10 живые ряды wezterm (term-word-wezterm)
+
+| Строка | Команда | Наблюдаемое | Вердикт |
+|---|---|---|---|
+| caps re-pin 20:34:27 | `SetCapabilities в журнале демона для контекста wezterm-nightly (до решений)` | activation: focus-detected; venue: vm (kvm); caps=0x9 (наблюдаемая подпись ночника; легаси-строки 0x9 исторические — Pitfall 4) | Verdict: подпись записана до решений (маршрутизация живая — classifyTerminal, не зашитая) |
+| word-a 20:34:29 | `armGate + type ghbdtn + double Shift_R (learning handshake) + pty-delta oracle` | activation: focus-detected; venue: vm (kvm); learning=false; pty_delta_hex=d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-дельта байт-точна; done+level-2 в журнале демона) |
+| word-b 20:34:31 | `armGate + type ghbdtn + double Shift_R (learning handshake) + pty-delta oracle` | activation: focus-detected; venue: vm (kvm); learning=false; pty_delta_hex=d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-дельта байт-точна; done+level-2 в журнале демона) |
+| mid-line 20:34:32 | `armGate + type echo ghbdtn + double Shift_R (learning handshake) + pty-delta oracle` | activation: focus-detected; venue: vm (kvm); learning=false; pty_delta_hex=6563686f20d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-дельта байт-точна; done+level-2 в журнале демона) |
+| clip-frozen 20:34:45 | `printf %s GS-SPIKE-SENTINEL | wl-copy → word round → wl-paste --no-newline` | activation: focus-detected; venue: vm (kvm); learning=false; clip_before=GS-SPIKE-SENTINEL; clip_after=GS-SPIKE-SENTINEL; pty_delta_hex=d0bfd180d0b8d0b2d0b5d1820a (CLIPBOARD перезаписан сентинелом — синтетика, пред-стейт задокументирован затиранием) | Verdict: pass (CLIPBOARD байт-нетронут терминальной коррекцией, слово исправлено) |
+| leg-probe 20:34:47 | `sentinel → goswitchctl probe-forward Home, shift+End → wl-paste --primary` | activation: focus-detected; venue: vm (kvm); sentinel=GS-SPIKE-SENTINEL; primary_after=GS-SPIKE-SENTINEL; token_hex=67686264746e | Verdict: leg-probe red (лег не подключён — буфер-доверие остаётся единственным механизмом по вердикту OQ 2 «contract»; граница D7 задокументирована) |
+| term-word-wezterm-mechanics 20:30-20:35 | `re-sync зеркала рецептом 10-01 Task 1 → go build ./... → unit -debug перезапущен; четыре захода кейса до зелёного (20:30:26 ssh-env, 20:30:49 armGate-floor, 20:33:52 oracle-форма — честные FAIL-заезды, 20:34:29 — зелёный)` | механика живых рядов wezterm закреплена четырьмя находками: (1) ssh-прогонам кейса нужны DISPLAY=:0 + XAUTHORITY (mutter-Xwaylandauth.*) — без них активация `ibus engine` падает в setxkbmap-refusal «Cannot open display» (заход 20:30:26, setup-отказ до всяких строк; повтор терминологии term-word-vte-mechanics); (2) uinput-churn первых ydotool-вызовов реминтит движок — BackSpace press заезда 20:30:49 сел в disable-окно старого мина, трейснулся только release → арминг-гейт wezterm-ряда несёт ОГРАНИЧЕННУЮ ретрай-лестницу (3 попытки, план §7.2 «ограниченные ретраи»; попытка 2 зелёная); (3) оракул дельты — hex-ТЕКСТ, завершение строки едет литерой «0a», не байтом \n (заход 20:33:52: pty_delta_hex был байт-точен, want был ошибочен — честный FAIL формы оракула, не канала); строки заездов 20:30:49/20:33:52 затёрты повторным rsync зеркала (журнал хоста перезаписал зеркальный) — причины восстановлены дословно из сессионного вывода, ни один вердикт ими не опирается; (4) ночник на стенде минтит контекст с caps=0x9 (ряд caps re-pin) — окружающий-бит НЕ анонсируется, коррекция едет без-капс веткой level-2 ПЕРВЫМ же жестом (learning=false во всех рядах), рукопожатие обучения остаётся терпящей формой; автокоррекция на границе слова воздержалась no-caps («autocorrect skipped reason no-caps» на Enter-границе — 06-07-негатив жив в том же прогоне) | Verdict: механика закреплена; критерий 1 (слово в wezterm по pty-оракулу, два подряд зелёных раунда) — ЗЕЛЁНЫЙ на живой сессии; leg-probe red — граница D7 без механизма подтверждена пробой |
+
+
+
+
+
+
+
+
+
+
+
 
 
 
