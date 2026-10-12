@@ -7282,10 +7282,12 @@ func teachTerminalClass(t *testing.T, a *session.Actor) {
 
 // TestTerminalBranch_RoutesChunkedNoPending pins the routing and the burst
 // shape: a verify-dead context with the surrounding-text bit ANNOUNCED (the
-// wezterm signature) skips the pending machine entirely — zero new
-// RequireSurroundingText calls, zero deletions — and the 20-rune token
-// replays as exactly 20 BackSpace forwards in 8+8+4 chunks with ONE commit,
-// the done INFO carrying the changed=true discriminator (D-24).
+// wezterm signature) skips the pending machine entirely — zero deletions,
+// no pre-burst verification — and the 20-rune token replays as exactly 20
+// BackSpace forwards in 8+8+4 chunks with ONE commit, the done INFO
+// carrying the changed=true discriminator (D-24). The single require of the
+// round is the verify-after ARM (Task 3) and lands strictly after the
+// commit.
 func TestTerminalBranch_RoutesChunkedNoPending(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActor() // the surrounding-text bit is SET — the class routes, not the bit
@@ -7298,16 +7300,16 @@ func TestTerminalBranch_RoutesChunkedNoPending(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	if got := sink.requireCount(); got != requiresBefore {
-		t.Fatalf("requires = %d, want %d — the terminal branch never arms the pending machine",
-			got, requiresBefore)
+	if got := sink.requireCount(); got != requiresBefore+1 {
+		t.Fatalf("requires = %d, want %d — exactly the verify-after arm, never the pending machine",
+			got, requiresBefore+1)
 	}
 	if calls := sink.deleteCalls(); len(calls) != 0 {
 		t.Errorf("deletions = %+v, want 0 — the terminal replay is BackSpace-only", calls)
 	}
-	want := termChunkOps(len([]rune(termWord20)), termWord20Converted)
+	want := append(termChunkOps(len([]rune(termWord20)), termWord20Converted), "require")
 	if got := sink.opLog()[opsBefore:]; !slices.Equal(got, want) {
-		t.Fatalf("round op log = %q, want the exact 8+8+4 chunk shape %q", got, want)
+		t.Fatalf("round op log = %q, want the 8+8+4 chunk shape + the verify-after arm %q", got, want)
 	}
 	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done","changed":true`) {
 		t.Errorf("the done INFO lost the changed=true discriminator (D-24); log:\n%s", buf.String())
@@ -7328,12 +7330,14 @@ func TestTerminalBranch_VTERoleUnifiedChunks(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	if got := sink.requireCount(); got != 0 {
-		t.Fatalf("requires = %d, want 0 — unified routing: no pending machine for a role-60 context", got)
+	// Task 3 semantics: the single require is the verify-after arm, after
+	// the commit — the pending machine stays unarmed (unified routing).
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("requires = %d, want 1 — unified routing: no pending machine, just the verify-after arm", got)
 	}
-	want := termChunkOps(len([]rune(termWord20)), termWord20Converted)
+	want := append(termChunkOps(len([]rune(termWord20)), termWord20Converted), "require")
 	if got := sink.opLog(); !slices.Equal(got, want) {
-		t.Fatalf("op log = %q, want the exact 8+8+4 chunk shape %q", got, want)
+		t.Fatalf("op log = %q, want the 8+8+4 chunk shape + the verify-after arm %q", got, want)
 	}
 }
 
@@ -7513,7 +7517,7 @@ func TestTerminalBranch_TailRidesReplay(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	want := termChunkOps(len(wordEN)+1, wordRU+" ")
+	want := append(termChunkOps(len(wordEN)+1, wordRU+" "), "require") // the verify-after arm (Task 3)
 	if got := sink.opLog()[opsBefore:]; !slices.Equal(got, want) {
 		t.Fatalf("round op log = %q, want the token+tail replay %q", got, want)
 	}
@@ -7561,7 +7565,8 @@ func TestTerminalBranch_VerifyAfterNoRungOnMismatch(t *testing.T) {
 
 	for i, c := range sink.forwardCalls() {
 		if c != backSpaceWireCall() {
-			t.Fatalf("forward[%d] = %+v, want a bare BackSpace — a terminal mismatch must never forward a paste chord (ADR-008 D4)", i, c)
+			t.Fatalf("forward[%d] = %+v, want a bare BackSpace — a terminal mismatch must never "+
+				"forward a paste chord (ADR-008 D4)", i, c)
 		}
 	}
 	if seq := runner.sequence(); len(seq) != 0 {

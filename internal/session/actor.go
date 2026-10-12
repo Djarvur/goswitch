@@ -523,6 +523,12 @@ type pendingAfter struct {
 	epoch      uint64
 	mismatches int
 	deadline   *time.Timer
+	// noRung marks a terminal-branch round (plan 10-04, ADR-008 D4, owner
+	// verdict OQ 2 «contract»): the mismatch verdict must never arm the
+	// clipboard rung — a Ctrl+V chord into a shell is the SIGINT class.
+	// Forbidden BY CONSTRUCTION, not by config: the round carries no paste
+	// payload at all.
+	noRung bool
 }
 
 // NewActor returns an actor deciding tap series inside the given
@@ -1639,6 +1645,14 @@ func (a *Actor) settleAfter() ([]rune, bool) {
 	}
 	a.clearAfter()
 	slog.Info("correction verify", "outcome", "mismatch")
+	if round.noRung {
+		// The terminal branch (plan 10-04, ADR-008 D4, owner verdict OQ 2
+		// «contract»): the mismatch LOGS and STOPS — the round carries no
+		// paste payload, so the rung condition is never even evaluated
+		// (Pitfall 3: the paste chord is forbidden by construction, under
+		// every configuration).
+		return nil, false
+	}
 
 	return round.paste, a.opts.ClipboardRung && a.clip != nil && eng != nil
 }
@@ -1685,6 +1699,27 @@ func (a *Actor) armAfterVerify(converted, tail []rune) {
 		expected: concatRunes(converted, tail),
 		paste:    converted,
 		epoch:    a.verifyEpoch,
+	}
+	epoch := a.verifyEpoch
+	a.after.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
+	a.emitter().RequireSurroundingText()
+}
+
+// armAfterVerifyTerminal starts the verify-after round of the terminal
+// write branch (plan 10-04 Task 3, owner verdict OQ 2 «contract»): the
+// SAME epoch, verify budget and quiet-timeout machinery as armAfterVerify —
+// the client that does push (VTE) settles honestly, a push-less context
+// dies by budget — but the round carries NO paste payload: a mismatch can
+// only log and stop (settleAfter's noRung branch), the clipboard rung is
+// forbidden by construction, never by config (ADR-008 D4). The caller
+// holds the mutex.
+func (a *Actor) armAfterVerifyTerminal(converted, tail []rune) {
+	a.verifyEpoch++
+	a.clearAfter() // never two open rounds
+	a.after = &pendingAfter{
+		expected: concatRunes(converted, tail),
+		epoch:    a.verifyEpoch,
+		noRung:   true,
 	}
 	epoch := a.verifyEpoch
 	a.after.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
@@ -2989,15 +3024,17 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	// never answers in a terminal: the pushes do not come). The
 	// classification is the SAME seam the arming veto consults — the veto
 	// and the write pipeline cannot diverge by construction.
-	if a.caps&correct.CapSurroundingText == 0 || a.classifyTerminal() {
+	terminal := a.classifyTerminal()
+	if a.caps&correct.CapSurroundingText == 0 || terminal {
 		// The write branch: the chunked level-2 replay. It serves the
 		// legacy no-caps degradation (the ADR-003 ladder level, no
 		// verification — the documented ADR-004 degradation, the buffer plus
 		// the explicit CORR-09 reset triggers are the only synchronization)
 		// AND the whole terminal class — against a terminal the buffer is
 		// the only target source (the stretch of plan 10-02), the pending
-		// machine is never armed.
-		a.executeLevel2(rng, converted, armed)
+		// machine is never armed. Only the terminal class verifies after
+		// the fact (Task 3); the legacy path arms nothing, byte as today.
+		a.executeLevel2(rng, converted, armed, terminal)
 
 		return
 	}
@@ -3100,8 +3137,11 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 // lie, the wezterm bit-set signature with no pushes ever coming): the
 // level-2 geometry is therefore forced by masking the bit, and BuildPlan
 // itself stays untouched (the D-13 tail semantics ride verbatim). The
-// caller holds the mutex.
-func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time) {
+// terminal argument marks the class-routed call: only it arms the
+// verify-after round (armAfterVerifyTerminal — no paste payload, plan 10-04
+// Task 3); the legacy degradation arms nothing, byte as today. The caller
+// holds the mutex.
+func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time, terminal bool) {
 	eng := a.emitter() // one atomic snapshot for the whole burst
 	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps&^correct.CapSurroundingText, a.backspaceCap())
 	if plan.Level == correct.LevelNone {
@@ -3140,6 +3180,13 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
 	a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
 	a.settleCombo()
+	if terminal {
+		// The terminal branch verifies after the fact (plan 10-04 Task 3):
+		// the client that does push settles the round honestly, a push-less
+		// one dies by budget — and a mismatch can only log and stop, the
+		// round carries no paste (armAfterVerifyTerminal).
+		a.armAfterVerifyTerminal(converted, rng.tail)
+	}
 }
 
 // chunkBoundaryMoved yields the actor mutex for one scheduling quanta and
