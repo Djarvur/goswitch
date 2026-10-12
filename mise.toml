@@ -179,6 +179,10 @@ run = "go run ./test/e2e -case wezterm-flip"
 description = "e2e: 10-05 term-word-vte — live VTE word rows on the VM stand: double Right Shift corrects ghbdtn→привет per the pty-hex oracle in bash and zsh panes, the mid-line contract row (OQ 2), the frozen CLIPBOARD sentinel row; done+level-2 marks gate the terminal branch; rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case term-word-vte"
 
+[tasks.e2e-term-negative-witnesses]
+description = "e2e: 10-05 term-negative-witnesses — the frozen negative witnesses (criterion 5): vim-insert and htop INSIDE gnome-terminal stay silent under the enabled layer (fired=0, terminal-veto abstentions grow, buffer verbatim) while the positive control corrects in the same class; autocorrect-terminal-silent re-pin row; rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-negative-witnesses"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"

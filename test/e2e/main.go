@@ -272,7 +272,7 @@ func pickCase(name string) (caseSpec, error) {
 			" spike-smoke, spike-wezterm, spike-caps, wezterm-flip, term04-negative,"+
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
 			" autocorrect-blocklist-silent, menu-v2,"+
-			" term-word-vte,"+
+			" term-word-vte, term-negative-witnesses,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 
@@ -324,9 +324,14 @@ func caseRegistry() map[string]caseSpec {
 		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
 		"menu-v2":                      {fn: runMenuV2},
 		"term-word-vte":                {fn: runTermWordVTE, noSurfacePreflight: true, watchdog: recipeWatchdog},
-		"install-cycle":                {fn: runInstallCycle, standalone: true},
-		"perf":                         {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
-		"perf-autocorrect":             {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
+		"term-negative-witnesses": {
+			fn:                 runTermNegativeWitnesses,
+			noSurfacePreflight: true,
+			watchdog:           autocorrectWatchdog,
+		},
+		"install-cycle":    {fn: runInstallCycle, standalone: true},
+		"perf":             {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
+		"perf-autocorrect": {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
 	}
 }
 
