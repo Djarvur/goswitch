@@ -128,6 +128,7 @@ type fakeSink struct {
 	modes       []string
 	ops         []string
 	forwardHook func(forwardCall)
+	commitHook  func(text string)
 	modeHook    func(symbol string)
 }
 
@@ -152,10 +153,14 @@ func (f *fakeSink) DeleteSurroundingText(offset int32, nchars uint32) {
 // CommitText records the committed text payload.
 func (f *fakeSink) CommitText(text engine.IBusText) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	f.commits = append(f.commits, text.Text)
 	f.ops = append(f.ops, "commit("+text.Text+")")
+	hook := f.commitHook
+	f.mu.Unlock()
+
+	if hook != nil {
+		hook(text.Text)
+	}
 }
 
 // ForwardKeyEvent records the replayed key event with its exact arguments.
@@ -7640,5 +7645,43 @@ func TestTerminalBranch_VerifyAfterQuietConfirm(t *testing.T) {
 	}
 	if got := len(sink.forwardCalls()); got != len(wordEN) {
 		t.Errorf("forwards = %d, want %d — the confirmation emits nothing", got, len(wordEN))
+	}
+}
+
+// TestTerminalBranch_Level2PacesWire pins the paced wire discipline of the
+// write branch (the 2026-10-12 VTE live finding, plan 10-05): a tight
+// ForwardKeyEvent burst REORDERS against the CommitText inside the client's
+// IM queue — the client drains forwarded keys lazily (they queue as GDK
+// events) while the commit lands synchronously, so the live row turned
+// "ghbdtn" into "ghприв" (four erases, the commit, two late erases). The
+// branch must sleep its pacing quantum BEFORE EVERY forward and BEFORE the
+// commit: the merged wire timeline is sleep→forward→…→sleep→commit through
+// the actor's sleeper seam (the UseRole form).
+func TestTerminalBranch_Level2PacesWire(t *testing.T) {
+	a, sink := wiredActorCaps(engine.CapPreeditText) // no CapSurroundingText — the write branch
+
+	const gap = 20 * time.Millisecond
+	var wire []string
+	record := func(op string) {
+		wire = append(wire, op)
+	}
+	a.UseLevel2Sleeper(func(d time.Duration) {
+		record(fmt.Sprintf("sleep(%s)", d))
+	})
+	sink.forwardHook = func(forwardCall) { record(backSpaceOp()) }
+	sink.commitHook = func(text string) { record("commit(" + text + ")") }
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	want := make([]string, 0, 2*len([]rune(wordEN))+2)
+	for range len([]rune(wordEN)) {
+		want = append(want, fmt.Sprintf("sleep(%s)", gap), backSpaceOp())
+	}
+	want = append(want, fmt.Sprintf("sleep(%s)", gap), "commit("+wordRU+")")
+	if !slices.Equal(wire, want) {
+		t.Fatalf("wire timeline = %q, want the paced %q", wire, want)
 	}
 }

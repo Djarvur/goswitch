@@ -277,6 +277,7 @@ type Actor struct {
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
+	level2Sleep func(time.Duration) // the write branch's pacing seam (UseLevel2Sleeper)
 	role        RoleSource
 	appidWarned bool // one WARN per degradation episode — a broken source must not spam per keystroke
 	startAppid  func() (AppidSource, error)
@@ -3302,4 +3303,12 @@ func refusalReason(token []rune) string {
 	}
 
 	return "no-letters"
+}
+
+// UseLevel2Sleeper installs the write branch's pacing seam — the RED-phase
+// stub; the pacing lands with the GREEN of the 2026-10-12 VTE fix.
+func (a *Actor) UseLevel2Sleeper(s func(time.Duration)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.level2Sleep = s
 }
