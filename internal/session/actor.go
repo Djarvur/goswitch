@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -51,6 +52,13 @@ const comboMask = engine.MaskControl | engine.MaskMod1 | engine.MaskMod4
 // keycode half of the level-2 replay ForwardKeyEvent(KeyBackSpace, 14, 0)
 // (RESEARCH Pattern 1; the keyval half is engine.KeyBackSpace).
 const backSpaceKeycode = 14
+
+// terminalChunkKeys is the chunk ceiling of the terminal write branch
+// (plan 10-04, TERM-02, ROADMAP criterion 4): the BackSpace replay is
+// emitted in bursts of at most this many keys with a context re-check
+// between chunks — a mid-burst focus loss can never cost more than one
+// chunk, and the IME queue's loss window stays bounded (T-10-04-03).
+const terminalChunkKeys = 8
 
 // switchTimeout bounds the SetGlobalEngine round trip on the flip path —
 // the FAILURE-path wedge guard (Pitfall 4, T-05-03-01), not a slice of the
@@ -175,12 +183,19 @@ type Actor struct {
 	// never wait for a.mu (G-6-1). Reads go through the emitter() snapshot
 	// accessor; nil before the first mint, exactly like the plain field it
 	// replaced.
-	engSlot      atomic.Pointer[emitterSlot]
-	surr         []rune // cached text-before-cursor from the latest client push
-	sel          selectionState
-	pending      *pendingFix
-	after        *pendingAfter
-	verifyEpoch  uint64               // monotonic verify-after round tag (stale-timer guard)
+	engSlot     atomic.Pointer[emitterSlot]
+	surr        []rune // cached text-before-cursor from the latest client push
+	sel         selectionState
+	pending     *pendingFix
+	after       *pendingAfter
+	verifyEpoch uint64 // monotonic verify-after round tag (stale-timer guard)
+	// ctxEpoch is the input-context generation tag (plan 10-04): the
+	// context-death branch of HandleLifecycle bumps it on every
+	// FocusOut/Reset, and the terminal write branch compares it between
+	// chunks — a focus loss landing in the chunk-boundary window stops the
+	// round without completion. The verifyEpoch discipline: a monotonic
+	// tag, read and written under the mutex.
+	ctxEpoch     uint64               // monotonic input-context generation (chunk re-check)
 	mode         scriptMode           // output-script state, EN at start (ADR-001 Option B)
 	opts         Options              // correction tuning (D-27 cap, D-28 rung switch, D-36 combo)
 	clip         *clipboard.Clipboard // the rung's wl-clipboard client
@@ -850,6 +865,10 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// the caches belong to the input context that just left
 		a.surr = nil
 		a.sel = selectionState{}
+		// the context generation moves with it (plan 10-04): the terminal
+		// write branch reads this tag between chunks — any death of the
+		// context inside the burst's boundary windows stops the round
+		a.ctxEpoch++
 		// the behavioral terminal class too (Phase 10): a fresh context
 		// starts unclassified — the next expired verify round re-learns it
 		a.setVerifyDead(false)
@@ -2864,8 +2883,9 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 	if !changed {
 		// D-24: the success-without-changes outcome — a SUCCESSFUL
 		// operation without changes; nothing to replace, nothing to verify.
+		// The discriminator names it changed=false (plan 10-04).
 		a.countCorrectionDone()
-		slog.Info("correction", "outcome", "done")
+		slog.Info("correction", "outcome", "done", "changed", false)
 		a.settleCombo()
 
 		return
@@ -2946,9 +2966,11 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	if !changed {
 		// D-24: the success-without-changes outcome — a SUCCESSFUL
 		// operation without changes (the owner's choice over a refusal and
-		// over a WARN); nothing to replace, nothing to verify.
+		// over a WARN); nothing to replace, nothing to verify. The
+		// discriminator names it changed=false (plan 10-04) — the same
+		// grep-form, the attribute extends.
 		a.countCorrectionDone()
-		slog.Info("correction", "outcome", "done")
+		slog.Info("correction", "outcome", "done", "changed", false)
 		a.settleCombo()
 
 		return
@@ -2961,11 +2983,20 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	}
 	a.resolvePending() // a second Double/Triple supersedes the stale round
 	a.clearAfter()     // …and the previous round's verify-after with it
-	if a.caps&correct.CapSurroundingText == 0 {
-		// Ladder level 2 (ADR-003): no surrounding text, no verification —
-		// the documented ADR-004 degradation. The buffer plus the explicit
-		// CORR-09 reset triggers are the only synchronization the daemon
-		// has, so the correction executes immediately, never guessed twice.
+	// TERM-02 routing (plan 10-04, owner verdict OQ 1 «unified»): the
+	// terminal class takes its own write branch BEFORE the caps fork — no
+	// pending fix, no RequireSurroundingText, no app verification (ADR-004
+	// never answers in a terminal: the pushes do not come). The
+	// classification is the SAME seam the arming veto consults — the veto
+	// and the write pipeline cannot diverge by construction.
+	if a.caps&correct.CapSurroundingText == 0 || a.classifyTerminal() {
+		// The write branch: the chunked level-2 replay. It serves the
+		// legacy no-caps degradation (the ADR-003 ladder level, no
+		// verification — the documented ADR-004 degradation, the buffer plus
+		// the explicit CORR-09 reset triggers are the only synchronization)
+		// AND the whole terminal class — against a terminal the buffer is
+		// the only target source (the stretch of plan 10-02), the pending
+		// machine is never armed.
 		a.executeLevel2(rng, converted, armed)
 
 		return
@@ -3057,15 +3088,22 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 	a.armAfterVerifyRange(p.converted, sel.start)
 }
 
-// executeLevel2 runs the ladder's Backspace level on a client without the
-// surrounding-text capability (ADR-003): plan.Backspaces replayed
-// ForwardKeyEvent(BackSpace) — counted in runes by BuildPlan, the tail
-// included — followed by ONE commit of the converted token plus the tail.
-// The burst→commit order is the wire contract (research A4: the daemon
-// preserves it for every client). The caller holds the mutex.
+// executeLevel2 runs the ladder's Backspace level: the plan's Backspaces —
+// counted in runes by BuildPlan, the tail included — replayed as
+// ForwardKeyEvent(BackSpace) in chunks of at most terminalChunkKeys with a
+// context re-check between chunks (plan 10-04, criterion 4), followed by
+// ONE commit of the converted token plus the tail. The burst→commit order
+// is the wire contract (research A4: the daemon preserves it for every
+// client). The write branch serves two callers: the legacy no-caps
+// degradation (ADR-003) and — owner verdict OQ 1 «unified» — the whole
+// terminal class, which may ANNOUNCE the surrounding-text bit (VTE's 0x29
+// lie, the wezterm bit-set signature with no pushes ever coming): the
+// level-2 geometry is therefore forced by masking the bit, and BuildPlan
+// itself stays untouched (the D-13 tail semantics ride verbatim). The
+// caller holds the mutex.
 func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time) {
 	eng := a.emitter() // one atomic snapshot for the whole burst
-	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps, a.backspaceCap())
+	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps&^correct.CapSurroundingText, a.backspaceCap())
 	if plan.Level == correct.LevelNone {
 		// D-27: the Backspace series would exceed the cap and this client
 		// has no DeleteSurroundingText — refuse silently, not one deletion.
@@ -3074,8 +3112,28 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 
 		return
 	}
-	for range plan.Backspaces {
-		eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
+	gen := a.ctxEpoch
+	for sent := 0; sent < plan.Backspaces; {
+		chunk := min(terminalChunkKeys, plan.Backspaces-sent)
+		for range chunk {
+			eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
+		}
+		sent += chunk
+		if sent >= plan.Backspaces {
+			break
+		}
+		// The chunk-boundary re-check: the mutex is released for one
+		// scheduling quanta so a real lifecycle callback — it serializes on
+		// this same mutex and would otherwise only land AFTER the whole
+		// burst — can be observed between chunks. A generation change stops
+		// the round: no commit, no completion, no repair (after the first
+		// destructive key there is no достройка — criterion 4).
+		if a.chunkBoundaryMoved(gen) {
+			slog.Info("correction", "outcome", "context-changed")
+			a.settleCombo()
+
+			return
+		}
 	}
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
@@ -3084,14 +3142,31 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	a.settleCombo()
 }
 
+// chunkBoundaryMoved yields the actor mutex for one scheduling quanta and
+// reports whether the input context died in the window — the ctxEpoch tag
+// bumped by HandleLifecycle's FocusOut/Reset branch (the verifyEpoch
+// discipline: a monotonic tag compared under the mutex). A second boundary
+// always catches a callback that missed the first window. The caller holds
+// the mutex on both entry and return.
+func (a *Actor) chunkBoundaryMoved(gen uint64) bool {
+	a.mu.Unlock()
+	runtime.Gosched()
+	a.mu.Lock()
+
+	return a.ctxEpoch != gen
+}
+
 // logCorrectionDone counts and writes the completion pair of one ladder
-// execution: the INFO counter (D-20 — outcome only, never the word) and
-// the DEBUG detail record whose FIRST attribute after msg is the ladder
-// level — the exact form the e2e matrix greps to pin the ACTUAL level a
-// client got (D-21). The caller holds the mutex.
+// execution: the INFO counter (D-20 — outcome only, never the word) with
+// the D-24 discriminator (plan 10-04: an executed correction is
+// changed=true — the frozen stand grep-forms «msg correction, outcome done»
+// keep matching, the attribute extends, never renames) and the DEBUG detail
+// record whose FIRST attribute after msg is the ladder level — the exact
+// form the e2e matrix greps to pin the ACTUAL level a client got (D-21).
+// The caller holds the mutex.
 func (a *Actor) logCorrectionDone(level correct.Level, token, converted []rune, latency time.Duration) {
 	a.corrDone++
-	slog.Info("correction", "outcome", "done")
+	slog.Info("correction", "outcome", "done", "changed", true)
 	slog.Debug("correction",
 		"level", int(level),
 		"runes", len(token),
