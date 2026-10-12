@@ -7518,3 +7518,122 @@ func TestTerminalBranch_TailRidesReplay(t *testing.T) {
 		t.Fatalf("round op log = %q, want the token+tail replay %q", got, want)
 	}
 }
+
+// The terminal verify-after corpus of plan 10-04 Task 3 (ADR-008 D4, owner
+// verdict OQ 2 «contract»): the terminal branch verifies its correction
+// after the fact on the SAME epoch/debounce/quiet-timeout machine — but the
+// clipboard rung is forbidden BY CONSTRUCTION, never by config: the round
+// carries no paste payload, so a mismatch can only log and stop. The
+// mid-line semantics stop at the D7 contract boundary: buffer trust holds
+// only for the type-at-cursor flow (the poison/primary mechanisms are
+// deliberately absent).
+
+// TestTerminalBranch_VerifyAfterNoRungOnMismatch pins the construction ban:
+// a terminal correction whose verify-after MISMATCHES never produces a
+// Ctrl+V forward and never spawns a clipboard subprocess — even with
+// clipboard_rung: true and a healthy client installed. The WR-05 debounce
+// keeps its shape (the first mismatching push re-requires), the second
+// concludes into the INFO mismatch and a full stop.
+func TestTerminalBranch_VerifyAfterNoRungOnMismatch(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseRole(&fakeRole{role: acRoleForbiddenTerminal}) // unified routing: terminal branch
+	a.SetOptions(session.Options{ClipboardRung: true})  // the config MUST NOT matter
+	runner := &clipRunner{reply: []byte("sentinel")}
+	a.UseClipboard(clipboard.New(clipboard.WithRunner(runner.run)))
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Fatalf("requires after the terminal correction = %d, want 1 — the verify-after round armed", got)
+	}
+
+	// WR-05: the first mismatching answer re-requires, the second concludes.
+	mismatch := "abc другойтекст"
+	a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch))
+	if got := sink.requireCount(); got != 2 {
+		t.Fatalf("requires after the first stale answer = %d, want 2 — the debounce re-required", got)
+	}
+	a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch))
+
+	for i, c := range sink.forwardCalls() {
+		if c != backSpaceWireCall() {
+			t.Fatalf("forward[%d] = %+v, want a bare BackSpace — a terminal mismatch must never forward a paste chord (ADR-008 D4)", i, c)
+		}
+	}
+	if seq := runner.sequence(); len(seq) != 0 {
+		t.Errorf("clipboard subprocesses = %q, want none — the rung is forbidden by construction", seq)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction verify","outcome":"mismatch"`) {
+		t.Errorf("the mismatch INFO record is missing; log:\n%s", buf.String())
+	}
+}
+
+// TestTerminalBranch_VerifyDeadQuietTimeout pins the quiet timeout of a
+// verify-dead context: the pushes never come, the round dies by budget —
+// the timeout record, no paste load, no repeated requires, and the stale
+// teaching deadline stays a no-op (epoch discipline).
+func TestTerminalBranch_VerifyDeadQuietTimeout(t *testing.T) {
+	buf := captureLogsLevel(t, slog.LevelDebug)
+	a, sink := wiredActor()
+	cfg := reloadCfg(300, "shift+ctrl_r")
+	cfg.Timeouts.VerifyWaitMs = 30
+	a.AttachConfig(&reloadSource{cfg: cfg})
+
+	teachTerminalClass(t, a)
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 2 {
+		t.Fatalf("requires = %d, want 2 — the teaching round's (1) plus the verify-after arm (1), nothing else", got)
+	}
+	if !waitLogUntil(t, buf, `"outcome":"timeout"`, 1, 2*time.Second) {
+		t.Fatalf("the quiet timeout never landed; log:\n%s", buf.String())
+	}
+	if got := strings.Count(buf.String(), `"outcome":"mismatch"`); got != 0 {
+		t.Errorf("mismatch records on a quiet context = %d, want 0", got)
+	}
+	if got := sink.requireCount(); got != 2 {
+		t.Errorf("requires after the timeout = %d, want 2 — no repeats", got)
+	}
+	for i, c := range sink.forwardCalls() {
+		if c != backSpaceWireCall() {
+			t.Fatalf("forward[%d] = %+v, want a bare BackSpace — no paste load on the timeout path", i, c)
+		}
+	}
+}
+
+// TestTerminalBranch_VerifyAfterQuietConfirm pins the honest-client side: a
+// fresh push whose suffix is the converted token (+tail) settles the round
+// quietly — a DEBUG match record, no mismatch, no further emitter traffic.
+func TestTerminalBranch_VerifyAfterQuietConfirm(t *testing.T) {
+	buf := captureLogsLevel(t, slog.LevelDebug)
+	a, sink := wiredActor()
+	a.UseRole(&fakeRole{role: acRoleForbiddenTerminal})
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+
+	if !strings.Contains(buf.String(), `"msg":"correction verify","outcome":"match"`) {
+		t.Errorf("the quiet match record is missing; log:\n%s", buf.String())
+	}
+	if got := strings.Count(buf.String(), `"outcome":"mismatch"`); got != 0 {
+		t.Errorf("mismatch records on a matching push = %d, want 0", got)
+	}
+	if got := sink.requireCount(); got != 1 {
+		t.Errorf("requires = %d, want 1 — the match settles without a re-require", got)
+	}
+	if got := len(sink.forwardCalls()); got != len(wordEN) {
+		t.Errorf("forwards = %d, want %d — the confirmation emits nothing", got, len(wordEN))
+	}
+}
