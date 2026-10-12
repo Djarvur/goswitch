@@ -60,6 +60,16 @@ const backSpaceKeycode = 14
 // chunk, and the IME queue's loss window stays bounded (T-10-04-03).
 const terminalChunkKeys = 8
 
+// level2ForwardGap is the pacing quantum between the write branch's wire
+// emissions (plan 10-05, the 2026-10-12 VTE live finding): the client
+// drains forwarded keys lazily — they queue as GDK events — while the
+// commit lands synchronously, so a tight burst reorders and corrupts the
+// line («ghbdtn» came back «ghприв»: four erases, the commit, two late
+// erases). A sleep before EVERY forward and before the commit lets the
+// client's queue drain between emissions; the order on the wire and the
+// chunk geometry stay untouched (the op-log pins hold).
+const level2ForwardGap = 20 * time.Millisecond
+
 // switchTimeout bounds the SetGlobalEngine round trip on the flip path —
 // the FAILURE-path wedge guard (Pitfall 4, T-05-03-01), not a slice of the
 // <50 ms SPEC reaction budget: it bounds only how long a wedged ibus-daemon
@@ -646,6 +656,15 @@ func (a *Actor) UseRole(rs RoleSource) {
 	defer a.mu.Unlock()
 
 	a.role = rs
+}
+
+// UseLevel2Sleeper installs the write branch's pacing seam — the
+// wiring/test seam of the UseRole form. The production sleeper is
+// time.Sleep; the corpus installs recorders (the 2026-10-12 pacing fix).
+func (a *Actor) UseLevel2Sleeper(s func(time.Duration)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.level2Sleep = s
 }
 
 // UseDetector installs a boundary detector double — the plan 10-03 spy
@@ -3154,9 +3173,14 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		return
 	}
 	gen := a.ctxEpoch
+	sleep := a.level2Sleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
 	for sent := 0; sent < plan.Backspaces; {
 		chunk := min(terminalChunkKeys, plan.Backspaces-sent)
 		for range chunk {
+			sleep(level2ForwardGap)
 			eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
 		}
 		sent += chunk
@@ -3176,6 +3200,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 			return
 		}
 	}
+	sleep(level2ForwardGap)
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
@@ -3303,12 +3328,4 @@ func refusalReason(token []rune) string {
 	}
 
 	return "no-letters"
-}
-
-// UseLevel2Sleeper installs the write branch's pacing seam — the RED-phase
-// stub; the pacing lands with the GREEN of the 2026-10-12 VTE fix.
-func (a *Actor) UseLevel2Sleeper(s func(time.Duration)) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.level2Sleep = s
 }
