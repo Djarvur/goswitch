@@ -2,19 +2,18 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 09
-current_phase_name: Спайк и дефект wezterm
+current_phase: 10
+current_phase_name: TERM-слово
 status: executing
-stopped_at: "09-02 live batch HALTED by owner 2026-10-11 evening: attach-mode R1 reached click-confirmed + visible injected input, but daemon key-trace empty (arming gate FAIL) — layer-3 client↔engine break; R2-R6 pending owner-runbook, blocked on the arming/trace gating fix"
-last_updated: "2026-10-11T16:15:00.000Z"
-last_updated: "2026-10-09T19:40:00.000Z"
-last_activity: 2026-10-08
-last_activity_desc: Phase 09 execution started
-state_head: bbd463d61c84aafa925f12dd2379c3723c374f69
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-10-12T14:22:11.771Z"
+last_activity: 2026-10-12
+last_activity_desc: Phase 10 execution started
+state_head: cc2e2d8b37d7024985b36db7a72c7546b7bac613
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 4
+  total_plans: 10
   completed_plans: 1
   percent: 0
 ---
@@ -26,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-08)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 09 — Спайк и дефект wezterm
+**Current focus:** Phase 10 — TERM-слово
 
 ## Current Position
 
-Phase: 09 (Спайк и дефект wezterm) — EXECUTING
-Plan: 2 of 4
+Phase: 10 (TERM-слово) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-10-08 — Phase 09 execution started
+Last activity: 2026-10-12 — Phase 10 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -49,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 09 P01 | 10 min | 2 tasks | 2 files |
+| Phase 10 P01 | 37min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -96,9 +96,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-09T18:45:00.000Z
-Stopped at: 09-02 manual activation EXHAUSTED: owner-clicked fixture windows never mint an IM context (clean run 21:37-21:41: 0 caps records of any kind in 3 min; owner confirmed seeing+clicking every window) — the focus-yank defeats clicks too; kernel 7.2.9-1 reboot probe is the remaining rung
-Resume file: .planning/phases/09-spayk-i-defekt-wezterm/09-02-PLAN.md
+Last session: 2026-10-12T14:22:11.739Z
+Stopped at: Completed 10-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
