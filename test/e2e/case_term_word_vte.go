@@ -16,7 +16,6 @@ package main
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,15 +51,10 @@ const (
 	// would flood the journal cell).
 	termRowTextBound = 200
 
-	// observerProbeKeys is the observer round's key-record floor: one probe
-	// keystroke yields press+release (2 records) above the spawn baseline.
-	observerProbeKeys = 2
+	// armProbeKeys is the arming gate's key-record floor: the probe letter
+	// plus its erase, press+release each (4 records above the baseline).
+	armProbeKeys = 4
 )
-
-// errTermArmNotWindow is the arming refusal of the word rows (err113):
-// window delivery unproven — no injection follows (a keystroke would ride a
-// stale context or an owner surface).
-var errTermArmNotWindow = errors.New("arming probe did not land in the fixture pty (window delivery unproven)")
 
 // termRow appends one dated verdict row to the case's journal section (the
 // appendSpikeRow form; the label carries the row tag, the time the date).
@@ -181,25 +175,25 @@ func (s *stand) openTermFixture(
 	return tf, nil
 }
 
-// termArmGate runs the formal arming gate against the fixture's own pty
-// capture (the house armGate: probe landing classifies delivery) and
-// refuses anything but window delivery — the rows type only into a proven
-// pane.
-func (s *stand) termArmGate(ctx context.Context, caseName string, tf *termFixture) error {
-	report, err := s.armGate(ctx, caseName, tf.ptyPath)
-	if err != nil {
-		return err
+// termArmGate is the rows' arming gate — BY THE DAEMON KEY-TRACE (the
+// plan's gate, never an AT-SPI witness): one boundary-free probe letter
+// typed and erased again (BackSpace is the venue-proven named key —
+// venue-mechanics 2026-10-12; the named Enter forms are NOT resolved by
+// this stand's ydotool and type their first letter instead, the run-3
+// finding). The self-erasing pair leaves the tty line buffer empty, so no
+// probe bytes ride into the row oracles. Window delivery itself is the
+// venue-probe fact (r1+r2, full channel) plus each row's own pty-hex
+// oracle — a broken delivery fails the row honestly.
+func (s *stand) termArmGate(ctx context.Context, caseName string) error {
+	base := s.countSub(keyTraceMark)
+	if err := s.injectText(ctx, "x"); err != nil {
+		return fmt.Errorf("%s: arming probe type: %w", caseName, err)
 	}
-	if report.outcome == armWindow {
-		return nil
-	}
-	if rerr := appendArmRow(secTermLive, caseName,
-		fmt.Sprintf("armGate probe (ydotool type %s + Enter)", armProbeText), report, tf.ptyPath); rerr != nil {
-		return rerr
+	if err := s.injectKeys(ctx, "BackSpace"); err != nil {
+		return fmt.Errorf("%s: arming probe erase: %w", caseName, err)
 	}
 
-	return fmt.Errorf("%s: %w (outcome %d, engine delta %d, tries %d)",
-		caseName, errTermArmNotWindow, report.outcome, report.engineDelta, report.tries)
+	return s.waitForNew(ctx, keyTraceMark, base+armProbeKeys, keyWait)
 }
 
 // termObserverRound warms the daemon's a11y observer path on a throwaway
@@ -214,12 +208,8 @@ func (s *stand) termObserverRound(ctx context.Context, caseName string) error {
 		return err
 	}
 	defer tf.close()
-	base := s.countSub(keyTraceMark)
-	if err := s.injectText(ctx, "x"); err != nil {
-		return fmt.Errorf("%s: observer probe: %w", caseName, err)
-	}
 
-	return s.waitForNew(ctx, keyTraceMark, base+observerProbeKeys, keyWait)
+	return s.termArmGate(ctx, caseName)
 }
 
 // termWordRound drives one manual word-correction round into the focused
@@ -289,7 +279,7 @@ func (s *stand) termWordRowCore(
 		return err
 	}
 	defer tf.close()
-	if err := s.termArmGate(ctx, caseName, tf); err != nil {
+	if err := s.termArmGate(ctx, caseName); err != nil {
 		return err
 	}
 	if err := s.termWordRound(ctx, caseName, text); err != nil {
@@ -322,7 +312,7 @@ func (s *stand) termRowClipFrozen(ctx context.Context, caseName string) error {
 		return err
 	}
 	defer tf.close()
-	if err := s.termArmGate(ctx, caseName, tf); err != nil {
+	if err := s.termArmGate(ctx, caseName); err != nil {
 		return err
 	}
 	if err := clipCopy(ctx, primarySentinelMark); err != nil {
