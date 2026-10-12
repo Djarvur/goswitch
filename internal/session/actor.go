@@ -247,6 +247,11 @@ type Actor struct {
 	// the pending round). A5 insurance: every transition logs one
 	// source-neutral INFO marker, word-free (D-20/D-21).
 	verifyDead bool
+	// detectCheck is the boundary's detector seam (plan 10-03): the
+	// indirection the veto corpus spies through — UseDetector installs a
+	// counting double, nil keeps the real detect.Check (the production
+	// wiring never touches the seam).
+	detectCheck func(tok []rune, mode string, data detect.Data, tri detect.Trigrams, params detect.Params) detect.Verdict
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -2343,14 +2348,7 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 		}
 	}
 	tok := a.buf.Token()
-	v := detect.Check(tok, a.modeSymbol(),
-		detect.Data{RU: layouts.DictRU, EN: layouts.DictEN},
-		detect.Trigrams{RU: layouts.TriRU, EN: layouts.TriEN},
-		detect.Params{
-			MinWordLen:    a.opts.AutoCorrectMinWordLen,
-			TrigramMargin: a.opts.AutoCorrectMargin,
-			TrigramFloor:  a.opts.AutoCorrectFloor,
-		})
+	v := a.detectVerdict(tok)
 	if !v.WrongLayout || !v.Confident {
 		// D-53 condition 4 (with the detector's own length gate): an unsure
 		// verdict, a dictionary veto or a short token stays untouched — the
@@ -2371,6 +2369,37 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 		word: tok,
 		app:  app,
 	}, true
+}
+
+// UseDetector installs a boundary detector double — the plan 10-03 spy
+// seam (the UseRole precedent): the veto corpus counts the calls through
+// it to prove the detector never runs on a terminal class and runs exactly
+// as before on a GTK class. nil restores the real detect.Check. The daemon
+// path never calls it.
+func (a *Actor) UseDetector(fn func(tok []rune, mode string, data detect.Data, tri detect.Trigrams, params detect.Params) detect.Verdict) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.detectCheck = fn
+}
+
+// detectVerdict runs the boundary's detector over the finished token — the
+// threshold plumbing and the seam indirection in one place (the boundary
+// stays under the complexity ceiling). A nil seam is the real detect.Check.
+func (a *Actor) detectVerdict(tok []rune) detect.Verdict {
+	check := a.detectCheck
+	if check == nil {
+		check = detect.Check
+	}
+
+	return check(tok, a.modeSymbol(),
+		detect.Data{RU: layouts.DictRU, EN: layouts.DictEN},
+		detect.Trigrams{RU: layouts.TriRU, EN: layouts.TriEN},
+		detect.Params{
+			MinWordLen:    a.opts.AutoCorrectMinWordLen,
+			TrigramMargin: a.opts.AutoCorrectMargin,
+			TrigramFloor:  a.opts.AutoCorrectFloor,
+		})
 }
 
 // refreshACBlocklist rebuilds the compiled blocklist cache only when the

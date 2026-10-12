@@ -16,6 +16,7 @@ import (
 	"github.com/Djarvur/goswitch/internal/clipboard"
 	"github.com/Djarvur/goswitch/internal/config"
 	"github.com/Djarvur/goswitch/internal/ctlsvc"
+	"github.com/Djarvur/goswitch/internal/detect"
 	"github.com/Djarvur/goswitch/internal/engine"
 	"github.com/Djarvur/goswitch/internal/hotkey"
 	"github.com/Djarvur/goswitch/internal/session"
@@ -5390,6 +5391,11 @@ const (
 	acReasonAppBlocked    = "app-blocked"
 	acReasonNoCaps        = "no-caps"
 	acReasonTrigramUnsure = "trigram-unsure"
+	// acReasonTerminalVeto is the plan 10-03 arming-veto slug (TERM-04,
+	// D-55): the terminal class refuses at the ARMING point, ahead of the
+	// detector. The literal is pinned here independently — the test greps
+	// the wire form, not the identifier.
+	acReasonTerminalVeto = "terminal-veto"
 )
 
 // acUnsureWord is the corpus's OOV token ("москва" typed in EN): a
@@ -5555,8 +5561,12 @@ func silenceMatrixCells() []struct {
 			role: &fakeRole{role: acRoleForbiddenEntry}, reason: acReasonRoleForbidden, async: true,
 		},
 		{
-			name: "role 60 terminal is forbidden", token: wordEN,
-			role: &fakeRole{role: acRoleForbiddenTerminal}, reason: acReasonRoleForbidden, async: true,
+			// The D-55 migration (Phase 10): the terminal verdict moved from
+			// the confirm's role switch to the ARMING point — role 60 now
+			// abstains synchronously with terminal-veto, ahead of the
+			// detector (the confirm switch stays as the second belt).
+			name: "role 60 terminal vetoes at arming", token: wordEN,
+			role: &fakeRole{role: acRoleForbiddenTerminal}, reason: acReasonTerminalVeto,
 		},
 		{
 			name: "role error is unknown", token: wordEN,
@@ -7070,4 +7080,150 @@ func TestTerminalClass_MarkerWordFree(t *testing.T) {
 			t.Errorf("the log leaked %q (D-20/D-21); log:\n%s", word, logged)
 		}
 	}
+}
+
+// The arming-veto corpus of plan 10-03 Task 2 (TERM-04/D-55, ROADMAP
+// criterion 5): the terminal class refuses at the ARMING point —
+// autoCorrectBoundary, after the blocklist segment, AHEAD of the detector
+// — from all three sources (role 60, correction.terminals, verify-dead),
+// independent of identity observability (fail-closed), with the confirm's
+// role switch untouched as the second belt.
+
+// fakeDetector is the boundary detector's test spy (the plan 10-03 seam,
+// UseDetector): it counts the calls and answers with the real Check — the
+// veto corpus proves the detector never runs on a terminal class and runs
+// exactly as before on a GTK class through the same counter.
+type fakeDetector struct {
+	mu    sync.Mutex
+	count int
+}
+
+// check counts one detector call and delegates to the real Check.
+func (f *fakeDetector) check(tok []rune, mode string, d detect.Data, tri detect.Trigrams, p detect.Params) detect.Verdict {
+	f.mu.Lock()
+	f.count++
+	f.mu.Unlock()
+
+	return detect.Check(tok, mode, d, tri, p)
+}
+
+// calls snapshots the counter.
+func (f *fakeDetector) calls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.count
+}
+
+// TestAutoCorrect_TerminalVetoBeforeDetector pins the D-55 placement: a
+// live terminal role 60 vetoes at the ARMING point — the detector is never
+// consulted (spy: zero calls), exactly one terminal-veto abstention is
+// counted, nothing is armed (the confirm never exists).
+func TestAutoCorrect_TerminalVetoBeforeDetector(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleForbiddenTerminal})
+	a.SetOptions(acOptions())
+	detector := &fakeDetector{}
+	a.UseDetector(detector.check)
+
+	boundaryWord(t, a, wordEN)
+
+	if got := detector.calls(); got != 0 {
+		t.Fatalf("detector calls on a terminal class = %d, want 0 — the veto precedes detect.Check (D-55)", got)
+	}
+	assertSilence(t, a, sink, acReasonTerminalVeto)
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("requires = %d, want 0 — a vetoed boundary never arms a verify round", got)
+	}
+}
+
+// TestAutoCorrect_TerminalVetoPatternMatch pins the configured-identity
+// source: an identity matching correction.terminals marks the context
+// terminal even with a text-role answer (61) — substring RE2 semantics,
+// the author anchors explicitly (the blocklist precedent).
+func TestAutoCorrect_TerminalVetoPatternMatch(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleAllowed}) // 61 — a text box, not a terminal by role
+	opts := acOptions()
+	opts.Terminals = []string{`^org\.gnome\.gedit`}
+	a.SetOptions(opts)
+
+	boundaryWord(t, a, wordEN)
+
+	assertSilence(t, a, sink, acReasonTerminalVeto)
+}
+
+// TestAutoCorrect_TerminalVetoIdentityUnobservable pins the fail-closed
+// core of the invariant (D-55 verbatim: the veto «не зависит от
+// наблюдаемости identity»): the identity is invisible (no a11y source, the
+// role source errors) and the behavioral verify-dead class alone — learned
+// on the manual round whose verify budget expired with the context alive —
+// vetoes the next arming.
+func TestAutoCorrect_TerminalVetoIdentityUnobservable(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+	a.UseRole(&fakeRole{err: errAppidBusDead})
+
+	// The teaching round: the layer is OFF — the manual Double's verify
+	// budget expires with the context alive, the class is learned.
+	teachVerifyDead(t, a, wordEN)
+	requiresAfterTeach := sink.requireCount()
+	// The separator clears the taught word while the layer is still off —
+	// the veto round must start from an honest single-word buffer.
+	a.HandleKey(spaceKey())
+
+	// The veto round: terminal class with ZERO observable identity.
+	a.SetOptions(acOptions())
+	boundaryWord(t, a, "cnhjrf")
+
+	assertSilence(t, a, sink, acReasonTerminalVeto)
+	if got := sink.requireCount(); got != requiresAfterTeach {
+		t.Errorf("requires = %d, want %d — the vetoed round never arms regardless of the class source",
+			got, requiresAfterTeach)
+	}
+}
+
+// TestAutoCorrect_TerminalVetoGTKUnchanged pins the byte-as-today side
+// (the veto adds one refusal, it moves nothing else): a GTK context —
+// role 61, no terminal patterns, live class — runs the detector exactly as
+// before the veto existed (one call) and the armed pipeline fires.
+func TestAutoCorrect_TerminalVetoGTKUnchanged(t *testing.T) {
+	a, _ := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	detector := &fakeDetector{}
+	a.UseDetector(detector.check)
+	a.UseRole(&fakeRole{role: acRoleAllowed})
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
+		"the GTK round never fired — the veto must not touch the healthy path")
+
+	if got := detector.calls(); got != 1 {
+		t.Errorf("detector calls on a GTK class = %d, want exactly 1 — the same count as before the veto existed", got)
+	}
+}
+
+// TestAutoCorrect_TerminalVetoSingleSlug pins the abstention accounting
+// (T-10-03-04): one vetoed arming counts exactly one terminal-veto record
+// — and because the vetoed boundary arms nothing, the confirm stage (whose
+// role-60 branch is the second belt) never exists to duplicate it.
+func TestAutoCorrect_TerminalVetoSingleSlug(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	a.UseRole(&fakeRole{role: acRoleForbiddenTerminal}) // the second belt would say role-forbidden — if it ran
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+
+	if got := sink.requireCount(); got != 0 {
+		t.Fatalf("requires = %d, want 0 — nothing armed, the confirm goroutine never exists", got)
+	}
+	if got := strings.Count(buf.String(), `"reason":"`+acReasonTerminalVeto+`"`); got != 1 {
+		t.Errorf("terminal-veto records = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+	assertSilence(t, a, sink, acReasonTerminalVeto)
 }
