@@ -249,3 +249,11 @@
 - НЕ доказано здесь (недоказуемо без владельца при клавиатурно-мёртвых фоновых окнах ядра 7.2.9-2-t2): флип печатью в реальном окне. Доказательство — обычная работа владельца в свежезапущенном wezterm (не тест-протокол).
 - Откат задокументирован: строка 78 → false, либо `apt-mark unhold wezterm-nightly && apt-get install wezterm=20240203-110809-5046fc22`.
 - Версия закреплена (`apt-mark hold`) — плавающие ежедневные ночники не меняют бинарник владельца без явного шага.
+
+## 2026-10-12 ~13:42-13:55 — Wave-0 площадка Фазы 10 (план 10-01): готовность стенда goswitch-stand, клавиатурная проба, вердикт площадки
+
+Площадка живых рядов 10-05/10-06. Проба оркестратора ~15:30 (дневник debug-файла) уже дала KEYBOARD_ALIVE=true; этот блок воспроизводит пробу собственными датированными строками и ставит вердикт площадки. Дисциплина: маркер армирования — ТОЛЬКО key-trace демона -debug (никогда AT-SPI-свидетель, Pitfall 7); корпус только синтетический (ghbdtn-класс), pty-артефакты tmp-only, в журнал — hex и счётчики.
+
+| Строка | Команда | Наблюдаемое | Вердикт |
+|---|---|---|---|
+| venue-ready 13:49 | `stand-env (/tmp/stand-env.sh: VM_ADDR=192.168.122.150, VM_USER=stand, VM_REPO=/home/stand/goswitch) + rsync + unit -debug` | goswitch-stand (стоковое ядро 6.8.0-142-generic): goswitchd — сборка рабочего дерева хоста 87908b0 — `systemctl --user is-active` = active, unit dist/systemd/user/goswitchd.service + drop-in stand-debug.conf (ExecStart=%h/go/bin/goswitchd -debug); компонент зарегистрирован (engines:2), глобальный движок переключён `ibus engine goswitch-en` (journal демона: engine created → focus_in → enable → caps 0x29); ydotool 0.1.8 + input-группа + /dev/uinput 0660 root:input (udev-правило 60-goswitch-stand-uinput.rules, запись открытием подтверждена); gnome-terminal (VTE) на месте; wl-clipboard 2.2.1-1build1 доставлен из архива Ubuntu 24.04; зеркало ~/goswitch = рабочее дерево хоста 87908b0 (rsync -a, исключения .git/.zcode/node_modules; stale .git удалён; MIRROR_BUILDS go1.27.1); спавн окон из ssh-сессии доходит до GNOME-сессии (WAYLAND_DISPLAY=wayland-0 + XDG_RUNTIME_DIR + DBUS bus: gnome-terminal pane-программа исполнилась, /tmp/spawn-check=ok); хостовый goswitchd владельца не тронут (0 рестартов юнита за окно задачи) | Verdict: стенд готов — внутренности доведены, зеркало актуально, оракул -debug активен |
