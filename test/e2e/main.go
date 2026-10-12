@@ -122,6 +122,7 @@ func caseListUsage() string {
 		" | spike-wezterm | spike-caps | wezterm-flip | term04-negative" +
 		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
 		" | autocorrect-blocklist-silent | menu-v2" +
+		" | term-word-vte" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -253,9 +254,31 @@ func runCaseWatchdog(
 }
 
 // pickCase resolves the case name through the registry; the registry is
-// built per call (no mutable globals).
+// built per call (no mutable globals) and lives in caseRegistry (the funlen
+// budget keeps the two apart).
 func pickCase(name string) (caseSpec, error) {
-	registry := map[string]caseSpec{
+	spec, ok := caseRegistry()[name]
+	if !ok {
+		return caseSpec{}, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
+			" d01-probe, chromium-smoke, gte-smoke, gedit-smoke, x11-smoke, word-en-ru,"+
+			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
+			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
+			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
+			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, flip-keystroke,"+
+			" spike-smoke, spike-wezterm, spike-caps, wezterm-flip, term04-negative,"+
+			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
+			" autocorrect-blocklist-silent, menu-v2,"+
+			" term-word-vte,"+
+			" install-cycle, perf, perf-autocorrect)", name)
+	}
+
+	return spec, nil
+}
+
+// caseRegistry is the case table of the stand (built per call — no mutable
+// globals).
+func caseRegistry() map[string]caseSpec {
+	return map[string]caseSpec{
 		"m1-gate":                      {fn: runM1Gate},
 		"ibus-restart":                 {fn: runIbusRestart},
 		"kill9-survive":                {fn: runKill9Survive},
@@ -296,25 +319,11 @@ func pickCase(name string) (caseSpec, error) {
 		"autocorrect-terminal-silent":  {fn: runAutocorrectTerminalSilent, watchdog: autocorrectWatchdog},
 		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
 		"menu-v2":                      {fn: runMenuV2},
+		"term-word-vte":                {fn: runTermWordVTE, watchdog: recipeWatchdog},
 		"install-cycle":                {fn: runInstallCycle, standalone: true},
 		"perf":                         {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
 		"perf-autocorrect":             {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
 	}
-	spec, ok := registry[name]
-	if !ok {
-		return caseSpec{}, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
-			" d01-probe, chromium-smoke, gte-smoke, gedit-smoke, x11-smoke, word-en-ru,"+
-			" word-after-space, word-ru-en, word-mixed, phrase-en-ru, phrase-mixed, ladder-chromium,"+
-			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
-			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
-			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, flip-keystroke,"+
-			" spike-smoke, spike-wezterm, spike-caps, wezterm-flip, term04-negative,"+
-			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
-			" autocorrect-blocklist-silent, menu-v2,"+
-			" install-cycle, perf, perf-autocorrect)", name)
-	}
-
-	return spec, nil
 }
 
 // setupStand builds the daemon, snapshots the desktop and starts the
