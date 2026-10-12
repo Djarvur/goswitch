@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
 status: executing
-stopped_at: Completed 10-04-PLAN.md
-last_updated: "2026-10-12T18:05:21.253Z"
+stopped_at: Completed 10-05-PLAN.md
+last_updated: "2026-10-12T20:10:34.585Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 10 execution started
-state_head: 193778e5113ea9b28ac6f30a190c7d067d75fcbd
+state_head: e8ad4db243770cc3961d6c6a17040391c7f4cfa0
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 ## Current Position
 
 Phase: 10 (TERM-слово) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-10-12 — Phase 10 execution started
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P02 | 28min | 3 tasks | 13 files |
 | Phase 10 P03 | 31min | 2 tasks | 2 files |
 | Phase 10 P04 | 39min | 3 tasks | 5 files |
+| Phase 10 P05 | 102min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - [Phase 10]: Терминальный класс — один шов classifyTerminal на двух потребителей: вето D-55 в точке армирования (после blocklist, до detect.Check) и терминальный конвейер 10-04; роль 60 запрашивается в момент решения под autoRoleTimeout, verify-dead учится на истёкшем verify-бюджете при живом контексте — План предписывал вето ДО детектора независимо от наблюдаемости identity; confirm-стадия де-факто держала ролевое решение с эпохи ADR-007 — перенос в autoCorrectBoundary делает инвариант буквальным, а confirm остаётся вторым поясом
 - [Phase 10]: Терминальная ветка записи: OQ 1 unified — весь терминальный класс (роль 60/паттерн/verify-dead) идёт в чанкированный level-2 (≤8, перечек ctxEpoch между чанками), pending-машина ADR-004 для терминалов не существует — Единый канал — буква TERM-02 и ADR-008 D3/D4; жертвуется работающий level-1 путь VTE: середина строки VTE защищается на уровне буфера, не поля; разъезд вето D-55 и конвейера записи невозможен (один шов classifyTerminal)
 - [Phase 10]: Середина строки — OQ 2 contract (D7): буфер-доверие только для флоу «набор сразу в позицию курсора», «стрелки → набор» вне защиты честно; poison-флаг и primary-read НЕ ставились, Primary остаётся примитивом без потребителя; граница зафиксирована в docs/CONFIG.md, амендмент ADR-008 — 10-06 — Вердикты владельца 2026-10-12 из checkpoint'а применены дословно; контрактная граница — не настраиваемый режим: отдельного выключателя нет
+- [Phase 10]: A2 ответен живым рядом 10-05: тесный бурст ForwardKeyEvent+CommitText переставляется в VTE (форварды стоят в GDK-очереди клиента, коммит синхронен; живой hex «ghbdtn»→«ghприв») — executeLevel2 пакирован (sleep 20ms перед каждой эмиссией), wire-порядок и чанк-геометрия не тронуты, после фикса ряды байт-точные
+- [Phase 10]: Наблюдатель a11y демона регистрирует собственный интерес в at-spi реестре (RegisterEvent Object:state-changed) — мосты GTK эмитят фокус-события только при живой регистрации (0→153 StateChanged в живой пробе); raw bus match слеп на голом столе, отказ регистрации честно валит Start
 
 ### Pending Todos
 
@@ -103,8 +106,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T18:05:21.217Z
-Stopped at: Completed 10-04-PLAN.md
+Last session: 2026-10-12T20:10:27.854Z
+Stopped at: Completed 10-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
