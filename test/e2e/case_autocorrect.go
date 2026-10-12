@@ -187,7 +187,13 @@ func startAutocorrectConfigDaemon(ctx context.Context, s *stand, doc string) err
 		}
 	}
 
-	return s.activateGoswitch(ctx)
+	// The retry form (the activateGoswitchRetry discipline): on the VM
+	// stand the fresh daemon re-creates its engine for beats after the
+	// readiness marks, and a single-shot SetGlobalEngine races it —
+	// "Operation was cancelled" (the term-negative-witnesses live finding,
+	// 2026-10-12). A transient failure retries instead of failing the
+	// spawn ladder.
+	return s.activateGoswitchRetry(ctx)
 }
 
 // startPasswordFixture spawns the GTK4 fixture (a stand-owned surface —
