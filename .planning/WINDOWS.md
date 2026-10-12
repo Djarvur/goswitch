@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 3
+open_count: 5
 waived_count: 4
 fixed_count: 7
-total_count: 14
-last_updated: 2026-10-12T15:31:24.063Z
+total_count: 16
+last_updated: 2026-10-12T18:02:30.777Z
 ---
 
 # Broken Windows Ledger
@@ -29,6 +29,8 @@ last_updated: 2026-10-12T15:31:24.063Z
 | 12 | 05 | unmet-truth | test/e2e/cases/matrix-v3.yaml |  | plan 05-05: word-mixed + phrase-mixed rows expect a correction ACROSS a flip boundary — under ADR-006 the two-source flip churns FocusOut/FocusIn and the designed context reset (05-CONTEXT: «переключение раскладки сбрасывает контекст») drops the pre-flip buffer; the daemon then corrects only the post-flip word (word-mixed: buffer привет → wholesale ru→en → gfbghbdtn; phrase-mixed → ghbdtn ghbdtn). Rows frozen (v3, CASES-FROZEN); the owner owns the verdict at the phase verify gate: either the rows re-shape to the reset semantics (new plan) or the reset semantics get revisited (architectural) | fixed |  | 2026-09-30T00:21:32.095Z | 2026-10-08T10:39:18.940Z |
 | 13 | 06 | unrun-verify | test/e2e/cases/matrix-v4.yaml |  | plan 06-07: full mise run e2e-matrix-v4 green NOT achieved on this session — first-key-after-mode-flip session drift (each row typing right after a SetGlobalEngine flip loses exactly one leading char/mode record); control experiment: pre-phase-6 tree d96dcb2 fails BYTE-IDENTICALLY (/tmp/matrix-v3-oldtree.log, worktree /tmp/goswitch-0505) — environmental, phase-6 diff exonerated; autocorrect rows (fires/off/oov) green x2 and all three live cases green; formal fresh-session D-48 double-run rides plan 06-08 (checkpoint accept & defer 2026-10-02). 06-08 verdict (2026-10-02): drift CONFIRMED REAL and STICKY — the formal back-to-back double-run on the relogged-in session (ages 2h03m/2h08m) went 23/35 and 24/35 with the SAME row set (9 drift rows byte-similar to 06-07, +1 ibus-activation transient in run 1); autocorrect rows and word/phrase manual-contract carriers green x2 in the same runs (3rd independent exoneration of the phase diff); NEW diagnostic: the drift SURVIVES 'ibus restart' (24/35, identical set — /tmp/06-08-matrix-post-ibus-restart.log) — not the documented-cure class, lives in the login state; the formal <=30-min fresh_session=true gate (docs/ci-runner.md) remains the owner's machine-checked instrument at verify-work; ADR-007 Acceptance Evidence row 5 carries the full record | open |  | 2026-10-02T18:01:54.918Z |  |
 | 14 | 10 | deviation | internal/session/actor_test.go | 5557 | Silence-matrix role-60 cell migrated to the arming expectation (terminal-veto, sync) — the D-55 semantic move the plan mandates; the confirm role switch stays as the second belt | open |  | 2026-10-12T15:31:24.063Z |  |
+| 15 | 10 | deviation | internal/session/actor_test.go | 6945 | Plan 10-04 (OQ 1 unified): TestTerminalClass_VerifyDeadLearnedOnVerifyTimeout second half migrated — a LEARNED verify-dead context routes the next Double through the terminal write branch, so a second verify expiry is unreachable; marker discipline (no transition, no marker) preserved | open |  | 2026-10-12T18:02:30.083Z |  |
+| 16 | 10 | deviation | internal/session/actor.go | 2970 | Plan 10-04 Task 2 acceptance partial: the D-24 instant-done changed=false INFO is unreachable by behavior test — ConvertRuns provably never returns changed=false (runs.go doctrine, WINDOWS-2 owner verdict), the branch stays defensive; the discriminator is planted in the same form as logCorrectionDone, changed=true is behaviorally pinned | open |  | 2026-10-12T18:02:30.777Z |  |
 
 ````json
 [
@@ -198,6 +200,30 @@ last_updated: 2026-10-12T15:31:24.063Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-12T15:31:24.063Z",
+    "resolved_at": null
+  },
+  {
+    "id": 15,
+    "kind": "deviation",
+    "phase": "10",
+    "file": "internal/session/actor_test.go",
+    "line": 6945,
+    "description": "Plan 10-04 (OQ 1 unified): TestTerminalClass_VerifyDeadLearnedOnVerifyTimeout second half migrated — a LEARNED verify-dead context routes the next Double through the terminal write branch, so a second verify expiry is unreachable; marker discipline (no transition, no marker) preserved",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-12T18:02:30.083Z",
+    "resolved_at": null
+  },
+  {
+    "id": 16,
+    "kind": "deviation",
+    "phase": "10",
+    "file": "internal/session/actor.go",
+    "line": 2970,
+    "description": "Plan 10-04 Task 2 acceptance partial: the D-24 instant-done changed=false INFO is unreachable by behavior test — ConvertRuns provably never returns changed=false (runs.go doctrine, WINDOWS-2 owner verdict), the branch stays defensive; the discriminator is planted in the same form as logCorrectionDone, changed=true is behaviorally pinned",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-12T18:02:30.777Z",
     "resolved_at": null
   }
 ]

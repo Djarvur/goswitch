@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
 status: executing
-stopped_at: Completed 10-03-PLAN.md
-last_updated: "2026-10-12T15:33:44.573Z"
+stopped_at: Completed 10-04-PLAN.md
+last_updated: "2026-10-12T18:05:21.253Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 10 execution started
-state_head: c7fcd518623f29320e9eb761a569eb07402b825a
+state_head: 193778e5113ea9b28ac6f30a190c7d067d75fcbd
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 ## Current Position
 
 Phase: 10 (TERM-слово) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-10-12 — Phase 10 execution started
 
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P01 | 37min | 3 tasks | 1 files |
 | Phase 10 P02 | 28min | 3 tasks | 13 files |
 | Phase 10 P03 | 31min | 2 tasks | 2 files |
+| Phase 10 P04 | 39min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,8 @@ Recent decisions affecting current work:
 - [Phase 09]: Вето автокоррекции в терминалах живёт в точке армирования (роль AT-SPI 60, проверка ДО детектора), не в apps_blocklist; двухразрешительная модель и транспорт терминалов закреплены SPEC rev D-55 в §4.3/§4.4/§5/§7.2/§11 — Спека прежде кода (D-55); формулировка через blocklist противоречила бы D-53 «blocklist не может исключить невидимое»; TERM-04 инвариант дословно из 09-RESEARCH
 - [Phase 09]: ADR-008 «Терминальный транспорт» создан Proposed: D1–D7 с пустыми Evidence-ячейками-плейсхолдерами журнала adr-008-spike-log.md; заполняет только живой спайк (09-02), Accepted ставит 09-03 — Anti-Pattern «фикс из issue-tracker'а»: апстрим-факты (20240203 последний тег, ловушки #5125/#1772/#4615) упомянуты без веб-ссылок; grep-гейт отсутствия ссылок зелёный
 - [Phase 10]: Терминальный класс — один шов classifyTerminal на двух потребителей: вето D-55 в точке армирования (после blocklist, до detect.Check) и терминальный конвейер 10-04; роль 60 запрашивается в момент решения под autoRoleTimeout, verify-dead учится на истёкшем verify-бюджете при живом контексте — План предписывал вето ДО детектора независимо от наблюдаемости identity; confirm-стадия де-факто держала ролевое решение с эпохи ADR-007 — перенос в autoCorrectBoundary делает инвариант буквальным, а confirm остаётся вторым поясом
+- [Phase 10]: Терминальная ветка записи: OQ 1 unified — весь терминальный класс (роль 60/паттерн/verify-dead) идёт в чанкированный level-2 (≤8, перечек ctxEpoch между чанками), pending-машина ADR-004 для терминалов не существует — Единый канал — буква TERM-02 и ADR-008 D3/D4; жертвуется работающий level-1 путь VTE: середина строки VTE защищается на уровне буфера, не поля; разъезд вето D-55 и конвейера записи невозможен (один шов classifyTerminal)
+- [Phase 10]: Середина строки — OQ 2 contract (D7): буфер-доверие только для флоу «набор сразу в позицию курсора», «стрелки → набор» вне защиты честно; poison-флаг и primary-read НЕ ставились, Primary остаётся примитивом без потребителя; граница зафиксирована в docs/CONFIG.md, амендмент ADR-008 — 10-06 — Вердикты владельца 2026-10-12 из checkpoint'а применены дословно; контрактная граница — не настраиваемый режим: отдельного выключателя нет
 
 ### Pending Todos
 
@@ -100,8 +103,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T15:33:31.525Z
-Stopped at: Completed 10-03-PLAN.md
+Last session: 2026-10-12T18:05:21.217Z
+Stopped at: Completed 10-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
