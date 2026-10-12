@@ -818,21 +818,29 @@ func runAutocorrectTerminalSilent(ctx context.Context, s *stand) error {
 	if err != nil {
 		return err
 	}
+	// The control's engagement gate is the daemon focus_in above the spawn
+	// baseline — the unified observation layer's only reliable focus signal
+	// (the AT-SPI witness is pinned to gnome-shell globally, the
+	// 2026-10-11 finding; the 10-05 venue re-pin burned its whole budget on
+	// it and the hand-over note prescribed daemon focus_in gates). The
+	// delivery proof itself stays with the control's key-trace floor below.
+	focusBase := s.focusBaseline()
 	if err := s.startZenity(ctx); err != nil {
 		return err
 	}
 	defer s.reapZenity()
-	if err := s.waitZenityEntry(ctx); err != nil {
+	if err := s.waitFocusInFrom(ctx, caseName, "zenity control", focusBase); err != nil {
 		return err
 	}
 	if err := s.acControlKeystroke(ctx, caseName); err != nil {
 		return err
 	}
+	wezFocusBase := s.focusBaseline()
 	if err := s.startWezterm(ctx); err != nil {
 		return err
 	}
 	defer s.closeWezterm()
-	if err := s.acWaitWeztermFocus(ctx, caseName); err != nil {
+	if err := s.acWaitWeztermFocus(ctx, caseName, wezFocusBase); err != nil {
 		return err
 	}
 	if err := s.acTerminalOracle(ctx, ctlBin, caseName); err != nil {
@@ -858,37 +866,16 @@ func (s *stand) acControlKeystroke(ctx context.Context, caseName string) error {
 	return nil
 }
 
-// acWaitWeztermFocus is the focus proof: the witness must stop naming our
-// zenity (stale AT-SPI FOCUSED bits clear within beats — the 02-06
-// lesson) — a blind injection into an unknown surface is forbidden. The
-// deadline rides the manual-activation budget (2026-10-09/10 protocol:
-// the owner's click is the only working focus grant on the drifted
-// session — the 5 s automation-era budget cannot contain a human click).
-func (s *stand) acWaitWeztermFocus(ctx context.Context, caseName string) error {
-	deadline := time.Now().Add(spikeClickWait)
-	notes := newNoteGate()
-	for {
-		witness, werr := s.focusWitness(ctx)
-		if werr != nil {
-			return werr
-		}
-		if !strings.HasPrefix(witness, "zenity:") {
-			fmt.Printf("%s: witness %q — wezterm is off the a11y bus, the negative witness is the expected actual\n",
-				caseName, witness)
-
-			break
-		}
-		_ = notes.due()
-		if time.Now().After(deadline) {
-			return fmt.Errorf("%s: our zenity still holds focus — the terminal did not take it (witness %q)",
-				caseName, witness)
-		}
-		if err := sleepCtx(ctx, witnessPoll); err != nil {
-			return err
-		}
-	}
-
-	return nil
+// acWaitWeztermFocus is the focus proof: a fresh daemon focus_in above the
+// spawn baseline — the terminal engaged the engine (a blind injection into
+// an unknown surface is forbidden). The form is the unified observation
+// layer's gate (waitFocusInFrom): the AT-SPI witness this proof rode
+// before is pinned to gnome-shell globally (the 2026-10-11 finding — on
+// the drifted session it passed TRIVIALLY, never proving the terminal took
+// focus; the 10-05 hand-over note prescribed daemon focus_in gates), and
+// the manual-activation deadline budget is preserved by the same helper.
+func (s *stand) acWaitWeztermFocus(ctx context.Context, caseName string, focusBase int) error {
+	return s.waitFocusInFrom(ctx, caseName, "wezterm negative surface", focusBase)
 }
 
 // acTerminalOracle runs the terminal round's oracle set: after the settle
