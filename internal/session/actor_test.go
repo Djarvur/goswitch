@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -7228,4 +7229,269 @@ func TestAutoCorrect_TerminalVetoSingleSlug(t *testing.T) {
 		t.Errorf("terminal-veto records = %d, want exactly 1; log:\n%s", got, buf.String())
 	}
 	assertSilence(t, a, sink, acReasonTerminalVeto)
+}
+
+// The terminal write-branch corpus of plan 10-04 (TERM-02, ROADMAP
+// criterion 4): the terminal class routes to its OWN write branch at
+// startRangeCorrection — before the caps fork, no pending fix, no
+// RequireSurroundingText, no app verification (ADR-004 never answers
+// here) — and the shared level-2 burst is CHUNKED: at most 8 BackSpace
+// forwards per chunk, a context re-check between chunks, ONE commit at
+// the end. The abort is free before the first BackSpace.
+
+// termWord20 is the 20-rune convertible token of the chunk matrix
+// (wordEN ×3 + "gh") and its wholesale EN→RU conversion — 20 backspaces
+// the chunk ceiling splits 8+8+4.
+var (
+	termWord20          = strings.Repeat(wordEN, 3) + "gh"
+	termWord20Converted = strings.Repeat(wordRU, 3) + "пр"
+)
+
+// termChunkKeys is the chunk ceiling of the terminal write branch — the
+// production constant under test (the corpus mirrors it in termChunkOps).
+const termChunkKeys = 8
+
+// termChunkOps builds the exact unified op-log of a chunked terminal
+// correction: chunks of at most 8 BackSpace forwards, then the single
+// replacement commit.
+func termChunkOps(total int, commit string) []string {
+	ops := make([]string, 0, total+1)
+	for sent := 0; sent < total; {
+		chunk := min(termChunkKeys, total-sent)
+		for range chunk {
+			ops = append(ops, backSpaceOp())
+		}
+		sent += chunk
+	}
+
+	return append(ops, "commit("+commit+")")
+}
+
+// teachTerminalClass prepares a verify-dead context and leaves the buffer
+// empty — the deterministic terminal-class setup the routing corpus drives
+// (the teaching round's verify budget expires with the context alive).
+func teachTerminalClass(t *testing.T, a *session.Actor) {
+	t.Helper()
+	teachVerifyDead(t, a, wordEN)
+	a.HandleKey(spaceKey())
+}
+
+// TestTerminalBranch_RoutesChunkedNoPending pins the routing and the burst
+// shape: a verify-dead context with the surrounding-text bit ANNOUNCED (the
+// wezterm signature) skips the pending machine entirely — zero new
+// RequireSurroundingText calls, zero deletions — and the 20-rune token
+// replays as exactly 20 BackSpace forwards in 8+8+4 chunks with ONE commit,
+// the done INFO carrying the changed=true discriminator (D-24).
+func TestTerminalBranch_RoutesChunkedNoPending(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor() // the surrounding-text bit is SET — the class routes, not the bit
+	teachTerminalClass(t, a)
+	requiresBefore := sink.requireCount()
+
+	typeWord(a, termWord20)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != requiresBefore {
+		t.Fatalf("RequireSurroundingText calls = %d, want %d — the terminal branch never arms the pending machine", got, requiresBefore)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("deletions = %+v, want 0 — the terminal replay is BackSpace-only", calls)
+	}
+	want := termChunkOps(len([]rune(termWord20)), termWord20Converted)
+	if got := sink.opLog(); !slices.Equal(got, want) {
+		t.Fatalf("op log = %q, want the exact 8+8+4 chunk shape %q", got, want)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done","changed":true`) {
+		t.Errorf("the done INFO lost the changed=true discriminator (D-24); log:\n%s", buf.String())
+	}
+}
+
+// TestTerminalBranch_VTERoleUnifiedChunks pins the owner verdict OQ 1
+// «unified»: a role-60 context goes through the SAME terminal write branch
+// — the working level-1 path with app verification is deliberately
+// sacrificed, the unified channel is chunked level-2 for BOTH terminal
+// classes.
+func TestTerminalBranch_VTERoleUnifiedChunks(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseRole(&fakeRole{role: acRoleForbiddenTerminal})
+
+	typeWord(a, termWord20)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 0 {
+		t.Fatalf("RequireSurroundingText calls = %d, want 0 — unified routing: no pending machine for a role-60 context", got)
+	}
+	want := termChunkOps(len([]rune(termWord20)), termWord20Converted)
+	if got := sink.opLog(); !slices.Equal(got, want) {
+		t.Fatalf("op log = %q, want the exact 8+8+4 chunk shape %q", got, want)
+	}
+}
+
+// TestTerminalBranch_FocusLossBetweenChunksStops pins the criterion-4 stop:
+// a FocusOut landing between chunks (the forward hook plays the real
+// lifecycle callback, which serializes on the actor mutex and can only be
+// observed in the chunk-boundary window) stops the round — the forwards end
+// on a chunk boundary, the commit NEVER fires, and the INFO boundary
+// records the stop without any completion or repair.
+func TestTerminalBranch_FocusLossBetweenChunksStops(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+
+	typeWord(a, termWord20)
+	var landed sync.Once
+	sent := atomic.Int32{}
+	sink.forwardHook = func(forwardCall) {
+		if sent.Add(1) == termChunkKeys {
+			landed.Do(func() { go a.HandleLifecycle(engine.LifecycleFocusOut) })
+		}
+	}
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	forwards := sink.forwardCalls()
+	if n := len(forwards); n == 0 || n >= len([]rune(termWord20)) || n%termChunkKeys != 0 {
+		t.Fatalf("forwards = %d, want a non-empty multiple of %d strictly below %d — the burst must stop on a chunk boundary", n, termChunkKeys, len([]rune(termWord20)))
+	}
+	for i, c := range forwards {
+		if c != backSpaceWireCall() {
+			t.Fatalf("forward[%d] = %+v, want a bare BackSpace replay", i, c)
+		}
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("commits = %q, want none — a focus-lost round is never completed", texts)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("deletions = %+v, want none", calls)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"context-changed"`) {
+		t.Errorf("the round-stop INFO boundary is missing; log:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), `"outcome":"done"`) {
+		t.Errorf("a stopped round logged a done outcome; log:\n%s", buf.String())
+	}
+}
+
+// TestTerminalBranch_FreeAbortBeforeBurst pins the free abort: every
+// refusal that can happen before the first BackSpace — empty-buffer,
+// convert-failed, no-engine, the D-27 cap — leaves the field untouched:
+// zero forwards, the skipCorrection branches unchanged.
+func TestTerminalBranch_FreeAbortBeforeBurst(t *testing.T) {
+	t.Run("empty-buffer", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		tapShift(a) // no word — the Double finds an empty buffer
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Errorf("forwards on an empty buffer = %d, want 0", got)
+		}
+		if !strings.Contains(buf.String(), `"reason":"empty-buffer"`) {
+			t.Errorf("empty-buffer skip record missing; log:\n%s", buf.String())
+		}
+	})
+
+	t.Run("convert-failed", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+
+		// The phrase path carries the unmappable letter: «é» has no key
+		// position, so the word stretch stops before it — but the Triple's
+		// phrase is the whole buffer, and ConvertRuns refuses it wholesale
+		// (T-03-01-03: no partial conversion ever leaks).
+		typeWord(a, wordEN+"é")
+		tapShift(a)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Errorf("forwards on an unmappable phrase = %d, want 0", got)
+		}
+		if !strings.Contains(buf.String(), `"reason":"convert-failed"`) {
+			t.Errorf("convert-failed skip record missing; log:\n%s", buf.String())
+		}
+	})
+
+	t.Run("no-engine", func(t *testing.T) {
+		buf := captureLogs(t)
+		a := session.NewActor(farWindow)
+		a.HandleCapabilities(engine.CapSurroundingText) // no engine minted
+
+		typeWord(a, wordEN)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if !strings.Contains(buf.String(), `"reason":"no-engine"`) {
+			t.Errorf("no-engine skip record missing; log:\n%s", buf.String())
+		}
+	})
+
+	t.Run("backspace-cap", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, sink := wiredActor()
+		teachTerminalClass(t, a)
+		a.SetOptions(session.Options{BackspaceCap: 5}) // the 6-rune word exceeds the cap
+
+		typeWord(a, wordEN)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+
+		if got := len(sink.forwardCalls()); got != 0 {
+			t.Errorf("forwards on a capped replay = %d, want 0 — D-27 refuses before the burst", got)
+		}
+		if !strings.Contains(buf.String(), `"reason":"backspace-cap"`) {
+			t.Errorf("backspace-cap skip record missing; log:\n%s", buf.String())
+		}
+	})
+}
+
+// TestTerminalBranch_LegacyNoCapsChunkedToo pins the shared write path: a
+// legacy client WITHOUT the surrounding-text bit keeps its immediate
+// no-verification level-2 correction (the ADR-004 degradation, byte as
+// today) — and the chunking applies to it too, the same executeLevel2.
+func TestTerminalBranch_LegacyNoCapsChunkedToo(t *testing.T) {
+	a, sink := wiredActorCaps(engine.CapPreeditText) // no CapSurroundingText, no terminal class
+	legacyWord := strings.Repeat(wordEN, 2)          // 12 runes — two chunks
+
+	typeWord(a, legacyWord)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("requires = %d, want 0 — the legacy path stays verification-free", got)
+	}
+	want := termChunkOps(len([]rune(legacyWord)), strings.Repeat(wordRU, 2))
+	if got := sink.opLog(); !slices.Equal(got, want) {
+		t.Fatalf("op log = %q, want the chunked legacy burst %q", got, want)
+	}
+}
+
+// TestTerminalBranch_TailRidesReplay pins the D-13 invariant on the
+// terminal replay: the table-less tail (the space) is deleted with the
+// token and recommitted AS TYPED — BuildPlan untouched, «ghbdtn » still
+// becomes «привет » through the chunked branch.
+func TestTerminalBranch_TailRidesReplay(t *testing.T) {
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+
+	typeWord(a, wordEN+" ")
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	want := termChunkOps(len(wordEN)+1, wordRU+" ")
+	if got := sink.opLog(); !slices.Equal(got, want) {
+		t.Fatalf("op log = %q, want the token+tail replay %q", got, want)
+	}
 }
