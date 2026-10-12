@@ -39,6 +39,14 @@ const (
 	stateChanged  = "StateChanged"
 	getRoleMethod = "org.a11y.atspi.Accessible.GetRole"
 	signalBufSize = 16
+
+	// The at-spi registry — the object the event interest registers with
+	// (the 2026-10-12 stand fix): the application bridges consult the
+	// registry's registered-event list and emit signals ONLY while some
+	// listener holds a matching registration.
+	a11yRegistryName   = "org.a11y.atspi.Registry"
+	a11yRegistryPath   = "/org/a11y/atspi/registry"
+	eventStateInterest = "Object:state-changed"
 )
 
 // ErrBusClosed reports that the observer's a11y bus connection went away —
@@ -292,4 +300,11 @@ func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
 			}
 		}
 	}
+}
+
+// registerEventInterest announces the observer's interest in the
+// state-changed events to the at-spi registry — the RED-phase stub; the
+// implementation lands with theGREEN step of the 2026-10-12 stand fix.
+func registerEventInterest(_ dbus.BusObject, _ string) error {
+	return nil
 }
