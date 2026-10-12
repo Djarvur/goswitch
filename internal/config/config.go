@@ -89,12 +89,19 @@ type Timeouts struct {
 }
 
 // Correction carries the replacement-ladder parameters: the D-27 Backspace
-// series cap, the D-28 opt-in clipboard rung and the post-correction script
-// flip switch (owner decision 2, quick plan 260927-vu8).
+// series cap, the D-28 opt-in clipboard rung, the post-correction script
+// flip switch (owner decision 2, quick plan 260927-vu8) and the terminal
+// class of Phase 10 (TERM-02/D-55): anchored RE2 identity patterns naming
+// the terminal applications. The zero value (an absent key) is the old
+// behavior — the D-54 precedent; the consumer is the classification seam of
+// plan 10-03 (the «configured identity» source of the terminal veto), and
+// the list is capped like every identity list (the maxAutocorrectBlocklist
+// precedent).
 type Correction struct {
-	BackspaceCap        int  `yaml:"backspace_cap"`
-	ClipboardRung       bool `yaml:"clipboard_rung"`
-	FlipAfterCorrection bool `yaml:"flip_after_correction"`
+	BackspaceCap        int      `yaml:"backspace_cap"`
+	ClipboardRung       bool     `yaml:"clipboard_rung"`
+	FlipAfterCorrection bool     `yaml:"flip_after_correction"`
+	Terminals           []string `yaml:"terminals"`
 }
 
 // MACR is the Super→Ctrl remapping layer (ADR-005): a global switch, the

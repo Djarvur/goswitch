@@ -31,6 +31,9 @@ const (
 	// fieldAutoCorrectBlocklist is the D-53 revision's blocklist key.
 	fieldAutoCorrectBlocklist = "autocorrect.apps_blocklist"
 
+	// fieldCorrectionTerminals is the terminal-class key of plan 10-02.
+	fieldCorrectionTerminals = "correction.terminals"
+
 	// appGedit is the corpus's bridge-namespace example app.
 	appGedit = "org.gnome.Gedit"
 
@@ -818,4 +821,152 @@ func TestLoad_ModeSwitchChord(t *testing.T) {
 			t.Errorf("error %q does not name the field %q", err, fieldChord)
 		}
 	})
+}
+
+// terminalsDocYAML renders the complete document with the given YAML body
+// spliced into the correction section as the terminals list — the
+// decode corpus's template (the chordDocYAML idiom: full document, one key
+// under test).
+func terminalsDocYAML(list string) string {
+	return strings.Replace(chordDocYAML(defChord),
+		"correction:\n  backspace_cap: 50",
+		"correction:\n  terminals:\n"+list+"  backspace_cap: 50",
+		1,
+	)
+}
+
+// termAnchor is the corpus's terminal identity pattern (the D-53
+// anchoring discipline: substring RE2 with explicit ^…$ anchoring).
+const termAnchor = `^org\.gnome\.Terminal$`
+
+// TestCorrection_TerminalsDecode pins the decode surface of the
+// terminal-class key (plan 10-02, the D-55 classification seam): a document
+// WITHOUT the key decodes to the nil zero value — the old behavior
+// byte-for-byte (the D-54 precedent) — and a document WITH the list decodes
+// it through the strict KnownFields decoder.
+func TestCorrection_TerminalsDecode(t *testing.T) {
+	t.Parallel()
+
+	t.Run("document without the key decodes to nil", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := config.Load(writeConfig(t, chordDocYAML(defChord)))
+		if err != nil {
+			t.Fatalf("Load(document without terminals): %v", err)
+		}
+		if cfg.Correction.Terminals != nil {
+			t.Errorf("Correction.Terminals = %v, want nil — zero-value is the old behavior (D-54)", cfg.Correction.Terminals)
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Validate(document without terminals) = %v, want nil", err)
+		}
+	})
+
+	t.Run("valid list decodes", func(t *testing.T) {
+		t.Parallel()
+
+		doc := terminalsDocYAML("    - '" + termAnchor + "'\n    - '^com\\.wezterm$'\n")
+		cfg, err := config.Load(writeConfig(t, doc))
+		if err != nil {
+			t.Fatalf("Load(document with terminals): %v", err)
+		}
+		want := []string{termAnchor, `^com\.wezterm$`}
+		if !slices.Equal(cfg.Correction.Terminals, want) {
+			t.Errorf("Correction.Terminals = %v, want %v", cfg.Correction.Terminals, want)
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Validate(document with terminals) = %v, want nil", err)
+		}
+	})
+}
+
+// TestValidate_CorrectionTerminals pins the terminal-class grammar
+// (plan 10-02, the D-53 precedents): anchored RE2 patterns compile at Load,
+// a broken pattern rejects the whole config with the field AND the element
+// index named, an empty or blank pattern is refused before the compile
+// attempt (it would match everything), and the 64-entry ceiling bites
+// unconditionally (the DoS guard of every identity list).
+func TestValidate_CorrectionTerminals(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid anchored patterns accepted", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := validDoc()
+		cfg.Correction.Terminals = []string{termAnchor, acBlockSubstr}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("valid terminal patterns rejected: %v", err)
+		}
+	})
+
+	t.Run("boundary: 64 entries validate", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := validDoc()
+		cfg.Correction.Terminals = make([]string, 64)
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("64 terminal patterns rejected: %v", err)
+		}
+	})
+
+	t.Run("broken regexp rejected with field and index", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := validDoc()
+		cfg.Correction.Terminals = []string{termAnchor, "["}
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("broken terminal pattern accepted, want a whole-config rejection")
+		}
+		if !strings.Contains(err.Error(), fieldCorrectionTerminals) || !strings.Contains(err.Error(), "[1]") {
+			t.Errorf("error %q does not name %q and the element index [1]", err, fieldCorrectionTerminals)
+		}
+	})
+
+	t.Run("empty and blank patterns rejected", func(t *testing.T) {
+		t.Parallel()
+
+		for _, pattern := range []string{"", "   "} {
+			cfg := validDoc()
+			cfg.Correction.Terminals = []string{termAnchor, pattern}
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("blank terminal pattern %q accepted, want a whole-config rejection", pattern)
+			}
+			if !strings.Contains(err.Error(), fieldCorrectionTerminals) || !strings.Contains(err.Error(), "[1]") {
+				t.Errorf("error %q does not name %q and the element index [1]", err, fieldCorrectionTerminals)
+			}
+			if !strings.Contains(err.Error(), "matches everything") {
+				t.Errorf("error %q does not cite the empty-pattern trap", err)
+			}
+		}
+	})
+
+	t.Run("ceiling: 65 entries rejected", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := validDoc()
+		cfg.Correction.Terminals = make([]string, 65)
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("65 terminal patterns accepted, want a whole-config rejection")
+		}
+		if !strings.Contains(err.Error(), fieldCorrectionTerminals) || !strings.Contains(err.Error(), "64") {
+			t.Errorf("error %q does not name %q and the 64-entry limit", err, fieldCorrectionTerminals)
+		}
+	})
+}
+
+// TestDefaults_CorrectionTerminalsNil pins the default shape: Defaults()
+// does NOT include the key — the owner's existing document stays
+// byte-compatible and the zero value reads as the old behavior (D-54).
+func TestDefaults_CorrectionTerminalsNil(t *testing.T) {
+	t.Parallel()
+
+	if got := config.Defaults().Correction.Terminals; got != nil {
+		t.Errorf("Defaults().Correction.Terminals = %v, want nil (zero-value = off, D-54)", got)
+	}
+	if err := config.Defaults().Validate(); err != nil {
+		t.Errorf("Defaults() does not validate with the terminals shape: %v", err)
+	}
 }

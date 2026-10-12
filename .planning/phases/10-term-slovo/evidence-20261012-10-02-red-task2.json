@@ -1,0 +1,7 @@
+{
+  "command": "mise exec -- go test ./internal/config/ -run TestCorrection_Terminals -race -count=1 -v (run: TestCorrection_Terminals|TestValidate_CorrectionTerminals|TestDefaults_CorrectionTerminalsNil)",
+  "exitCode": 1,
+  "output": "ok 1 - TestDefaults_CorrectionTerminalsNil\nnot ok 2 - TestValidate_CorrectionTerminals\nnot ok 3 - TestValidate_CorrectionTerminals/ceiling:_65_entries_rejected\nok 4 - TestValidate_CorrectionTerminals/boundary:_64_entries_validate\nnot ok 5 - TestValidate_CorrectionTerminals/empty_and_blank_patterns_rejected\nok 6 - TestValidate_CorrectionTerminals/valid_anchored_patterns_accepted\nnot ok 7 - TestValidate_CorrectionTerminals/broken_regexp_rejected_with_field_and_index\nok 8 - TestCorrection_TerminalsDecode\nok 9 - TestCorrection_TerminalsDecode/document_without_the_key_decodes_to_nil\nok 10 - TestCorrection_TerminalsDecode/valid_list_decodes\n# tests 10\n# pass 6\n# fail 4",
+  "targetTest": "TestValidate_CorrectionTerminals",
+  "targetFile": "internal/config/config_test.go"
+}
