@@ -367,7 +367,7 @@ func startTerm04Daemon(ctx context.Context, s *stand, caseName string) error {
 	}
 	fmt.Printf("%s: awaiting the component name release (budget %v) before the spawn\n",
 		caseName, daemonReleaseWait)
-	if err := awaitNameFree(ctx, daemonReleaseWait, "before the stand daemon spawn"); err != nil {
+	if err := awaitNameFree(ctx, "before the stand daemon spawn"); err != nil {
 		return err
 	}
 	cfgPath := filepath.Join(s.tmpDir, "autocorrect.yaml")

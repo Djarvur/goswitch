@@ -63,14 +63,18 @@ type config struct {
 // caseSpec is one registry entry: the case body plus the stand-shape flag.
 // standalone cases (install-cycle) run WITHOUT the stand daemon — the
 // single-instance ctlsvc name and the IBus registration belong to the
-// daemon the case itself installs as a systemd unit. A non-zero watchdog
-// overrides the default case deadline (perf: N × its repeat budget —
-// raised, never removed: a live-session stand must never strand the
-// owner's desktop).
+// daemon the case itself installs as a systemd unit. noSurfacePreflight
+// skips the chromium/gte/gedit launch checks (the matrixPreflight
+// philosophy: the surface drivers prove their binaries inside the cases
+// that use them — a terminal-only case on a stand without those binaries
+// must not fail their preflight). A non-zero watchdog overrides the default
+// case deadline (perf: N × its repeat budget — raised, never removed: a
+// live-session stand must never strand the owner's desktop).
 type caseSpec struct {
-	fn         func(context.Context, *stand) error
-	standalone bool
-	watchdog   time.Duration
+	fn                 func(context.Context, *stand) error
+	standalone         bool
+	noSurfacePreflight bool
+	watchdog           time.Duration
 }
 
 // desktopSnapshot is the live-desktop state the teardown restores.
@@ -186,7 +190,7 @@ func run() (exit int) {
 		}
 	}()
 
-	if err := preflight(ctx, s); err != nil {
+	if err := preflight(ctx, s, spec.noSurfacePreflight); err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
 		return 1
@@ -319,7 +323,7 @@ func caseRegistry() map[string]caseSpec {
 		"autocorrect-terminal-silent":  {fn: runAutocorrectTerminalSilent, watchdog: autocorrectWatchdog},
 		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
 		"menu-v2":                      {fn: runMenuV2},
-		"term-word-vte":                {fn: runTermWordVTE, watchdog: recipeWatchdog},
+		"term-word-vte":                {fn: runTermWordVTE, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"install-cycle":                {fn: runInstallCycle, standalone: true},
 		"perf":                         {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
 		"perf-autocorrect":             {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
@@ -514,11 +518,18 @@ func (s *stand) waitDaemonExit() {
 // spawn died with "another goswitchd instance already registered" and the
 // preflight burned its whole budget on a dead daemon).
 func (s *stand) startSetupDaemon(ctx context.Context) error {
+	// The unit snapshot rides BEFORE the stale-reap: on the VM stand the
+	// unit daemon itself runs -debug (the 10-01 oracle drop-in), so the
+	// pgrep below matches it — a snapshot taken after the reap would read
+	// "inactive" and the teardown would silently skip the restore (the
+	// first term-word-vte run left the stand unit down, live finding
+	// 2026-10-12). On a host whose unit is not -debug the order is
+	// byte-equivalent.
+	unit := unitState(ctx)
+	s.unitWasActive = unit == unitActiveState
 	if err := stopStaleStandDaemon(ctx); err != nil {
 		return err
 	}
-	unit := unitState(ctx)
-	s.unitWasActive = unit == unitActiveState
 	if s.unitWasActive {
 		fmt.Printf("stand setup: the user unit goswitchd is active — stopping it (restored at teardown)\n")
 		if _, err := runCmd(ctx, "systemctl", "--user", "stop", "goswitchd"); err != nil {
@@ -527,7 +538,7 @@ func (s *stand) startSetupDaemon(ctx context.Context) error {
 	}
 	fmt.Printf("stand setup: awaiting the component name release (budget %v) before the spawn\n",
 		daemonReleaseWait)
-	if err := awaitNameFree(ctx, daemonReleaseWait, "before the setup daemon spawn"); err != nil {
+	if err := awaitNameFree(ctx, "before the setup daemon spawn"); err != nil {
 		return err
 	}
 
@@ -723,12 +734,13 @@ func stopStaleStandDaemonWith(ctx context.Context, grace time.Duration) error {
 }
 
 // awaitNameFree blocks until the component's well-known name is claimable —
-// the non-destructive DoNotQueue probe of waitNameFree with a caller-set
-// budget (the spike cases' patient replacement for the fixed 15 s budget
-// the slow-releasing previous daemon outlived). The start half of the
-// lifecycle: after this returns nil, the spawn cannot lose a name race.
-func awaitNameFree(ctx context.Context, budget time.Duration, why string) error {
-	deadline := time.Now().Add(budget)
+// the non-destructive DoNotQueue probe of waitNameFree under the generous
+// daemonReleaseWait budget (the spike cases' patient replacement for the
+// fixed 15 s budget the slow-releasing previous daemon outlived). The
+// start half of the lifecycle: after this returns nil, the spawn cannot
+// lose a name race.
+func awaitNameFree(ctx context.Context, why string) error {
+	deadline := time.Now().Add(daemonReleaseWait)
 	restarted := false
 	for {
 		// Re-discover on every iteration: an ibus restart (below) mints a
@@ -768,7 +780,7 @@ func awaitNameFree(ctx context.Context, budget time.Duration, why string) error 
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("%s still held after %v (%s) — the previous holder has not released the component name",
-				goswitchComponentName, budget, why)
+				goswitchComponentName, daemonReleaseWait, why)
 		}
 		if err := sleepCtx(ctx, logPollInterval); err != nil {
 			return err

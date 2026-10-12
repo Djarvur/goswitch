@@ -30,7 +30,10 @@ const registrationWait = 30 * time.Second
 // human can act on before the stand exits 1. Standalone cases (no stand
 // daemon — install-cycle) run the environment core only: the daemon-bound
 // and surface-driver checks presuppose the stand's own daemon/surfaces.
-func preflight(ctx context.Context, s *stand) error {
+// skipSurfaces additionally drops the chromium/gte/gedit launch checks —
+// the matrixPreflight philosophy (the surface drivers prove their binaries
+// inside the cases that use them).
+func preflight(ctx context.Context, s *stand, skipSurfaces bool) error {
 	type check struct {
 		name string
 		run  func(context.Context, *stand) error
@@ -45,10 +48,14 @@ func preflight(ctx context.Context, s *stand) error {
 		checks = append(checks,
 			check{"engine-registered", checkEngineRegistered},
 			check{"daemon-log-heartbeat", checkLogHeartbeat},
-			check{"chromium-launch", checkChromiumLaunch},
-			check{"gnome-text-editor-launch", checkGnomeTextEditorLaunch},
-			check{"gedit-launch", checkGeditLaunch},
 		)
+		if !skipSurfaces {
+			checks = append(checks,
+				check{"chromium-launch", checkChromiumLaunch},
+				check{"gnome-text-editor-launch", checkGnomeTextEditorLaunch},
+				check{"gedit-launch", checkGeditLaunch},
+			)
+		}
 	}
 	for _, c := range checks {
 		if err := c.run(ctx, s); err != nil {

@@ -228,7 +228,7 @@ func startSpikeDaemon(ctx context.Context, s *stand, caseName string) (string, e
 	}
 	fmt.Printf("%s: awaiting the component name release (budget %v) before the spawn\n",
 		caseName, daemonReleaseWait)
-	if err := awaitNameFree(ctx, daemonReleaseWait, "before the stand daemon spawn"); err != nil {
+	if err := awaitNameFree(ctx, "before the stand daemon spawn"); err != nil {
 		return "", fmt.Errorf("%s: %w", caseName, err)
 	}
 	if err := s.startDaemonRegistered(ctx); err != nil {
