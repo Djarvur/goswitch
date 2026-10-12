@@ -106,7 +106,17 @@ func (c *Clipboard) Save(ctx context.Context) (saved []byte, had bool, err error
 // outside the actor's mutex, never under it (the runClipboardRung
 // precedent, actor.go) — and bounded by the same cmdTimeout.
 func (c *Clipboard) Primary(ctx context.Context) (saved []byte, had bool, err error) {
-	return nil, false, nil // RED scaffold of plan 10-02: the wire arrives with GREEN
+	out, err := c.call(ctx, binPaste, []string{flagPrimary, flagNoNewline}, nil)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 && ctx.Err() == nil {
+			return nil, false, nil // wl-paste's genuine empty-selection exit
+		}
+
+		return nil, false, fmt.Errorf("clipboard primary: %w", err)
+	}
+
+	return out, true, nil
 }
 
 // Set puts content into the clipboard: the bytes travel through the
