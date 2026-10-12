@@ -169,3 +169,7 @@ None - no external service configuration required. (Стенд самодост�
 ---
 *Phase: 10-term-slovo*
 *Completed: 2026-10-12*
+
+## Self-Check: PASSED
+
+SUMMARY exists; commits d7539e9 / 61dc503 / cc2e2d8 verified in git log; final metadata commit 3786d37; ledger recount 4 commits from plan base 87908b0.
