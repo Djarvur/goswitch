@@ -7099,7 +7099,9 @@ type fakeDetector struct {
 }
 
 // check counts one detector call and delegates to the real Check.
-func (f *fakeDetector) check(tok []rune, mode string, d detect.Data, tri detect.Trigrams, p detect.Params) detect.Verdict {
+func (f *fakeDetector) check(
+	tok []rune, mode string, d detect.Data, tri detect.Trigrams, p detect.Params,
+) detect.Verdict {
 	f.mu.Lock()
 	f.count++
 	f.mu.Unlock()

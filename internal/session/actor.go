@@ -79,10 +79,13 @@ const autoRoleTimeout = 25 * time.Millisecond
 // internal/appid (gi Atspi 2.52.0, 06-RESEARCH Q4). password-text (40),
 // terminal (60) and every other value refuse. The gate compares NUMBERS
 // only: role-name strings localize ("text box" vs the gi-nick "text").
+// acRoleTerminal is the terminal class of the D-55 veto (Phase 10) — the
+// first source of the classification seam (internal/appid RoleTerminal).
 const (
 	acRoleText         uint32 = 61
 	acRoleEntry        uint32 = 79
 	acRoleDocumentText uint32 = 94
+	acRoleTerminal     uint32 = 60
 )
 
 // The autocorrect abstention vocabulary (plan 06-06, D-53 fail-closed):
@@ -102,6 +105,10 @@ const (
 	acReasonRoleTimeout     = "role-timeout"
 	acReasonRecheckDisabled = "recheck-disabled"
 	acReasonPayloadStale    = "payload-stale"
+	// acReasonTerminalVeto is the arming veto of the terminal class
+	// (Phase 10, TERM-04/D-55): the boundary refuses before the detector
+	// runs — the invariant's literal placement, never the blocklist.
+	acReasonTerminalVeto = "terminal-veto"
 )
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
@@ -251,7 +258,7 @@ type Actor struct {
 	// indirection the veto corpus spies through — UseDetector installs a
 	// counting double, nil keeps the real detect.Check (the production
 	// wiring never touches the seam).
-	detectCheck func(tok []rune, mode string, data detect.Data, tri detect.Trigrams, params detect.Params) detect.Verdict
+	detectCheck detectorFunc
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -601,6 +608,13 @@ type RoleSource interface {
 	Role(ctx context.Context) (uint32, error)
 }
 
+// detectorFunc is the boundary detector's signature — the named type of
+// the plan 10-03 spy seam (the RoleCall precedent of internal/appid): one
+// Check over the finished token with the baked dictionaries and thresholds.
+type detectorFunc func(
+	tok []rune, mode string, data detect.Data, tri detect.Trigrams, params detect.Params,
+) detect.Verdict
+
 // UseRole installs a prepared role source — the wiring/test seam of the
 // D-53 role contour (the UseAppid mirror). The daemon path never calls it:
 // the observer arrives through ensureAppid's lazy start and the RoleSource
@@ -610,6 +624,18 @@ func (a *Actor) UseRole(rs RoleSource) {
 	defer a.mu.Unlock()
 
 	a.role = rs
+}
+
+// UseDetector installs a boundary detector double — the plan 10-03 spy
+// seam (the UseRole precedent): the veto corpus counts the calls through
+// it to prove the detector never runs on a terminal class and runs exactly
+// as before on a GTK class. nil restores the real detect.Check. The daemon
+// path never calls it.
+func (a *Actor) UseDetector(fn detectorFunc) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.detectCheck = fn
 }
 
 // SetVersion pins the daemon's build identity into the status snapshot
@@ -2347,6 +2373,19 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 			}
 		}
 	}
+	// The D-55 terminal veto (TERM-04, the invariant's literal placement):
+	// the terminal class is checked at the ARMING point, ahead of the
+	// detector — a terminal context never arms the automatic layer. The
+	// class does not depend on identity observability (fail-closed: the
+	// behavioral verify-dead source alone vetoes an invisible context),
+	// and it deliberately does NOT live in the blocklist — a blocklist
+	// cannot exclude the invisible (wezterm is outside the a11y bus). The
+	// confirm's role switch below stays as the second belt, untouched.
+	if a.classifyTerminal() {
+		a.recordACAbstain(acReasonTerminalVeto)
+
+		return acPayload{}, false
+	}
 	tok := a.buf.Token()
 	v := a.detectVerdict(tok)
 	if !v.WrongLayout || !v.Confident {
@@ -2371,16 +2410,59 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 	}, true
 }
 
-// UseDetector installs a boundary detector double — the plan 10-03 spy
-// seam (the UseRole precedent): the veto corpus counts the calls through
-// it to prove the detector never runs on a terminal class and runs exactly
-// as before on a GTK class. nil restores the real detect.Check. The daemon
-// path never calls it.
-func (a *Actor) UseDetector(fn func(tok []rune, mode string, data detect.Data, tri detect.Trigrams, params detect.Params) detect.Verdict) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+// classifyTerminal answers the one question both consumers of the
+// terminal class share — the arming veto (autoCorrectBoundary, plan 10-03)
+// and the terminal write pipeline (plan 10-04): is this input context a
+// terminal? One seam, three sources, cheap-to-expensive (RESEARCH
+// Pattern 1):
+//
+//  1. the behavioral verify-dead class — a verify round of this context
+//     expired by budget while the context lived (learned in VerifyExpiry,
+//     cleared by HandleLifecycle); it needs no identity at all;
+//  2. the document's terminal identity patterns (correction.terminals) —
+//     substring RE2 against the observable identity; an invisible identity
+//     answers nothing from this source (the quiet norm, not an error);
+//  3. the live AT-SPI terminal role 60, queried at the decision moment
+//     through the RoleSource under the autoRoleTimeout deadline — the
+//     T-10-03-03 wedge guard: a stuck a11y object costs the same bounded
+//     budget the confirm already pays, never an unbounded stall. A role
+//     ERROR answers "not terminal" here — the confirm's role-unknown
+//     discipline stays the authority on an unusable source.
+//
+// The caller holds the mutex.
+func (a *Actor) classifyTerminal() bool {
+	if a.verifyDead {
+		return true
+	}
+	if app, known := a.acFocusedApp(); known && a.matchACTerminal(app) {
+		return true
+	}
+	if rs := a.role; rs != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), autoRoleTimeout)
+		defer cancel()
+		role, err := rs.Role(ctx)
+		if err == nil && role == acRoleTerminal {
+			return true
+		}
+		if err != nil {
+			a.warnACRole(err)
+		}
+	}
 
-	a.detectCheck = fn
+	return false
+}
+
+// matchACTerminal reports whether the identity matches any compiled
+// terminal-class pattern (substring RE2 — the blocklist semantics, the
+// author anchors). The caller holds the mutex.
+func (a *Actor) matchACTerminal(app string) bool {
+	for _, re := range a.acTerminals {
+		if re.MatchString(app) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // detectVerdict runs the boundary's detector over the finished token — the
