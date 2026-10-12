@@ -18,7 +18,7 @@ affects: [10-02, 10-03, 10-04, 10-05, 10-06, phase-11-menu]
 actuals:
   tokens: 2399          # chars/4 over the journal diff 87908b0..HEAD (plan carried estimate 35000)
   tasks: 3
-  commits: 3            # MEASURED: git rev-list --count gsd-plan-head-before-10-01..HEAD
+  commits: 5            # MEASURED: git rev-list --count gsd-plan-head-before-10-01..HEAD (3 task + metadata + self-check)
 
 # Tech tracking
 tech-stack:
@@ -172,4 +172,4 @@ None - no external service configuration required. (Стенд самодост�
 
 ## Self-Check: PASSED
 
-SUMMARY exists; commits d7539e9 / 61dc503 / cc2e2d8 verified in git log; final metadata commit 3786d37; ledger recount 4 commits from plan base 87908b0.
+SUMMARY exists; commits d7539e9 / 61dc503 / cc2e2d8 verified in git log; final metadata commit 3786d37 + self-check sync 54801b4; ledger recount 5 commits from plan base 87908b0.
