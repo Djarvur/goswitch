@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
-status: executing
-stopped_at: Completed 10-05-PLAN.md
-last_updated: "2026-10-12T20:10:34.585Z"
+status: verifying
+stopped_at: Completed 10-06-PLAN.md
+last_updated: "2026-10-12T21:30:51.124Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 10 execution started
-state_head: e8ad4db243770cc3961d6c6a17040391c7f4cfa0
+state_head: c3b436a7ab2aecc6b297fcd2675e1f98592a5c33
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 10
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 
 Phase: 10 (TERM-слово) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-12 — Phase 10 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P03 | 31min | 2 tasks | 2 files |
 | Phase 10 P04 | 39min | 3 tasks | 5 files |
 | Phase 10 P05 | 102min | 3 tasks | 12 files |
+| Phase 10 P06 | 67min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -106,8 +107,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T20:10:27.854Z
-Stopped at: Completed 10-05-PLAN.md
+Last session: 2026-10-12T21:30:51.085Z
+Stopped at: Completed 10-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

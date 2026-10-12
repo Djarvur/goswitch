@@ -10,7 +10,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### TERM — Терминалы
 
 - [ ] **TERM-01**: Переключение раскладки работает в wezterm (ежедневный терминал владельца). Живой спайк подтверждает первопричину (гипотеза: `enable_wayland = false` → wezterm как XWayland/XIM-клиент, флип движка не меняет его X-keymap — переключение структурно невидимо); фикс — рецепт нативного Wayland-режима в конфиге wezterm или демонский обход; приёмка — два подряд зелёных оракула в e2e.
-- [ ] **TERM-02**: Пользователь может исправить слово не в той раскладке жестом (двойной правый Shift) в wezterm и GNOME Terminal. Чтение — собственный буфер нажатий демона (VTE) / primary-выделение (wezterm, рецепт CopyMode); запись — N×BackSpace-реплей + `commit_text` через канал IBus (не внешний инжектор, не paste), с безопасной точкой отмены до первого разрушающего действия и verify-сверкой.
+- [x] **TERM-02**: Пользователь может исправить слово не в той раскладке жестом (двойной правый Shift) в wezterm и GNOME Terminal. Чтение — собственный буфер нажатий демона (VTE) / primary-выделение (wezterm, рецепт CopyMode); запись — N×BackSpace-реплей + `commit_text` через канал IBus (не внешний инжектор, не paste), с безопасной точкой отмены до первого разрушающего действия и verify-сверкой.
 - [ ] **TERM-03**: Пользователь может исправить всю набранную строку/фразу в терминале (растяжка). Feasibility-gated спайком: в VTE нет выделения с клавиатуры (VTE-исходник) — если примитив захвата строки недоступен, область честно сужается до wezterm; вердикт о сужении — за владельцем.
 - [ ] **TERM-04**: Автокоррекция в терминалах никогда не срабатывает (инвариант). Вето закрепляется spec-delta (не через apps_blocklist) + замороженные негативные ряды e2e-матрицы; терминал = команды, ошибка автокоррекции недопустима.
 
@@ -49,7 +49,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | TERM-01 | Phase 9 | Pending |
 | TERM-04 | Phase 9 | Pending |
-| TERM-02 | Phase 10 | Pending |
+| TERM-02 | Phase 10 | Complete |
 | MENU-01 | Phase 11 | Pending |
 | TERM-03 | Phase 12 | Pending |
 | A11Y-01 | Phase 13 | Pending |
@@ -57,6 +57,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | A11Y-03 | Phase 13 | Pending |
 
 **Coverage:**
+
 - v1.2 requirements: 8 total
 - Mapped to phases: 8
 - Unmapped: 0 ✓ (роадмап от 2026-10-08: фазы 9-13)
