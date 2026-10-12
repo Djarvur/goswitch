@@ -855,7 +855,8 @@ func TestCorrection_TerminalsDecode(t *testing.T) {
 			t.Fatalf("Load(document without terminals): %v", err)
 		}
 		if cfg.Correction.Terminals != nil {
-			t.Errorf("Correction.Terminals = %v, want nil — zero-value is the old behavior (D-54)", cfg.Correction.Terminals)
+			t.Errorf("Correction.Terminals = %v, want nil — zero-value is the old behavior (D-54)",
+				cfg.Correction.Terminals)
 		}
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("Validate(document without terminals) = %v, want nil", err)
@@ -880,13 +881,10 @@ func TestCorrection_TerminalsDecode(t *testing.T) {
 	})
 }
 
-// TestValidate_CorrectionTerminals pins the terminal-class grammar
-// (plan 10-02, the D-53 precedents): anchored RE2 patterns compile at Load,
-// a broken pattern rejects the whole config with the field AND the element
-// index named, an empty or blank pattern is refused before the compile
-// attempt (it would match everything), and the 64-entry ceiling bites
-// unconditionally (the DoS guard of every identity list).
-func TestValidate_CorrectionTerminals(t *testing.T) {
+// TestValidate_CorrectionTerminals pins the accepted shapes of the
+// terminal-class grammar (plan 10-02, the D-53 precedents): anchored RE2
+// patterns compile at Load and the 64-entry ceiling is inclusive.
+func TestValidate_CorrectionTerminalsAccepted(t *testing.T) {
 	t.Parallel()
 
 	t.Run("valid anchored patterns accepted", func(t *testing.T) {
@@ -903,11 +901,25 @@ func TestValidate_CorrectionTerminals(t *testing.T) {
 		t.Parallel()
 
 		cfg := validDoc()
-		cfg.Correction.Terminals = make([]string, 64)
+		patterns := make([]string, 64)
+		for i := range patterns {
+			patterns[i] = termAnchor // duplicates carry no meaning — the list is a set of refusals
+		}
+		cfg.Correction.Terminals = patterns
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("64 terminal patterns rejected: %v", err)
 		}
 	})
+}
+
+// TestValidate_CorrectionTerminals pins the refusal shapes of the
+// terminal-class grammar (plan 10-02, the D-53 precedents): a broken
+// pattern rejects the whole config with the field AND the element index
+// named, an empty or blank pattern is refused before the compile attempt
+// (it would match everything), and the 64-entry ceiling bites
+// unconditionally (the DoS guard of every identity list).
+func TestValidate_CorrectionTerminals(t *testing.T) {
+	t.Parallel()
 
 	t.Run("broken regexp rejected with field and index", func(t *testing.T) {
 		t.Parallel()

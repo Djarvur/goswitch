@@ -28,6 +28,11 @@ const (
 	maxAutocorrectBlocklist = 64
 	minAutocorrectWordLen   = 2
 	maxAutocorrectWordLen   = 16
+
+	// maxCorrectionTerminals caps the terminal-class identity list
+	// (plan 10-02) — the same DoS guard as every identity list
+	// (the maxAutocorrectBlocklist / maxMACRApps precedent).
+	maxCorrectionTerminals = 64
 )
 
 // The documented default values (config_schema): the tap window is
@@ -63,6 +68,10 @@ var (
 	errAutocorrectBlocklistEmpty    = errors.New("must not be empty or blank — an empty pattern matches everything")
 	errAutocorrectMinWordLenRange   = errors.New("must be in [2, 16]")
 	errAutocorrectThresholdRange    = errors.New("must be positive, with trigram_margin >= trigram_floor")
+
+	errCorrectionTerminalsOverCeil = errors.New("entries, at most 64 allowed")
+	errCorrectionTerminalsRegex    = errors.New("must be a valid regular expression")
+	errCorrectionTerminalsEmpty    = errors.New("must not be empty or blank — an empty pattern matches everything")
 )
 
 // altModifierCandidates is the closed set of alternative MACR modifiers
@@ -359,13 +368,33 @@ func (t Timeouts) validate() error {
 }
 
 // validate enforces the Backspace series cap range (D-27: the ladder's
-// destructive series is bounded).
+// destructive series is bounded) and the terminal-class grammar
+// (plan 10-02, the D-53 precedents): the identity list is capped
+// unconditionally — a giant list is a DoS vector even while no consumer
+// reads it (T-10-02-01) — and every pattern is compiled here, the only
+// place a broken regex is visible before runtime; an empty or blank
+// pattern is refused before the compile attempt (an empty string is a
+// VALID RE2 that matches everything — the silent match-everything trap).
 func (c Correction) validate() error {
 	if c.BackspaceCap < minBackspaceCap || c.BackspaceCap > maxBackspaceCap {
 		return fmt.Errorf(
 			"correction.backspace_cap = %d: %w",
 			c.BackspaceCap, errBackspaceCapRange,
 		)
+	}
+	if len(c.Terminals) > maxCorrectionTerminals {
+		return fmt.Errorf(
+			"correction.terminals has %d %w",
+			len(c.Terminals), errCorrectionTerminalsOverCeil,
+		)
+	}
+	for i, pattern := range c.Terminals {
+		if strings.TrimSpace(pattern) == "" {
+			return fmt.Errorf("correction.terminals[%d] %q: %w", i, pattern, errCorrectionTerminalsEmpty)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("correction.terminals[%d] = %q: %w", i, pattern, errCorrectionTerminalsRegex)
+		}
 	}
 
 	return nil
