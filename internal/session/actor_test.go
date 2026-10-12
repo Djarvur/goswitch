@@ -538,6 +538,42 @@ func TestActor_AfterSpaceCorrects(t *testing.T) {
 	}
 }
 
+// TestActor_DoubleTapPunctuationStretch pins the convertible stretch end to
+// end (SPEC §4.2, plan 10-02): a word typed with its trailing table
+// punctuation («ytn?») corrects WHOLE on the GTK cached-push path — one
+// DeleteSurroundingText over the 4-rune stretch (not the 3-rune token) and
+// one CommitText of «нет,». «нет?» — the punctuation riding the tail as
+// typed — is the defect this pins out.
+func TestActor_DoubleTapPunctuationStretch(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	const typed = "ytn?"
+	for i, r := range typed {
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r)})
+		a.HandleSurroundingText(typed[:i+1], uint32(i+1), uint32(i+1)) // the client's spontaneous push
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Release: true})
+	}
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.requireCount(); got != 1 {
+		t.Errorf("require calls = %d, want exactly 1 — the verify-after round, never a pre-correction one", got)
+	}
+	calls := sink.deleteCalls()
+	if len(calls) != 1 || calls[0] != (deleteCall{offset: -4, nchars: 4}) {
+		t.Fatalf("deletions = %+v, want exactly one (-4,4) — the whole stretch, not the 3-rune token", calls)
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != "нет," {
+		t.Fatalf("commits = %q, want exactly one %q — «ytn?» corrects to «нет,», never «нет?»", texts, "нет,")
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done"`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
 // TestActor_ToggleRepeat pins the ReplaceToken toggle invariant through the
 // whole pipeline: after a successful correction the buffer holds the
 // converted word, so a repeated double tap converts it BACK — the field
