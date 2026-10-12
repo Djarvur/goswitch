@@ -15,7 +15,7 @@ const (
 	stretchHeadPunc = "(ytn"     // the head side: an opening bracket joins the run
 	stretchHeadRU   = "(нет"     // and converts with it
 	stretchMixPunc  = "gфb?"     // a MIXED-script run with table punctuation
-	stretchMixOut   = "паи?"     // mixed semantics: punctuation rides AS TYPED
+	stretchMixOut   = "пaи?"     // mixed semantics: punctuation rides AS TYPED («a» is the LATIN image of «ф»)
 	stretchRuns2026 = "ytn?2026" // digits stay members across the extended run
 )
 
@@ -31,17 +31,20 @@ func TestConvertibleStretch_WordWithPunctuation(t *testing.T) {
 	b := correct.NewBuffer()
 	push(b, stretchENPunct)
 	if got := string(b.ConvertibleStretch()); got != stretchENPunct {
-		t.Fatalf("ConvertibleStretch() = %q, want %q — the trailing «?» carries a table position (ENToRU[?] = ',')", got, stretchENPunct)
+		t.Fatalf("ConvertibleStretch() = %q, want %q — the trailing «?» carries a table position",
+			got, stretchENPunct)
 	}
 	if got := string(b.StretchTail()); got != "" {
 		t.Fatalf("StretchTail() = %q, want empty — the run ends at the buffer end", got)
 	}
 	out, changed, ok := correct.ConvertRuns(b.ConvertibleStretch())
 	if !ok || !changed {
-		t.Fatalf("ConvertRuns(%q) = (%q, changed=%v, ok=%v), want a wholesale conversion", stretchENPunct, string(out), changed, ok)
+		t.Fatalf("ConvertRuns(%q) = (%q, changed=%v, ok=%v), want a wholesale conversion",
+			stretchENPunct, string(out), changed, ok)
 	}
 	if string(out) != stretchRUPunct {
-		t.Fatalf("ConvertRuns(%q) = %q, want %q — «ytn?» converts whole, never «нет?»", stretchENPunct, string(out), stretchRUPunct)
+		t.Fatalf("ConvertRuns(%q) = %q, want %q — «ytn?» converts whole, never «нет?»",
+			stretchENPunct, string(out), stretchRUPunct)
 	}
 }
 
@@ -90,7 +93,8 @@ func TestConvertibleStretch_HeadSidePunctuation(t *testing.T) {
 		t.Fatalf("ConvertRuns(%q) = ok=%v changed=%v, want a wholesale conversion", stretchHeadPunc, ok, changed)
 	}
 	if string(out) != stretchHeadRU {
-		t.Fatalf("ConvertRuns(%q) = %q, want %q — the bracket converts with the word", stretchHeadPunc, string(out), stretchHeadRU)
+		t.Fatalf("ConvertRuns(%q) = %q, want %q — the bracket converts with the word",
+			stretchHeadPunc, string(out), stretchHeadRU)
 	}
 }
 
@@ -111,7 +115,8 @@ func TestConvertibleStretch_DigitsRemainMembers(t *testing.T) {
 		}
 		out, changed, ok := correct.ConvertRuns(b.ConvertibleStretch())
 		if !ok || !changed || string(out) != wordRU+"2026" {
-			t.Fatalf("ConvertRuns(%q) = (%q, %v, %v), want (%q, true, true)", wordENDigits, string(out), changed, ok, wordRU+"2026")
+			t.Fatalf("ConvertRuns(%q) = (%q, %v, %v), want (%q, true, true)",
+				wordENDigits, string(out), changed, ok, wordRU+"2026")
 		}
 	})
 
@@ -120,11 +125,13 @@ func TestConvertibleStretch_DigitsRemainMembers(t *testing.T) {
 		b := correct.NewBuffer()
 		push(b, stretchRuns2026)
 		if got := string(b.ConvertibleStretch()); got != stretchRuns2026 {
-			t.Fatalf("ConvertibleStretch() = %q, want %q — «?2026» joins through the table punctuation", got, stretchRuns2026)
+			t.Fatalf("ConvertibleStretch() = %q, want %q — «?2026» joins through the table punctuation",
+				got, stretchRuns2026)
 		}
 		out, changed, ok := correct.ConvertRuns(b.ConvertibleStretch())
 		if !ok || !changed || string(out) != stretchRUPunct+"2026" {
-			t.Fatalf("ConvertRuns(%q) = (%q, %v, %v), want (%q, true, true)", stretchRuns2026, string(out), changed, ok, stretchRUPunct+"2026")
+			t.Fatalf("ConvertRuns(%q) = (%q, %v, %v), want (%q, true, true)",
+				stretchRuns2026, string(out), changed, ok, stretchRUPunct+"2026")
 		}
 	})
 }
@@ -147,7 +154,8 @@ func TestConvertibleStretch_MixedPunctRidesAsTyped(t *testing.T) {
 		t.Fatalf("ConvertRuns(%q) = ok=%v changed=%v, want a mixed conversion", stretchMixPunc, ok, changed)
 	}
 	if string(out) != stretchMixOut {
-		t.Fatalf("ConvertRuns(%q) = %q, want %q — mixed semantics: the «?» rides as typed", stretchMixPunc, string(out), stretchMixOut)
+		t.Fatalf("ConvertRuns(%q) = %q, want %q — mixed semantics: the «?» rides as typed",
+			stretchMixPunc, string(out), stretchMixOut)
 	}
 }
 
@@ -216,6 +224,7 @@ func TestConvertibleStretch_ReplaceStretchCoversRun(t *testing.T) {
 	}
 	back, ok := correct.Convert(b.Token(), dir)
 	if !ok || string(back) != stretchENPunct {
-		t.Errorf("Convert(corrected run) = (%q, %v), want (%q, true) — the toggle round-trips", string(back), ok, stretchENPunct)
+		t.Errorf("Convert(corrected run) = (%q, %v), want (%q, true) — the toggle round-trips",
+			string(back), ok, stretchENPunct)
 	}
 }

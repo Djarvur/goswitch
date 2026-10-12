@@ -2618,8 +2618,12 @@ func (a *Actor) modeSwitchChord(ev engine.EngineEvent) bool {
 // startCorrection launches the correction of the Double decision: with an
 // active selection in the last surrounding push the range is that selection
 // (CORR-03, D-30 — the selection takes precedence over the buffer, whatever
-// the buffer holds); otherwise the WORD path of Phase 2, exactly as before.
-// The caller holds the mutex.
+// the buffer holds); otherwise the WORD path of Phase 2 over the convertible
+// stretch (SPEC §4.2, plan 10-02): the token plus the adjacent runes that
+// carry a table position — «ytn?» corrects whole to «нет,», never «нет?» —
+// with the replace half covering the whole run. The autocorrect payload
+// keeps consuming the bare Token() (D-13/D-14 unchanged). The caller holds
+// the mutex.
 func (a *Actor) startCorrection() {
 	if sel, runes, ok := a.activeSelection(); ok {
 		a.startSelectionCorrection(sel, runes)
@@ -2627,9 +2631,9 @@ func (a *Actor) startCorrection() {
 		return
 	}
 	a.startRangeCorrection(correctionRange{
-		token:   a.buf.Token(),
-		tail:    a.buf.Tail(),
-		replace: a.buf.ReplaceToken,
+		token:   a.buf.ConvertibleStretch(),
+		tail:    a.buf.StretchTail(),
+		replace: a.buf.ReplaceStretch,
 	})
 }
 
