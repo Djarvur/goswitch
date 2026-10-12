@@ -232,6 +232,21 @@ type Actor struct {
 	// parse-cache form: rebuilt only when the document's list changed.
 	acBlocklistNames []string
 	acBlocklist      []*regexp.Regexp
+	// acTerminals is the compiled view of the document's terminal-class
+	// identity patterns (correction.terminals, Phase 10/D-55) — the same
+	// one-compile-per-list-change cache discipline as acBlocklist. Names
+	// is the raw list the cache was built from (the parse-cache form).
+	acTerminalNames []string
+	acTerminals     []*regexp.Regexp
+	// verifyDead is the behavioral terminal class of the LIVE input
+	// context (RESEARCH Pattern 1, source 3): set when a verify round of
+	// this context expired by budget while the context was still alive
+	// (the wezterm signature — the surrounding-text bit is announced, the
+	// pushes never come), cleared by the context's death
+	// (HandleLifecycle FocusOut/Reset — the same lifecycle that retires
+	// the pending round). A5 insurance: every transition logs one
+	// source-neutral INFO marker, word-free (D-20/D-21).
+	verifyDead bool
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -333,6 +348,13 @@ type Options struct {
 	AutoCorrectMinWordLen int
 	AutoCorrectMargin     float64
 	AutoCorrectFloor      float64
+	// Terminals carries the document's terminal-class identity patterns
+	// (correction.terminals, Phase 10/D-55): a substring RE2 match against
+	// the focused app's bridge-namespace identity MARKS the context
+	// terminal — the classification seam's second source. The zero value
+	// (an empty list) marks nothing — the old behavior, the D-54
+	// precedent.
+	Terminals []string
 	// SoundEnabled is the acoustic-feedback switch of the owner's «Звуки
 	// при переключении» decision (plan 07-08): DEFAULT ON — only an
 	// explicit enabled: false silences the tones. Fed from the document's
@@ -508,6 +530,7 @@ func (a *Actor) SetOptions(o Options) {
 
 	a.opts = o
 	a.refreshACBlocklist(o.AutoCorrectBlocklist) // the no-config surface owns the same cache
+	a.refreshACTerminals(o.Terminals)            // the terminal-class cache rides the same discipline
 	// An enabled autocorrect layer or a non-empty macr list arrives through
 	// this surface too.
 	a.ensureAppid()
@@ -796,6 +819,9 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// the caches belong to the input context that just left
 		a.surr = nil
 		a.sel = selectionState{}
+		// the behavioral terminal class too (Phase 10): a fresh context
+		// starts unclassified — the next expired verify round re-learns it
+		a.setVerifyDead(false)
 		a.resolvePending()
 		a.clearAfter()
 		// A combo retired by the context's death never settles its word
@@ -1075,6 +1101,13 @@ func (a *Actor) VerifyExpiry() {
 	if a.pending == nil {
 		return // already settled — a stale timer is a no-op
 	}
+	// The behavioral terminal class (Phase 10, RESEARCH Pattern 1 source
+	// 3): the budget expired while the context is still alive — the
+	// pending guard above already retired every context-death case, so
+	// this round's expiry is the wezterm signature learned on the living
+	// context. The class persists for the context's remaining life and is
+	// cleared by HandleLifecycle (FocusOut/Reset).
+	a.setVerifyDead(true)
 	a.resolvePending()
 	a.clearAfter()
 	a.skipCorrection("verify-timeout")
@@ -1313,6 +1346,45 @@ func (a *Actor) applySnapshot() {
 	a.opts.BackspaceCap = snap.Correction.BackspaceCap
 	a.opts.ClipboardRung = snap.Correction.ClipboardRung
 	a.opts.FlipAfterCorrection = snap.Correction.FlipAfterCorrection
+	a.opts.Terminals = snap.Correction.Terminals // the terminal-class list folds live (Phase 10, D-55)
+	a.applySnapshotBindings(snap)
+	a.opts.MACREnabled = snap.MACR.Enabled
+	a.opts.MACRApps = snap.MACR.Apps
+	a.opts.MACRAltModifier = snap.MACR.AltModifier
+	if snap.MACR.Letters != a.macrLettersName {
+		a.macrLettersName = snap.MACR.Letters
+		a.opts.MACRLetters = parseMACRLetters(snap.MACR.Letters)
+	}
+	// The autocorrect section folds live (plan 06-06, the MACR-fold
+	// precedent): the D-54 defaults are off, so a document without the
+	// section keeps the boundary byte-as-today; the thresholds mirror
+	// detect.Params (the config 06-04 pair — change the places together).
+	// The blocklist recompiles only when the document's pattern list
+	// changed (one compile per edit, not per boundary).
+	a.opts.AutoCorrectEnabled = snap.Autocorrect.Enabled
+	a.opts.AutoCorrectBlocklist = snap.Autocorrect.AppsBlocklist
+	a.opts.AutoCorrectMinWordLen = snap.Autocorrect.MinWordLen
+	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
+	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
+	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
+	a.refreshACTerminals(snap.Correction.Terminals)
+	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
+	// The sound switch folds live (plan 07-08, the autocorrect-fold
+	// precedent): the owner's default ON is the EffectiveEnabled truth —
+	// an absent section reads ON, only an explicit enabled: false mutes,
+	// and the next gesture carries the change (the D-32 hot reload).
+	a.foldSound(snap.Sound.EffectiveEnabled())
+	a.pushA11y(snap) // the a11y-magic fold rides the same per-fold push chain (plan 08-05)
+	a.pushMenuSync(snap)
+}
+
+// applySnapshotBindings re-resolves the NAME-keyed hotkey bindings of the
+// snapshot (the word-layout combo, the mode-switch chord) — the fold half
+// of applySnapshot, extracted whole: a binding re-resolves only when the
+// document's binding NAME changed; a name that fails to parse — impossible
+// from a validated document — keeps the last-good binding (the D-32
+// discipline). The caller holds the mutex.
+func (a *Actor) applySnapshotBindings(snap config.Config) {
 	if name := snap.Hotkeys.WordLayoutCombo; name != a.comboName {
 		if binding, err := hotkey.ParseBinding(name); err == nil {
 			a.opts.WordLayoutCombo = binding
@@ -1333,33 +1405,6 @@ func (a *Actor) applySnapshot() {
 			a.chordName = name
 		}
 	}
-	a.opts.MACREnabled = snap.MACR.Enabled
-	a.opts.MACRApps = snap.MACR.Apps
-	a.opts.MACRAltModifier = snap.MACR.AltModifier
-	if snap.MACR.Letters != a.macrLettersName {
-		a.macrLettersName = snap.MACR.Letters
-		a.opts.MACRLetters = parseMACRLetters(snap.MACR.Letters)
-	}
-	// The autocorrect section folds live (plan 06-06, the MACR-fold
-	// precedent): the D-54 defaults are off, so a document without the
-	// section keeps the boundary byte-as-today; the thresholds mirror
-	// detect.Params (the config 06-04 pair — change the places together).
-	// The blocklist recompiles only when the document's pattern list
-	// changed (one compile per edit, not per boundary).
-	a.opts.AutoCorrectEnabled = snap.Autocorrect.Enabled
-	a.opts.AutoCorrectBlocklist = snap.Autocorrect.AppsBlocklist
-	a.opts.AutoCorrectMinWordLen = snap.Autocorrect.MinWordLen
-	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
-	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
-	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
-	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
-	// The sound switch folds live (plan 07-08, the autocorrect-fold
-	// precedent): the owner's default ON is the EffectiveEnabled truth —
-	// an absent section reads ON, only an explicit enabled: false mutes,
-	// and the next gesture carries the change (the D-32 hot reload).
-	a.foldSound(snap.Sound.EffectiveEnabled())
-	a.pushA11y(snap) // the a11y-magic fold rides the same per-fold push chain (plan 08-05)
-	a.pushMenuSync(snap)
 }
 
 // foldSound applies the snapshot's sound switch (plan 07-08's fold, the
@@ -2337,21 +2382,33 @@ func (a *Actor) refreshACBlocklist(names []string) {
 		return
 	}
 	a.acBlocklistNames = names
-	a.acBlocklist = compileACBlocklist(names)
+	a.acBlocklist = compileACPatterns(names, "blocklist")
 }
 
-// compileACBlocklist compiles the document's blocklist patterns for the
-// boundary gate. A compile failure is impossible from a validated
-// document (config.Validate refuses it at Load, D-33); the defensive
-// branch WARNs once per rebuild and treats the whole list as EMPTY —
-// nothing matches, nothing is forbidden (the failure falls open toward
+// refreshACTerminals rebuilds the compiled terminal-class cache only when
+// the raw pattern LIST changed (the refreshACBlocklist form) — one compile
+// per document edit or SetOptions install, never per boundary. The caller
+// holds the mutex.
+func (a *Actor) refreshACTerminals(names []string) {
+	if slices.Equal(names, a.acTerminalNames) {
+		return
+	}
+	a.acTerminalNames = names
+	a.acTerminals = compileACPatterns(names, "terminal-class")
+}
+
+// compileACPatterns compiles one document pattern list for the boundary
+// gates (the blocklist, the terminal class). A compile failure is
+// impossible from a validated document (config.Validate refuses it at
+// Load, D-33); the defensive branch WARNs once per rebuild and treats the
+// whole list as EMPTY — nothing matches (the failure falls open toward
 // the role gate, never around it).
-func compileACBlocklist(patterns []string) []*regexp.Regexp {
+func compileACPatterns(patterns []string, source string) []*regexp.Regexp {
 	compiled := make([]*regexp.Regexp, 0, len(patterns))
 	for _, pattern := range patterns {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
-			slog.Warn("autocorrect blocklist pattern rejected at fold", "error", err)
+			slog.Warn("autocorrect pattern rejected at fold", "source", source, "error", err)
 
 			return nil
 		}
@@ -2359,6 +2416,19 @@ func compileACBlocklist(patterns []string) []*regexp.Regexp {
 	}
 
 	return compiled
+}
+
+// setVerifyDead flips the behavioral terminal class of the live input
+// context and records the transition with ONE source-neutral INFO marker —
+// the A5 insurance (a flapping class must leave a trail), word-free
+// (D-20/D-21): the marker names neither the typed word nor the source that
+// produced the verdict. The caller holds the mutex.
+func (a *Actor) setVerifyDead(dead bool) {
+	if a.verifyDead == dead {
+		return
+	}
+	a.verifyDead = dead
+	slog.Info("terminal class", "verify_dead", dead)
 }
 
 // acFocusedApp resolves the focused app identity for the boundary and
