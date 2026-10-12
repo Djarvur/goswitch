@@ -6890,3 +6890,184 @@ func TestActor_A11yNilSinkNoOp(t *testing.T) {
 			"(the defaults document reads sound ON)")
 	}
 }
+
+// The terminal-class corpus of plan 10-03 Task 1 (TERM-04/D-55): the
+// behavioral verify-dead source of the classification seam lives and dies
+// with the input context — learned when a verify round of the LIVE context
+// expires by budget, cleared by the context's death (FocusOut/Reset) — and
+// every class transition writes ONE source-neutral INFO marker (the A5
+// insurance) without a word of content (D-20/D-21).
+
+// teachVerifyDead drives one manual Double whose pre-correction verify
+// budget expires while the context is still alive — the exact behavioral
+// signature the seam learns (RESEARCH Pattern 1, source 3). The callers
+// own every assertion; this helper only drives the deterministic round.
+func teachVerifyDead(t *testing.T, a *session.Actor, word string) {
+	t.Helper()
+	typeWord(a, word)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.VerifyExpiry() // deterministic injection of the 100 ms deadline
+}
+
+// TestTerminalClass_VerifyDeadLearnedOnVerifyTimeout pins the learning: a
+// verify round that expires by budget while the context is still alive
+// marks the context verify-dead — exactly one transition marker — and the
+// class PERSISTS: a second expired round on the same context is no news
+// (no second marker).
+func TestTerminalClass_VerifyDeadLearnedOnVerifyTimeout(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+
+	teachVerifyDead(t, a, wordEN)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 1 {
+		t.Fatalf("verify-timeout records = %d, want 1 — the round must still drop exactly as before", got)
+	}
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 1 {
+		t.Fatalf("terminal-class markers after the first verify-timeout = %d, want exactly 1; log:\n%s",
+			got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `"verify_dead":true`) {
+		t.Errorf("the learned-class marker is missing; log:\n%s", buf.String())
+	}
+
+	// A second expired round on the same context: the class is already
+	// learned — no transition, no marker.
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	teachVerifyDead(t, a, wordEN)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 2 {
+		t.Fatalf("verify-timeout records after the second round = %d, want 2", got)
+	}
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 1 {
+		t.Errorf("terminal-class markers after the second verify-timeout = %d, want still 1 — "+
+			"no transition, no marker", got)
+	}
+}
+
+// TestTerminalClass_VerifyDeadClearedByFocusOut pins the clearing side of
+// the lifecycle (the plan's two separate clearing tests, FocusOut first):
+// the context's death clears the learned class — one clearing marker — and
+// the cleared context learns afresh on its next expired round (the state,
+// not just the log, was reset).
+func TestTerminalClass_VerifyDeadClearedByFocusOut(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+
+	teachVerifyDead(t, a, wordEN)
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
+		t.Fatalf("terminal-class markers after the FocusOut = %d, want exactly 2 (learn + clear); log:\n%s",
+			got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `"verify_dead":false`) {
+		t.Errorf("the cleared-class marker is missing; log:\n%s", buf.String())
+	}
+
+	// The fresh context learns afresh: the second expiry transitions again.
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	teachVerifyDead(t, a, wordEN)
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 3 {
+		t.Errorf("terminal-class markers after the re-learn = %d, want 3 — "+
+			"the FocusOut really cleared the class, not just logged", got)
+	}
+}
+
+// TestTerminalClass_VerifyDeadClearedByReset pins the second clearing arm
+// (the plan demands FocusOut AND Reset as separate tests): an engine Reset
+// retires the context exactly like a focus loss.
+func TestTerminalClass_VerifyDeadClearedByReset(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+
+	teachVerifyDead(t, a, wordEN)
+	a.HandleLifecycle(engine.LifecycleReset)
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
+		t.Fatalf("terminal-class markers after the Reset = %d, want exactly 2 (learn + clear); log:\n%s",
+			got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `"verify_dead":false`) {
+		t.Errorf("the cleared-class marker is missing; log:\n%s", buf.String())
+	}
+
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	teachVerifyDead(t, a, wordEN)
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 3 {
+		t.Errorf("terminal-class markers after the re-learn = %d, want 3 — "+
+			"the Reset really cleared the class, not just logged", got)
+	}
+}
+
+// TestTerminalClass_NeverDeadContextClearsSilently pins the transition-only
+// discipline from the other side: clearing a context that was never dead is
+// no news — zero markers.
+func TestTerminalClass_NeverDeadContextClearsSilently(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	a.HandleLifecycle(engine.LifecycleReset)
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 0 {
+		t.Errorf("terminal-class markers on a never-dead context = %d, want 0 — "+
+			"clearing a clear state must stay silent", got)
+	}
+}
+
+// TestTerminalClass_StaleVerifyExpiryLearnsNothing pins the stale-timer
+// guard: the round settled in time (the client answered), so the deadline
+// callback is a no-op — no timeout record, no learned class. The "expired
+// budget while the context is still alive" signature requires the budget
+// to actually expire.
+func TestTerminalClass_StaleVerifyExpiryLearnsNothing(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	// The cached push is the freshest report — the round executes.
+	end := uint32(len([]rune("abc " + wordEN)))
+	a.HandleSurroundingText("abc "+wordEN, end, end)
+	if got := len(sink.commitTexts()); got != 1 {
+		t.Fatalf("commits after the cached push = %d, want 1 — the round never executed", got)
+	}
+
+	a.VerifyExpiry() // the stale deadline — a settled round teaches nothing
+
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 0 {
+		t.Errorf("verify-timeout records after the stale deadline = %d, want 0", got)
+	}
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 0 {
+		t.Errorf("terminal-class markers after the stale deadline = %d, want 0 — "+
+			"a settled round teaches nothing", got)
+	}
+}
+
+// TestTerminalClass_MarkerWordFree pins the privacy half of the marker
+// contract (D-20/D-21): the class transitions never carry the typed word
+// nor the conversion — counts and the boolean state only.
+func TestTerminalClass_MarkerWordFree(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+
+	teachVerifyDead(t, a, wordEN)
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+
+	logged := buf.String()
+	for _, word := range []string{wordEN, wordRU} {
+		if strings.Contains(logged, word) {
+			t.Errorf("the log leaked %q (D-20/D-21); log:\n%s", word, logged)
+		}
+	}
+}
