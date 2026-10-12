@@ -1,4 +1,4 @@
-package appid
+package appid_test
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/godbus/dbus/v5"
+
+	"github.com/Djarvur/goswitch/internal/appid"
 )
 
 // errRegistryDenied is the refused-registry sentinel of the interest corpus
@@ -21,7 +23,7 @@ type fakeRegistry struct {
 }
 
 func (f *fakeRegistry) Call(method string, _ dbus.Flags, args ...interface{}) *dbus.Call {
-	return f.CallWithContext(nil, method, 0, args...)
+	return f.CallWithContext(context.Background(), method, 0, args...)
 }
 
 func (f *fakeRegistry) CallWithContext(_ context.Context, method string, _ dbus.Flags, args ...interface{}) *dbus.Call {
@@ -31,25 +33,29 @@ func (f *fakeRegistry) CallWithContext(_ context.Context, method string, _ dbus.
 	return &dbus.Call{Err: f.failErr}
 }
 
-func (f *fakeRegistry) Go(method string, _ dbus.Flags, ch chan *dbus.Call, args ...interface{}) *dbus.Call {
-	call := f.CallWithContext(nil, method, 0, args...)
+func (f *fakeRegistry) Go(
+	method string, _ dbus.Flags, ch chan *dbus.Call, args ...interface{},
+) *dbus.Call {
+	call := f.CallWithContext(context.Background(), method, 0, args...)
 	go func() { ch <- call }()
 
 	return call
 }
 
-func (f *fakeRegistry) GoWithContext(ctx context.Context, method string, _ dbus.Flags, ch chan *dbus.Call, args ...interface{}) *dbus.Call {
+func (f *fakeRegistry) GoWithContext(
+	ctx context.Context, method string, _ dbus.Flags, ch chan *dbus.Call, args ...interface{},
+) *dbus.Call {
 	call := f.CallWithContext(ctx, method, 0, args...)
 	go func() { ch <- call }()
 
 	return call
 }
 
-func (f *fakeRegistry) AddMatchSignal(_ string, _ string, _ ...dbus.MatchOption) *dbus.Call {
+func (f *fakeRegistry) AddMatchSignal(_, _ string, _ ...dbus.MatchOption) *dbus.Call {
 	return &dbus.Call{}
 }
 
-func (f *fakeRegistry) RemoveMatchSignal(_ string, _ string, _ ...dbus.MatchOption) *dbus.Call {
+func (f *fakeRegistry) RemoveMatchSignal(_, _ string, _ ...dbus.MatchOption) *dbus.Call {
 	return &dbus.Call{}
 }
 
@@ -66,11 +72,11 @@ func (f *fakeRegistry) SetProperty(string, interface{}) error {
 }
 
 func (f *fakeRegistry) Destination() string {
-	return a11yRegistryName
+	return appid.A11yRegistryName
 }
 
 func (f *fakeRegistry) Path() dbus.ObjectPath {
-	return a11yRegistryPath
+	return dbus.ObjectPath("/org/a11y/atspi/registry")
 }
 
 // TestRegisterEventInterest_PinsRegistryCall pins the event-interest seam:
@@ -83,18 +89,22 @@ func (f *fakeRegistry) Path() dbus.ObjectPath {
 // returns the registry error wrapped, named.
 func TestRegisterEventInterest_PinsRegistryCall(t *testing.T) {
 	reg := &fakeRegistry{}
-	if err := registerEventInterest(reg, eventStateInterest); err != nil {
-		t.Fatalf("registerEventInterest = %v, want nil", err)
+	err := appid.RegisterEventInterest(context.Background(), reg, appid.EventStateInterest)
+	if err != nil {
+		t.Fatalf("RegisterEventInterest = %v, want nil", err)
 	}
-	if len(reg.calls) != 1 || reg.calls[0] != a11yRegistryName+".RegisterEvent" {
-		t.Fatalf("registry calls %v, want exactly [%s.RegisterEvent]", reg.calls, a11yRegistryName)
+	want := appid.A11yRegistryName + ".RegisterEvent"
+	if len(reg.calls) != 1 || reg.calls[0] != want {
+		t.Fatalf("registry calls %v, want exactly [%s]", reg.calls, want)
 	}
-	if len(reg.args) != 1 || len(reg.args[0]) != 1 || reg.args[0][0] != eventStateInterest {
-		t.Fatalf("registry args %v, want exactly [%q]", reg.args, eventStateInterest)
+	oneArg := len(reg.args) == 1 && len(reg.args[0]) == 1 && reg.args[0][0] == appid.EventStateInterest
+	if !oneArg {
+		t.Fatalf("registry args %v, want exactly [%q]", reg.args, appid.EventStateInterest)
 	}
 
 	reg.failErr = errRegistryDenied
-	if err := registerEventInterest(reg, eventStateInterest); !errors.Is(err, errRegistryDenied) {
-		t.Fatalf("registerEventInterest over a refused registry = %v, want the wrapped registry error", err)
+	err = appid.RegisterEventInterest(context.Background(), reg, appid.EventStateInterest)
+	if !errors.Is(err, errRegistryDenied) {
+		t.Fatalf("RegisterEventInterest over a refused registry = %v, want the wrapped registry error", err)
 	}
 }
