@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 6
+open_count: 7
 waived_count: 4
 fixed_count: 7
-total_count: 17
-last_updated: 2026-10-12T21:28:26.352Z
+total_count: 18
+last_updated: 2026-10-13T21:53:18.173Z
 ---
 
 # Broken Windows Ledger
@@ -32,6 +32,7 @@ last_updated: 2026-10-12T21:28:26.352Z
 | 15 | 10 | deviation | internal/session/actor_test.go | 6945 | Plan 10-04 (OQ 1 unified): TestTerminalClass_VerifyDeadLearnedOnVerifyTimeout second half migrated — a LEARNED verify-dead context routes the next Double through the terminal write branch, so a second verify expiry is unreachable; marker discipline (no transition, no marker) preserved | open |  | 2026-10-12T18:02:30.083Z |  |
 | 16 | 10 | deviation | internal/session/actor.go | 2970 | Plan 10-04 Task 2 acceptance partial: the D-24 instant-done changed=false INFO is unreachable by behavior test — ConvertRuns provably never returns changed=false (runs.go doctrine, WINDOWS-2 owner verdict), the branch stays defensive; the discriminator is planted in the same form as logCorrectionDone, changed=true is behaviorally pinned | open |  | 2026-10-12T18:02:30.777Z |  |
 | 17 | 10 | deviation | test/e2e/case_autocorrect.go |  | terminal-silent re-pin gates moved to daemon focus_in (AT-SPI witness pinned to gnome-shell globally; 10-05 hand-over prescription) + noSurfacePreflight — closed the 10-05 blocked row | open |  | 2026-10-12T21:28:26.352Z |  |
+| 18 | 10 | unrun-verify | .planning/debug/DEBUG-term-host-live-failures.md | 332 | Task 2 automated verify 'approved\|rejected' matches instruction/pending text only - owner re-acceptance verdict is PENDING (never synthesized); routing: UAT end-of-phase; on approved append gap-closed row, on rejected STOP without code changes | open |  | 2026-10-13T21:53:18.173Z |  |
 
 ````json
 [
@@ -237,6 +238,18 @@ last_updated: 2026-10-12T21:28:26.352Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-12T21:28:26.352Z",
+    "resolved_at": null
+  },
+  {
+    "id": 18,
+    "kind": "unrun-verify",
+    "phase": "10",
+    "file": ".planning/debug/DEBUG-term-host-live-failures.md",
+    "line": 332,
+    "description": "Task 2 automated verify 'approved|rejected' matches instruction/pending text only - owner re-acceptance verdict is PENDING (never synthesized); routing: UAT end-of-phase; on approved append gap-closed row, on rejected STOP without code changes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-13T21:53:18.173Z",
     "resolved_at": null
   }
 ]

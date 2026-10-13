@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
-status: executing
-stopped_at: Completed 10-08-PLAN.md
-last_updated: "2026-10-13T21:38:45.859Z"
+status: verifying
+stopped_at: Completed 10-09-PLAN.md
+last_updated: "2026-10-13T21:53:02.610Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: 4b65c1782b2cc9215bd5228ad96448f0ab3acd0d
+state_head: b90498f83f4080dcdbdc4e4d0a2ff2bbf3406838
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 13
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 
 Phase: 10 (TERM-слово) — EXECUTING
 Plan: 9 of 9
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-13 — Phase 10 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P06 | 67min | 3 tasks | 8 files |
 | Phase 10 P07 | 150min | 3 tasks | 13 files |
 | Phase 10 P08 | 141min | 2 tasks | 13 files |
+| Phase 10 P09 | 8min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,7 @@ Recent decisions affecting current work:
 
 - [Phase 10]: Plan 10-08: машина отложенного флипа defer-until-confirmed — SetGlobalEngine только после подтверждения доставки (подтверждающий push / клавиша / flipConfirmGrace 300 мс / mismatch / тихий таймаут); release переиспользует flipTo целиком (D-36 не дублируется); ни один release-сайт не сидит на FocusOut
 - [Phase 10]: Plan 10-08: owner-approved Rule 4 амендмент — nil-cache word-раунд с ответом-без-набранного-пробега = терминальный контекст (класс учится, раунд исполняет терминальную ветку); fail-closed для кэш-свидетельств сохранён; дрейф 0x9→0x29 документирован датированными рядами
+- [Phase 10]: Установка gap-сборки закрытия G-10-1 (v1.1.1-124-g7ace3fd, HEAD 7ace3fd: фиксы 10-07+10-08) на хост существующим процессом 10-06 — НОВЫЙ release-dir, путь отката v1.1.1 нетронут; фикс. путь goswitchctl для всех машинных проверок (не на PATH — новейший releases по mtime) — Вердикт re-acceptance владельца — единственный оракул закрытия G-10-1: машинные предпроверки не заменяют приёмку; вердикт не синтезируется (честный ОЖИДАНИЕ в Closure validation, human_judgment: true в SUMMARY), маршрутизация через UAT end-of-phase; при rejected — СТОП без правок кода, откат по запросу
 
 ### Pending Todos
 
@@ -118,8 +120,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T21:38:45.810Z
-Stopped at: Completed 10-08-PLAN.md
+Last session: 2026-10-13T21:53:02.550Z
+Stopped at: Completed 10-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

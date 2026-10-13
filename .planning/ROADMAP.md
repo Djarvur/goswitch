@@ -68,7 +68,7 @@ Plans:
   4. До первого разрушающего действия (первый ForwardKeyEvent BackSpace) отмена бесплатна и ничего не мутирует; после — verify-сверка при расхождении логирует и останавливается, никогда не «чинит» сама; фокус-переключение между чанками (≤8 клавиш) перечекается
   5. Двухразрешительная модель Фазы 9 живая: замороженные негативные ряды матрицы зелёные — автокоррекция в терминале молчит при работающей ручной коррекции (vim-insert/htop-свидетели)
 
-**Plans**: 8/9 plans executed + 3 gap-closure (10-07…10-09, gap G-10-1)
+**Plans**: 9/9 plans executed + 3 gap-closure (10-07…10-09, gap G-10-1)
 
 Plans:
 
@@ -80,7 +80,7 @@ Plans:
 - [x] 10-06-PLAN.md — живые ряды wezterm ×2 + primary-лег проба + ADR-008 Accepted + owner-зачёт
 - [x] 10-07-PLAN.md — gap G-10-1 (A): флап-стойкая классификация терминала + дефолт correction.terminals + громкая role-диагностика — SUMMARY 10-07 (3 задачи, причина A закрыта в коде, стенд re-pin байт-точный зелёный)
 - [x] 10-08-PLAN.md — gap G-10-1 (B): отложенный флип терминальной коррекции (defer-until-confirmed) + стенд-ряд term-word-vte-flip
-- [ ] 10-09-PLAN.md — gap G-10-1: хост-ревалидация + owner re-acceptance (human-check)
+- [x] 10-09-PLAN.md — gap G-10-1: хост-ревалидация + owner re-acceptance (human-check)
 
 ### Phase 11: MENU — пункт «в чёрный список»
 
@@ -133,7 +133,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 9. Спайк и дефект wezterm | v1.2 | 1/4 | In Progress|  |
-| 10. TERM-слово | v1.2 | 8/9 | In Progress|  |
+| 10. TERM-слово | v1.2 | 9/9 | In Progress|  |
 | 11. MENU — пункт «в чёрный список» | v1.2 | 0/? | Not started | - |
 | 12. TERM-строка | v1.2 | 0/? | Not started | - |
 | 13. A11Y — рецепты Telegram/ZCode | v1.2 | 0/? | Not started | - |
