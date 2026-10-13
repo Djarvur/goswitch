@@ -4,16 +4,16 @@ milestone: v1.2
 milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
-status: verifying
-stopped_at: Completed 10-06-PLAN.md
-last_updated: "2026-10-12T21:30:51.124Z"
-last_activity: 2026-10-12
+status: executing
+stopped_at: Completed 10-07-PLAN.md
+last_updated: "2026-10-13T19:09:08.647Z"
+last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: c3b436a7ab2aecc6b297fcd2675e1f98592a5c33
+state_head: 8b514cc1e089be58d3b4925b568526550f3a5bd7
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 10
+  total_plans: 13
   completed_plans: 7
   percent: 0
 ---
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 ## Current Position
 
 Phase: 10 (TERM-слово) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Last activity: 2026-10-12 — Phase 10 execution started
+Plan: 8 of 9
+Status: Ready to execute
+Last activity: 2026-10-13 — Phase 10 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P04 | 39min | 3 tasks | 5 files |
 | Phase 10 P05 | 102min | 3 tasks | 12 files |
 | Phase 10 P06 | 67min | 3 tasks | 8 files |
+| Phase 10 P07 | 150min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,10 @@ Recent decisions affecting current work:
 - [Phase 10]: Середина строки — OQ 2 contract (D7): буфер-доверие только для флоу «набор сразу в позицию курсора», «стрелки → набор» вне защиты честно; poison-флаг и primary-read НЕ ставились, Primary остаётся примитивом без потребителя; граница зафиксирована в docs/CONFIG.md, амендмент ADR-008 — 10-06 — Вердикты владельца 2026-10-12 из checkpoint'а применены дословно; контрактная граница — не настраиваемый режим: отдельного выключателя нет
 - [Phase 10]: A2 ответен живым рядом 10-05: тесный бурст ForwardKeyEvent+CommitText переставляется в VTE (форварды стоят в GDK-очереди клиента, коммит синхронен; живой hex «ghbdtn»→«ghприв») — executeLevel2 пакирован (sleep 20ms перед каждой эмиссией), wire-порядок и чанк-геометрия не тронуты, после фикса ряды байт-точные
 - [Phase 10]: Наблюдатель a11y демона регистрирует собственный интерес в at-spi реестре (RegisterEvent Object:state-changed) — мосты GTK эмитят фокус-события только при живой регистрации (0→153 StateChanged в живой пробе); raw bus match слеп на голом столе, отказ регистрации честно валит Start
+- [Phase 10]: Plan 10-07: флап-окно стирания verifyDead — внутренняя константа 10 мс с журнальным происхождением (пары 1–3 мс, 16:20:05), не конфиг-ключ; Reset и синтетика флипа стирают немедленно, ctxEpoch/HardReset семантика 10-04 байт-неизменна
+- [Phase 10]: Plan 10-07: дефолтный identity-якорь [gnome-terminal, wezterm] едет И нормализацией config.Load (nil→якорь, явный [] — opt-out), И в Defaults() (no-file демон классифицирует идентично); якорь доезжает существующим applySnapshot-фолдом, шов не правился
+- [Phase 10]: Plan 10-07: role-диагностика громкая и липкая — счётчик ошибок эпизода в status (ac_role_errors=, обнуляется здоровым ответом :2741-семантикой), WARN с окном переармивания 30 мин (происхождение: эпизод 11:00:16 молчал весь день)
+- [Phase 10]: Plan 10-07: встроенная форма terminal-silent-repin (term-negative-witnesses) считает correction-записи ОБЩЕГО журнала кейса — в них падают done+verify-after позитивного контроля (до-существующий артефакт формы, не регрессия); вердикт негатива несёт STANDALONE форма (ряд 19:07:31 зелёный при коде 10-07)
 
 ### Pending Todos
 
@@ -107,8 +112,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T21:30:51.085Z
-Stopped at: Completed 10-06-PLAN.md
+Last session: 2026-10-13T19:09:08.600Z
+Stopped at: Completed 10-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
