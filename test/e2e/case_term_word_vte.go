@@ -54,6 +54,12 @@ const (
 	// armProbeKeys is the arming gate's key-record floor: the probe letter
 	// plus its erase, press+release each (4 records above the baseline).
 	armProbeKeys = 4
+
+	// termArmGateTries bounds the arming ladder (SPEC §7.2 «ограниченные
+	// ретраи», the wezterm family's form): the uinput churn of the first
+	// ydotool calls can silently eat whole key calls (the 2026-10-13
+	// fresh-boot finding), so the probe retries until the floor is met.
+	termArmGateTries = 3
 )
 
 // termRow appends one dated verdict row to the case's journal section (the
@@ -185,15 +191,22 @@ func (s *stand) openTermFixture(
 // venue-probe fact (r1+r2, full channel) plus each row's own pty-hex
 // oracle — a broken delivery fails the row honestly.
 func (s *stand) termArmGate(ctx context.Context, caseName string) error {
-	base := s.countSub(keyTraceMark)
-	if err := s.injectText(ctx, "x"); err != nil {
-		return fmt.Errorf("%s: arming probe type: %w", caseName, err)
-	}
-	if err := s.injectKeys(ctx, "BackSpace"); err != nil {
-		return fmt.Errorf("%s: arming probe erase: %w", caseName, err)
+	for attempt := 1; attempt <= termArmGateTries; attempt++ {
+		base := s.countSub(keyTraceMark)
+		if err := s.injectText(ctx, "x"); err != nil {
+			return fmt.Errorf("%s: arming probe type: %w", caseName, err)
+		}
+		if err := s.injectKeys(ctx, "BackSpace"); err != nil {
+			return fmt.Errorf("%s: arming probe erase: %w", caseName, err)
+		}
+		if err := s.waitForNew(ctx, keyTraceMark, base+armProbeKeys, keyWait); err == nil {
+			return nil
+		}
+		fmt.Printf("%s: arming attempt %d/%d below the key-trace floor — retrying\n",
+			caseName, attempt, termArmGateTries)
 	}
 
-	return s.waitForNew(ctx, keyTraceMark, base+armProbeKeys, keyWait)
+	return fmt.Errorf("%s: arming gate: key-trace floor unmet after %d attempts", caseName, termArmGateTries)
 }
 
 // termObserverRound warms the daemon's a11y observer path on a throwaway
