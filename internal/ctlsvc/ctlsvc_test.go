@@ -798,6 +798,7 @@ func TestRenderStatus_AutocorrectTokens(t *testing.T) {
 		AutoCorrectFired:       2,
 		AutoCorrectAbstained:   3,
 		AutoCorrectSkipReasons: map[string]int{"no-caps": 1, "abstain-short": 2},
+		AutoCorrectRoleErrors:  7,
 		ConfigPath:             "/tmp/goswitch-ac.yaml",
 		ConfigValid:            false,
 		ConfigError:            "decode config: boom",
@@ -810,6 +811,9 @@ func TestRenderStatus_AutocorrectTokens(t *testing.T) {
 	for _, want := range []string{
 		"autocorrect_enabled=true", "autocorrect_fired=2", "autocorrect_abstained=3",
 		"sound_enabled=false",
+		// The role-error counter (plan 10-07, G-10-1 missing #3): the new
+		// token rides the ac_ family; every OLD token keeps its exact form.
+		"ac_role_errors=7",
 		"ac_skip_abstain_short=2", "ac_skip_no_caps=1",
 	} {
 		if !strings.Contains(reply, want) {

@@ -187,6 +187,13 @@ func renderStatus(st session.Status) string {
 		"autocorrect_enabled="+strconv.FormatBool(st.AutoCorrectEnabled),
 		"autocorrect_fired="+strconv.Itoa(st.AutoCorrectFired),
 		"autocorrect_abstained="+strconv.Itoa(st.AutoCorrectAbstained),
+		// The role-source error counter (plan 10-07, G-10-1 missing #3):
+		// every role-request error of the live episode is machine-visible —
+		// the 11:00:16 episode stayed silent-broken behind its single WARN
+		// for the rest of the day; a healthy answer zeroes it. Counts only
+		// (D-20/D-21); the token rides the ac_ family before the config
+		// block, and no old key moves or renames.
+		"ac_role_errors="+strconv.Itoa(st.AutoCorrectRoleErrors),
 		"sound_enabled="+strconv.FormatBool(st.SoundEnabled),
 	)
 	for _, reason := range slices.Sorted(maps.Keys(st.AutoCorrectSkipReasons)) {

@@ -104,6 +104,16 @@ const switchTimeout = 150 * time.Millisecond
 // ceiling.
 const autoRoleTimeout = 25 * time.Millisecond
 
+// acRoleWarnRearm is the re-arm window of the sticky role-source WARN
+// (plan 10-07, G-10-1 missing #3): the 2026-10-13 host journal shows the
+// 11:00:16 episode consuming the one WARN and staying silent the WHOLE DAY
+// while the source stayed broken (autocorrect_fired=0 all day) — a lasting
+// outage must not dissolve into a single absorbed line. Errors continuing
+// past half an hour sound the WARN again (one line per window, never one
+// per query — a flap-bursting source keeps its journal clean); every error
+// between the lines still grows the status-visible counter.
+const acRoleWarnRearm = 30 * time.Minute
+
 // The AT-SPI text-input roles the D-53 role gate allows: text box (61),
 // entry (79) and document text (94) — the live-verified enum of
 // internal/appid (gi Atspi 2.52.0, 06-RESEARCH Q4). password-text (40),
@@ -326,8 +336,8 @@ type Actor struct {
 	acRoleErrors   int
 	acRoleWarnedAt time.Time
 	roleClock      func() time.Time
-	appidWarned bool // one WARN per degradation episode — a broken source must not spam per keystroke
-	startAppid  func() (AppidSource, error)
+	appidWarned    bool // one WARN per degradation episode — a broken source must not spam per keystroke
+	startAppid     func() (AppidSource, error)
 	// version is the daemon's build identity (D-37) pinned at construction;
 	// the status snapshot lifts it so goswitchctl status identifies the
 	// running build.
@@ -2881,6 +2891,7 @@ func (a *Actor) autoConfirm(payload acPayload) {
 		return
 	}
 	a.acRoleWarned = false // a healthy answer closes the episode
+	a.acRoleErrors = 0     // …and zeroes its error counter (plan 10-07): a recovered source reads as zero errors
 	switch role {
 	case acRoleText, acRoleEntry, acRoleDocumentText:
 		// CR-01 + the 07-04 confirm form: the fired threshold re-checks the
@@ -2969,15 +2980,27 @@ func (a *Actor) acConfirmRefusals(payload acPayload, role uint32) bool {
 	return true
 }
 
-// warnACRole records one live role-source failure: the WARN fires once per
-// degradation episode (the warnAppid form — per boundary would spam the
-// journal of a broken source). The error is transport-class only — it
-// never carries the word (D-20/D-21). The caller holds the mutex.
+// warnACRole records one live role-source failure (plan 10-07, G-10-1
+// missing #3): the ERROR COUNT is loud — every role-request error of the
+// degradation episode grows the status-visible counter (the 11:00:16
+// episode stayed silent-broken behind its single WARN for the rest of the
+// day; counts never hide again) — while the WARN LINE stays sticky: one
+// line per episode, re-armed after acRoleWarnRearm of continued breakage
+// (a lasting outage sounds again, a flap-bursting source never spams).
+// A nil error (the no-source degradation, autoConfirm's rs==nil arm)
+// warns by the same stickiness but counts nothing — no role request was
+// made. The error is transport-class only — it never carries the word
+// (D-20/D-21). The caller holds the mutex.
 func (a *Actor) warnACRole(err error) {
-	if a.acRoleWarned {
-		return
+	if err != nil {
+		a.acRoleErrors++
+	}
+	now := a.roleClock()
+	if a.acRoleWarned && now.Sub(a.acRoleWarnedAt) < acRoleWarnRearm {
+		return // the episode's one line stands; the counter above carries the rest
 	}
 	a.acRoleWarned = true
+	a.acRoleWarnedAt = now
 	if err == nil {
 		slog.Warn("autocorrect role unavailable")
 
