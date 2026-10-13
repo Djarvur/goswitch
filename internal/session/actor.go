@@ -586,6 +586,13 @@ type pendingFix struct {
 	armed     time.Time
 	deadline  *time.Timer
 	sel       *selectionSpec
+	// cacheNil snapshots the push cache at arm time (plan 10-08, the
+	// owner-approved client-drift amendment of 2026-10-13): the word round
+	// armed over an EMPTY cache — the client has never reported a field
+	// state in this context episode (an honest GTK client pushes on every
+	// change). Paired with an answer that does not hold the typed stretch,
+	// that is the stale-cache terminal signature (pendingStaleCache).
+	cacheNil bool
 }
 
 // pendingAfter is the state of the verify-after round — the post-correction
@@ -1851,6 +1858,7 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 	slog.Debug("surrounding push", "text", text,
 		"cursor", cursorPos, "anchor", anchorPos)
 	if a.pending != nil {
+		p := a.pending
 		switch {
 		case a.pendingVerdict():
 			a.executeCorrection()
@@ -1860,6 +1868,20 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 			// open within its budget for the post-boundary push (06-07
 			// live finding; VerifyExpiry keeps the fail-closed bound).
 		default:
+			if pendingStaleCache(p) {
+				// The 2026-10-13 client-drift amendment (plan 10-08, owner
+				// verdict, G-10-1): the client never reported a field state
+				// (empty cache at arm) and its only answer does not hold
+				// what the daemon watched being typed — the stale-cache
+				// terminal signature. The behavioral class learns and the
+				// round routes to the terminal write branch; the word
+				// corrects on this round instead of dying a GTK mismatch.
+				a.resolvePending()
+				a.setVerifyDead(true)
+				a.executeLevel2(p.rng, p.converted, p.armed, true)
+
+				return nil, false
+			}
 			a.resolvePending()
 			a.skipCorrection("verify-mismatch")
 			a.settleCombo() // the word half settled by refusal — the D-36 flip still fires
@@ -1885,6 +1907,21 @@ func (a *Actor) pendingVerdict() bool {
 	}
 
 	return correct.VerifyRangeAt(a.sel.full, a.pending.sel.start, a.pending.match)
+}
+
+// pendingStaleCache reports the stale-cache terminal signature of the
+// 2026-10-13 client-drift amendment (plan 10-08, owner verdict, G-10-1):
+// the word round armed over an EMPTY push cache — the client has never
+// reported a field state in this context episode (an honest GTK client
+// pushes on every change) — and its only answer does not hold the typed
+// stretch. Such a client (the 0x29-drifted wezterm nightly) is the
+// behavioral terminal class, not a GTK verify-mismatch. Cache evidence
+// (the pushes tracked the typing) keeps the byte-as-today fail-closed
+// world; selection rounds are range-anchored (Pitfall 6) and autocorrect
+// boundary rounds carry their own CR-02 fail-closed semantics — both
+// excluded.
+func pendingStaleCache(p *pendingFix) bool {
+	return p.sel == nil && !p.rng.acBoundary && p.cacheNil
 }
 
 // pendingEarlyAnswer reports whether the fresh push is an armed
@@ -3363,6 +3400,7 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 		converted: converted,
 		match:     concatRunes(rng.token, rng.tail),
 		armed:     armed,
+		cacheNil:  a.surr == nil, // the stale-cache evidence of the 2026-10-13 amendment
 	}
 	// CR-02: a boundary-armed payload NEVER trusts the cached push — the
 	// arming keystroke (Enter/Tab/Escape) is itself an in-flight

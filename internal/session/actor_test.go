@@ -3641,6 +3641,10 @@ func TestActor_RefusalsNeverFlip(t *testing.T) {
 	t.Run("verify mismatch", func(t *testing.T) {
 		refusalFlipProbe(t, "verify-mismatch", func(a *session.Actor) {
 			typeWord(a, wordEN)
+			// The honest-GTK world (plan 10-08 amendment migration): the
+			// cache carries tracking evidence — the nil-cache form is the
+			// stale-cache terminal signature now.
+			a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
 			tapShift(a)
 			tapShift(a)
 			a.ExpiryAt(expiryAfterWindow)
@@ -8109,6 +8113,9 @@ const termFlipGrace = 300 * time.Millisecond
 // observable in the op log (the corpus names it once, goconst).
 const termFlipRUOp = "mode(ru)"
 
+// requireOp is the RequireSurroundingText op-log entry (goconst).
+const requireOp = "require"
+
 // flipClock is the deterministic double of the deferred-flip grace seam
 // (plan 10-08, the flapClock form): arm records the armed deadlines and
 // holds the single pending callback; fire() plays the grace expiry, and the
@@ -8558,8 +8565,8 @@ func TestTerminalBranch_StaleCacheAnswerRoutesTerminal(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow) // pending armed over the nil cache; the Require is out
 
-	if got := sink.opLog(); !slices.Equal(got, []string{"require"}) {
-		t.Fatalf("op log before the answer = %q, want exactly [require] — nothing destructive before the verdict", got)
+	if got := sink.opLog(); !slices.Equal(got, []string{requireOp}) {
+		t.Fatalf("op log before the answer = %q, want exactly [%s] — nothing may precede the verdict", got, requireOp)
 	}
 
 	a.HandleSurroundingText("x", 1, 1) // the stale cache: not the typed stretch
@@ -8572,14 +8579,16 @@ func TestTerminalBranch_StaleCacheAnswerRoutesTerminal(t *testing.T) {
 		t.Fatalf("the stale-routed round never completed — the word was abandoned; log:\n%s", logged)
 	}
 	if !strings.Contains(logged, `"msg":"correction","level":2`) {
-		t.Errorf("the stale-routed round did not take the terminal write branch (level-2 DEBUG record missing); log:\n%s", logged)
+		t.Errorf("the stale-routed round missed the terminal write branch (level-2 record); log:\n%s", logged)
 	}
 	if strings.Contains(logged, `"reason":"verify-mismatch"`) {
-		t.Errorf("the stale-cache answer concluded a GTK verify-mismatch — the owner-amended signature must route terminal; log:\n%s", logged)
+		t.Errorf("the stale-cache answer concluded a GTK mismatch — the amended signature routes terminal\n%s", logged)
 	}
-	want := append([]string{"require"}, append(burstOps(len([]rune(wordEN)), wordRU), "require")...)
+	burst := burstOps(len([]rune(wordEN)), wordRU)
+	want := append([]string{requireOp}, burst...)
+	want = append(want, requireOp)
 	if got := sink.opLog(); !slices.Equal(got, want) {
-		t.Fatalf("op log = %q, want the arm %q + the chunked terminal write %q + the verify-after arm", got, []string{"require"}, burstOps(len([]rune(wordEN)), wordRU))
+		t.Fatalf("op log = %q, want the arm + the chunked terminal write %q + the verify-after arm", got, burst)
 	}
 }
 
@@ -8604,10 +8613,10 @@ func TestTerminalBranch_StaleCacheLearnsForNextGesture(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	want := append(burstOps(len([]rune(wordEN)), wordRU), "require")
+	want := append(burstOps(len([]rune(wordEN)), wordRU), requireOp)
 	if got := sink.opLog()[opsBefore:]; !slices.Equal(got, want) {
-		t.Fatalf("round-2 op log = %q, want the decision-time terminal burst %q + the verify-after arm — "+
-			"the learned class must route at the decision, never back into the pending machine", got, burstOps(len([]rune(wordEN)), wordRU))
+		t.Fatalf("round-2 op log = %q, want the decision-time terminal burst + the verify-after arm %q — "+
+			"the learned class must route at the decision, never back into the pending machine", got, want)
 	}
 }
 
@@ -8621,18 +8630,20 @@ func TestTerminalBranch_HonestPushStillFailClosed(t *testing.T) {
 	a, sink := wiredActor()
 
 	typeWord(a, wordEN)
-	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine)) // the honest tracking push
+	// The honest tracking push: the cache carries the client's field state.
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
 	tapShift(a)
 	tapShift(a)
-	a.ExpiryAt(expiryAfterWindow)                                                       // pending armed over the NON-nil cache
-	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine)) // the fresh answer, still not the token
+	a.ExpiryAt(expiryAfterWindow) // pending armed over the NON-nil cache
+	// The fresh honest answer — still not the typed token.
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
 
 	logged := buf.String()
 	if !strings.Contains(logged, `"reason":"verify-mismatch"`) {
 		t.Errorf("the honest-GTK mismatch lost its fail-closed record; log:\n%s", logged)
 	}
 	if strings.Contains(logged, `"msg":"terminal class"`) {
-		t.Errorf("a tracking client learned the terminal class — cache evidence must keep the fail-closed world; log:\n%s", logged)
+		t.Errorf("a tracking client learned the terminal class — cache evidence keeps fail-closed\n%s", logged)
 	}
 	if got := len(sink.forwardCalls()); got != 0 {
 		t.Errorf("the honest mismatch forwarded %+v — abort, не мусорить", sink.forwardCalls())
