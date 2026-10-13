@@ -319,6 +319,11 @@ type Actor struct {
 	flapEpoch uint64
 	flapStop  func()
 	flapAfter func(d time.Duration, fn func()) (stop func())
+	// flipAfter is the deferred-flip grace seam of the terminal write branch
+	// (plan 10-08, the flapAfter form: the production arm is time.AfterFunc,
+	// the corpus installs recorders). Set only by UseFlipTimer; the behavior
+	// riding it lands with the machine itself.
+	flipAfter func(d time.Duration, fn func()) (stop func())
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -740,6 +745,17 @@ func (a *Actor) UseFlapTimer(arm func(d time.Duration, fn func()) (stop func()))
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.flapAfter = arm
+}
+
+// UseFlipTimer installs the deferred-flip grace seam of the terminal write
+// branch (plan 10-08, the UseFlapTimer form): arm(d, fn) arms one grace
+// deadline and returns the stop function canceling a still-pending firing.
+// The production arm is time.AfterFunc (defaultFlapAfter); the corpus
+// installs a deterministic recorder. The daemon path never calls it.
+func (a *Actor) UseFlipTimer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.flipAfter = arm
 }
 
 // UseRoleClock installs the role-episode clock seam (plan 10-07, the

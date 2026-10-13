@@ -8076,3 +8076,439 @@ func TestTerminalBranch_Level2PacesWire(t *testing.T) {
 		t.Fatalf("wire timeline = %q, want the paced %q", wire, want)
 	}
 }
+
+// The deferred-flip corpus of plan 10-08 (G-10-1 cause B, the E3 verdict of
+// 2026-10-13 18:33 MSK): the terminal branch's post-correction flip DEFERS
+// until the commit's delivery is confirmed — a confirming push, the next
+// keystroke, or the grace deadline — because the flip's SetGlobalEngine
+// re-mints the engine object 2–8 ms after the commit and, under host focus
+// churn, the late-processing client discards the stale engine's signal: the
+// committed word is LOST (the E3 push 16 ms after the commit showed an EMPTY
+// field). The flip decision reuses settleCorrectionFlip's exact guards (the
+// combo gesture and the off gate keep their byte-as-today paths), each
+// release site fires flipTo exactly once, and no release site sits on the
+// FocusOut lifecycle — a flap pair must not be able to reproduce E3.
+
+// termFlipGrace is the pinned grace deadline of the deferred flip: the E3
+// healthy push landed 16 ms after the commit, the churn-delayed client is
+// unmeasurable from the daemon — the deadline carries a x20 headroom and is
+// an internal constant, never a config key.
+const termFlipGrace = 300 * time.Millisecond
+
+// flipClock is the deterministic double of the deferred-flip grace seam
+// (plan 10-08, the flapClock form): arm records the armed deadlines and
+// holds the single pending callback; fire() plays the grace expiry, and the
+// stop closure the actor holds cancels a released flip's pending callback —
+// a stale fire (already released, re-armed slot) is the production no-op.
+type flipClock struct {
+	mu        sync.Mutex
+	durations []time.Duration
+	pending   func()
+}
+
+// arm records one armed grace deadline and returns the actor's stop closure.
+func (f *flipClock) arm(d time.Duration, fn func()) func() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.durations = append(f.durations, d)
+	f.pending = fn
+
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.pending = nil
+	}
+}
+
+// fire plays the grace expiry: a released flip holds no callback, so a
+// stale fire is a no-op — exactly the production guard.
+func (f *flipClock) fire() {
+	f.mu.Lock()
+	fn := f.pending
+	f.pending = nil
+	f.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+// armedDurations snapshots the armed grace deadlines (armed count + the
+// pinned constant in one read).
+func (f *flipClock) armedDurations() []time.Duration {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]time.Duration(nil), f.durations...)
+}
+
+// hasPending reports whether a grace deadline is still armed — the quiet-
+// timeout cell's proof that the flip fired from the timeout release, not
+// from the grace.
+func (f *flipClock) hasPending() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.pending != nil
+}
+
+// deferFlipActor wires the corpus actor: the terminal branch via the role
+// double (the TestTerminalBranch_VTERoleUnifiedChunks form — a fresh buffer,
+// no teaching leftovers), the flip gate ON, the grace under the corpus
+// clock.
+func deferFlipActor() (*session.Actor, *fakeSink, *flipClock) {
+	a, sink := wiredActor()
+	a.UseRole(&fakeRole{role: acRoleForbiddenTerminal})
+	a.SetOptions(flipOnOptions())
+	clock := &flipClock{}
+	a.UseFlipTimer(clock.arm)
+
+	return a, sink, clock
+}
+
+// deferFlipRound drives one terminal word correction: type wordEN, double
+// tap, expiry — the branch commits and DEFERS its flip.
+func deferFlipRound(a *session.Actor) {
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+}
+
+// TestTerminalBranch_FlipDeferredUntilConfirmed pins the E3 fix's core: a
+// flip-enabled terminal correction emits burst+commit+verify-arm and NOTHING
+// else — no SetGlobalEngine, no panel emit between the commit and the
+// delivery confirmation; the confirming push (the field text ends with
+// converted+tail — the SAME match criterion the verify-after reads) fires
+// the flip exactly once, in the D-36 order (mode record → switcher → panel
+// emit), and the release itself emits no field traffic beyond the flip's
+// panel emit.
+func TestTerminalBranch_FlipDeferredUntilConfirmed(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink, _ := deferFlipActor()
+	probe := &switchProbe{}
+	var swSawMode bool
+	probe.onCall = func(string) {
+		swSawMode = strings.Contains(buf.String(), `"msg":"mode","to":"ru"`)
+	}
+	a.SetSwitcher(probe.switcher)
+
+	deferFlipRound(a)
+
+	want := append(termChunkOps(len([]rune(wordEN)), wordRU), "require")
+	if got := sink.opLog(); !slices.Equal(got, want) {
+		t.Fatalf("round op log = %q, want the burst+commit+verify-arm shape %q — no switch/panel "+
+			"traffic may sit between the commit and the delivery confirmation (E3, plan 10-08)", got, want)
+	}
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records before the confirming push = %d, want 0 — the flip defers; log:\n%s",
+			got, buf.String())
+	}
+	if got := probe.targets(); len(got) != 0 {
+		t.Errorf("SetGlobalEngine calls before the confirmation = %q, want none — the flip must not "+
+			"orphan the in-flight commit", got)
+	}
+
+	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+
+	logged := buf.String()
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after the confirming push = %d, want exactly 1; log:\n%s", got, logged)
+	}
+	if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+		t.Errorf("the released flip is not the EN→RU set; log:\n%s", logged)
+	}
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("switch targets after the confirmation = %q, want exactly [%s] — one flip, target engine",
+			got, engine.NameRU)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] — one emit per released flip", got)
+	}
+	if !swSawMode {
+		t.Errorf("the switcher fired before the mode record — the D-36 order survives the deferral")
+	}
+	if got := sink.requireCount(); got != 1 {
+		t.Errorf("requires = %d, want 1 — the release requires nothing", got)
+	}
+	if got := len(sink.forwardCalls()); got != len([]rune(wordEN)) {
+		t.Errorf("forwards = %d, want %d — the confirmation replayed nothing", got, len([]rune(wordEN)))
+	}
+}
+
+// TestTerminalBranch_FlipReleasedByNextKey pins the push-less client's
+// confirmation (the wezterm class): the first keystroke after the correction
+// releases the flip STRICTLY before the key is processed — the key already
+// types in the RESULT mode (the owner rule «режим следует за скриптом
+// результата» is preserved by the deferral, not lost to it).
+func TestTerminalBranch_FlipReleasedByNextKey(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink, _ := deferFlipActor()
+
+	deferFlipRound(a)
+
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records before the next key = %d, want 0 — the flip waits; log:\n%s",
+			got, buf.String())
+	}
+
+	a.HandleKey(engine.EngineEvent{Keyval: 'x'}) // EN-mode keyval — released first, consumed in RU
+
+	ops := sink.opLog()
+	n := len(ops)
+	if n < 2 || ops[n-2] != "mode(ru)" || ops[n-1] != "commit(ч)" {
+		t.Fatalf("tail of the op log = %q, want [... mode(ru) commit(ч)] — the release must precede "+
+			"the key's processing, the key types in the result mode", ops[max(n-3, 0):])
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records after the key = %d, want exactly 1 — one flip per correction; log:\n%s",
+			got, buf.String())
+	}
+}
+
+// TestTerminalBranch_FlipGraceDeadlineFires pins the last release site:
+// neither a push nor a keystroke arrived, so the grace deadline fires the
+// flip exactly once — the mode rule must never be lost silently (the slot
+// cannot stick), and a stale second fire is a no-op.
+func TestTerminalBranch_FlipGraceDeadlineFires(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink, clock := deferFlipActor()
+
+	deferFlipRound(a)
+
+	armed := clock.armedDurations()
+	if len(armed) != 1 {
+		t.Fatalf("deferred flips armed = %d, want exactly 1 — the grace deadline is the machine's "+
+			"last release site", len(armed))
+	}
+	if armed[0] != termFlipGrace {
+		t.Errorf("grace deadline = %v, want %v (the E3 headroom constant, never a config key)", armed[0], termFlipGrace)
+	}
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records with the grace pending = %d, want 0; log:\n%s", got, buf.String())
+	}
+
+	clock.fire()
+
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after the grace fire = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `"msg":"mode","to":"ru"`) {
+		t.Errorf("the grace flip is not the EN→RU set; log:\n%s", buf.String())
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru] — one emit per released flip", got)
+	}
+
+	clock.fire() // stale — the flip was already released
+
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records after a stale grace fire = %d, want still 1 — one flip per correction",
+			got)
+	}
+}
+
+// TestTerminalBranch_FlipReleasedOnMismatchAndTimeout pins the verify-
+// outcome neutrality of the mode rule: BOTH the concluding mismatch push and
+// the quiet verify-after timeout release the deferred flip — the verify
+// machinery judges the FIELD, the flip rule follows the RESULT script —
+// while the 10-04 mismatch semantics stay byte-unchanged (log and stop, no
+// rung, no repair).
+func TestTerminalBranch_FlipReleasedOnMismatchAndTimeout(t *testing.T) {
+	t.Run("mismatch", func(t *testing.T) {
+		buf := captureLogs(t)
+		a, _, _ := deferFlipActor()
+
+		deferFlipRound(a)
+
+		if got := countModeRecords(buf); got != 0 {
+			t.Fatalf("mode records before the mismatch push = %d, want 0; log:\n%s", got, buf.String())
+		}
+
+		// WR-05: the first mismatching answer re-quires — a stale-retry push
+		// is NOT a settlement and must not release the flip early.
+		a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
+		if got := countModeRecords(buf); got != 0 {
+			t.Fatalf("a stale-retry push released the flip early: %d mode records, want 0; log:\n%s",
+				got, buf.String())
+		}
+		a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
+
+		logged := buf.String()
+		if !strings.Contains(logged, `"msg":"correction verify","outcome":"mismatch"`) {
+			t.Errorf("the 10-04 mismatch INFO record is missing (byte-unchanged semantics); log:\n%s", logged)
+		}
+		if got := countModeRecords(buf); got != 1 {
+			t.Fatalf("mode records after the concluding mismatch = %d, want exactly 1 — the flip "+
+
+				"releases on the settlement, whatever its verdict; log:\n%s", got, logged)
+		}
+		if !strings.Contains(logged, `"msg":"mode","to":"ru"`) {
+			t.Errorf("the mismatch-released flip is not the EN→RU set; log:\n%s", logged)
+		}
+	})
+
+	t.Run("quiet-timeout", func(t *testing.T) {
+		buf := captureLogsLevel(t, slog.LevelDebug)
+		a, _, clock := deferFlipActor()
+		cfg := reloadCfg(300, "shift+ctrl_r")
+		cfg.Timeouts.VerifyWaitMs = 30
+		a.AttachConfig(&reloadSource{cfg: cfg})
+
+		deferFlipRound(a)
+
+		if got := countModeRecords(buf); got != 0 {
+			t.Fatalf("mode records before the quiet timeout = %d, want 0; log:\n%s", got, buf.String())
+		}
+
+		if !waitLogUntil(t, buf, `"outcome":"timeout"`, 1, 2*time.Second) {
+			t.Fatalf("the quiet timeout never landed; log:\n%s", buf.String())
+		}
+		if got := countModeRecords(buf); got != 1 {
+			t.Fatalf("mode records after the quiet timeout = %d, want exactly 1 — the timeout release "+
+				"saves the mode rule; log:\n%s", got, buf.String())
+		}
+		if !clock.hasPending() {
+			t.Error("the grace clock fired — the release came from the wrong site; the quiet timeout " +
+				"must release the flip itself")
+		}
+	})
+}
+
+// TestTerminalBranch_FlipFalseArmsNothing pins the frozen-stand regression
+// guard: with the off gate (the zero value every stand config document and
+// the whole unit corpus carries) the machine never arms — the round's op log
+// stays byte-identical to the frozen shape.
+func TestTerminalBranch_FlipFalseArmsNothing(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseRole(&fakeRole{role: acRoleForbiddenTerminal})
+	clock := &flipClock{}
+	a.UseFlipTimer(clock.arm)
+	a.SetOptions(session.Options{FlipAfterCorrection: false})
+
+	deferFlipRound(a)
+
+	if armed := clock.armedDurations(); len(armed) != 0 {
+		t.Fatalf("flip_after_correction=false armed %d deferred flips, want 0 — the frozen stand "+
+			"rows' world must stay byte-identical", len(armed))
+	}
+	if got := countModeRecords(buf); got != 0 {
+		t.Errorf("mode records with the gate off = %d, want 0; log:\n%s", got, buf.String())
+	}
+	want := append(termChunkOps(len([]rune(wordEN)), wordRU), "require")
+	if got := sink.opLog(); !slices.Equal(got, want) {
+		t.Fatalf("op log = %q, want the byte-identical frozen shape %q", got, want)
+	}
+}
+
+// TestTerminalBranch_ComboFlipImmediateNotDeferred pins the combo path:
+// a combo gesture's terminal correction keeps its OWN settleCombo flip —
+// immediate, exactly one, the deferred machine never arms (the D-36 combo
+// semantics byte-as-today).
+func TestTerminalBranch_ComboFlipImmediateNotDeferred(t *testing.T) {
+	buf := captureLogs(t)
+	a, _, clock := deferFlipActor()
+
+	typeWord(a, wordEN)
+	pressComboDefault(a) // the word half runs the terminal branch under comboPending
+
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("combo mode records = %d, want exactly 1 fired immediately — the combo's own "+
+			"settleCombo flip, byte as today; log:\n%s", got, buf.String())
+	}
+	if armed := clock.armedDurations(); len(armed) != 0 {
+		t.Errorf("deferred flips armed on the combo path = %d, want 0 — the combo flip stays immediate",
+			len(armed))
+	}
+	logged := buf.String()
+	iDone := strings.Index(logged, `"msg":"correction","outcome":"done"`)
+	iMode := strings.Index(logged, `"msg":"mode"`)
+	if iDone > iMode {
+		t.Errorf("combo flip preceded the settled done (done@%d > mode@%d) — the D-36 order", iDone, iMode)
+	}
+}
+
+// TestTerminalBranch_FlipSurvivesFocusOutGraceReleases pins the lifecycle
+// neutrality: the deferred flip is the GLOBAL mode rule, not context state —
+// a FocusOut/FocusIn flap pair (the host churn) must not release it (a
+// SetGlobalEngine inside the churn window is exactly the E3 reproduction),
+// and the grace deadline releases it after the pair.
+func TestTerminalBranch_FlipSurvivesFocusOutGraceReleases(t *testing.T) {
+	buf := captureLogs(t)
+	a, _, clock := deferFlipActor()
+
+	deferFlipRound(a)
+
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records before the flap pair = %d, want 0 — the flip waits; log:\n%s",
+			got, buf.String())
+	}
+
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("the flap pair released the flip: %d mode records, want 0 — no release site may sit "+
+			"on the lifecycle (E3 must stay unreproducible); log:\n%s", got, buf.String())
+	}
+	if !clock.hasPending() {
+		t.Error("the flap pair cancelled the grace deadline — the flip would be lost silently")
+	}
+
+	clock.fire()
+
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after the grace fire = %d, want exactly 1 — the rule survives the "+
+			"flap pair; log:\n%s", got, buf.String())
+	}
+}
+
+// TestTerminalBranch_SecondCorrectionReleasesPendingFlip pins the exactly-
+// one-flip-per-correction handoff: the second correction releases the first
+// round's pending flip synchronously (strictly before its own first wire
+// emission), then defers its own — and the confirming push releases that one
+// too. No flip is lost, none doubles.
+func TestTerminalBranch_SecondCorrectionReleasesPendingFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink, _ := deferFlipActor()
+
+	deferFlipRound(a)
+
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records after round 1 = %d, want 0 — the flip waits; log:\n%s", got, buf.String())
+	}
+
+	opsAfterRound1 := len(sink.opLog())
+	tapShift(a) // the first keystroke of the new gesture releases round 1's flip
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	ops := sink.opLog()
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after round 2 = %d, want exactly 1 — round 1's flip released before "+
+			"round 2 started, round 2's own flip still deferred; log:\n%s", got, buf.String())
+	}
+	// Round 1's verify-arm, then the release flip, then round 2's burst: the
+	// round-1 buffer was replaced with wordRU, so round 2 converts it back to
+	// wordEN — the opposite direction, the same chunked shape.
+	want := append(termChunkOps(len([]rune(wordEN)), wordRU), "require", "mode(ru)")
+	want = append(want, termChunkOps(len([]rune(wordEN)), wordEN)...)
+	want = append(want, "require")
+	if !slices.Equal(ops[opsAfterRound1:], want) {
+		t.Fatalf("round-2 op log = %q, want the release %q seated strictly before round 2's chunked "+
+			"burst %q", ops[opsAfterRound1:], want[:len(termChunkOps(len([]rune(wordEN)), wordRU))+2],
+			want[len(termChunkOps(len([]rune(wordEN)), wordRU))+2:])
+	}
+
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+
+	if got := countModeRecords(buf); got != 2 {
+		t.Fatalf("mode records after round 2's confirmation = %d, want exactly 2 — one flip per "+
+			"correction, none lost; log:\n%s", got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `"msg":"mode","to":"en"`) {
+		t.Errorf("round 2's flip is not the RU→EN set; log:\n%s", buf.String())
+	}
+}
