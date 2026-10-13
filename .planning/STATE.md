@@ -6,10 +6,10 @@ current_phase: 10
 current_phase_name: TERM-слово
 status: executing
 stopped_at: CHECKPOINT 10-08 Task 2 — awaiting owner verdict (Task 1 committed 5a47555/bfdeaf1)
-last_updated: "2026-10-13T20:19:48.570Z"
+last_updated: "2026-10-13T20:20:01.552Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: bfdeaf1741c29468f7a0527f61a48f9d94e6a840
+state_head: 12632f81885aa55474051cc7210318486d475950
 progress:
   total_phases: 5
   completed_phases: 0
@@ -95,6 +95,7 @@ None yet.
 - [Phase 9 / 09-02] BATCH2 HALTED BY OWNER (2026-10-11 ~19:10, писк/окна): R1 spike-smoke записал FAIL «arming gate: no key-trace record after 5 modifier taps» ПРИ подтверждённом клике (focus-пары демона 18:57:50) и видимой инъекции в окне — противоречие зафиксировано дословно в adr-008-spike-log.md, разбор за следующим заходом. R2–R6 не исполнены. Центральное свидетельство среды подтверждено валидацией: фоновые окна мертвы для клавиатуры (auto-grant нестабилен / AT-SPI ✗ / EWMH ✗ / клик ✗), окна владельца живы; AT-SPI-репортинг фокуса недостоверен глобально — свидетеля убрать из маркеров стенда. Runbook «владелец запускает → кликает → инъекция видна» доставлен; остался нерешённым арминг/трейс на стороне кейса. Все процессы пакета убиты, агент остановлен; живая часть 09-02 ждёт нового захода (сначала починить arming-gate, без звуковых циклов).
 - [Phase 9 / 09-02] OWNER ENDED LIVE-TEST PARTICIPATION (2026-10-12 ~02:00): after a day of harness failures the owner refused the tester role outright. Live rounds R2–R6 remain unexecuted and stay blocked on the environment: background-spawned windows are keyboard-dead on kernel 7.2.9-2-t2 (attribution defect, proven), and machine focus-detection proved unfixable at acceptable cost (six harness patches, all superseded). WHAT STANDS COMMITTED: the phase's core scientific result — engine→stale-context desync (XIM) reproduced twice, dated verdict rows + preserved daemon journals (a7ac579, 4953d78, 5a5b9f3, evidence-20261011-*.log); harness rewritten headless-green through 47e0583 (one observation layer, silent, patient daemon lifecycle, pty-armed gates, replay-pinned classifiers). PATHS FORWARD (owner's call, urgent): t2-linux kernel fix lands → re-run the 5-case runbook as-is; or a CI-runner desktop with working focus → run headless-owned; or resume owner-run commands if ever desired. The spike log's desync rows are already usable by phases 10/12 as feasibility evidence per the plan's own semantics.
 - Ячейка silence-matrix role-60 мигрирована на арминг-ожидание terminal-veto (D-55 переносит вердикт из confirm в арминг) — записана в WINDOWS.md как deviation, открытой до фазовой верификации
+- [Phase 10 / 10-08] CHECKPOINT (blocking-human, 2026-10-13): Задача 1 (машина отложенного флипа defer-until-confirmed) закоммичена (5a47555 RED, bfdeaf1 GREEN, mise ci зелёный). Задача 2 (стенд: re-pin замороженных рядов + term-word-vte-flip + амендмент ADR-008) заблокирована дрейфом стенда: wezterm-nightly клиент на ВМ минтит caps 0x29 (surrounding-бит анонсируется) против запиненного 0x9 и отвечает на RequireSurroundingText протухшим кэшем; подпись стабильна через ibus-restart и reboot ВМ, пакеты старше зелёных рядов 10-06. Починка в демоне = смена семантик 10-04/ADR-004 (Rule 4). Ждёт вердикт владельца: (1) семантическая дельта плана, (2) ручная активация стенда кликами, (3) поиск источника дрейфа 0x9→0x29, (4) закрыть план с задокументированным окруженческим хвостом. Возобновление: SendMessage агенту agent_5a61967f-ffab-4383-afff-962bf2450d7b с выбранным вариантом. 10-09 (хост-ревалидация) стоит за 10-08.
 
 ## Deferred Items
 
