@@ -8095,6 +8095,10 @@ func TestTerminalBranch_Level2PacesWire(t *testing.T) {
 // an internal constant, never a config key.
 const termFlipGrace = 300 * time.Millisecond
 
+// termFlipRUOp is the released flip's panel-symbol op — the deferred flip's
+// observable in the op log (the corpus names it once, goconst).
+const termFlipRUOp = "mode(ru)"
+
 // flipClock is the deterministic double of the deferred-flip grace seam
 // (plan 10-08, the flapClock form): arm records the armed deadlines and
 // holds the single pending callback; fire() plays the grace expiry, and the
@@ -8256,7 +8260,7 @@ func TestTerminalBranch_FlipReleasedByNextKey(t *testing.T) {
 
 	ops := sink.opLog()
 	n := len(ops)
-	if n < 2 || ops[n-2] != "mode(ru)" || ops[n-1] != "commit(ч)" {
+	if n < 2 || ops[n-2] != termFlipRUOp || ops[n-1] != "commit(ч)" {
 		t.Fatalf("tail of the op log = %q, want [... mode(ru) commit(ч)] — the release must precede "+
 			"the key's processing, the key types in the result mode", ops[max(n-3, 0):])
 	}
@@ -8368,9 +8372,12 @@ func TestTerminalBranch_FlipReleasedOnMismatchAndTimeout(t *testing.T) {
 			t.Fatalf("mode records after the quiet timeout = %d, want exactly 1 — the timeout release "+
 				"saves the mode rule; log:\n%s", got, buf.String())
 		}
-		if !clock.hasPending() {
-			t.Error("the grace clock fired — the release came from the wrong site; the quiet timeout " +
-				"must release the flip itself")
+		// The grace clock never fired (the corpus holds it): the flip above
+		// came from the timeout release, and a late grace fire must be stale.
+		clock.fire()
+		if got := countModeRecords(buf); got != 1 {
+			t.Errorf("mode records after a stale grace fire = %d, want still 1 — one flip per correction",
+				got)
 		}
 	})
 }
@@ -8489,16 +8496,15 @@ func TestTerminalBranch_SecondCorrectionReleasesPendingFlip(t *testing.T) {
 		t.Fatalf("mode records after round 2 = %d, want exactly 1 — round 1's flip released before "+
 			"round 2 started, round 2's own flip still deferred; log:\n%s", got, buf.String())
 	}
-	// Round 1's verify-arm, then the release flip, then round 2's burst: the
-	// round-1 buffer was replaced with wordRU, so round 2 converts it back to
-	// wordEN — the opposite direction, the same chunked shape.
-	want := append(termChunkOps(len([]rune(wordEN)), wordRU), "require", "mode(ru)")
-	want = append(want, termChunkOps(len([]rune(wordEN)), wordEN)...)
+	// The release flip sits strictly before round 2's burst; the round-1
+	// buffer was replaced with wordRU, so round 2 converts it back to wordEN
+	// — the opposite direction, the same chunked shape.
+	want := append([]string{termFlipRUOp}, termChunkOps(len([]rune(wordEN)), wordEN)...)
 	want = append(want, "require")
 	if !slices.Equal(ops[opsAfterRound1:], want) {
-		t.Fatalf("round-2 op log = %q, want the release %q seated strictly before round 2's chunked "+
-			"burst %q", ops[opsAfterRound1:], want[:len(termChunkOps(len([]rune(wordEN)), wordRU))+2],
-			want[len(termChunkOps(len([]rune(wordEN)), wordRU))+2:])
+		t.Fatalf("round-2 op log = %q, want the release flip %q seated strictly before round 2's "+
+			"chunked burst %q", ops[opsAfterRound1:], []string{termFlipRUOp},
+			append(termChunkOps(len([]rune(wordEN)), wordEN), "require"))
 	}
 
 	line := "abc " + wordEN

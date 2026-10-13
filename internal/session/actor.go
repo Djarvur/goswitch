@@ -72,6 +72,15 @@ const terminalChunkKeys = 8
 // user preference.
 const focusFlapWindow = 10 * time.Millisecond
 
+// flipConfirmGrace is the grace deadline of the terminal branch's deferred
+// correction flip (plan 10-08, G-10-1 cause B, the E3 verdict of 2026-10-13):
+// a healthy confirming push lands ~16 ms after the commit (the E3 -debug
+// trace), while the churn-delayed client's next keystroke is unmeasurable
+// from the daemon — the deadline carries a x20 headroom, so the mode rule
+// can never be lost silently yet never fires into a live delivery wait. An
+// internal constant with a journal provenance, never a config key.
+const flipConfirmGrace = 300 * time.Millisecond
+
 // level2ForwardGap is the pacing quantum between the write branch's wire
 // emissions (plan 10-05, the 2026-10-12 VTE live finding): the client
 // drains forwarded keys lazily — they queue as GDK events — while the
@@ -319,11 +328,23 @@ type Actor struct {
 	flapEpoch uint64
 	flapStop  func()
 	flapAfter func(d time.Duration, fn func()) (stop func())
-	// flipAfter is the deferred-flip grace seam of the terminal write branch
-	// (plan 10-08, the flapAfter form: the production arm is time.AfterFunc,
-	// the corpus installs recorders). Set only by UseFlipTimer; the behavior
-	// riding it lands with the machine itself.
-	flipAfter func(d time.Duration, fn func()) (stop func())
+	// The deferred correction flip of the terminal write branch (plan 10-08,
+	// G-10-1 cause B, the E3 verdict): the post-correction mode flip is
+	// ARMED, not executed — SetGlobalEngine 2–8 ms after the commit orphans
+	// the in-flight commit under host churn (the client processes the commit
+	// late, the re-minted context discards the stale engine's signal, the
+	// committed word is lost). The armed flip fires on the FIRST delivery
+	// confirmation — a confirming push, the next keystroke, or the grace
+	// deadline — and NO release site sits on the FocusOut lifecycle (a flap
+	// pair must not be able to reproduce E3; the mode rule is global, not
+	// context-scoped). flipEpoch is the stale-deadline guard (the afterExpiry
+	// discipline), flipStop cancels the armed deadline at release, and
+	// flipAfter is the timer seam (the flapAfter form: the production arm is
+	// time.AfterFunc, the corpus installs recorders).
+	flipPending *deferredFlip
+	flipEpoch   uint64
+	flipStop    func()
+	flipAfter   func(d time.Duration, fn func()) (stop func())
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -592,6 +613,17 @@ type pendingAfter struct {
 	// Forbidden BY CONSTRUCTION, not by config: the round carries no paste
 	// payload at all.
 	noRung bool
+}
+
+// deferredFlip is the armed post-correction mode flip of the terminal write
+// branch (plan 10-08, G-10-1 cause B, the E3 verdict): the SET-semantics
+// target — the corrected text's script, the owner rule «режим следует за
+// скриптом результата» — plus the armed slot's epoch. The epoch makes a
+// stale grace deadline from a released or re-armed slot a no-op (the
+// afterExpiry discipline).
+type deferredFlip struct {
+	target scriptMode
+	epoch  uint64
 }
 
 // NewActor returns an actor deciding tap series inside the given
@@ -1527,6 +1559,84 @@ func scriptOf(converted []rune) scriptMode {
 	return modeEN // letterless — the caller's transition is false either way
 }
 
+// deferCorrectionFlip arms the terminal branch's post-correction mode flip
+// instead of executing it (plan 10-08, G-10-1 cause B, the E3 verdict): the
+// decision reuses settleCorrectionFlip's EXACT guards — a combo gesture
+// keeps its own settleCombo flip, the off gate arms nothing, and a target
+// equal to the current mode is a no-op flip, so nothing is armed. The armed
+// flip fires on the FIRST delivery confirmation (releaseDeferredFlip): a
+// confirming push, the next keystroke, or the flipConfirmGrace deadline.
+// One slot at a time — arming cancels a still-pending deadline (a second
+// correction can reach this site only off the keystroke path, e.g.
+// CorrectNow, and its own flip supersedes the pending one). The caller
+// holds the mutex.
+func (a *Actor) deferCorrectionFlip(converted []rune) {
+	if a.comboPending || !a.opts.FlipAfterCorrection {
+		return
+	}
+	target := scriptOf(converted)
+	if target == a.mode {
+		return
+	}
+	a.cancelFlipGrace()
+	a.flipEpoch++
+	a.flipPending = &deferredFlip{target: target, epoch: a.flipEpoch}
+	epoch := a.flipEpoch
+	arm := a.flipAfter
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	a.flipStop = arm(flipConfirmGrace, func() { a.flipGraceExpiry(epoch) })
+}
+
+// releaseDeferredFlip executes an armed deferred flip exactly once (the
+// caller holds the mutex): flipTo's semantics are reused WHOLE — the D-36
+// record order (mode record → switcher → panel symbol) is flipTo's own,
+// never duplicated — and the slot clears before the call, so every release
+// site (the confirming push, the next keystroke, the grace deadline, the
+// verify settlements) is idempotent. A nil slot is a no-op: the release
+// sites on the shared paths (settleAfter, afterExpiry, feedKey) pass
+// through untouched for the GTK corrections and the flip-disabled
+// terminals. The caller holds the mutex.
+func (a *Actor) releaseDeferredFlip() {
+	if a.flipStop != nil {
+		a.flipStop()
+		a.flipStop = nil
+	}
+	if a.flipPending == nil {
+		return
+	}
+	flip := a.flipPending
+	a.flipPending = nil
+	a.flipTo(flip.target)
+}
+
+// cancelFlipGrace stops a pending grace deadline (the caller holds the
+// mutex): the epoch advance turns an already-queued callback stale — the
+// afterExpiry form.
+func (a *Actor) cancelFlipGrace() {
+	if a.flipStop != nil {
+		a.flipStop()
+		a.flipStop = nil
+	}
+	a.flipEpoch++
+}
+
+// flipGraceExpiry is the armed flip's grace deadline: no confirming push and
+// no keystroke arrived, so the mode rule must not wait forever — the slot
+// cannot stick (T-10-08-02), the flip fires. A stale epoch (the flip was
+// already released, or a newer arm owns the slot) is a no-op — the
+// afterExpiry form.
+func (a *Actor) flipGraceExpiry(epoch uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.flipPending == nil || a.flipPending.epoch != epoch {
+		return // stale deadline — the flip was released or re-armed
+	}
+	a.releaseDeferredFlip()
+}
+
 // skipCorrection records one D-20 refusal: the INFO reason record (one
 // line, the reason slug, nothing touched) and the counters the control
 // surface reports. The caller holds the mutex.
@@ -1820,6 +1930,7 @@ func (a *Actor) settleAfter() ([]rune, bool) {
 	if a.afterVerdict(round.expected, round.start, round.atRange) {
 		a.clearAfter()
 		slog.Debug("correction verify", "outcome", "match")
+		a.releaseDeferredFlip() // the confirming push: delivery proven — the deferred flip fires now
 
 		return nil, false
 	}
@@ -1833,6 +1944,7 @@ func (a *Actor) settleAfter() ([]rune, bool) {
 	}
 	a.clearAfter()
 	slog.Info("correction verify", "outcome", "mismatch")
+	a.releaseDeferredFlip() // the verify outcome never owns the mode rule: the flip fires on the settlement too
 	if round.noRung {
 		// The terminal branch (plan 10-04, ADR-008 D4, owner verdict OQ 2
 		// «contract»): the mismatch LOGS and STOPS — the round carries no
@@ -1870,6 +1982,7 @@ func (a *Actor) afterExpiry(epoch uint64) {
 	}
 	a.clearAfter()
 	slog.Debug("correction verify", "outcome", "timeout")
+	a.releaseDeferredFlip() // the quiet timeout also releases the flip — the rule never waits past it
 }
 
 // armAfterVerify starts the verify-after round (the caller holds the
@@ -2460,6 +2573,12 @@ func (a *Actor) modeSymbol() string {
 // The CORR-09 reset keyvals (Enter and its keypad variant, Tab, Escape)
 // end the phrase instead of feeding it. The caller holds the mutex.
 func (a *Actor) feedKey(ev engine.EngineEvent) bool {
+	// The deferred terminal flip's second confirmation site (plan 10-08, E3):
+	// the first keystroke after the correction proves the commit delivered —
+	// release STRICTLY before processing, so the key already types in the
+	// RESULT mode. A nil slot is a no-op.
+	a.releaseDeferredFlip()
+
 	if a.macrIntercept(ev) {
 		return true
 	}
@@ -3385,7 +3504,18 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
-	a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
+	if terminal {
+		// E3 delivery-order safety (plan 10-08, G-10-1 cause B): the
+		// SetGlobalEngine of the post-correction flip may not follow the
+		// commit at 2–8 ms — under host churn the client processes the
+		// commit late, the re-minted context discards the stale engine's
+		// signal, and the committed word is LOST. The flip ARMS instead and
+		// fires on the first delivery confirmation (a confirming push, the
+		// next keystroke, or the grace deadline).
+		a.deferCorrectionFlip(converted)
+	} else {
+		a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
+	}
 	a.settleCombo()
 	if terminal {
 		// The terminal branch verifies after the fact (plan 10-04 Task 3):
