@@ -6968,6 +6968,41 @@ func TestTerminalClass_VerifyDeadLearnedOnVerifyTimeout(t *testing.T) {
 	}
 }
 
+// TestTerminalClass_VerifyDeadSurvivesFlapPair pins the flap tolerance of
+// plan 10-07 (G-10-1, cause A): a REAL FocusOut followed by a FocusIn
+// within the flap window — the host kernel's same-engine focus pairs
+// (journal 2026-10-13 16:20:05: pairs 1–3 ms apart, four within 6 ms) —
+// must NOT wipe the learned terminal class: the wipe is deferred by the
+// window and the completing FocusIn cancels it. The class stays alive as a
+// fact, not just unlogged: the next expired round routes through the
+// terminal write branch (no verify round, no second verify-timeout — the
+// plan-10-04 routing contract).
+func TestTerminalClass_VerifyDeadSurvivesFlapPair(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+
+	teachVerifyDead(t, a, wordEN)
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	a.HandleLifecycle(engine.LifecycleFocusIn) // the pair completes inside the window
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 1 {
+		t.Fatalf("terminal-class markers after the flap pair = %d, want exactly 1 (learn only) — "+
+			"an instant same-engine pair must not wipe the learned class (G-10-1); log:\n%s",
+			got, buf.String())
+	}
+
+	// The class is functionally alive: the next Double rides it through the
+	// terminal branch — the verify machine never arms again (plan 10-04).
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	teachVerifyDead(t, a, wordEN)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 1 {
+		t.Fatalf("verify-timeout records after the flap pair = %d, want 1 — the learned class must "+
+			"still route the next gesture through the terminal branch; log:\n%s", got, buf.String())
+	}
+}
+
 // TestTerminalClass_VerifyDeadClearedByFocusOut pins the clearing side of
 // the lifecycle (the plan's two separate clearing tests, FocusOut first):
 // the context's death clears the learned class — one clearing marker — and
