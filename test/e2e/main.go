@@ -128,6 +128,7 @@ func caseListUsage() string {
 		" | autocorrect-blocklist-silent | menu-v2" +
 		" | term-word-vte" +
 		" | term-word-wezterm" +
+		" | term-word-vte-flip" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -274,7 +275,7 @@ func pickCase(name string) (caseSpec, error) {
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
 			" autocorrect-blocklist-silent, menu-v2,"+
 			" term-word-vte, term-negative-witnesses,"+
-			" term-word-wezterm,"+
+			" term-word-wezterm, term-word-vte-flip,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 
@@ -336,6 +337,7 @@ func caseRegistry() map[string]caseSpec {
 		"menu-v2":                      {fn: runMenuV2},
 		"term-word-vte":                {fn: runTermWordVTE, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-word-wezterm":            {fn: runTermWordWezterm, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		"term-word-vte-flip":           {fn: runTermWordVTEFlip, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-negative-witnesses": {
 			fn:                 runTermNegativeWitnesses,
 			noSurfacePreflight: true,

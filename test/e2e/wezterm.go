@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -290,9 +291,19 @@ func (s *stand) focusBaseline() int {
 // only wait (a timeout is a pause, never a failure of the experiment
 // protocol). The await is logged every 15 s so a timeout names the
 // surface that was waiting.
+//
+// Plan 10-08 (the fresh-session live finding of 2026-10-13): a freshly
+// booted stand session does not hand map-focus to spawned gnome-terminal
+// windows, so the gate PROVOKES the pair machine-side — after the first
+// quiet seconds it drives a ydotool center click (the manual-activation
+// equivalent, automated; the venue's stock kernel keeps background windows
+// keyboard-alive). The honesty is untouched: the click is only a
+// provocation, the proceed signal stays the daemon focus_in above the
+// baseline, and every nudge is logged.
 func (s *stand) waitFocusInFrom(ctx context.Context, caseName, surface string, focusBase int) error {
 	deadline := time.Now().Add(spikeClickWait)
 	notes := newNoteGate()
+	nextNudge := time.Now().Add(focusNudgeAfter)
 	for {
 		if s.countSub(focusInMark) > focusBase {
 			fmt.Printf("%s: %s engaged (daemon focus_in above the spawn baseline) — proceeding\n",
@@ -309,10 +320,55 @@ func (s *stand) waitFocusInFrom(ctx context.Context, caseName, surface string, f
 			fmt.Printf("%s: awaiting daemon focus_in for %s (map focus usually self-fires; a click fires it)\n",
 				caseName, surface)
 		}
+		if time.Now().After(nextNudge) {
+			nextNudge = time.Now().Add(focusNudgeEvery)
+			if err := nudgeFocusClick(ctx); err != nil {
+				fmt.Printf("%s: focus nudge failed (continuing to wait): %v\n", caseName, err)
+			}
+		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {
 			return err
 		}
 	}
+}
+
+// focusNudgeAfter is the quiet time before the gate's first machine click,
+// focusNudgeEvery the cadence after it: long enough that a self-firing map
+// focus is never disturbed, short enough that the gate's own budget
+// absorbs several nudges. nudgeHalfDivisor halves the screen dimensions to
+// the center; the xrandr probe reads the live geometry of the stand's
+// Xwayland display.
+const (
+	focusNudgeAfter  = 5 * time.Second
+	focusNudgeEvery  = 5 * time.Second
+	nudgeHalfDivisor = 2
+	nudgeXrandrProbe = "xrandr --current 2>/dev/null | grep -o '[0-9]*x[0-9]* screen'"
+)
+
+// nudgeFocusClick drives one ydotool center click — the machine form of
+// the venue's manual-activation step (plan 10-08): mutter maps spawned
+// windows centered, so the click lands on the fixture the gate is waiting
+// for. The screen size is read from xrandr when it answers (the Xwayland
+// display of the stand), the documented 1280x800 otherwise. Errors are the
+// caller's to log and survive: a failed nudge must not fail the gate.
+func nudgeFocusClick(ctx context.Context) error {
+	x, y := 640, 400
+	if out, err := runCmd(ctx, "sh", "-c", nudgeXrandrProbe); err == nil {
+		var w, h int
+		if _, serr := fmt.Sscan(strings.ReplaceAll(out, "x", " "), &w, &h); serr == nil && w > 0 && h > 0 {
+			x, y = w/nudgeHalfDivisor, h/nudgeHalfDivisor
+		}
+	}
+	if _, err := runCmd(ctx, "ydotool", "mousemove", "--delay", "100",
+		strconv.Itoa(x), strconv.Itoa(y)); err != nil {
+		return fmt.Errorf("mousemove: %w", err)
+	}
+	if _, err := runCmd(ctx, "ydotool", "click", "--delay", "100", "1"); err != nil {
+		return fmt.Errorf("click: %w", err)
+	}
+	fmt.Printf("focus nudge: ydotool center click at %dx%d\n", x, y)
+
+	return nil
 }
 
 // weztermFixturePath resolves a spike fixture config under test/e2e/fixtures.

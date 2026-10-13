@@ -248,6 +248,8 @@ func (s *stand) termWordRound(ctx context.Context, caseName, text string) error 
 // waitForCaptureHex polls the capture until the arming-stripped hex carries
 // want — the pty oracle's settle form. The last hex rides the error for the
 // journal row's observables.
+//
+//nolint:unparam // the timeout is the frozen termCaptureWait by design; the parameter keeps the helper general
 func waitForCaptureHex(ctx context.Context, path, want string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	var hexr string
