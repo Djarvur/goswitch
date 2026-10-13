@@ -314,6 +314,18 @@ type Actor struct {
 	// RoleSource, or a test double installed via UseRole.
 	level2Sleep func(time.Duration) // the write branch's pacing seam (UseLevel2Sleeper)
 	role        RoleSource
+	// acRoleErrors counts EVERY role-request error of the live episode
+	// (plan 10-07, G-10-1 missing #3): the 2026-10-13 host journal shows
+	// the 11:00:16 WARN consumed the episode and the broken source stayed
+	// silent the whole day — the counter makes that machine-visible in
+	// goswitchctl status. A healthy answer closes the episode and zeroes
+	// it (the :2741 semantics extended). acRoleWarnedAt anchors the sticky
+	// WARN's re-arm window; roleClock is the episode's time seam (the
+	// flapAfter form: the production clock is time.Now, the corpus
+	// installs a controllable double).
+	acRoleErrors   int
+	acRoleWarnedAt time.Time
+	roleClock      func() time.Time
 	appidWarned bool // one WARN per degradation episode — a broken source must not spam per keystroke
 	startAppid  func() (AppidSource, error)
 	// version is the daemon's build identity (D-37) pinned at construction;
@@ -584,6 +596,10 @@ func NewActor(window time.Duration) *Actor {
 		// time.AfterFunc deadline, stoppable — the corpus replaces it via
 		// UseFlapTimer with a deterministic recorder.
 		flapAfter: defaultFlapAfter,
+		// The role-episode clock's production form (plan 10-07): the real
+		// wall clock; the corpus installs a controllable double via
+		// UseRoleClock.
+		roleClock: time.Now,
 		// The lazy per-app observer's production starter: the a11y dial of
 		// internal/appid on the daemon's lifetime (the clipboard rung's
 		// context.Background precedent — the actor owns no shutdown path).
@@ -716,6 +732,16 @@ func (a *Actor) UseFlapTimer(arm func(d time.Duration, fn func()) (stop func()))
 	a.flapAfter = arm
 }
 
+// UseRoleClock installs the role-episode clock seam (plan 10-07, the
+// UseFlapTimer form): the clock timestamps the sticky role WARN's re-arm
+// window. The production clock is time.Now; the corpus installs a
+// controllable double. The daemon path never calls it.
+func (a *Actor) UseRoleClock(now func() time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.roleClock = now
+}
+
 // UseDetector installs a boundary detector double — the plan 10-03 spy
 // seam (the UseRole precedent): the veto corpus counts the calls through
 // it to prove the detector never runs on a terminal class and runs exactly
@@ -781,6 +807,11 @@ type Status struct {
 	AutoCorrectFired       int
 	AutoCorrectAbstained   int
 	AutoCorrectSkipReasons map[string]int
+	// AutoCorrectRoleErrors is the live role-request error count (plan
+	// 10-07, G-10-1 missing #3): every error of the current degradation
+	// episode is counted — the 11:00:16 episode stayed silent for the rest
+	// of the day behind its single WARN. A healthy answer zeroes it.
+	AutoCorrectRoleErrors int
 	// SoundEnabled is the applied sound switch (plan 07-05) — the
 	// EffectiveEnabled truth of the applied snapshot (an absent section
 	// reads ON, the owner's default), the `sound_enabled` status token the
@@ -824,6 +855,7 @@ func (a *Actor) StatusSnapshot() Status {
 		SoundEnabled:          a.soundEnabled,
 
 		AutoCorrectSkipReasons: maps.Clone(a.acReasons),
+		AutoCorrectRoleErrors:  a.acRoleErrors,
 		ConfigValid:            true, // built-in defaults, or a source without a status surface
 	}
 	if a.mode == modeRU {

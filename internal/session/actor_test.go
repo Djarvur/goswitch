@@ -5813,6 +5813,134 @@ func TestAutoCorrect_WarnOncePerEpisode(t *testing.T) {
 	}
 }
 
+// acRoleWarnRearmQuiet mirrors the production re-arm window of the sticky
+// role WARN (plan 10-07): errors resuming after this silence sound the WARN
+// AGAIN — a lasting outage must not dissolve into one morning line (the
+// 11:00:16 episode stayed silent the whole day). The test advances past the
+// window instead of sleeping it.
+const acRoleWarnRearmQuiet = 31 * time.Minute
+
+// newFakeClock returns the role-episode clock's controllable double: Now
+// answers the advanced instant, advance moves it without sleeping.
+func newFakeClock() *fakeClock {
+	return &fakeClock{t: time.Now()}
+}
+
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+// Now answers the clock's current instant (the seam's signature).
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.t
+}
+
+// advance moves the clock forward without sleeping.
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// TestAutoCorrect_RoleErrorsCounted pins the counter half of the plan-10-07
+// role diagnostics (G-10-1 missing #3): EVERY role-request error of the
+// episode grows the status-visible counter even while the WARN keeps its
+// stickiness (one line per episode — the journal never spams; the counter
+// never hides). A failing boundary counts twice: the boundary's own
+// classify query and the confirm's live verdict.
+func TestAutoCorrect_RoleErrorsCounted(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{err: errAppidBusDead}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	eventually(t, func() bool { return a.StatusSnapshot().AutoCorrectRoleErrors == 2 },
+		"the first failing boundary never counted its role errors")
+	boundaryWord(t, a, "cnhjrf")
+	eventually(t, func() bool { return a.StatusSnapshot().AutoCorrectRoleErrors == 4 },
+		"the second failing boundary never counted its role errors")
+	if got := strings.Count(buf.String(), `"msg":"autocorrect role unavailable"`); got != 1 {
+		t.Errorf("role WARNs inside one episode = %d, want exactly 1 — the stickiness is kept; log:\n%s",
+			got, buf.String())
+	}
+}
+
+// TestAutoCorrect_RoleWarnRearmsAfterQuietWindow pins the re-arm half of
+// the plan-10-07 role diagnostics: errors continuing after the quiet window
+// sound the WARN AGAIN — a lasting outage is loud every window, never one
+// absorbed morning line (11:00:16). Inside the window the stickiness holds.
+func TestAutoCorrect_RoleWarnRearmsAfterQuietWindow(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	clock := newFakeClock()
+	a.UseRoleClock(clock.Now)
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{err: errAppidBusDead}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	eventually(t, func() bool { return a.StatusSnapshot().AutoCorrectRoleErrors == 2 },
+		"the first failing boundary never counted")
+	if got := strings.Count(buf.String(), `"msg":"autocorrect role unavailable"`); got != 1 {
+		t.Fatalf("role WARNs at the first error = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+
+	clock.advance(acRoleWarnRearmQuiet) // the quiet interval passes — the outage is still on
+	boundaryWord(t, a, "cnhjrf")
+	eventually(t, func() bool { return a.StatusSnapshot().AutoCorrectRoleErrors == 4 },
+		"the post-window boundary never counted")
+	if got := strings.Count(buf.String(), `"msg":"autocorrect role unavailable"`); got != 2 {
+		t.Errorf("role WARNs after the quiet window = %d, want 2 — "+
+			"a lasting outage must sound again; log:\n%s", got, buf.String())
+	}
+}
+
+// TestAutoCorrect_RoleHealthyClosesEpisodeAndZeroes pins the episode close
+// (the :2741 semantics extended by plan 10-07): a healthy role answer
+// closes the episode AND zeroes the consecutive-error counter — a recovered
+// source reads as zero errors, and the next failing boundary opens a fresh
+// episode (WARN again immediately, counter from zero).
+func TestAutoCorrect_RoleHealthyClosesEpisodeAndZeroes(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.UseAppid(fakeAppid{app: acListedApp})
+	role := &fakeRole{err: errAppidBusDead}
+	a.UseRole(role)
+	a.SetOptions(acOptions())
+
+	boundaryWord(t, a, wordEN)
+	eventually(t, func() bool { return a.StatusSnapshot().AutoCorrectRoleErrors == 2 },
+		"the failing boundary never counted")
+	if got := strings.Count(buf.String(), `"msg":"autocorrect role unavailable"`); got != 1 {
+		t.Fatalf("role WARNs at the first error = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+
+	role.set(acRoleAllowed, nil) // a healthy answer closes the episode
+	boundaryWord(t, a, "cegth")
+	eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
+		"the healthy boundary never fired")
+	if got := a.StatusSnapshot().AutoCorrectRoleErrors; got != 0 {
+		t.Errorf("role-error counter after the healthy answer = %d, want 0 — "+
+			"the healthy answer zeroes the episode counter", got)
+	}
+
+	role.set(0, errAppidBusDead) // a fresh failing episode
+	boundaryWord(t, a, "vtyz")
+	eventually(t, func() bool { return a.StatusSnapshot().AutoCorrectRoleErrors == 2 },
+		"the fresh episode never counted")
+	if got := strings.Count(buf.String(), `"msg":"autocorrect role unavailable"`); got != 2 {
+		t.Errorf("role WARNs after the fresh episode = %d, want exactly 2; log:\n%s", got, buf.String())
+	}
+}
+
 // TestAutoCorrect_RoleDeadlineBounded pins the off-mutex deadline
 // discipline (T-06-06-04): while the live role call blocks, the keystroke
 // path stays fully live (HandleKey completes — the mutex never leaks into
