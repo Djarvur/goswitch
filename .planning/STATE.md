@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
 status: executing
-stopped_at: CHECKPOINT 10-08 Task 2 — awaiting owner verdict (Task 1 committed 5a47555/bfdeaf1)
-last_updated: "2026-10-13T20:20:01.552Z"
+stopped_at: Completed 10-08-PLAN.md
+last_updated: "2026-10-13T21:38:45.859Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: 12632f81885aa55474051cc7210318486d475950
+state_head: 4b65c1782b2cc9215bd5228ad96448f0ab3acd0d
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 13
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 ## Current Position
 
 Phase: 10 (TERM-слово) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Ready to execute
 Last activity: 2026-10-13 — Phase 10 execution started
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P05 | 102min | 3 tasks | 12 files |
 | Phase 10 P06 | 67min | 3 tasks | 8 files |
 | Phase 10 P07 | 150min | 3 tasks | 13 files |
+| Phase 10 P08 | 141min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ Recent decisions affecting current work:
 - [Phase 10]: Plan 10-07: role-диагностика громкая и липкая — счётчик ошибок эпизода в status (ac_role_errors=, обнуляется здоровым ответом :2741-семантикой), WARN с окном переармивания 30 мин (происхождение: эпизод 11:00:16 молчал весь день)
 - [Phase 10]: Plan 10-07: встроенная форма terminal-silent-repin (term-negative-witnesses) считает correction-записи ОБЩЕГО журнала кейса — в них падают done+verify-after позитивного контроля (до-существующий артефакт формы, не регрессия); вердикт негатива несёт STANDALONE форма (ряд 19:07:31 зелёный при коде 10-07)
 
+- [Phase 10]: Plan 10-08: машина отложенного флипа defer-until-confirmed — SetGlobalEngine только после подтверждения доставки (подтверждающий push / клавиша / flipConfirmGrace 300 мс / mismatch / тихий таймаут); release переиспользует flipTo целиком (D-36 не дублируется); ни один release-сайт не сидит на FocusOut
+- [Phase 10]: Plan 10-08: owner-approved Rule 4 амендмент — nil-cache word-раунд с ответом-без-набранного-пробега = терминальный контекст (класс учится, раунд исполняет терминальную ветку); fail-closed для кэш-свидетельств сохранён; дрейф 0x9→0x29 документирован датированными рядами
+
 ### Pending Todos
 
 None yet.
@@ -87,6 +91,7 @@ None yet.
 
 - [Phase 13]: planning blocked on Telegram owner decision (лестница: snap → deb/flatpak с разовой проверкой a11y-reachability → демон-fallback)
 - [Phase 12]: feasibility-gated — VTE kill-критерий может сузить строку до wezterm-only; вердикт о сужении за владельцем; фаза может быть снята без провала вехи
+- [Phase 10 / 10-08] RESOLVED (owner approved semantic amendment 2026-10-13): контрольная точка Task 2 — дрейф подписи клиента wezterm-nightly (0x9→0x29 + Require-ответы протухшим кэшем) закрыт амендментом маршрутизации (pendingStaleCache: nil-cache раунд + ответ-без-набранного-пробега = терминальный контекст, класс учится, раунд исполняет терминальную ветку); fail-closed для кэш-свидетельств сохранён; все четыре живых кейса зелёные на одной свежей сессии
 - [Phase 10]: пер-терминальная семантика клавиш (VTE пропускает Shift+Home в шелл, wezterm #4615 может терять Shift) — истина только в живой capability-таблице Фазы 9, не в веб-источниках
 - [Phase 9 / 09-02] Live-session gate STILL BLOCKED after four probes: relogin 10:13 applied the formal fresh-session cure; probes 1 (10:39, age 25 min = within D-48 gate), 2 (10:48), 3 (11:01, idle desk, confound removed) and 4 (13:21, prime suspect REMOVED — owner closed all 7 bitwarden processes with explicit approval; bitwarden was autostarting headless `--ozone-platform=x11` every session, which explains why the relogin did not cure) all reproduce the identical ground truth: AT-SPI witness pinned at gnome-shell:WINDOW:chars=-1 through 30× grabFocus pokes, focused-inputs=(), zenity dialog immune to ydotool Enter, stdout empty. Probe 4 microdelta: focus_out/focus_in pairs DID fire at zenity spawn (13:21:08, absent in probes 2–3) — removing bitwarden changed the map dynamics, but focus still does not stick (no stable zenity:TEXT frame, Enter undelivered). Focus machinery alive (owner typing through the daemon 10:14:20/10:33:02). NEXT RUNG IS OWNER-SIDE (executor forbidden): disable bitwarden autostart, relogin with it NOT running, then one witness probe. All four spike cases + TERM-04 regression still need working injection surfaces; running them now would write false verdicts into adr-008-spike-log.md and risk typing into owner windows (T-09-02-03). Committed RED (c21e043) + GREEN (bbd463d) verified (unit corpus, mise run ci green, keys verbatim vs ibuskeysyms.h, go.mod untouched); drafted fixture/case files stay uncommitted in-tree pending the live smoke run.
 - [Phase 9 / 09-02] LIVE BISECT VERDICTS (orchestrator, 2026-10-09 ~20:00, all live/no reboot, state restored after each): (1) daemon out of input loop (goswitchd stop + `ibus engine xkb:us::eng`) → probe FAIL — daemon cleared; (2) ALL 6 GNOME extensions disabled → probe FAIL — extensions cleared; (3) client path cleared (GDK_BACKEND=x11 zenity via XWayland FAILS same as native Wayland); (4) /dev/input per-device capture blocked by uaccess for this shell — phantom-event capture not possible non-root. Probe harness rebuilt inline (zenity entry + Atspi StateType walk + ydotool key 28) — reproduces the defect (rc=124, AT-SPI witness pinned gnome-shell|FOCUSED). Conclusion: map-time focus-grant is yanked at compositor level; with userspace exonerated live, kernel 7.2.9-2 (T2, updated Oct 8 00:24) remains the only delta — fix requires reboot/kernel update (owner declines). ADAPTATION DECISION (owner-authorized 2026-10-09 «справиться без шаманства»): 09-02 proceeds in MANUAL-ACTIVATION mode — machine maps fixture windows, OWNER CLICKS the window (the production gesture anyway: users focus terminals by clicking), machine waits for a stable-focus marker (daemon focus_in / AT-SPI ACTIVE on the fixture), then injects/observes. Every verdict line in adr-008-spike-log.md gets `activation: manual-click` so the evidence stays honest; caps-table rows record per-terminal whether the yank affects them at all (all probes so far were zenity — terminals are genuinely untested). If even owner-clicked surfaces reject injected keys → deeper defect, STOP with evidence (that would threaten the phase, not just its convenience).
@@ -113,9 +118,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T20:19:48.516Z
-Stopped at: CHECKPOINT 10-08 Task 2 — awaiting owner verdict (Task 1 committed 5a47555/bfdeaf1)
-Resume file: SendMessage agent_5a61967f-ffab-4383-afff-962bf2450d7b
+Last session: 2026-10-13T21:38:45.810Z
+Stopped at: Completed 10-08-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
