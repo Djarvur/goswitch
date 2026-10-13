@@ -28,21 +28,48 @@ import (
 
 // The case's journal section and marks: the section header text is the
 // contract (TestSpikeJournalSectionsExist pins the sections). The
-// settlement mark is the verify-after's DEBUG match record — the
-// stand daemon runs -debug, so the DEBUG records are greppable; the
-// switch mark is the daemon wiring's SetGlobalEngine INFO record.
+// settlement marks are the verify-after's DEBUG CONCLUSIONS — the plan's
+// settlement рубеж is «push match / verify»: the client's confirming push
+// (match) or the quiet budget conclusion (timeout). The stand's VTE
+// answers Requires with a lagged cache (the live finding of the first
+// run), so the honest row accepts both forms; the stale-retry record is
+// the WR-05 intermediate, never a settlement. The stand daemon runs
+// -debug, so the DEBUG records are greppable; the switch mark is the
+// daemon wiring's SetGlobalEngine INFO record.
 const (
 	secTermFlip = "Фаза 10 живой ряд VTE flip (term-word-vte-flip)"
 
-	termFlipSettleMark = `"msg":"correction verify","outcome":"match"`
-	termFlipModeMark   = `"msg":"mode","to"`
-	termFlipSwitchMark = `"msg":"switch_engine"`
+	termFlipSettleMatch   = `"msg":"correction verify","outcome":"match"`
+	termFlipSettleTimeout = `"msg":"correction verify","outcome":"timeout"`
+	termFlipSettleMis     = `"msg":"correction verify","outcome":"mismatch"`
+	termFlipModeMark      = `"msg":"mode","to"`
+	termFlipSwitchMark    = `"msg":"switch_engine"`
 
 	// termFlipDocFlipLine replaces the frozen false pin of the
 	// autocorrectConfigDoc form — the case owns its document (the 03-02
 	// no-overlay rule); the frozen configs are never touched.
 	termFlipDocFlipLine = "  flip_after_correction: true # plan 10-08: the deferred flip rides the live rows"
 )
+
+// isSettleRecord reports whether the journal line is a verify-after
+// CONCLUSION (the plan's settlement рубеж in either form).
+func isSettleRecord(ln string) bool {
+	return strings.Contains(ln, termFlipSettleMatch) ||
+		strings.Contains(ln, termFlipSettleTimeout) ||
+		strings.Contains(ln, termFlipSettleMis)
+}
+
+// settleCount counts the verify-after conclusions in the daemon log.
+func (s *stand) settleCount() int {
+	n := 0
+	for _, ln := range s.logLines() {
+		if isSettleRecord(ln) {
+			n++
+		}
+	}
+
+	return n
+}
 
 // termFlipConfigDoc is the case's complete config document: the
 // autocorrectConfigDoc form with the flip gate ON — the mechanism row's
@@ -92,7 +119,7 @@ func (s *stand) flipWordRound(ctx context.Context, caseName, text string) error 
 	actionBase := s.countSub(actionDoubleMark)
 	doneBase := s.countSub(correctionDoneMa)
 	levelBase := s.countSub(termLevel2Mark)
-	settleBase := s.countSub(termFlipSettleMark)
+	settleBase := s.settleCount()
 	modeBase := s.countSub(termFlipModeMark)
 	switchBase := s.countSub(termFlipSwitchMark)
 	if err := s.injectKeys(ctx, "Shift_R", "Shift_R"); err != nil {
@@ -107,11 +134,19 @@ func (s *stand) flipWordRound(ctx context.Context, caseName, text string) error 
 	if err := s.waitForNew(ctx, termLevel2Mark, levelBase+1, correctionWait); err != nil {
 		return fmt.Errorf("%s: terminal branch level-2 mark: %w", caseName, err)
 	}
-	// The settlement: the client's confirming push — the deferred flip's
-	// first release trigger proves the commit DELIVERED before the mode
-	// moves (the E3 contract).
-	if err := s.waitForNew(ctx, termFlipSettleMark, settleBase+1, correctionWait); err != nil {
-		return fmt.Errorf("%s: settlement (verify-after match) never landed: %w", caseName, err)
+	// The settlement: the verify-after's CONCLUSION — the client's
+	// confirming push (match) or the quiet budget (timeout). Either closes
+	// the delivery question before the mode moves (the E3 contract); the
+	// WR-05 stale-retry record is an intermediate, not a settlement.
+	settleDeadline := time.Now().Add(correctionWait)
+	for s.settleCount() <= settleBase {
+		if time.Now().After(settleDeadline) {
+			return fmt.Errorf("%s: settlement (verify-after match/timeout) never concluded within %v",
+				caseName, correctionWait)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return err
+		}
 	}
 	if err := s.waitForNew(ctx, termFlipModeMark, modeBase+1, correctionWait); err != nil {
 		return fmt.Errorf("%s: mode record after the settlement: %w", caseName, err)
@@ -143,7 +178,7 @@ func (s *stand) assertFlipDeliveryOrder() error {
 			continue
 		}
 		switch {
-		case settle < 0 && strings.Contains(ln, termFlipSettleMark):
+		case settle < 0 && isSettleRecord(ln):
 			settle = i
 		case settle < 0 &&
 			(strings.Contains(ln, termFlipModeMark) || strings.Contains(ln, termFlipSwitchMark)):
