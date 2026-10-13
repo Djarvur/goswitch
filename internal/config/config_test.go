@@ -840,26 +840,49 @@ func terminalsDocYAML(list string) string {
 const termAnchor = `^org\.gnome\.Terminal$`
 
 // TestCorrection_TerminalsDecode pins the decode surface of the
-// terminal-class key (plan 10-02, the D-55 classification seam): a document
-// WITHOUT the key decodes to the nil zero value — the old behavior
-// byte-for-byte (the D-54 precedent) — and a document WITH the list decodes
-// it through the strict KnownFields decoder.
+// terminal-class key (plan 10-02, the D-55 classification seam), re-pinned
+// by plan 10-07 (G-10-1): a document WITHOUT the key decodes to the DEFAULT
+// identity anchor [gnome-terminal, wezterm] — the anchor named verbatim in
+// the UAT verdict, the identity source that was dead by construction on
+// both machines (10-UAT missing #2); an EXPLICIT empty list stays the
+// conscious opt-out (classification not configured — the pre-10-07 default,
+// the D-54 precedent kept as a deliberate choice); a document WITH the list
+// decodes it through the strict KnownFields decoder.
 func TestCorrection_TerminalsDecode(t *testing.T) {
 	t.Parallel()
 
-	t.Run("document without the key decodes to nil", func(t *testing.T) {
+	t.Run("document without the key decodes to the default anchor", func(t *testing.T) {
 		t.Parallel()
 
 		cfg, err := config.Load(writeConfig(t, chordDocYAML(defChord)))
 		if err != nil {
 			t.Fatalf("Load(document without terminals): %v", err)
 		}
-		if cfg.Correction.Terminals != nil {
-			t.Errorf("Correction.Terminals = %v, want nil — zero-value is the old behavior (D-54)",
-				cfg.Correction.Terminals)
+		want := []string{"gnome-terminal", "wezterm"}
+		if !slices.Equal(cfg.Correction.Terminals, want) {
+			t.Errorf("Correction.Terminals = %v, want the default anchor %v (G-10-1)",
+				cfg.Correction.Terminals, want)
 		}
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("Validate(document without terminals) = %v, want nil", err)
+		}
+	})
+
+	t.Run("explicit empty list is the opt-out", func(t *testing.T) {
+		t.Parallel()
+
+		doc := strings.Replace(chordDocYAML(defChord),
+			"correction:\n  backspace_cap: 50",
+			"correction:\n  terminals: []\n  backspace_cap: 50",
+			1,
+		)
+		cfg, err := config.Load(writeConfig(t, doc))
+		if err != nil {
+			t.Fatalf("Load(document with empty terminals): %v", err)
+		}
+		if cfg.Correction.Terminals == nil || len(cfg.Correction.Terminals) != 0 {
+			t.Errorf("Correction.Terminals = %v, want an explicit empty list — "+
+				"the opt-out form must survive normalization untouched", cfg.Correction.Terminals)
 		}
 	})
 
@@ -969,14 +992,17 @@ func TestValidate_CorrectionTerminals(t *testing.T) {
 	})
 }
 
-// TestDefaults_CorrectionTerminalsNil pins the default shape: Defaults()
-// does NOT include the key — the owner's existing document stays
-// byte-compatible and the zero value reads as the old behavior (D-54).
-func TestDefaults_CorrectionTerminalsNil(t *testing.T) {
+// TestDefaults_CorrectionTerminalsAnchor pins the default shape (plan
+// 10-07, G-10-1): Defaults() carries the SAME identity anchor a document
+// without the key normalizes to — the no-config daemon and the adopted
+// defaults ride the anchor identically (the daemon's no-file path serves
+// Defaults() verbatim), and the default list validates.
+func TestDefaults_CorrectionTerminalsAnchor(t *testing.T) {
 	t.Parallel()
 
-	if got := config.Defaults().Correction.Terminals; got != nil {
-		t.Errorf("Defaults().Correction.Terminals = %v, want nil (zero-value = off, D-54)", got)
+	want := []string{"gnome-terminal", "wezterm"}
+	if got := config.Defaults().Correction.Terminals; !slices.Equal(got, want) {
+		t.Errorf("Defaults().Correction.Terminals = %v, want the default anchor %v (G-10-1)", got, want)
 	}
 	if err := config.Defaults().Validate(); err != nil {
 		t.Errorf("Defaults() does not validate with the terminals shape: %v", err)

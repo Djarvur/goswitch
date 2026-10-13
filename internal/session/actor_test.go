@@ -5476,6 +5476,15 @@ func (f *fakeRole) set(role uint32, err error) {
 	f.role, f.err = role, err
 }
 
+// callCount snapshots the consultation counter — the anchor corpus proves
+// the live source is never consulted when the identity already classified.
+func (f *fakeRole) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.calls
+}
+
 // assertSilence checks the shared silence invariants of one matrix cell:
 // nothing fired, no correction op touched the field, exactly one
 // abstention with the cell's reason slug.
@@ -7340,6 +7349,41 @@ func TestAutoCorrect_TerminalVetoBeforeDetector(t *testing.T) {
 	if got := sink.requireCount(); got != 0 {
 		t.Errorf("requires = %d, want 0 — a vetoed boundary never arms a verify round", got)
 	}
+}
+
+// acDefaultAnchorApp is the bridge-namespace identity of GNOME Terminal —
+// the process name the default anchor's substring `gnome-terminal` must
+// find (the substring match is the blocklist semantics, no re-anchoring).
+const acDefaultAnchorApp = "gnome-terminal-server"
+
+// TestAutoCorrect_TerminalVetoDefaultAnchor pins the default identity
+// anchor of plan 10-07 (G-10-1, missing #2): a defaults document (no
+// correction.terminals key — the shape on the host AND every stand case)
+// carries the anchor [gnome-terminal, wezterm], and a focused identity
+// matching it classifies the context terminal BEFORE the expensive sources
+// — zero role queries (the live a11y round trip never runs), zero detector
+// calls (the veto precedes detect.Check, D-55).
+func TestAutoCorrect_TerminalVetoDefaultAnchor(t *testing.T) {
+	a, sink := wiredActor()
+	a.UseAppid(fakeAppid{app: acDefaultAnchorApp})
+	role := &fakeRole{role: acRoleAllowed} // 61 — not a terminal by role; the anchor must answer first
+	a.UseRole(role)
+	detector := &fakeDetector{}
+	a.UseDetector(detector.check)
+	src := &reloadSource{cfg: acEnabledCfg()} // the defaults document — the anchor rides the existing fold
+	a.AttachConfig(src)
+
+	boundaryWord(t, a, wordEN)
+
+	if got := role.callCount(); got != 0 {
+		t.Fatalf("role queries on an identity-anchored terminal = %d, want 0 — "+
+			"the default anchor must classify before the expensive live source", got)
+	}
+	if got := detector.calls(); got != 0 {
+		t.Fatalf("detector calls on an identity-anchored terminal = %d, want 0 — "+
+			"the veto precedes detect.Check (D-55)", got)
+	}
+	assertSilence(t, a, sink, acReasonTerminalVeto)
 }
 
 // TestAutoCorrect_TerminalVetoPatternMatch pins the configured-identity
