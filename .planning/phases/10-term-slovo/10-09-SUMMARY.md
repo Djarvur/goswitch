@@ -166,3 +166,7 @@ None — plan executed exactly as written. (Код задачами не пис�
 ---
 *Phase: 10-term-slovo*
 *Completed: 2026-10-14*
+
+## Self-Check: PASSED
+
+SUMMARY exists; коммиты df0c9e3 / b90498f / 206ec20 верифицированы в git log; ledger recount: 3 коммита от базы плана 7ace3fd (gsd-plan-head-before-10-09 на диске); файлы созданы/модифицированы (SUMMARY, секция host-ревалидации в spike-log с рядом host-install-gap, секция Closure validation в debug-файле) — все FOUND; production-файлы совпадают с files_modified frontmatter (adr-008-spike-log.md, DEBUG-term-host-live-failures.md); mise run ci зелёный на финальном HEAD (build+vet+golangci-lint+test -race, ~12 c); go.mod/go.sum нетронуты; stub-скан изменённых файлов чист (TODO/FIXME/placeholder — ноль); tracked-дерево чистое; хост-санити после установки (read-only): unit active, config_valid=true, ac_role_errors=0, autocorrect_fired=0 — единственный error-match в журнале за окно установки это пред-стартовый WARN старого процесса при ibus-restart шаге инсталлятора (ожидаемая механика 10-06); откат-путь v1.1.1 нетронут; вердикт re-acceptance честно ОЖИДАНИЕ (D4 human_judgment: true, unrun-verify записан в WINDOWS ledger).
