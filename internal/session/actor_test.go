@@ -7403,6 +7403,33 @@ func TestAutoCorrect_TerminalVetoPatternMatch(t *testing.T) {
 	assertSilence(t, a, sink, acReasonTerminalVeto)
 }
 
+// TestAutoCorrect_DefaultAnchorDoesNotInventIdentity pins the quiet norm
+// of the anchor's source 2: an INVISIBLE identity (wezterm sits outside the
+// a11y bus — no source, no focus event) answers nothing from the anchor —
+// the anchor never invents a terminal class from silence; the GTK path
+// (role query, detector, fire) runs exactly as before.
+func TestAutoCorrect_DefaultAnchorDoesNotInventIdentity(t *testing.T) {
+	a, _ := wiredActor() // no appid source installed — the identity is unobservable
+	// The start fails honestly (the errAppidNoBus degradation): no observer,
+	// the role seam keeps the fake — the identity stays invisible for both
+	// the anchor and the confirm.
+	a.UseAppidStarter(func() (session.AppidSource, error) { return nil, errAppidNoBus })
+	detector := &fakeDetector{}
+	a.UseDetector(detector.check)
+	a.UseRole(&fakeRole{role: acRoleAllowedEntry}) // 79 — an unambiguous allowed role fires with an unknown identity
+	src := &reloadSource{cfg: acEnabledCfg()}      // the anchor is in force, the identity is not
+	a.AttachConfig(src)
+
+	boundaryWord(t, a, wordEN)
+	eventually(t, func() bool { return a.AutoCorrectCounters().Fired == 1 },
+		"an invisible identity must not be classified terminal by the anchor — the round must fire")
+
+	if got := detector.calls(); got != 1 {
+		t.Errorf("detector calls on an invisible identity = %d, want exactly 1 — "+
+			"the anchor must stay quiet when nothing is observable", got)
+	}
+}
+
 // TestAutoCorrect_TerminalVetoIdentityUnobservable pins the fail-closed
 // core of the invariant (D-55 verbatim: the veto «не зависит от
 // наблюдаемости identity»): the identity is invisible (no a11y source, the

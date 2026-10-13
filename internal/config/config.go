@@ -82,6 +82,29 @@ func altModifierCandidates() []string {
 	return []string{"", "ctrl_l", "ctrl_r"}
 }
 
+// The default terminal identity anchor (plan 10-07, gap G-10-1): the
+// identity source of the terminal class was dead by construction — the
+// correction.terminals key is absent on the host AND in every stand-case
+// document (10-UAT missing #2) — so classification leaned only on the
+// churn-fragile behavioral and role sources. The two names are the UAT
+// verdict's verbatim terminals (G-10-1, 2026-10-13); substring RE2
+// semantics — `gnome-terminal` finds gnome-terminal-server — and explicit
+// ^…$ anchoring stays the author's choice, the blocklist precedent.
+// Functions, not package vars: the strict lint forbids mutable globals
+// (the altModifierCandidates idiom), and a returned slice must never alias
+// package state a caller could mutate.
+const (
+	defaultTerminalGnomeTerminal = "gnome-terminal"
+	defaultTerminalWezterm       = "wezterm"
+)
+
+// DefaultTerminals returns a fresh copy of the default identity anchor —
+// the value an absent correction.terminals key normalizes to and the
+// built-in defaults carry.
+func DefaultTerminals() []string {
+	return []string{defaultTerminalGnomeTerminal, defaultTerminalWezterm}
+}
+
 // Hotkeys are the daemon's key bindings, expressed as closed-table name
 // strings resolved by hotkey.ParseBinding (D-31: name strings, combos
 // "+"-joined with the key last).
@@ -101,11 +124,14 @@ type Timeouts struct {
 // series cap, the D-28 opt-in clipboard rung, the post-correction script
 // flip switch (owner decision 2, quick plan 260927-vu8) and the terminal
 // class of Phase 10 (TERM-02/D-55): anchored RE2 identity patterns naming
-// the terminal applications. The zero value (an absent key) is the old
-// behavior — the D-54 precedent; the consumer is the classification seam of
-// plan 10-03 (the «configured identity» source of the terminal veto), and
-// the list is capped like every identity list (the maxAutocorrectBlocklist
-// precedent).
+// the terminal applications. An ABSENT key normalizes to the default
+// identity anchor (DefaultTerminals, plan 10-07 gap G-10-1 — the anchor
+// named verbatim in the UAT verdict); an EXPLICIT empty list is the
+// conscious opt-out — classification not configured, the pre-10-07
+// behavior kept as a deliberate choice (the D-54 precedent survives as the
+// opt-out form). The consumer is the classification seam of plan 10-03
+// (the «configured identity» source of the terminal veto), and the list is
+// capped like every identity list (the maxAutocorrectBlocklist precedent).
 type Correction struct {
 	BackspaceCap        int      `yaml:"backspace_cap"`
 	ClipboardRung       bool     `yaml:"clipboard_rung"`
@@ -252,6 +278,11 @@ func Defaults() Config {
 			BackspaceCap:        defaultBackspaceCap,
 			ClipboardRung:       false,
 			FlipAfterCorrection: true,
+			// The default identity anchor rides the built-in defaults too
+			// (plan 10-07, G-10-1): the no-file daemon serves Defaults()
+			// verbatim (the adopted path), so an absent document and no
+			// document classify identically.
+			Terminals: DefaultTerminals(),
 		},
 		MACR: MACR{
 			Enabled:     false,
