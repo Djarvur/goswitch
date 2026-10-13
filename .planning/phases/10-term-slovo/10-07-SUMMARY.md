@@ -206,3 +206,7 @@ None — no external service configuration required. (Host-ревалидаци�
 ---
 *Phase: 10-term-slovo*
 *Completed: 2026-10-13*
+
+## Self-Check: PASSED
+
+SUMMARY exists; все 8 коммитов от базы плана 60e8b5e верифицированы в git log (7 production/docs + метаданные ce8d8ba; ledger gsd-plan-head-before-10-07 на диске); файлы созданы (3 evidence-JSON, SUMMARY) и модифицированы (actor.go, actor_test.go, config.go, load.go, config_test.go, ctlsvc.go, ctlsvc_test.go, docs/CONFIG.md, SKILL.md, spike-log) — все FOUND; TDD-гейт: test(10-07) 2d1e3f9/f8601cd/3d2b558 + feat(10-07) e2c2cba/c2849fa/eb17979 в логе (RED_EVIDENCE_OK ×3); mise run ci зелёный на HEAD (build+vet+golangci-lint 0 issues+test -race); go.mod/go.sum нетронуты (git diff --exit-code); стенд-ряды term-word-vte/term-negative-witnesses/autocorrect-terminal-silent байт-точные зелёные при коде 10-07; tracked-дерево чистое (0 modified); stub-скан чист (TODO/FIXME/placeholder — ноль); хост-демон владельца не тронут.
