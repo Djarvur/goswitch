@@ -6968,6 +6968,53 @@ func TestTerminalClass_VerifyDeadLearnedOnVerifyTimeout(t *testing.T) {
 	}
 }
 
+// flapClock is the deterministic double of the flap-window timer seam
+// (plan 10-07, the UseFlapTimer form): arm records the arm/stop counts and
+// holds the single pending callback; fire() plays the window's expiry, and
+// stop() cancels it — the FocusIn and immediate-wipe paths run through the
+// same stop closure the actor holds.
+type flapClock struct {
+	mu      sync.Mutex
+	armed   int
+	stopped int
+	pending func()
+}
+
+// arm records one armed window and returns the actor's stop closure.
+func (f *flapClock) arm(_ time.Duration, fn func()) func() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.armed++
+	f.pending = fn
+
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.stopped++
+		f.pending = nil
+	}
+}
+
+// fire plays the window expiry: a cancelled or superseded window holds no
+// callback, so a stale fire is a no-op — exactly the production guard.
+func (f *flapClock) fire() {
+	f.mu.Lock()
+	fn := f.pending
+	f.pending = nil
+	f.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+// counts snapshots the arm/stop counters.
+func (f *flapClock) counts() (armed, stopped int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.armed, f.stopped
+}
+
 // TestTerminalClass_VerifyDeadSurvivesFlapPair pins the flap tolerance of
 // plan 10-07 (G-10-1, cause A): a REAL FocusOut followed by a FocusIn
 // within the flap window — the host kernel's same-engine focus pairs
@@ -7004,19 +7051,28 @@ func TestTerminalClass_VerifyDeadSurvivesFlapPair(t *testing.T) {
 }
 
 // TestTerminalClass_VerifyDeadClearedByFocusOut pins the clearing side of
-// the lifecycle (the plan's two separate clearing tests, FocusOut first):
-// the context's death clears the learned class — one clearing marker — and
-// the cleared context learns afresh on its next expired round (the state,
-// not just the log, was reset).
+// the lifecycle (the plan's two separate clearing tests, FocusOut first),
+// re-pinned by plan 10-07 on the deferred form: the wipe a REAL FocusOut
+// executes is the window's expiry — no FocusIn inside focusFlapWindow
+// means a real focus loss, and the class clears exactly as before (one
+// clearing marker, and the cleared context learns afresh on its next
+// expired round — the state, not just the log, was reset).
 func TestTerminalClass_VerifyDeadClearedByFocusOut(t *testing.T) {
 	buf := captureLogs(t)
 	a, _ := wiredActor()
+	clock := &flapClock{}
+	a.UseFlapTimer(clock.arm)
 
 	teachVerifyDead(t, a, wordEN)
 	a.HandleLifecycle(engine.LifecycleFocusOut)
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 1 {
+		t.Fatalf("terminal-class markers before the window expiry = %d, want 1 — "+
+			"the wipe waits the flap window out; log:\n%s", got, buf.String())
+	}
+	clock.fire() // the window closed without a FocusIn — a real focus loss
 
 	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
-		t.Fatalf("terminal-class markers after the FocusOut = %d, want exactly 2 (learn + clear); log:\n%s",
+		t.Fatalf("terminal-class markers after the window expiry = %d, want exactly 2 (learn + clear); log:\n%s",
 			got, buf.String())
 	}
 	if !strings.Contains(buf.String(), `"verify_dead":false`) {
@@ -7030,7 +7086,108 @@ func TestTerminalClass_VerifyDeadClearedByFocusOut(t *testing.T) {
 
 	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 3 {
 		t.Errorf("terminal-class markers after the re-learn = %d, want 3 — "+
-			"the FocusOut really cleared the class, not just logged", got)
+			"the real focus loss really cleared the class, not just logged", got)
+	}
+}
+
+// TestTerminalClass_VerifyDeadClearedBySyntheticFocusOut pins the
+// immediate-wipe arm of plan 10-07: a FocusOut carrying the own flip's
+// synthetic credit is NOT deferred — the engine re-mint is a new context
+// generation, the class died with the old one, and the wipe executes at
+// once (no window armed, no stop pending).
+func TestTerminalClass_VerifyDeadClearedBySyntheticFocusOut(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	clock := &flapClock{}
+	a.UseFlapTimer(clock.arm)
+	a.SetSwitcher(func(_ context.Context, _ string) error { return nil })
+
+	teachVerifyDead(t, a, wordEN)
+	flipMode(a)                                 // EN → RU: the successful round trip arms exactly one credit
+	a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes it
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
+		t.Fatalf("terminal-class markers after the synthetic FocusOut = %d, want exactly 2 (learn + clear) — "+
+			"the own flip's re-mint wipes immediately; log:\n%s", got, buf.String())
+	}
+	if armed, stopped := clock.counts(); armed != 0 {
+		t.Errorf("flap windows armed on the synthetic path = %d, want 0 — "+
+			"the immediate wipe never defers", armed)
+	} else if stopped != 0 {
+		t.Errorf("flap windows stopped on the synthetic path = %d, want 0", stopped)
+	}
+	if !strings.Contains(buf.String(), `"verify_dead":false`) {
+		t.Errorf("the cleared-class marker is missing; log:\n%s", buf.String())
+	}
+}
+
+// TestTerminalClass_FlapWindowRearmsNotBreeds pins the single-window
+// discipline (T-10-07-04): a second real FocusOut while a window is pending
+// RE-ARMS the same window (arm 2, stop 1), the completing FocusIn cancels
+// it (stop 2, nothing pending), and a stale expiry afterwards wipes nothing
+// — the class survives.
+func TestTerminalClass_FlapWindowRearmsNotBreeds(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	clock := &flapClock{}
+	a.UseFlapTimer(clock.arm)
+
+	teachVerifyDead(t, a, wordEN)
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	a.HandleLifecycle(engine.LifecycleFocusOut) // a flap burst: re-arm, never a second timer
+	a.HandleLifecycle(engine.LifecycleFocusIn)  // the pair completes
+
+	if armed, stopped := clock.counts(); armed != 2 || stopped != 2 {
+		t.Fatalf("flap windows armed/stopped = %d/%d, want 2/2 — "+
+			"a repeated FocusOut re-arms the same window, the FocusIn cancels it", armed, stopped)
+	}
+	clock.fire() // a stale expiry — the cancelled window owns nothing
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 1 {
+		t.Errorf("terminal-class markers after the burst + stale fire = %d, want 1 — "+
+			"the cancelled window wipes nothing; log:\n%s", got, buf.String())
+	}
+}
+
+// TestTerminalBranch_FlapPairBetweenChunksStops pins the ctxEpoch arm of
+// plan 10-07: the deferred wipe does NOT soften the context-generation
+// discipline — a flap pair landing in a chunk-boundary window still bumps
+// ctxEpoch (the plan-10-04 chunk stop), so the burst stops on a chunk
+// boundary exactly as for a real focus loss.
+func TestTerminalBranch_FlapPairBetweenChunksStops(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+
+	typeWord(a, termWord20)
+	var landed sync.Once
+	sent := atomic.Int32{}
+	sink.forwardHook = func(forwardCall) {
+		if sent.Add(1) == termChunkKeys {
+			landed.Do(func() {
+				go func() {
+					a.HandleLifecycle(engine.LifecycleFocusOut)
+					// the pair completes — the class survives, the generation moved
+					a.HandleLifecycle(engine.LifecycleFocusIn)
+				}()
+			})
+		}
+	}
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	forwards := sink.forwardCalls()
+	if n := len(forwards); n == 0 || n >= len([]rune(termWord20)) || n%termChunkKeys != 0 {
+		t.Fatalf("forwards = %d, want a non-empty multiple of %d strictly below %d — "+
+			"the flap pair must stop the burst exactly like a real focus loss (ctxEpoch)",
+			n, termChunkKeys, len([]rune(termWord20)))
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("commits = %q, want none — a flap-interrupted round is never completed", texts)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"context-changed"`) {
+		t.Errorf("the round-stop INFO boundary is missing; log:\n%s", buf.String())
 	}
 }
 

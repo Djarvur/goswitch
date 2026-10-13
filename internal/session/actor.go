@@ -60,6 +60,18 @@ const backSpaceKeycode = 14
 // chunk, and the IME queue's loss window stays bounded (T-10-04-03).
 const terminalChunkKeys = 8
 
+// focusFlapWindow is the flap-pair window of the DEFERRED verify-dead wipe
+// (plan 10-07, G-10-1 cause A): a real FocusOut whose FocusIn comes back
+// within this window is the host kernel's same-engine focus flap — the
+// journal of 2026-10-13 16:20:05 shows pairs 1–3 ms apart, four within
+// 6 ms — while a real window change costs orders of magnitude more. The
+// wipe the pair used to execute immediately waits the window out; the
+// completing FocusIn cancels it and the learned terminal class survives
+// the burst. An internal constant with a journal provenance, never a
+// config key: the flap geometry is a property of the churn defect, not a
+// user preference.
+const focusFlapWindow = 10 * time.Millisecond
+
 // level2ForwardGap is the pacing quantum between the write branch's wire
 // emissions (plan 10-05, the 2026-10-12 VTE live finding): the client
 // drains forwarded keys lazily — they queue as GDK events — while the
@@ -284,6 +296,19 @@ type Actor struct {
 	// counting double, nil keeps the real detect.Check (the production
 	// wiring never touches the seam).
 	detectCheck detectorFunc
+	// The deferred verify-dead wipe of the flap window (plan 10-07,
+	// G-10-1 cause A): a REAL FocusOut arms focusFlapWindow once — the
+	// wipe executes at expiry unless a FocusIn cancelled it first (the
+	// same-engine flap pair). A Reset or a synthetic FocusOut (the own
+	// flip's credit) wipes immediately, byte as before. flapEpoch is the
+	// stale-deadline guard (the afterExpiry form: a monotonic tag compared
+	// under the mutex — a re-armed window or a completed pair turns a
+	// queued callback stale); flapStop is the armed timer's stop; flapAfter
+	// is the timer seam (the level2Sleep precedent: the production arm is
+	// time.AfterFunc, the corpus installs recorders).
+	flapEpoch uint64
+	flapStop  func()
+	flapAfter func(d time.Duration, fn func()) (stop func())
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -555,6 +580,10 @@ func NewActor(window time.Duration) *Actor {
 		start:      time.Now(),
 		buf:        correct.NewBuffer(),
 		clip:       clipboard.New(),
+		// The flap-window timer's production arm (plan 10-07): a real
+		// time.AfterFunc deadline, stoppable — the corpus replaces it via
+		// UseFlapTimer with a deterministic recorder.
+		flapAfter: defaultFlapAfter,
 		// The lazy per-app observer's production starter: the a11y dial of
 		// internal/appid on the daemon's lifetime (the clipboard rung's
 		// context.Background precedent — the actor owns no shutdown path).
@@ -562,6 +591,15 @@ func NewActor(window time.Duration) *Actor {
 			return appid.Start(context.Background())
 		},
 	}
+}
+
+// defaultFlapAfter arms one real focusFlapWindow deadline (the production
+// flapAfter): the returned closure stops a still-pending firing; an already
+// fired timer returns false harmlessly — the epoch guard owns the verdict.
+func defaultFlapAfter(d time.Duration, fn func()) func() {
+	t := time.AfterFunc(d, fn)
+
+	return func() { t.Stop() }
 }
 
 // SetOptions stores the correction options (the startup wiring feeds them
@@ -665,6 +703,17 @@ func (a *Actor) UseLevel2Sleeper(s func(time.Duration)) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.level2Sleep = s
+}
+
+// UseFlapTimer installs the flap-window timer seam (plan 10-07, the
+// UseLevel2Sleeper form): arm(d, fn) arms one focusFlapWindow deadline and
+// returns the stop function canceling a still-pending firing. The production
+// arm is time.AfterFunc (defaultFlapAfter); the corpus installs a
+// deterministic recorder. The daemon path never calls it.
+func (a *Actor) UseFlapTimer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.flapAfter = arm
 }
 
 // UseDetector installs a boundary detector double — the plan 10-03 spy
@@ -895,9 +944,22 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// write branch reads this tag between chunks — any death of the
 		// context inside the burst's boundary windows stops the round
 		a.ctxEpoch++
-		// the behavioral terminal class too (Phase 10): a fresh context
-		// starts unclassified — the next expired verify round re-learns it
-		a.setVerifyDead(false)
+		// The behavioral terminal class too (Phase 10): a fresh context
+		// starts unclassified — the next expired verify round re-learns it.
+		// Plan 10-07 (G-10-1 cause A): a REAL FocusOut defers the wipe by
+		// focusFlapWindow — the host kernel's same-engine flap pairs (1–3 ms
+		// in the 16:20:05 journal) wiped the learned class before the next
+		// gesture could ride it, and wezterm's only classification source
+		// died with it. A Reset and a SYNTHETIC FocusOut (the own flip's
+		// re-mint — a new context generation, the class died with the old
+		// one) wipe immediately, byte as before.
+		switch {
+		case kind == engine.LifecycleReset || synthetic:
+			a.cancelVerifyDeadWipe()
+			a.setVerifyDead(false)
+		default:
+			a.armVerifyDeadWipe()
+		}
 		a.resolvePending()
 		a.clearAfter()
 		// A combo retired by the context's death never settles its word
@@ -914,6 +976,12 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		}
 	case engine.LifecycleFocusIn, engine.LifecycleEnable, engine.LifecycleDisable:
 		slog.Debug("lifecycle", "kind", kind.String())
+		if kind == engine.LifecycleFocusIn {
+			// Plan 10-07 (G-10-1 cause A): the flap pair completed within
+			// the window — the context never left; the learned class
+			// survives and the pending wipe dies with the window.
+			a.cancelVerifyDeadWipe()
+		}
 		// The panel indicator self-heals on every focus gain (owner
 		// decision 1, quick plan 260927-way): engine objects are minted
 		// per input context, so a freshly minted context re-asserts the
@@ -1241,6 +1309,48 @@ func (a *Actor) FoldAppliedConfig() {
 		return
 	}
 	a.applySnapshot()
+}
+
+// armVerifyDeadWipe re-arms the single deferred wipe deadline of the flap
+// window (the caller holds the mutex): a repeated FocusOut re-arms the SAME
+// window instead of breeding timers (T-10-07-04), and the epoch advance
+// turns a deadline from a superseded window stale (the afterExpiry form).
+func (a *Actor) armVerifyDeadWipe() {
+	a.cancelVerifyDeadWipe() // one window at a time, never a second timer
+	epoch := a.flapEpoch
+	arm := a.flapAfter
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	a.flapStop = arm(focusFlapWindow, func() { a.verifyDeadWipeExpiry(epoch) })
+}
+
+// cancelVerifyDeadWipe stops a pending deferred wipe (the caller holds the
+// mutex): the epoch advance turns an already-queued callback stale, so a
+// racing expiry is a no-op — the completing FocusIn and every immediate
+// wipe (Reset, the own flip's synthetic pair) land here.
+func (a *Actor) cancelVerifyDeadWipe() {
+	if a.flapStop != nil {
+		a.flapStop()
+		a.flapStop = nil
+	}
+	a.flapEpoch++
+}
+
+// verifyDeadWipeExpiry is the deferred wipe's deadline callback: the flap
+// window closed without a FocusIn — the focus loss is REAL and the wipe
+// executes (a stale epoch — a newer FocusIn/FocusOut owns the window — is
+// a no-op; the class learns and clears on transitions only, so the host's
+// flap bursts never spam the journal).
+func (a *Actor) verifyDeadWipeExpiry(epoch uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.flapEpoch != epoch {
+		return // stale deadline — a newer FocusIn/FocusOut owns the window
+	}
+	a.flapStop = nil
+	a.setVerifyDead(false)
 }
 
 // soundSinkFor returns the installed sink when the sound switch is ON —
