@@ -404,6 +404,12 @@ func TestActor_VerifyPaths(t *testing.T) {
 		a, sink := wiredActor()
 
 		typeWord(a, wordEN)
+		// The honest-GTK world (plan 10-08 amendment migration, owner
+		// verdict 2026-10-13): the client PUSHED its field state during the
+		// typing — the cache carries evidence the verify channel tracks.
+		// The nil-cache form of this scenario is the stale-cache terminal
+		// signature now (TestTerminalBranch_StaleCacheAnswerRoutesTerminal).
+		a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
 		tapShift(a)
 		tapShift(a)
 		a.ExpiryAt(expiryAfterWindow)
@@ -753,6 +759,10 @@ func TestActor_PhraseVerifyMismatch(t *testing.T) {
 	typeWord(a, wordEN)
 	pressSpace(a)
 	typeWord(a, wordEN)
+	// The honest-GTK world (plan 10-08 amendment migration, owner verdict
+	// 2026-10-13): the pushed cache carries tracking evidence — see the word
+	// path's mismatch cell.
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
 	tapShift(a)
 	tapShift(a)
 	tapShift(a)
@@ -8516,5 +8526,154 @@ func TestTerminalBranch_SecondCorrectionReleasesPendingFlip(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), `"msg":"mode","to":"en"`) {
 		t.Errorf("round 2's flip is not the RU→EN set; log:\n%s", buf.String())
+	}
+}
+
+// The stale-cache amendment corpus (plan 10-08, the owner-approved Rule 4
+// amendment of 2026-10-13, G-10-1): the stand's wezterm-nightly context
+// drifted from the pinned 0x9 signature (no surrounding bit, no pushes) to
+// the 0x29 class — the bit IS announced and the client ANSWERS
+// RequireSurroundingText with its stale cache (never the typed stretch).
+// The old pending machine concluded such rounds as GTK verify-mismatches,
+// the behavioral class never learned, and the context never corrected. The
+// owner's verdict: a client that announced the bit and answers with a cache
+// that does not hold what the daemon watched being typed IS the terminal
+// context — the class learns and the round routes to the terminal write
+// branch. The fail-closed invariant survives for contexts WITH cache
+// evidence: a client whose pushes tracked the typing (the honest GTK world)
+// keeps the byte-as-today verify-mismatch abort.
+
+// TestTerminalBranch_StaleCacheAnswerRoutesTerminal pins the amendment's
+// core: a nil-cache word round (the client never pushed a field state —
+// the pending armed over the empty cache and required) whose only answer
+// does not hold the typed stretch LEARNS the behavioral class and executes
+// the terminal write branch ON THIS ROUND — done+level-2, no GTK
+// verify-mismatch, no repair-free abort of a correctable word.
+func TestTerminalBranch_StaleCacheAnswerRoutesTerminal(t *testing.T) {
+	buf := captureLogsLevel(t, slog.LevelDebug)
+	a, sink := wiredActor() // caps announced; NO role source — unclassified context
+
+	typeWord(a, wordEN) // transit; the client never pushed — nil cache
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // pending armed over the nil cache; the Require is out
+
+	if got := sink.opLog(); !slices.Equal(got, []string{"require"}) {
+		t.Fatalf("op log before the answer = %q, want exactly [require] — nothing destructive before the verdict", got)
+	}
+
+	a.HandleSurroundingText("x", 1, 1) // the stale cache: not the typed stretch
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"terminal class","verify_dead":true`) {
+		t.Errorf("the stale-cache signature did not learn the behavioral class; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done","changed":true`) {
+		t.Fatalf("the stale-routed round never completed — the word was abandoned; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"correction","level":2`) {
+		t.Errorf("the stale-routed round did not take the terminal write branch (level-2 DEBUG record missing); log:\n%s", logged)
+	}
+	if strings.Contains(logged, `"reason":"verify-mismatch"`) {
+		t.Errorf("the stale-cache answer concluded a GTK verify-mismatch — the owner-amended signature must route terminal; log:\n%s", logged)
+	}
+	want := append([]string{"require"}, append(burstOps(len([]rune(wordEN)), wordRU), "require")...)
+	if got := sink.opLog(); !slices.Equal(got, want) {
+		t.Fatalf("op log = %q, want the arm %q + the chunked terminal write %q + the verify-after arm", got, []string{"require"}, burstOps(len([]rune(wordEN)), wordRU))
+	}
+}
+
+// TestTerminalBranch_StaleCacheLearnsForNextGesture pins the class
+// persistence: after the stale-cache round, the NEXT gesture routes through
+// the terminal write branch AT THE DECISION — no pending machine, no
+// Require before the burst, the same shape the verify-timeout-taught class
+// produces.
+func TestTerminalBranch_StaleCacheLearnsForNextGesture(t *testing.T) {
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText("x", 1, 1) // the stale-cache answer: learn + write
+
+	opsBefore := len(sink.opLog())
+	a.HandleKey(spaceKey()) // the boundary-free separator; the buffer keeps mirroring
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	want := append(burstOps(len([]rune(wordEN)), wordRU), "require")
+	if got := sink.opLog()[opsBefore:]; !slices.Equal(got, want) {
+		t.Fatalf("round-2 op log = %q, want the decision-time terminal burst %q + the verify-after arm — "+
+			"the learned class must route at the decision, never back into the pending machine", got, burstOps(len([]rune(wordEN)), wordRU))
+	}
+}
+
+// TestTerminalBranch_HonestPushStillFailClosed pins the invariant half of
+// the amendment: a context WITH cache evidence — the pushes tracked the
+// typing (the honest GTK world) — whose fresh answer does not hold the
+// token keeps the byte-as-today fail-closed verify-mismatch: no learning,
+// no write, not one destructive emission.
+func TestTerminalBranch_HonestPushStillFailClosed(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeWord(a, wordEN)
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine)) // the honest tracking push
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)                                                       // pending armed over the NON-nil cache
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine)) // the fresh answer, still not the token
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"reason":"verify-mismatch"`) {
+		t.Errorf("the honest-GTK mismatch lost its fail-closed record; log:\n%s", logged)
+	}
+	if strings.Contains(logged, `"msg":"terminal class"`) {
+		t.Errorf("a tracking client learned the terminal class — cache evidence must keep the fail-closed world; log:\n%s", logged)
+	}
+	if got := len(sink.forwardCalls()); got != 0 {
+		t.Errorf("the honest mismatch forwarded %+v — abort, не мусорить", sink.forwardCalls())
+	}
+	if got := len(sink.commitTexts()); got != 0 {
+		t.Errorf("the honest mismatch committed %q — abort, не мусорить", sink.commitTexts())
+	}
+}
+
+// TestTerminalBranch_StaleRouteFlipStillDeferred pins the Task-1 E3
+// contract on the amendment path: the stale-routed terminal write with the
+// flip gate ON arms the deferred flip — SetGlobalEngine does not follow the
+// commit — and the confirming push releases it exactly once.
+func TestTerminalBranch_StaleRouteFlipStillDeferred(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(flipOnOptions())
+	clock := &flipClock{}
+	a.UseFlipTimer(clock.arm)
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText("x", 1, 1) // the stale-cache answer routes the write
+
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records after the stale-routed write = %d, want 0 — the flip defers on the "+
+			"amendment path too (E3); log:\n%s", got, buf.String())
+	}
+	if armed := clock.armedDurations(); len(armed) != 1 {
+		t.Fatalf("deferred flips armed = %d, want exactly 1", len(armed))
+	}
+
+	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // the confirming push
+
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after the confirming push = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru]", got)
 	}
 }
