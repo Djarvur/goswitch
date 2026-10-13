@@ -1,8 +1,8 @@
 ---
 phase: 10-term-slovo
-verified: 2026-10-12T22:08:34Z
+verified: 2026-10-13T22:30:04Z
 status: human_needed
-score: 5/5 must-haves verified
+score: 16/17 must-haves verified
 covered_files:
   - .planning/REQUIREMENTS.md
   - .planning/phases/10-term-slovo/10-01-PLAN.md
@@ -17,177 +17,228 @@ covered_files:
   - .planning/phases/10-term-slovo/10-05-SUMMARY.md
   - .planning/phases/10-term-slovo/10-06-PLAN.md
   - .planning/phases/10-term-slovo/10-06-SUMMARY.md
+  - .planning/phases/10-term-slovo/10-07-PLAN.md
+  - .planning/phases/10-term-slovo/10-07-SUMMARY.md
+  - .planning/phases/10-term-slovo/10-08-PLAN.md
+  - .planning/phases/10-term-slovo/10-08-SUMMARY.md
+  - .planning/phases/10-term-slovo/10-09-PLAN.md
+  - .planning/phases/10-term-slovo/10-09-SUMMARY.md
+  - .planning/phases/10-term-slovo/10-UAT.md
   - docs/CONFIG.md
   - docs/adr/ADR-008-terminal-transport.md
   - docs/adr/adr-008-spike-log.md
   - internal/appid/appid.go
   - internal/appid/appid_registry_test.go
-  - internal/appid/export_test.go
   - internal/clipboard/clipboard.go
   - internal/clipboard/clipboard_test.go
   - internal/config/config.go
   - internal/config/config_test.go
+  - internal/config/load.go
+  - internal/ctlsvc/ctlsvc.go
+  - internal/ctlsvc/ctlsvc_test.go
   - internal/correct/stretch.go
   - internal/correct/stretch_test.go
   - internal/session/actor.go
   - internal/session/actor_test.go
   - mise.toml
   - skills/goswitch-config/SKILL.md
-  - test/e2e/case_autocorrect.go
-  - test/e2e/case_spike_caps.go
-  - test/e2e/case_spike_wezterm.go
-  - test/e2e/case_switch.go
   - test/e2e/case_term_negative.go
   - test/e2e/case_term_word_vte.go
+  - test/e2e/case_term_word_vte_flip.go
   - test/e2e/case_term_word_wezterm.go
   - test/e2e/fixtures/gs-e2e-wezterm-stand.lua
   - test/e2e/main.go
-  - test/e2e/preflight.go
-  - test/e2e/spike_journal_test.go
-covered_digest: "v1:sha256:4a9184786834c5fc91911dd912f400426e7f611ee29d516131ec08f2948ebe31"
+  - test/e2e/wezterm.go
+covered_digest: "v1:sha256:055056a1642d2ffa7e611270a7b274bbfecc52464cdcb437f33b4dc952e6503d"
 behavior_unverified: 0
 overrides_applied: 0
+unverified_prohibitions: 11
+unverified_prohibitions_note: "unverified-prohibition — human review recommended: 11 judgment-tier prohibitions (10-07 ×4, 10-08 ×4, 10-09 ×3) carry a non-authoritative LLM-judge verdict in the Prohibition Review section; plans declare no verification tier — human review folds into the owner re-acceptance round"
+re_verification:
+  previous_status: human_needed
+  previous_score: 5/5
+  gaps_closed:
+    - "G-10-1 причина A: флап-стойкая классификация терминала (10-07) — код + behavior-тесты зелёные + стенд re-pin байт-точный"
+    - "G-10-1 причина B: defer-until-confirmed доставка commit + stale-cache амендмент (10-08) — код + behavior-тесты зелёные + живой flip-ряд с оракулом порядка"
+    - "G-10-1 недостающий элемент 5: gap-сборка v1.1.1-124-g7ace3fd на хосте, машинные предпроверки зелёные (10-09, верифицировано live read-only)"
+  gaps_remaining: []
+  regressions: []
 human_verification:
-  - test: "Owner human-check (owner's live desktop, from 10-06-PLAN Task 3 <human-check>): (1) wezterm: type ghbdtn, double Right Shift → привет; (2) same in GNOME Terminal; (3) mid-line word corrected by the gesture; (4) «ytn?» + gesture → «нет,»; (5) autocorrect stayed silent in the terminal during the manual trials. Answer «approved» or describe deviations. Rollback if asked: ~/.local/share/goswitch/releases/v1.1.1/goswitchctl install"
-    expected: "All 5 points green on the owner's own desktop (host build v1.1.1-94-ge62a5e4 installed and active); the machine venue (VM stand) already shows byte-exact green rows in both terminals"
-    why_human: "The owner's daily desktop (wezterm config, host kernel 7.2.9-2-t2 with its background-window keyboard defect, personal input habits) is outside the VM stand venue; only the owner can sign off criterion 1's acceptance"
-  - test: "Formal classification of the TERM-02 edge coverage (flagged assumption carried unresolved by all six plans, never auto-resolvable): review the edge evidence — 8 golden stretch behaviors (ytn?/ghbdtn␠/(ytn/ghbdtn2026/mix/ytn é/YTN?/replace-run) + live rows bash/zsh/mid-line/clip-frozen/witnesses/wezterm ×2 — and give the owner's classification verdict"
-    expected: "Owner accepts the edge coverage as expressed in concrete acceptance forms (the plans' own resolution condition — a human_needed verdict — applies only if the edge were NOT so expressed)"
-    why_human: "The spec-less probe left the edge `unclassified` by design; the verdict is reserved to the owner, the verifier may only account for the row, never quietly pass it"
+  - test: "Owner re-acceptance (закрывающий оракул G-10-1; gap-сборка v1.1.1-124-g7ace3fd установлена и активна): (1) wezterm: «ghbdtn» + двойной правый Shift → «привет»; (2) GNOME Terminal: то же; (3) флап-бурст — быстро пощёлкать фокус между окнами и СРАЗУ жест в терминале — исправление срабатывает; (4) слово в середине фразы исправляется; (5) «ytn?» + жест → «нет,»; (6) автокоррекция молчала во время всех проб (goswitchctl status — autocorrect_fired не вырос). Ответ «approved» или описание отклонений; при approved — ряд «gap closed by owner re-acceptance» в Closure validation; при rejected — СТОП без правок кода. Откат по запросу: ~/.local/share/goswitch/releases/v1.1.1/goswitchctl install"
+    expected: "Все шесть пунктов зелёные на живом столе владельца; журнальные ряды приёмки: нет skip-рядов verify-timeout/verify-mismatch, done changed=true не потерян по E3 (следующий push трекает исправленное слово), флип-рубежи строго после settlement-рубежей"
+    why_human: "Стенд принципиально не воспроизводит хостовую флап-тряску ядра 7.2.9-2-t2 (E1/E2b доказали); владелец — единственный валидный оракул закрытия G-10-1 (план 10-09 Task 2 human-check, T-10-09-02); вердикт честно ОЖИДАНИЕ в Closure validation, не синтезируется"
+  - test: "Формальная классификация края TERM-02 (флагнутое допущение, UAT Test 2 — [pending]): рассмотреть край-свидетельства — 8 золотых поведений пробега + живые ряды (bash/zsh, мид-лайн, clip-frozen, свидетели vim/htop, wezterm ×2 раунда 10-06 и re-pin 10-08 с learning=true по stale-cache амендменту, flip-ряд) — и вынести вердикт классификации края"
+    expected: "Владелец принимает край в том виде, в каком он выражен конкретными проверками; human_needed-вердикт требовался бы, только если бы край НЕ был так выражен"
+    why_human: "Spec-less проба классифицировала край unclassified по построению; флагнутое допущение никогда не снимается автоматически — формальный вердикт за владельцем"
 ---
 
-# Phase 10: TERM-слово Verification Report
+# Phase 10: TERM-слово Verification Report (re-verification после закрытия G-10-1)
 
 **Phase Goal:** Пользователь исправляет слово, набранное не в той раскладке, одним жестом в wezterm и GNOME Terminal — через собственный канал ввода демона (IBus), без внешних инжекторов
-**Verified:** 2026-10-12T22:08:34Z
-**Status:** human_needed (machine verification complete and green; two owner signatures pending — see Human Verification Required)
-**Re-verification:** No — initial verification
+**Verified:** 2026-10-13T22:30:04Z
+**Status:** human_needed (машинная верификация полностью зелёная, включая обе причины разрыва G-10-1; открыта ревизия владельца — см. Human Verification Required)
+**Re-verification:** Yes — после закрытия разрыва G-10-1 (планы 10-07, 10-08, 10-09)
 
 ## Goal Achievement
 
 ### Observable Truths
 
+Truths 1–5 — контракт ROADMAP (предыдущий раунд, регрессионная проверка). Truths G1–G12 — must_haves планов закрытия 10-07/10-08/10-09 (полная трёхуровневая проверка).
+
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Двойной правый Shift исправляет слово в wezterm (bash/zsh, кириллица, мид-лайн): ghbdtn → привет на живом столе | ✓ VERIFIED | Code present+wired: `test/e2e/case_term_word_wezterm.go` (508 LOC, registered main.go:338 + usage), terminal branch `internal/session/actor.go:3047-3216`. Behavior pinned by passing unit tests (RoutesChunkedNoPending, VTERoleUnifiedChunks, Level2PacesWire). Live machine evidence: word-a/word-b 20:34:29/31 + independent repeat 21:17:16/18 — `pty_delta_hex=d0bfd180d0b8d0b2d0b5d1820a`, verifier-decoded byte-exact «привет\n»; mid-line 21:17:20 decodes «echo привет\n». Read-only stand check: goswitchd active, wezterm-nightly 20261010-083911-e2a98e1b installed. Owner's own-desktop signature pending → Human Verification item 1 |
-| 2 | То же в GNOME Terminal (VTE); чтение — собственный буфер демона; primary-лег — по необходимости (вердикт владельца OQ 2 «contract») | ✓ VERIFIED | word-bash/word-zsh 19:17:39/41 pass — pty_hex decodes «привет\n» exactly; reading channel wired: Buffer fed by ProcessKeyEvent → `ConvertibleStretch()` consumed at `actor.go:2889-2891`. Primary clause: owner verdict OQ 2 «contract» (2026-10-12, recorded in ADR-008 amendment) supersedes — `internal/clipboard.Primary` exists, tested (pinned argv `--primary --no-newline`), deliberately without consumer; leg-probe (OQ 3) honestly red 20:34:47/21:17:23; D7 boundary documented docs/CONFIG.md:43-51. Codebase honors the owner's authoritative interpretation |
-| 3 | N×BackSpace-реплей + commit_text через IBus; CLIPBOARD байт-нетронут; commit-over-selection и paste-чорды не используются | ✓ VERIFIED | `executeLevel2` (actor.go:3164-3216): only ForwardKeyEvent(KeyBackSpace) chunks + ONE CommitText — zero DeleteSurroundingText, zero selection commits. clip-frozen rows: VTE 19:17:46 + wezterm 20:34:45/21:17:22 — clip_before=clip_after=GS-SPIKE-SENTINEL. Paste chord unreachable from terminal branch: settleAfter's noRung branch (actor.go:1668-1675) returns before the rung condition; unit-pinned by TestTerminalBranch_VerifyAfterNoRungOnMismatch (green, including ClipboardRung=true config). No uinput/wl-copy in daemon path (grep clean) |
-| 4 | До первого BackSpace отмена бесплатна; после — verify-сверка логирует и останавливается, никогда не чинит; перечек фокуса между чанками ≤8 | ✓ VERIFIED | Behavior-dependent — exercised by passing named tests: TestTerminalBranch_FreeAbortBeforeBurst (all 4 cells: empty-buffer/convert-failed/no-engine/backspace-cap — zero forwards), TestTerminalBranch_FocusLossBetweenChunksStops (burst stops at chunk boundary, no commit, INFO рубеж), TestTerminalBranch_VerifyAfterNoRungOnMismatch + VerifyDeadQuietTimeout. Code: aborts at actor.go:3011-3043 (all before burst); mismatch log+stop at 1667-1675; chunks `terminalChunkKeys=8` with ctxEpoch re-check (`chunkBoundaryMoved`, mutex released one quantum) → «correction outcome=context-changed», no commit, no достройка (3196-3201) |
-| 5 | Двухразрешительная модель Фазы 9 живая: замороженные негативные ряды зелёные — автокоррекция молчит при работающей ручной (vim-insert/htop-свидетели) | ✓ VERIFIED | Veto wired at the ARMING point BEFORE the detector: actor.go:2458 (`classifyTerminal` → recordACAbstain(acReasonTerminalVeto)) precedes detectVerdict at 2464; fail-closed via verify-dead source (2508). Unit corpus green: TestAutoCorrect_TerminalVeto{BeforeDetector,PatternMatch,IdentityUnobservable,GTKUnchanged,SingleSlug} + TestTerminalClass_* lifecycle. Live frozen rows: witness-vim 19:29:28 (fired=0, veto Δ=1, buffer_hex=67686264746e200a — verifier-decoded «ghbdtn␠» verbatim), witness-htop 19:29:31, positive-control 19:29:34 («привет\n» byte-exact — silence is the veto, not deafness), autocorrect-terminal-silent-repin 21:13:40 pass (full counters oracle). Counter chain verified end-to-end: recordACAbstain → AutoCorrectSkipReasons → renderStatus `ac_skip_`+dash-flattened slug (ctlsvc.go:195-197) → case regex `ac_skip_terminal_veto` |
+| 1 | Двойной правый Shift исправляет слово в wezterm (bash/zsh, кириллица, мид-лайн): ghbdtn → привет на живом столе | ✓ VERIFIED | Регрессия: символы целы (`case_term_word_wezterm.go`, терминальная ветка actor.go), корпус зелёный. Живые ряды: 20:34/21:17 (10-06) байт-точные; re-pin 10-08 — word-a 21:31:32 learning=true (stale-cache амендмент виден живым рядом), word-b/mid-line байт-точные. Хост-сборка v1.1.1-124-g7ace3fd активна. Приёмка владельца — Human Verification 1 |
+| 2 | То же в GNOME Terminal (VTE); чтение — собственный буфер демона; primary-лег — по необходимости (вердикт OQ 2 «contract») | ✓ VERIFIED | Регрессия: re-pin ряды word-bash/word-zsh/mid-line 21:30:49-53 — pty_hex=d0bfd180d0b8d0b2d0b5d1820a дословно рядов 10-05 (верификатором декодировано «привет»); reading channel: ProcessKeyEvent → Buffer → ConvertibleStretch → actor.go:2889-2891 нетронут; leg-probe red честен (OQ 2 «contract») |
+| 3 | N×BackSpace-реплей + commit_text через IBus; CLIPBOARD байт-нетронут; commit-over-selection и paste-чорды не используются | ✓ VERIFIED | executeLevel2: только ForwardKeyEvent(KeyBackSpace) чанки + один CommitText; clip-сентинел удержан во ВСЕХ записанных прогонах (clip_before=clip_after=GS-SPIKE-SENTINEL: 18:58:55, 21:30:56, 21:31:38, flip 21:32:57); paste-чорд недостижим (noRung-ветка, пин зелёный); uinput/wl-copy в daemon-пути нет |
+| 4 | До первого BackSpace отмена бесплатна; после — verify-сверка логирует и останавливается, никогда не чинит; перечек фокуса между чанками ≤8 | ✓ VERIFIED | Поведенческие тесты зелёные (верификатором, -race): TestTerminalBranch_FreeAbortBeforeBurst, FocusLossBetweenChunksStops, VerifyAfterNoRungOnMismatch, FlapPairBetweenChunksStops (ctxEpoch-остановка переживает флап); код: aborts/forks actor.go:3384-3488+, chunks=8 (:61), ctxEpoch++ на каждом FocusOut (:1043) |
+| 5 | Двухразрешительная модель Фазы 9 живая: автокоррекция молчит в терминале при работающей ручной (vim-insert/htop-свидетели) | ✓ VERIFIED | Вето на точке ARMING перед детектором: actor.go:2782-2788 (classifyTerminal → recordACAbstain(acReasonTerminalVeto) → detectVerdict); TestAutoCorrect_TerminalVeto* зелёные (верификатором); re-pin свидетели 21:32:13/27 — fired=0, veto Δ=1, буферы дословно; positive-control 21:32:29 байт-точный |
+| G1 | Флап-пара FocusOut/FocusIn (1–3 мс) не стирает выученный терминальный класс: verifyDead переживает пару; стирают только истечение окна, Reset, синтетика флипа (10-07, причина A) | ✓ VERIFIED | Код: focusFlapWindow=10 мс (actor.go:73), FocusOut-ветка armVerifyDeadWipe / Reset+синтетика setVerifyDead(false) (:1047-1062), FocusIn cancelVerifyDeadWipe (:1080), один таймер с epoch-гардом (:1411-1444). Behavior-тест зелёный (верификатором): TestTerminalClass_VerifyDeadSurvivesFlapPair; RED честен (evidence-20261013-10-07-red-task1.json, «not ok 153»); пины ClearedBy*/Rearms/FlapPairBetweenChunksStops зелёные |
+| G2 | Отсутствующий ключ correction.terminals даёт дефолт-якорь [gnome-terminal, wezterm]; явный [] — opt-out; docs фиксируют обе формы (10-07) | ✓ VERIFIED | config.go:91-128 (DefaultTerminals, константы с происхождением G-10-1), load.go:46 (нормализация nil→якорь после декода), Defaults() :285; docs/CONFIG.md:43,84 + SKILL.md:151 (регенерирован, golden зелёный). Тесты зелёные (верификатором): TestCorrection_TerminalsDecode (без ключа → якорь; [] → opt-out; список → как написано), TestDefaults_CorrectionTerminalsAnchor |
+| G3 | Недоступность a11y-роли перестала быть тихой: каждая ошибка растит счётчик в status, WARN переармивается (10-07) | ✓ VERIFIED | actor.go:116-124 (acRoleWarnRearm 30 мин), :353-364 (acRoleErrors), :875-923 (Status.AutoCorrectRoleErrors), :3066 (здоровый ответ обнуляет); ctlsvc.go:196 токен ac_role_errors= (пин ctlsvc_test.go:816 зелёный, старые токены байт-прежние). Тесты зелёные (верификатором): RoleErrorsCounted, RoleWarnRearmsAfterQuietWindow, RoleHealthyClosesEpisodeAndZeroes. ЖИВОЕ доказательство: host status сейчас показывает ac_role_errors=3 — диагностика машинно видна на реальном столе |
+| G4 | Семантика остановки чанков (ctxEpoch) и жёсткий сброс на реальном FocusOut не тронуты — защищённое поведение 10-04 байт-прежнее (10-07) | ✓ VERIFIED | Код: ctxEpoch++ ДО флап-ветки (:1043) — растёт на каждом FocusOut включая флап; HardReset/resolvePending/clearAfter следуют как прежде. Пин TestTerminalBranch_FlapPairBetweenChunksStops зелёный (верификатором); полный session-корпус зелёный в mise run ci (exit 0) |
+| G5 | Стенд не регрессирует: при flip=false машина флипа не армится вовсе; term-word-vte, term-word-wezterm, term-negative-witnesses re-pin зелёные (10-08) | ✓ VERIFIED | Пин «flip=false → ops байт-идентичен» зелёный (саммари+CI); журнальные ряды 21:30-21:32 (свежая сессия boot 21:27:35, четыре кейса подряд): VTE 4/4 рядов байт-точных, свидетели fired=0/veto Δ=1, wezterm word-a/b/mid-line байт-точные. ОГОВОРКА (warning): wezterm clip-frozen 21:31:38 — ряд записан Verdict: FAIL (в pty-дельте префиксный мусор 16×0x6e и нет хвостового 0a), при этом инвариант ряда — CLIPBOARD-сентинел — удержан (clip_before=clip_after), «привет» в дельте присутствует, кейс exit 0 (форма: wezClipFrozenRow возвращает cerr захвата, а не результат сравнения — FAIL-ряд не валит exit). Не блокер: SC3-инвариант удержан, ряд записан честно, наблюдение самоисполнителем помечено на разбор фазовой верификацией (разобрано здесь) |
+| G6 | Пост-коррекционный флип не осиротяет in-flight commit: SetGlobalEngine только после подтверждения доставки (push / клавиша / grace 300 мс) (10-08, причина B) | ✓ VERIFIED | Код: flipConfirmGrace=300 мс (actor.go:75-82), deferCorrectionFlip (:1580-1596), releaseDeferredFlip (:1599-1620), flipGraceExpiry с epoch-гардом (:1637-1644); release-сайты: match settleAfter :1970, mismatch :1984, тихий таймаут :2022, вход feedKey :2617 (СТРОГО до обработки ключа); НИ ОДНОГО release на FocusOut/Reset (проверено grep+чтением HandleLifecycle). Behavior-тесты зелёные (верификатором): FlipDeferredUntilConfirmed, FlipReleasedByNextKey, FlipGraceDeadlineFires, FlipSurvivesFocusOutGraceReleases, SecondCorrectionReleasesPendingFlip; RED честен (10-08-red-task1, «not ok 182»). Живой ряд flip-word-bash 21:32:54 — delivery_order=done<settlement<mode |
+| G7 | Правило владельца «режим следует за скриптом результата» сохранено: флип отложен, не отменён; ровно один flipTo на коррекцию; D-36 порядок байт-прежний (10-08) | ✓ VERIFIED | releaseDeferredFlip переиспользует flipTo целиком (D-36 не дублируется); слот очищается при release; grace-дедлайн гарантирует освобождение. Тесты FlipGraceDeadlineFires (ровно один, stale-fire no-op) и SecondCorrectionReleasesPendingFlip зелёные (верификатором) |
+| G8 | Новый ряд term-word-vte-flip (flip=true) зелёный: pty байт-точный, журнальный порядок done → settlement → mode/switch (10-08) | ✓ VERIFIED | case_term_word_vte_flip.go (собственный конфиг-документ flip_after_correction: true), зарегистрирован main.go:131/278/340, mise-задача e2e-term-word-vte-flip (mise.toml:190-192, NOT in ci). Живые ряды: flip-word-bash 21:32:54 pty_hex байт-точен + delivery_order=done<settlement<mode; flip-clip-frozen 21:32:57 — сентинел удержан при активной машине флипа |
+| G9 | GTK level-1 путь и combo-флипы не тронуты — немедленный settleCorrectionFlip; mismatch verify-after только логирует и останавливает (10-08) | ✓ VERIFIED | executeCorrection level-1: немедленные флипы :3450/:3481; терминальный форк :3553-3555 (deferCorrectionFlip только в терминальной ветке); combo-гард в deferCorrectionFlip; пины TestTerminalBranch_ComboFlipImmediateNotDeferred и мигрированные VerifyPaths/RefusalsNeverFlip зелёные (верификатором, включая HonestPushStillFailClosed — fail-closed для кэш-свидетельств сохранён) |
+| G10 | Хост несёт gap-сборку (оба фикса), unit active, версия/коммит записаны, откат-путь назван; машинная предпроверка зелёная (10-09) | ✓ VERIFIED | Верифицировано LIVE read-only этим верификатором: `systemctl --user is-active goswitchd` = active, ExecStart=/home/nil/.local/share/goswitch/releases/v1.1.1-124-g7ace3fd/goswitchd (старт 2026-10-14 00:46:57 MSK); фикс. путь ctl существует; status парсится: config_valid=true, config_error пуст, ac_role_errors виден (сейчас 3), autocorrect_fired=0. Ряд host-install-gap 2026-10-14 00:46 в spike-log с маркером «gap G-10-1 closure build» и откатом ДО приёмки |
+| G11 | Секция Closure validation (G-10-1) в debug-файле: машинные предпроверки, шестипунктовая инструкция re-acceptance, критерии журнальных рядов (10-09) | ✓ VERIFIED | .planning/debug/DEBUG-term-host-live-failures.md:259-338 — предпроверки 00:46–00:49 MSK с датами; инструкция 6 пунктов (5 исходных + флап-бурст + молчание автокоррекции с машинной проверкой); критерии: нет verify-timeout/mismatch, done changed=true не потерян по E3, флипы строго после settlement; откат в инструкции; вердикт — честный ОЖИДАНИЕ (не синтезирован — проверено чтением) |
+| G12 | Разрыв G-10-1 закрывается ТОЛЬКО ответом владельца: re-acceptance на живом столе — «approved» (10-09 Task 2) | → HUMAN | By design: закрывающий оракул — жест владельца; машинные проверки его не заменяют (T-10-09-02). Вердикт честно ОЖИДАНИЕ в Closure validation → Human Verification item 1. Единственная не-машинная истина фазы; единственная причина статуса human_needed |
 
-**Score:** 5/5 truths verified (0 present, behavior-unverified)
+**Score:** 16/17 истин verified (G12 — by-design человеческий оракул, честно ОЖИДАНИЕ; 0 present-behavior-unverified)
+
+**Behavior-доказательства:** все behavior-зависимые истины (G1 флап-переход, G6/G7 машина флипа, G9 fail-closed, G4 ctxEpoch, 3/5 вето/abort) закреплены ИМЕНОВАННЫМИ тестами, исполненными верификатором с -race; RED-фазы обоих TDD-планов подтверждены по evidence-JSON («not ok» целевых тестов при exit 1).
+
+### Deferred Items
+
+Нет. Пункты, не покрытые кодом (вердикт владельца, классификация края), — человеческие оракулы, а не отложенные машинные работы; поздние фазы милстоуна (MENU-01, TERM-03, A11Y-*) их не покрывают.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| `internal/correct/stretch.go` | ConvertibleStretch/StretchTail/ReplaceStretch + tablePosition predicate | ✓ VERIFIED | 93 LOC, substantive; consumed at actor.go:2889-2891 (wired); 8-test golden corpus green |
-| `internal/config/config.go` (Correction.Terminals) | schema + ceiling 64 + sentinel errors + Defaults() excludes | ✓ VERIFIED | Lines 32-74, 113, 385-397; strict decoder, zero-value=off; docs/CONFIG.md:77 + SKILL.md:151 rows in sync |
-| `internal/clipboard/clipboard.go` (Primary) | flagPrimary + Primary(ctx) with Runner seam | ✓ VERIFIED | Lines 36, 108-109; tested; primitive without consumer by owner verdict (documented, not orphaned-by-omission) |
-| `internal/session/actor.go` (terminal machinery) | classifyTerminal + verify-dead + veto + terminal branch + chunks + noRung + changed + pacing | ✓ VERIFIED | All symbols present and wired: 61 (chunk=8), 71 (20ms), 129 (slug), 208/281/542 (epoch/dead/noRung), 1736 (armAfterVerifyTerminal), 2458 (veto), 2507 (seam), 3047 (routing), 3164 (branch), 3224 (re-check) |
-| `internal/appid/appid.go` | a11y observer registers RegisterEvent interest | ✓ VERIFIED | Lines 49, 326; TestRegisterEventInterest_PinsRegistryCall green; live probe 0→153 StateChanged in journal mechanics row |
-| `test/e2e/case_term_word_vte.go` | term-word-vte case: 4 rows, pty oracle, CLIPBOARD sentinel | ✓ VERIFIED | 417 LOC; rows word-bash/word-zsh/mid-line/clip-frozen; registered registry+usage |
-| `test/e2e/case_term_negative.go` | term-negative-witnesses: vim/htop + positive control | ✓ VERIFIED | 301 LOC; counters oracle vetoCountRe; rows match journal |
-| `test/e2e/case_term_word_wezterm.go` + fixture | term-word-wezterm: caps re-pin, ×2 rounds, delta oracle, leg-probe | ✓ VERIFIED | 508 LOC + `fixtures/gs-e2e-wezterm-stand.lua` (stand-owned config, top-level --config-file form) |
-| `mise.toml` | three e2e tasks NOT in ci | ✓ VERIFIED | e2e-term-word-vte (178), e2e-term-negative-witnesses (182), e2e-term-word-wezterm (186) — all with «NOT in ci» |
-| `docs/adr/ADR-008-terminal-transport.md` | Status Accepted, Evidence D1–D7 from journal rows, amendment | ✓ VERIFIED | Accepted (2026-10-12); 7/7 D-rows cite dated journal rows; zero web links (grep http = 0); amendment quotes OQ 1 unified / OQ 2 contract, caps re-pin, venue verdict, leg-probe red |
-| `docs/adr/adr-008-spike-log.md` | dated venue + live rows + witnesses + caps re-pin + host-install | ✓ VERIFIED | All rows read; hex fragments independently decoded byte-exact («привет», «echo привет», «ghbdtn␠», «ghbdtn»); venue verdict vm-primary cites both probe rounds |
-| `docs/CONFIG.md` + `skills/goswitch-config/SKILL.md` | terminals row + D7 contract boundary | ✓ VERIFIED | Row identical in both (line 77/151); D7 boundary paragraph at CONFIG.md:43-51 |
+| `internal/session/actor.go` (флап-механика) | focusFlapWindow + armVerifyDeadWipe/cancelVerifyDeadWipe/verifyDeadWipeExpiry, UseFlapTimer | ✓ VERIFIED | :63-73, :1047-1090, :1411-1444; один таймер, epoch-гард, переармывание; wired в HandleLifecycle |
+| `internal/session/actor.go` (машина флипа) | deferCorrectionFlip/releaseDeferredFlip/flipGraceExpiry, flipConfirmGrace, pendingStaleCache | ✓ VERIFIED | :75-82, :340-346, :1569-1644, :1912-1924, :3403; release-сайты :1970/:1984/:2022/:2617; арм :3553 |
+| `internal/session/actor.go` (role-диагностика) | acRoleErrors + acRoleWarnRearm + roleClock + Status-поле | ✓ VERIFIED | :116-124, :353-364, :800-807, :875-923, :3066 |
+| `internal/config/config.go` + `load.go` | DefaultTerminals + якорь в Defaults + нормализация nil→якорь | ✓ VERIFIED | config.go:91-128, :285; load.go:46; docs/CONFIG.md:43,84 и SKILL.md:151 синхронны (golden зелёный) |
+| `internal/ctlsvc/ctlsvc.go` | токен ac_role_errors= в ac-блоке | ✓ VERIFIED | :196; пин ctlsvc_test.go:816; старые ключи байт-прежние; ЖИВО на хосте (ac_role_errors=3) |
+| `test/e2e/case_term_word_vte_flip.go` | кейс term-word-vte-flip: оракул порядка + CLIPBOARD-сентинел | ✓ VERIFIED | 12 885 байт; главный real-data оракул; зарегистрирован main.go:340 + usage :131 + mise.toml:190 |
+| `docs/adr/ADR-008-terminal-transport.md` | амендмент 2026-10-13: delivery-order safety + клиент-дрейф | ✓ VERIFIED | Секция :159+ (defer-until-confirmed, flipConfirmGrace 300 мс, E3-вердикт как Evidence); Status Accepted; D1–D7 не переписаны; веб-ссылок нет |
+| `docs/adr/adr-008-spike-log.md` | ряды re-pin 10-07, flip 10-08, дрейф/амендрмент, host-install-gap 10-09 | ✓ VERIFIED | Секции :288+ (re-pin 18:58-19:08), flip :21:32:54/57, дрейф+checkpoint владельца (вариант 1 одобрен дословно), host-install-gap 2026-10-14 00:46; FAIL/aborted/blocked-ряды сохранены честно |
+| `.planning/debug/DEBUG-term-host-live-failures.md` | секция Closure validation (G-10-1) | ✓ VERIFIED | :259-338; вердикт ОЖИДАНИЕ не синтезирован |
+| `.planning/phases/10-term-slovo/evidence-20261013-10-0{7,8}-red-task*.json` | 5 честных RED-свидетельств | ✓ VERIFIED | Все 5 содержат «not ok N - <целевой тест>» при exit 1 (проверено парсингом) |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 | ---- | -- | --- | ------ | ------- |
-| internal/correct/stretch.go | internal/session/actor.go startCorrection | ConvertibleStretch consumed for correctionRange | ✓ WIRED | actor.go:2889-2891; autocorrect payload still consumes Token() (D-13/D-14 untouched, existing corpus green) |
-| config Correction.Terminals | actor classifyTerminal | refreshACTerminals compile cache | ✓ WIRED | actor.go:577, 1425, 1446, 2577-2583 → matchACTerminal:2532; live-fold on document edit |
-| actor autoCorrectBoundary | actor classifyTerminal | veto BEFORE detect.Check | ✓ WIRED | Line 2458 precedes 2464; spy-detector test pins zero detector calls |
-| actor startRangeCorrection | actor classifyTerminal | terminal routing BEFORE caps fork | ✓ WIRED | Line 3047; VTERoleUnifiedChunks pins role-60 → same branch |
-| actor executeLevel2 | engine Emitter | ForwardKeyEvent(BackSpace) chunks + one CommitText | ✓ WIRED | Lines 3184, 3204; paced 20ms (Level2PacesWire green) |
-| actor settleAfter | terminal verify-after | noRung round — mismatch logs and stops | ✓ WIRED | Lines 1668-1675, armAfterVerifyTerminal:1736; noRung returns before rung condition |
-| case_term_word_vte.go | actor terminal branch | done + level-2 grep oracle + pty hex | ✓ WIRED | Case asserts done+level-2 marks (lines 218-242) pinning the TERMINAL branch, then pty-hex oracle |
-| case_term_negative.go | actor terminal-veto | ac_skip_terminal_veto counters delta | ✓ WIRED | vetoCountRe parses renderStatus output; slug produced dynamically from acReasonTerminalVeto |
-| spike-log rows | ADR-008 Evidence D1–D7 | cells cite dated journal rows only | ✓ WIRED | 7/7 rows, zero web links |
-| case files | main.go + mise.toml | registry + usage + tasks | ✓ WIRED | main.go:129-130, 276-277, 337-339; mise.toml:178-188 |
+| actor.go HandleLifecycle FocusOut (:900-зона) | setVerifyDead / flap-механика | отложенное стирание focusFlapWindow; FocusIn отменяет | ✓ WIRED | :1047-1090; Reset/синтетика — немедленно; ctxEpoch++ вне ветки |
+| config Load/Defaults (Correction.Terminals) | actor classifyTerminal | дефолт-якорь через существующий applySnapshot-фолд | ✓ WIRED | load.go:46; якорь-тест classifyTerminal зелёный; watch.go гонит reload через Load (ревью подтвердило) |
+| actor warnACRole (acRoleErrors) | ctlsvc StatusSnapshot | счётчик виден машинно | ✓ WIRED | actor.go:875-923 → ctlsvc.go:196; ЖИВО: host status ac_role_errors=3 |
+| actor executeLevel2 (коммит) | settleAfter / afterExpiry / feedKey | арм отложенного флипа; release на первом подтверждении | ✓ WIRED | :3553 арм; release :1970/:1984/:2022/:2617; ни одного release на lifecycle |
+| case_term_word_vte_flip.go | машина отложенного флипа | конфиг flip=true армит; журнальный порядок оракулятся | ✓ WIRED | живой ряд delivery_order=done<settlement<mode |
+| host unit goswitchd (gap-сборка) | Closure validation debug-секция | журнальные ряды жестов владельца (после приёмки) | ✓ WIRED (форма готова) | unit на v1.1.1-124-g7ace3fd верифицирован live; критерии рядов сформулированы; сами ряды — после жестов владельца |
+| case files | main.go + mise.toml | реестр + usage + задачи | ✓ WIRED | term-word-vte-flip: main.go:131/278/340; mise.toml:190 (NOT in ci) |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 | -------- | ------------- | ------ | ------------------ | ------ |
-| terminal write branch | correction target | daemon's own keystroke Buffer (ProcessKeyEvent feed) → ConvertibleStretch | yes — live rows byte-exact | ✓ FLOWING |
-| live e2e oracles | pty hex / delta | real VTE/wezterm pane pseudo-terminals on the VM stand | yes — verifier-decoded «привет\n» | ✓ FLOWING |
-| negative witnesses | fired / veto counters | real daemon counters through goswitchctl status renderStatus | yes — Δ=1 rows | ✓ FLOWING |
-| verify-after | expected suffix | converted+tail from the same correction round | yes (unit-pinned) | ✓ FLOWING |
+| машина отложенного флипа | flip target | scriptOf(converted) из реального конвертируемого пробега раунда | да — живой ряд 21:32:54 | ✓ FLOWING |
+| stale-cache маршрут | cacheNil | снапшот push-кэша в момент арма реального раунда (:3403) | да — learning=true word-a 21:31:32 | ✓ FLOWING |
+| ac_role_errors | счётчик ошибок эпизода | реальные ошибки role-источника живого демона | да — хост показывает 3 | ✓ FLOWING |
+| flip-кейс оракулы | pty_hex / delivery_order | реальные VTE pane + журнал демона стенда | да — байт-точные ряды | ✓ FLOWING |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Full CI gate (build+vet+golangci-lint+test -race) | `mise run ci` | exit 0; 21 packages ok | ✓ PASS |
-| Chunked routing + unified + free abort + focus stop + no-rung + pacing | `go test ./internal/session/ -run 'TestTerminalBranch_(...)' -race -v` | 7/7 PASS (incl. 4 free-abort subtests) | ✓ PASS |
-| Veto before detector + verify-dead lifecycle | `go test ./internal/session/ -run 'TestAutoCorrect_TerminalVeto|TestTerminalClass_' -race -v` | 11/11 PASS | ✓ PASS |
-| ConvertibleStretch golden corpus | `go test ./internal/correct/ -run 'TestConvertibleStretch|TestStretch' -race -v` | 8/8 PASS | ✓ PASS |
-| Journal hex byte-exactness (independent decode) | python3 bytes.fromhex on d0bfd180…/6563686f20…/67686264746e200a | «привет» / «echo привет» / «ghbdtn␠» | ✓ PASS |
-| VM stand alive with internals (read-only) | ssh stand: `is-active goswitchd; command -v ydotool wl-paste gnome-terminal; wezterm --version` | active; all tools present; wezterm 20261010-083911-e2a98e1b | ✓ PASS |
+| Флап-пара сохраняет класс | `go test ./internal/session/ -race -run TestTerminalClass_VerifyDeadSurvivesFlapPair -v` | PASS | ✓ PASS |
+| Машина отложенного флипа (defer/release/keys/grace) | `go test ./internal/session/ -race -run 'Flip(DeferredUntilConfirmed\|ReleasedByNextKey\|GraceDeadlineFires\|SurvivesFocusOutGraceReleases)' -v` | 4/4 PASS | ✓ PASS |
+| Вторая коррекция/выживание/комбо/fail-closed пины | `go test ./internal/session/ -race -run '(SecondCorrectionReleasesPendingFlip\|ComboFlipImmediateNotDeferred\|HonestPushStillFailClosed\|FlapPairBetweenChunksStops)' -v` | 4/4 PASS | ✓ PASS |
+| Stale-cache маршрут | `go test ./internal/session/ -race -run TestTerminalBranch_StaleCacheAnswerRoutesTerminal -v` | PASS | ✓ PASS |
+| Регрессия 10-04/10-03 (abort/focus-stop/noRung/veto/class-lifecycle) | `go test ./internal/session/ -race -run '(FreeAbortBeforeBurst\|FocusLossBetweenChunksStops\|VerifyAfterNoRungOnMismatch\|TestAutoCorrect_TerminalVeto\|TestTerminalClass_)'` | ok | ✓ PASS |
+| Геометрия пробега (8 golden) | `go test ./internal/correct/ -race -run 'TestConvertibleStretch\|TestStretch'` | ok | ✓ PASS |
+| Якорь конфига + токен status | `go test ./internal/config/ ./internal/ctlsvc/ -race -run '(TerminalsDecode\|CorrectionTerminalsAnchor\|AutocorrectTokens)' -v` | все PASS (subtests: без ключа→якорь; []→opt-out) | ✓ PASS |
+| Полный CI-гейт | `mise run ci` | exit 0; lint 0 issues; все пакеты ok под -race | ✓ PASS |
+| Хост: gap-сборка активна, диагностика видна (read-only) | `systemctl --user is-active goswitchd` + show ExecStart + фикс.ctl status | active; ExecStart=…v1.1.1-124-g7ace3fd/goswitchd; config_valid=true; ac_role_errors=3; autocorrect_fired=0 | ✓ PASS |
+| Журнальные ряды стенда — независимый hex-декод | python3 bytes.fromhex(d0bfd180…0a / 6563686f20… / 67686264746e0a) | «привет\n» / «echo привет\n» / «ghbdtn\n» | ✓ PASS |
 
 ### Probe Execution
 
 | Probe | Command | Result | Status |
 | ----- | ------- | ------ | ------ |
-| scripts/*/tests/probe-*.sh (conventional discovery) | find scripts -path '*/tests/probe-*.sh' | none exist | N/A — no conventional probes |
-| e2e-term-word-vte (phase-declared live verification) | `go run ./test/e2e -case term-word-vte` (inside VM) | executed live during plan 10-05; dated rows 19:17:39-46 in journal; NOT re-run by verifier | SKIP (re-run) — mutating live case (restarts stand daemon, spawns windows, overwrites CLIPBOARD/gsettings); verifier basis: dated rows + independent hex decode + stand reachability |
-| e2e-term-negative-witnesses (phase-declared) | `go run ./test/e2e -case term-negative-witnesses` (inside VM) | executed live during plan 10-05; rows 19:29:28-34; not re-run | SKIP (re-run) — same mutation rationale |
-| e2e-term-word-wezterm (phase-declared) | `go run ./test/e2e -case term-word-wezterm` (inside VM) | executed live during plan 10-06 twice (20:34, 21:17); rows in journal; not re-run | SKIP (re-run) — same mutation rationale |
-
-Rationale: the three live e2e cases are the phase's own deliverable verification, already executed on the designated venue (vm-primary venue verdict, two-consecutive-greens discipline) with dated, internally consistent, hex-verified rows; re-execution mutates the stand state (daemon restarts, window spawns, clipboard/sources takeover), which the behavioral spot-check constraints forbid. The mise tasks keep them machine-reproducible.
+| scripts/*/tests/probe-*.sh | find scripts -path '*/tests/probe-*.sh' | не существуют | N/A |
+| Живые e2e-кейсы (term-word-vte/-wezterm/-negative-witnesses/-vte-flip) | `go run ./test/e2e -case …` (внутри ВМ) | исполнены исполнителем 2026-10-13 (ряды 18:58-19:08, 21:30-21:32); верификатором НЕ перезапускались | SKIP (re-run) — мутация живого стенда (рестарт демона, окна, CLIPBOARD/gsettings); базис верификатора: датированные ряды + независимый hex-декод + именованные юнит-тесты + live read-only хост-чеки |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 | ----------- | ---------- | ----------- | ------ | -------- |
-| TERM-02 | 10-01..10-06 (all six) | Пользователь может исправить слово не в той раскладке жестом (двойной правый Shift) в wezterm и GNOME Terminal; чтение — буфер демона / primary (по необходимости); запись — N×BackSpace + commit_text через IBus; безопасная точка отмены; verify-сверка | ✓ SATISFIED | Truths 1-5 above; REQUIREMENTS.md checkbox [x], traceability «TERM-02 \| Phase 10 \| Complete»; live rows both terminals byte-exact; safety invariants unit-pinned |
-| — (orphaned) | — | REQUIREMENTS.md maps only TERM-02 to Phase 10 | ✓ NONE | No orphaned requirements |
+| TERM-02 | 10-01…10-09 (все девять) | Слово не в той раскладке исправляется жестом в wezterm и GNOME Terminal; чтение — буфер демона / primary (по необходимости); запись — N×BackSpace + commit_text через IBus; безопасная точка отмены; verify-сверка | ✓ SATISFIED (машинно; финальная приёмка — за владельцем) | Истины 1-5, G1-G11; REQUIREMENTS.md checkbox [x], трассировка «TERM-02 \| Phase 10 \| Complete»; обе причины UAT-разрыва G-10-1 закрыты в коде с behavior-доказательствами и живыми рядами; host re-acceptance — Human Verification 1 |
+| — (orphaned) | — | REQUIREMENTS.md отображает на Phase 10 только TERM-02 | ✓ NONE | Потерянных требований нет |
 
-### Test Quality Audit
+### Prohibition Review (non-authoritative LLM-judge — human review recommended)
 
-| Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
-| --------- | ---------- | ------ | ------- | -------- | --------------- | ------- |
-| internal/correct/stretch_test.go | TERM-02 | 8 | 0 | no (fixed golden constants) | Value | OK |
-| internal/session/actor_test.go (terminal corpus) | TERM-02 | 20 | 0 | no (ops-log series, exact hex) | Behavioral | OK |
-| internal/config/config_test.go | TERM-02 | corpus | 0 | no | Value | OK |
-| internal/clipboard/clipboard_test.go | TERM-02 | corpus | 0 | no (pinned argv) | Value | OK |
-| internal/appid/appid_registry_test.go | TERM-02 | 1 | 0 | no | Value | OK |
-| test/e2e/spike_journal_test.go | TERM-02 | sections | 0 | no | Existence (section contract) | OK |
+Планы 10-07/10-08/10-09 декларируют 11 prohibitions категории safety/values/privacy без tier `verification:` — по ADR-550 D4 записывается НЕАВТОРИТЕТНЫЙ вердикт; человеческое ревью складывается в раунд owner re-acceptance.
 
-**Disabled tests on requirements:** 0. **Circular patterns:** 0 — journal hex evidence independently decoded by the verifier, not generated by the system under test. **Insufficient assertions:** 0 — the D-24 changed=false half has no behavioral test (WINDOWS ledger #16, defensive branch, ConvertRuns provably never returns changed=false); changed=true is behaviorally pinned; recorded as documented limit, not a gap.
+| # | Plan | Prohibition (кратко) | LLM-judge verdict | Basis |
+| - | ---- | -------------------- | ----------------- | ----- |
+| 1 | 10-07 | Флап-толерантность не ослабляет защитные остановки (ctxEpoch/HardReset/resolvePending) | judged PASS (non-authoritative) | Код :1043-1070; пин FlapPairBetweenChunksStops зелёный |
+| 2 | 10-07 | Дефолт-якорь только усиливает вето D-55 | judged PASS (non-authoritative) | Якорь — identity-источник; вето-код :2782-2788 нетронут; TestAutoCorrect_TerminalVetoDefaultAnchor зелёный |
+| 3 | 10-07 | Инвариант D-55 не пересматривается | judged PASS (non-authoritative) | Свидетели fired=0/veto Δ=1 (18:59, 21:32) |
+| 4 | 10-07 | Новая диагностика без содержимого (D-20/D-21) | judged PASS (non-authoritative) | Токен — только счётчик; WARN-текст байт-прежний (WarnOncePerEpisode зелёный без правок) |
+| 5 | 10-08 | Замороженные ряды не мутируются (конфиги/оракулы байт-прежние; новый ряд — новый кейс) | judged PASS with NOTE (non-authoritative) | Конфиг-документы и оракулы нетронуты; case_term_word_vte.go получила только арминг-лестницу termArmGateTries=3 (форма гейта, не пин; ряды вышли байт-точными) |
+| 6 | 10-08 | Мисматч verify-after только логирует и останавливает | judged PASS (non-authoritative) | release :1984 добавлен В mismatch-ветку, но семантика log+stop сохранена; пины зелёные |
+| 7 | 10-08 | Правило владельца сохранено (отложено, не отменено) | judged PASS (non-authoritative) | G7 |
+| 8 | 10-08 | Журнальные рубежи без содержимого; grace — не конфиг | judged PASS (non-authoritative) | flipConfirmGrace — const :82 |
+| 9 | 10-09 | Хост read-only вне установки | judged PASS (non-authoritative) | Ряд установки + предпроверки 00:46-00:49; независимая пост-проверка верификатором read-only; полная гарантируемость — за ревизией владельца |
+| 10 | 10-09 | Разрыв закрывается только вердиктом владельца | judged PASS (non-authoritative) | Closure validation: вердикт ОЖИДАНИЕ не синтезирован (проверено чтением) |
+| 11 | 10-09 | Откат-путь назван ДО приёмки | judged PASS (non-authoritative) | Ряд host-install-gap + инструкция Closure validation |
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| (worktree, uncommitted) | — | untracked `test/e2e/e2e` binary build artifact in git status | ℹ️ Info | Not committed, not part of phase evidence; local `go build` residue |
-| none in phase files | — | TBD/FIXME/XXX/TODO/PLACEHOLDER scan across all 27 changed files | — | clean |
+| test/e2e/case_term_word_wezterm.go | 355-380 | wezClipFrozenRow пишет ряд Verdict: FAIL, но возвращает cerr (ошибку захвата), а не результат сравнения hexr — FAIL-ряд не валит exit кейса (продемонстрировано рядом 21:31:38: FAIL при exit 0) | ⚠️ Warning | Тест-форма: строгость клип-ряда не доезжает до вердикта кейса; сам инвариант CLIPBOARD удержан; кандидат на точечный фикс (row-ошибка → return error) вне закрытия G-10-1 |
+| docs/adr/adr-008-spike-log.md | :338 | wezterm clip-frozen re-pin ряд записан Verdict: FAIL (pty-дельта: префиксный мусор 16×0x6e + нет хвостового 0a) при пройденной сути (сентинел удержан, «привет» в дельте) | ⚠️ Warning | Заявление 10-08 «пере-pin'нуты байт-точными зелёными» преувеличено для этого ряда; записано честно, разбор исполень пометил на фазовую верификацию — анализ здесь: capture-артефакт дрейфовавшего клиента (0x29 stale-cache контекст), не регрессия безопасности |
+| test/e2e/main.go | 117-131 | caseListUsage не называет term-negative-witnesses (IN-01 ревью, подтверждено) | ℹ️ Info | Косметика usage-строки |
+| test/e2e/case_term_word_vte.go | 72-78 | boundRowText режет по байтам, может разбить UTF-8 руну (IN-03 ревью) | ℹ️ Info | Диагностика журнала только |
+| internal/session/actor.go и др. | — | TBD/FIXME/XXX/TODO/PLACEHOLDER по всем изменённым файлам фазы | — | clean (0) |
+| 10-REVIEW.md WR-01…WR-04 | — | Гоночная форма write-ветки, VerifyExpiry без тега раунда, identity-слепота флап-окна, мёртвый xrandr-проб | ℹ️ Info (advisory) | 0 critical; известные предупреждения ревью — консультативные, верификацию не блокируют (контекст раунда) |
+
+### Test Quality Audit (delta)
+
+| Test File | Linked Req | Verdict |
+| --------- | ---------- | ------- |
+| actor_test.go: флап-корпус, якорный корпус, role-корпус, deferred-flip корпус, stale-cache корпус | TERM-02 | OK — 5/5 RED-свидетельств честны («not ok» целевых тестов, exit 1); behavior-пины исполнены верификатором зелёными |
+| config_test.go: двухформенный decode-корпус | TERM-02 | OK — subtests покрывают nil/[]/list точно по контракту |
+| ctlsvc_test.go: пин ac_role_errors= | TERM-02 | OK — токен-пин со значением 7, старые токены целы |
+| case_term_word_vte_flip.go: оракул порядка доставки | TERM-02 | OK с NOTE — settlement-гейт принимает match/timeout/mismatch (IN-04 ревью: вердикт-текст ряда может преувеличивать «подтверждение доставки» при timeout/mismatch; pty-оракул независим) |
+
+Disabled tests on requirements: 0. Circular patterns: 0 — журнальные hex-ряды независимо декодированы верификатором.
 
 ### Human Verification Required
 
-### 1. Owner human-check — live-desktop acceptance of criterion 1 (5-point checklist)
+### 1. Owner re-acceptance — закрывающий оракул G-10-1 (6 пунктов, gap-сборка активна)
 
-**Test:** On the owner's own desktop (host build v1.1.1-94-ge62a5e4 installed and active — journal row host-install 00:19): (1) wezterm: type `ghbdtn`, double Right Shift → see «привет»; (2) same in GNOME Terminal; (3) a word in the middle of a phrase corrected by the gesture; (4) `ytn?` + gesture → «нет,»; (5) autocorrect stayed silent in the terminal during the manual trials. Answer «approved» or describe deviations. Rollback if asked: `~/.local/share/goswitch/releases/v1.1.1/goswitchctl install`.
-**Expected:** All five points green; the machine venue (VM stand) already shows byte-exact green rows in both terminals, twice, independently.
-**Why human:** The owner's daily desktop (personal wezterm config, host kernel 7.2.9-2-t2 background-window keyboard defect, real workloads) is outside the VM venue; only the owner can sign the acceptance. Declared in 10-06-PLAN Task 3 `<human-check>`; pending end-of-phase harvest.
+**Test:** На живом столе владельца (установлена и активна gap-сборка v1.1.1-124-g7ace3fd, старт 00:46:57 MSK — верифицировано live): (1) wezterm: «ghbdtn» + двойной правый Shift → «привет»; (2) GNOME Terminal: то же; (3) флап-бурст — быстро пощёлкать фокус между окнами и СРАЗУ жест в терминале; (4) слово в середине фразы; (5) «ytn?» + жест → «нет,»; (6) автокоррекция молчала (goswitchctl status — autocorrect_fired не вырос). После жестов снять журнальные ряды за окно приёмки: НЕТ skip-рядов verify-timeout/verify-mismatch; done changed=true не потерян по E3 (следующий surrounding-push трекает исправленное слово); флип-рубежи строго после settlement-рубежей. Ответ «approved» (дописать ряд «gap closed by owner re-acceptance» в Closure validation) или описание отклонений (rejected → СТОП без правок кода). Откат по запросу: `~/.local/share/goswitch/releases/v1.1.1/goswitchctl install`.
+**Expected:** Все шесть пунктов зелёные в среде, которую стенд принципиально не воспроизводит (флап-тряска ядра 7.2.9-2-t2).
+**Why human:** Владелец — единственный валидный оракул закрытия G-10-1 (план 10-09 Task 2 human-check; T-10-09-02); машинные проверки видимость диагностики фиксируют, но приёмку не заменяют; вердикт честно ОЖИДАНИЕ в Closure validation.
 
-### 2. Formal classification of the TERM-02 edge coverage (flagged assumption)
+### 2. Формальная классификация края TERM-02 (флагнутое допущение; UAT Test 2 — pending)
 
-**Test:** Review the edge evidence — 8 golden stretch behaviors (punctuation head/tail, space stop, digits, mixed ride-as-typed, é whole-stretch refusal, registers, replace-run) plus the live rows (bash/zsh, mid-line, clip-frozen, vim/htop witnesses, wezterm ×2) — and give the owner's classification verdict on the edge.
-**Expected:** The owner accepts the edge as expressed in concrete acceptance forms. The plans' own resolution condition — a forced human_needed — applies only if the edge were NOT so expressed; it is expressed, but the formal verdict stays the owner's (the flagged assumption is never auto-resolved).
-**Why human:** The spec-less probe classified the edge `unclassified` by design; every plan demands the verifier account for the row, never a quiet pass.
+**Test:** Рассмотреть край-свидетельства — 8 золотых поведений пробега + живые ряды (bash/zsh, мид-лайн, clip-frozen всех прогонов, vim/htop-свидетели, wezterm 10-06 ×2 и re-pin 10-08 с learning=true по stale-cache амендменту, flip-ряд с оракулом порядка) — и вынести вердикт классификации края.
+**Expected:** Край принят в том виде, в каком он выражен конкретными проверками; human_needed требовался бы, только если бы край НЕ был так выражен.
+**Why human:** Spec-less проба классифицировала край unclassified по построению; флагнутое допущение никогда не снимается автоматически.
 
-## Gaps Summary
+### Gaps Summary
 
-No gaps. All five ROADMAP success criteria are machine-verified: the terminal write branch (chunks ≤8, focus re-check, free abort, verify-after without clipboard rank, D-24 discriminator) is implemented and unit-pinned in `internal/session/actor.go`; the conversion geometry (`internal/correct/stretch.go`) fixes the punctuation edge with an 8-test golden corpus; the D-55 arming veto sits before the detector with a verified counters chain; ADR-008 is Accepted on dated, hex-verified live evidence; the frozen negative rows pin criterion 5 on the designated VM venue. `mise run ci` is green at HEAD (exit 0, 21 packages under -race; golangci-lint strict).
+Машинных разрывов нет. Обе причины UAT-разрыва G-10-1 закрыты в коде и подкреплены behavior-доказательствами: причина A (10-07) — verifyDead переживает флап-пары (тест зелёный верификатором), классификация получила дефолтный identity-якорь с opt-out и обновлённой документацией, role-диагностика машинно видна (на реальном хосте прямо сейчас ac_role_errors=3 против немого эпизода 11:00:16); причина B (10-08) — SetGlobalEngine физически не следует за commit (release-сайты push/клавиша/grace, ни одного на FocusOut — E3 не воспроизводим по построению), stale-cache амендмент одобрен владельцем (Rule 4) и виден живым рядом learning=true; хост несёт сборку обоих фиксов (верифицировано live read-only), `mise run ci` зелёный на HEAD.
 
-The phase status is human_needed solely because two owner signatures are open: the live-desktop human-check (declared in 10-06-PLAN, machine evidence already green) and the flagged-assumption edge classification. One non-blocking owner gate is already tracked in ADR-008 Consequences and needs no UAT item: the keep-or-remove decision on the debug `probe-forward` verb (OQ 5, confirmed open precondition, fail-closed without -debug).
+Статус human_needed исключительно из-за честного ожидания владельца: re-acceptance критерия 1 (единственная by-design человеческая истина G12) и формальная классификация края. Два предупреждения зафиксированы консультативно: (1) wezterm clip-frozen re-pin-ряд записан FAIL при удержанном CLIPBOARD-инварианте и exit 0 кейса — форма теста (FAIL-ряд не валит exit) плюс capture-артефакт дрейфовавшего клиента; (2) известные advisory-находки ревью WR-01…WR-04 (0 critical). Ни одно не противоречит критериям успеха ROADMAP и не блокирует достижение цели; оба видны владельцу в этом отчёте до приёмки.
 
 ---
 
-_Verified: 2026-10-12T22:08:34Z_
+_Verified: 2026-10-13T22:30:04Z_
 _Verifier: Claude (gsd-verifier)_
