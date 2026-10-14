@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
 status: verifying
-stopped_at: Completed 10-10-PLAN.md
-last_updated: "2026-10-14T08:40:13.087Z"
+stopped_at: Completed 10-11-PLAN.md
+last_updated: "2026-10-14T09:37:21.201Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: 689f7f54ca21187529a85bb828311c5f1f729b3b
+state_head: 9ac7b2523feee2c71b6d1e635dfdcf5bee664090
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P08 | 141min | 2 tasks | 13 files |
 | Phase 10 P09 | 8min | 2 tasks | 2 files |
 | Phase 10 P10 | 48min | 2 tasks | 5 files |
+| Phase 10 P11 | 52min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,7 @@ Recent decisions affecting current work:
 - [Phase 10]: Plan 10-08: owner-approved Rule 4 амендмент — nil-cache word-раунд с ответом-без-набранного-пробега = терминальный контекст (класс учится, раунд исполняет терминальную ветку); fail-closed для кэш-свидетельств сохранён; дрейф 0x9→0x29 документирован датированными рядами
 - [Phase 10]: Установка gap-сборки закрытия G-10-1 (v1.1.1-124-g7ace3fd, HEAD 7ace3fd: фиксы 10-07+10-08) на хост существующим процессом 10-06 — НОВЫЙ release-dir, путь отката v1.1.1 нетронут; фикс. путь goswitchctl для всех машинных проверок (не на PATH — новейший releases по mtime) — Вердикт re-acceptance владельца — единственный оракул закрытия G-10-1: машинные предпроверки не заменяют приёмку; вердикт не синтезируется (честный ОЖИДАНИЕ в Closure validation, human_judgment: true в SUMMARY), маршрутизация через UAT end-of-phase; при rejected — СТОП без правок кода, откат по запросу
 - [Phase 10]: Answer-only сигнатура клиента — терминальный контекст на обеих ветках вердикта (план 10-10) — Правило владельца 2026-10-13 («обещает окружение, но отвечает протухшим кэшем = всё равно терминал») переносится с содержимого ответа на канал ответа: предикат pendingStaleCache (nil-cache && !acBoundary && !selection) применён на match-ветке HandleSurroundingText байт-той же формой, что и на mismatch-ветке 10-08 — хост-ряды 09:39 (уровень-1 за 1,9-2,4 мс, инверсия delete/commit) шли именно через match-ответ answer-only клиента; класс учится существующим setVerifyDead — шов classifyTerminal един, вето D-55 следует автоматически; fail-closed для кэш-свидетельств сохранён; попутно закрыты WR-02 (epoch-тег VerifyExpiry) и WR-01 (level2Busy) в зоне, которую маршрут делает горячей; реплей журнальных рядов красный-до/зелёный-после (урок 2026-10-12)
+- [Phase 10]: Уровень-1 стал двухфазным (план 10-11): коммит отделён от удаления доказательством применения — push/Require-ответ, чей текст-до-курсора не оканчивается на token+tail; фолбэк level1ConfirmBudget 60 мс деградирует к сегодняшней паре с INFO-слагом; flush — единственная точка завершения через захваченный при арме снапшот эмиттера (шесть сайтов); флип уровня-1 — машина 10-08 (deferCorrectionFlip во flush, ноль новых release-сайтов); WR-03 закрыт same-context флап-дисциплиной (снапшот эмиттера FocusOut→FocusIn, интерфейс EventHandler не менялся) — Ряды владельца 09:39 (REJECTED) показали класс A2 на уровне-1: клиентская обработка тесной пары delete+commit переставляется, вставка видна, запаздывающее удаление стирает свежее слово — в обоих терминалах. Спонтанно-пушащий клиент принципиально неотличим от gedit живыми сигналами (маршрут 10-10 его не достигает), поэтому единственный честный фикс — сам рубеж доставки. Фолбэк к сегодняшней семантике гарантирует: завышение бюджета не делает поведение хуже статус-кво. Flush на захваченном снапшоте превращает механику вектора E3 в предохранитель (протухший объект клиент отбрасывает). Флип — реиспользование одобренной владельцем машины 10-08: правило «режим следует за скриптом результата» отложено, не отменено. WR-03 решён сравнением снапшотов (вариант без изменения интерфейса EventHandler): реальные 1–3 мс флап-пары same-engine переживают, реальный переключ окна внутри 10 мс стирает класс — пин 10-07 зелёный без правок.
 
 ### Pending Todos
 
@@ -123,8 +125,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T08:40:13.030Z
-Stopped at: Completed 10-10-PLAN.md
+Last session: 2026-10-14T09:37:21.100Z
+Stopped at: Completed 10-11-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

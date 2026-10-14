@@ -68,7 +68,7 @@ Plans:
   4. До первого разрушающего действия (первый ForwardKeyEvent BackSpace) отмена бесплатна и ничего не мутирует; после — verify-сверка при расхождении логирует и останавливается, никогда не «чинит» сама; фокус-переключение между чанками (≤8 клавиш) перечекается
   5. Двухразрешительная модель Фазы 9 живая: замороженные негативные ряды матрицы зелёные — автокоррекция в терминале молчит при работающей ручной коррекции (vim-insert/htop-свидетели)
 
-**Plans**: 10/12 plans executed + 6 gap-closure (10-07…10-09 round 1, 10-10…10-12 round 2; gap G-10-1)
+**Plans**: 11/12 plans executed + 6 gap-closure (10-07…10-09 round 1, 10-10…10-12 round 2; gap G-10-1)
 
 Plans:
 
@@ -82,7 +82,7 @@ Plans:
 - [x] 10-08-PLAN.md — gap G-10-1 (B): отложенный флип терминальной коррекции (defer-until-confirmed) + стенд-ряд term-word-vte-flip
 - [x] 10-09-PLAN.md — gap G-10-1: хост-ревалидация + owner re-acceptance (human-check)
 - [x] 10-10-PLAN.md — gap G-10-1 round 2 (маршрут): answer-only сигнатура клиента → терминальная ветка на обеих ветках вердикта + WR-01/WR-02 гарды + replay-корпус рядов 09:39
-- [ ] 10-11-PLAN.md — gap G-10-1 round 2 (доставка): двухфазный уровень-1 (delete → подтверждение → commit) + отложенный флип уровня-1 + WR-03 same-context флап-дисциплина
+- [x] 10-11-PLAN.md — gap G-10-1 round 2 (доставка): двухфазный уровень-1 (delete → подтверждение → commit) + отложенный флип уровня-1 + WR-03 same-context флап-дисциплина
 - [ ] 10-12-PLAN.md — gap G-10-1 round 2: стенд re-pin ×4 + установка gap-сборки + owner re-acceptance (human-check)
 
 ### Phase 11: MENU — пункт «в чёрный список»
@@ -136,7 +136,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 9. Спайк и дефект wezterm | v1.2 | 1/4 | In Progress|  |
-| 10. TERM-слово | v1.2 | 10/12 | In Progress|  |
+| 10. TERM-слово | v1.2 | 11/12 | In Progress|  |
 | 11. MENU — пункт «в чёрный список» | v1.2 | 0/? | Not started | - |
 | 12. TERM-строка | v1.2 | 0/? | Not started | - |
 | 13. A11Y — рецепты Telegram/ZCode | v1.2 | 0/? | Not started | - |
