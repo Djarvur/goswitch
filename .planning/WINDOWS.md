@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 8
 waived_count: 4
 fixed_count: 7
-total_count: 18
-last_updated: 2026-10-13T21:53:18.173Z
+total_count: 19
+last_updated: 2026-10-14T10:03:44.986Z
 ---
 
 # Broken Windows Ledger
@@ -33,6 +33,7 @@ last_updated: 2026-10-13T21:53:18.173Z
 | 16 | 10 | deviation | internal/session/actor.go | 2970 | Plan 10-04 Task 2 acceptance partial: the D-24 instant-done changed=false INFO is unreachable by behavior test — ConvertRuns provably never returns changed=false (runs.go doctrine, WINDOWS-2 owner verdict), the branch stays defensive; the discriminator is planted in the same form as logCorrectionDone, changed=true is behaviorally pinned | open |  | 2026-10-12T18:02:30.777Z |  |
 | 17 | 10 | deviation | test/e2e/case_autocorrect.go |  | terminal-silent re-pin gates moved to daemon focus_in (AT-SPI witness pinned to gnome-shell globally; 10-05 hand-over prescription) + noSurfacePreflight — closed the 10-05 blocked row | open |  | 2026-10-12T21:28:26.352Z |  |
 | 18 | 10 | unrun-verify | .planning/debug/DEBUG-term-host-live-failures.md | 332 | Task 2 automated verify 'approved\|rejected' matches instruction/pending text only - owner re-acceptance verdict is PENDING (never synthesized); routing: UAT end-of-phase; on approved append gap-closed row, on rejected STOP without code changes | open |  | 2026-10-13T21:53:18.173Z |  |
+| 19 | 10 | unrun-verify | .planning/debug/DEBUG-term-host-live-failures.md |  | 10-12 D4: вердикт re-acceptance round-2 (шесть пунктов, закрывающий оракул G-10-1) — ОЖИДАНИЕ ответа владельца; grep-гейт матчится с текстом инструкции, не с вердиктом | open |  | 2026-10-14T10:03:44.986Z |  |
 
 ````json
 [
@@ -250,6 +251,18 @@ last_updated: 2026-10-13T21:53:18.173Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-13T21:53:18.173Z",
+    "resolved_at": null
+  },
+  {
+    "id": 19,
+    "kind": "unrun-verify",
+    "phase": "10",
+    "file": ".planning/debug/DEBUG-term-host-live-failures.md",
+    "line": null,
+    "description": "10-12 D4: вердикт re-acceptance round-2 (шесть пунктов, закрывающий оракул G-10-1) — ОЖИДАНИЕ ответа владельца; grep-гейт матчится с текстом инструкции, не с вердиктом",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T10:03:44.986Z",
     "resolved_at": null
   }
 ]
