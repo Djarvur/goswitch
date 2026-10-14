@@ -64,8 +64,11 @@ const (
 
 	// capsPushWait bounds the wait for ONE ask's surrounding push to land
 	// in the daemon journal (an ask is only consumed when its push lands
-	// or the bound expires).
-	capsPushWait = 2 * time.Second
+	// or the bound expires). 5 s: the nightly's stale-cache answer rides
+	// its own cadence (the 10-08 drift rows) — the budget must not be the
+	// reason an answer is missed; on a genuinely silent client the bound
+	// is what makes the poll MEASURED silence instead of a hang.
+	capsPushWait = 5 * time.Second
 
 	// capsForwardCount is the P3 drain: 6 BackSpaces erase the 6-rune token.
 	capsForwardCount = 6
@@ -113,6 +116,7 @@ type capProbeResult struct {
 	latencyMS    int64 // emission → reflecting push, journal timestamps (-1 unknown)
 	baselineCur  int64
 	reflectCur   int64 // the reflecting answer's cursor (-1 when never)
+	baselineOK   bool  // the baseline ask was ANSWERED (a blind baseline anchors nothing)
 	baselineSeen bool  // the baseline answer carried the typed token (the channel tracked the typing)
 }
 
@@ -143,20 +147,20 @@ func (s *stand) lastCapPush() (idx int, push capPush, ok bool) {
 
 // waitCapPush polls the journal until a push lands ABOVE the given line
 // index (a genuinely NEW record — never an older answer re-read), bounded
-// by capsPushWait.
-func (s *stand) waitCapPush(ctx context.Context, caseName string, afterIdx int) (int, capPush, error) {
+// by capsPushWait. The bound's expiry is MEASURED SILENCE (ok=false) — the
+// honest never-input of the poll, never a case failure (T-10-13-03).
+func (s *stand) waitCapPush(ctx context.Context, afterIdx int) (idx int, push capPush, answered bool, err error) {
 	deadline := time.Now().Add(capsPushWait)
 	for {
 		idx, push, ok := s.lastCapPush()
 		if ok && idx > afterIdx {
-			return idx, push, nil
+			return idx, push, true, nil
 		}
 		if time.Now().After(deadline) {
-			return idx, push, fmt.Errorf("%s: no surrounding push above journal line %d within %v",
-				caseName, afterIdx, capsPushWait)
+			return idx, push, false, nil
 		}
 		if err := sleepCtx(ctx, witnessPoll); err != nil {
-			return idx, push, err
+			return idx, push, false, err
 		}
 	}
 }
@@ -164,13 +168,16 @@ func (s *stand) waitCapPush(ctx context.Context, caseName string, afterIdx int) 
 // capAsk drives ONE Require ask through the DST(0,0) no-op poll form and
 // waits for its push (the plan's read_first decision: one verb, the
 // zero-char delete is a no-op, the Require forces the client's report).
-// The returned idx feeds the next ask's freshness bound.
-func (s *stand) capAsk(ctx context.Context, caseName, ctlBin string, afterIdx int) (int, capPush, error) {
+// ok reports whether the ask was ANSWERED within the bound; the returned
+// idx feeds the next ask's freshness bound either way.
+func (s *stand) capAsk(
+	ctx context.Context, caseName, ctlBin string, afterIdx int,
+) (idx int, push capPush, answered bool, err error) {
 	if _, _, err := runCtl(ctx, ctlBin, "probe-delete-surrounding", "0", "0"); err != nil {
-		return afterIdx, capPush{}, fmt.Errorf("%s: poll ask: %w", caseName, err)
+		return afterIdx, capPush{}, false, fmt.Errorf("%s: poll ask: %w", caseName, err)
 	}
 
-	return s.waitCapPush(ctx, caseName, afterIdx)
+	return s.waitCapPush(ctx, afterIdx)
 }
 
 // capLineTime parses one journal record's timestamp (the latency anchor).
@@ -211,6 +218,9 @@ func capLatency(s *stand, emitLine int, emitMark string, pushIdx int) int64 {
 // against the baseline answer plus the token's presence class — content
 // never leaves the journal, the predicate reads numbers and booleans.
 func capReflecting(res *capProbeResult, base, push capPush) bool {
+	if !res.baselineOK {
+		return false // a blind baseline cannot anchor the arithmetic
+	}
 	switch res.probe {
 	case capsP1: // the field shortened by exactly nchars
 		return int64(push.Cursor) == int64(base.Cursor)-capsTokenRunes && !strings.Contains(push.Text, capsToken)
@@ -288,8 +298,10 @@ func (s *stand) capRunProbe(
 	}
 
 	// Baseline ask: the channel's answer to the KNOWN typed state — the
-	// arithmetic anchor of the reflection predicate.
-	_, basePush, err := s.capAsk(ctx, caseName, ctlBin, -1)
+	// arithmetic anchor of the reflection predicate. An unanswered
+	// baseline is the measured blindness of the channel (the probes still
+	// run — the rows carry baseline_cursor=-1 semantics).
+	_, basePush, baseOK, err := s.capAsk(ctx, caseName, ctlBin, -1)
 	if err != nil {
 		return fmt.Errorf("%s: %s baseline ask: %w", caseName, probe, err)
 	}
@@ -299,7 +311,8 @@ func (s *stand) capRunProbe(
 		latencyMS:    -1,
 		baselineCur:  int64(basePush.Cursor),
 		reflectCur:   -1,
-		baselineSeen: strings.Contains(basePush.Text, capsToken),
+		baselineOK:   baseOK,
+		baselineSeen: baseOK && strings.Contains(basePush.Text, capsToken),
 	}
 
 	// The action; its emission record (the last one after this mark) is the
@@ -329,7 +342,7 @@ func (s *stand) capRunProbe(
 		res.never = true
 	}
 
-	return capsProbeRow(ctx, client, rowTag, res, int64(basePush.Cursor))
+	return capsProbeRow(ctx, client, rowTag, res)
 }
 
 // capPollForResult runs the budgeted Require poll and returns the first
@@ -341,21 +354,22 @@ func (s *stand) capPollForResult(
 	basePush capPush, emitLine int, ownAsk bool,
 ) (int, capPush, error) {
 	if ownAsk {
-		idx, push, werr := s.waitCapPush(ctx, caseName, emitLine)
-		if werr == nil && capReflecting(res, basePush, push) {
+		idx, push, ok, werr := s.waitCapPush(ctx, emitLine)
+		if werr == nil && ok && capReflecting(res, basePush, push) {
 			return idx, push, nil
 		}
 	}
 	pollIdx, _, _ := s.lastCapPush()
 	for res.asks-1 < capsPollAsks {
 		var push capPush
+		var ok bool
 		var perr error
-		pollIdx, push, perr = s.capAsk(ctx, caseName, ctlBin, pollIdx)
+		pollIdx, push, ok, perr = s.capAsk(ctx, caseName, ctlBin, pollIdx)
 		res.asks++
 		if perr != nil {
 			return -1, capPush{}, fmt.Errorf("%s: %s poll: %w", caseName, res.probe, perr)
 		}
-		if capReflecting(res, basePush, push) {
+		if ok && capReflecting(res, basePush, push) {
 			return pollIdx, push, nil
 		}
 		if gerr := sleepCtx(ctx, capsPollGap); gerr != nil {
@@ -366,9 +380,19 @@ func (s *stand) capPollForResult(
 	return -1, capPush{}, nil
 }
 
+// rowCursor renders a cursor observable: the honest -1 for a blind
+// (unanswered) baseline ask.
+func rowCursor(cur int64, ok bool) int64 {
+	if !ok {
+		return -1
+	}
+
+	return cur
+}
+
 // capsProbeRow lands one probe's dated verdict row (content-free: cursors,
 // booleans, ask counts, latencies).
-func capsProbeRow(ctx context.Context, client, rowTag string, res capProbeResult, baseCur int64) error {
+func capsProbeRow(ctx context.Context, client, rowTag string, res capProbeResult) error {
 	cmd := map[string]string{
 		capsP1: "type ghbdtn → probe-delete-surrounding 0 6 → polls DST(0,0)+Require",
 		capsP2: "type ghbdtn → probe-commit привет → polls DST(0,0)+Require",
@@ -377,8 +401,8 @@ func capsProbeRow(ctx context.Context, client, rowTag string, res capProbeResult
 	observed := fmt.Sprintf(
 		"venue: vm-primary (%s); client=%s; probe=%s; baseline_cursor=%d; honored=%v; asks=%d;"+
 			" latency_ms=%d; never=%v; reflect_cursor=%d; baseline_token_seen=%v",
-		venueMarker(ctx), client, res.probe, baseCur, res.honored, res.asks, res.latencyMS, res.never,
-		res.reflectCur, res.baselineSeen)
+		venueMarker(ctx), client, res.probe, rowCursor(res.baselineCur, res.baselineOK),
+		res.honored, res.asks, res.latencyMS, res.never, res.reflectCur, res.baselineSeen)
 	verdict := fmt.Sprintf("Verdict: %s=%s", res.probe, map[bool]string{true: "yes", false: "no"}[res.honored])
 	switch {
 	case res.never:
