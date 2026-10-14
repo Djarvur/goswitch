@@ -184,20 +184,36 @@ func ProbeForward(eng engine.Emitter, spec string) error {
 var ErrProbeNoEngine = errors.New("probe has no engine (no input context attached)")
 
 // ProbeDeleteSurrounding emits the delivery probe's erase-then-ask pair
-// (plan 10-13). RED stub — GREEN implements the emission.
+// (plan 10-13): exactly DeleteSurroundingText(offset, nchars) followed by
+// RequireSurroundingText on the live engine emitter — the single ordered
+// IM channel the round-3 delivery-capability probe measures (no external
+// tool can substitute: the signals ride the engine's own connection). One
+// DEBUG row per call carries the parameters and the outcome — never the
+// field content (the «passwords become visible» class of the probe family;
+// the content lives only in the stand's pty oracle). Without an emitter
+// (no input context minted yet) the probe fails closed.
 func ProbeDeleteSurrounding(eng engine.Emitter, offset int32, nchars uint32) error {
-	_ = eng
-	_ = offset
-	_ = nchars
+	if eng == nil {
+		return ErrProbeNoEngine
+	}
+	eng.DeleteSurroundingText(offset, nchars)
+	eng.RequireSurroundingText()
+	slog.Debug("probe delete-surrounding", "offset", offset, "nchars", nchars)
 
 	return nil
 }
 
-// ProbeCommit emits the delivery probe's commit (plan 10-13). RED stub —
-// GREEN implements the emission.
+// ProbeCommit emits the delivery probe's commit (plan 10-13): one
+// CommitText carrying the text on the live engine emitter. The DEBUG row
+// carries the rune count, never the text (D-20/D-21 — same content
+// discipline as ProbeDeleteSurrounding). Without an emitter the probe
+// fails closed.
 func ProbeCommit(eng engine.Emitter, text string) error {
-	_ = eng
-	_ = text
+	if eng == nil {
+		return ErrProbeNoEngine
+	}
+	eng.CommitText(engine.NewIBusText(text))
+	slog.Debug("probe commit", "runes", len([]rune(text)))
 
 	return nil
 }

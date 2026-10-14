@@ -265,7 +265,7 @@ func (p *probeOpSink) CommitText(text engine.IBusText) {
 func (p *probeOpSink) UpdateModeSymbol(string) {}
 
 // opsSnapshot returns the ordered op log and the committed texts.
-func (p *probeOpSink) opsSnapshot() ([]string, []string) {
+func (p *probeOpSink) opsSnapshot() (ops, commits []string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

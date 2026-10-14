@@ -44,6 +44,11 @@ var ErrNotPrimaryOwner = errors.New("another instance owns the goswitch control 
 // (unlike the IBus side, where a reply must stay zero-valued).
 const errFailed = "org.freedesktop.DBus.Error.Failed"
 
+// errProbeDisabled is the fail-closed reply of every debug-gated probe
+// method (T-09-02-01, T-10-13-01): the emission dep is absent on a
+// production daemon, and the method must not emit.
+const errProbeDisabled = "probe disabled (daemon not under -debug)"
+
 // StatusSnapshotProvider reports the daemon state — the session actor's
 // snapshot under its mutex (never a second FSM).
 type StatusSnapshotProvider interface {
@@ -153,7 +158,7 @@ func (s *Svc) ProbeForward(spec string) (reply string, err *dbus.Error) {
 	defer recoverMethod("ProbeForward", &err)
 
 	if s.deps.ProbeForward == nil {
-		return "", &dbus.Error{Name: errFailed, Body: []any{"probe disabled (daemon not under -debug)"}}
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
 	}
 	if perr := s.deps.ProbeForward(spec); perr != nil {
 		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
@@ -164,25 +169,39 @@ func (s *Svc) ProbeForward(spec string) (reply string, err *dbus.Error) {
 
 // ProbeDeleteSurrounding implements org.djarvur.goswitch.
 // ProbeDeleteSurrounding (i u) → s: the delivery probe's erase-then-ask
-// verb (plan 10-13). RED stub — GREEN implements the fail-closed form.
+// verb of plan 10-13 — the ProbeForward fail-closed form verbatim. The dep
+// exists ONLY when the daemon runs under -debug, so a nil dep is the
+// fail-closed answer ("probe disabled"); these are destructive primitives
+// in the live input field, and a surface any session-bus caller can reach
+// must not emit them without the debug gate. A live dep's failure surfaces
+// as errFailed carrying the dep's error text.
 func (s *Svc) ProbeDeleteSurrounding(offset int32, nchars uint32) (reply string, err *dbus.Error) {
 	defer recoverMethod("ProbeDeleteSurrounding", &err)
 
-	_ = offset
-	_ = nchars
+	if s.deps.ProbeDeleteSurrounding == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeDeleteSurrounding(offset, nchars); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
 
-	return "", nil
+	return "probe delete-surrounding emitted", nil
 }
 
 // ProbeCommit implements org.djarvur.goswitch.ProbeCommit (s) → s: the
-// delivery probe's commit verb (plan 10-13). RED stub — GREEN implements
-// the fail-closed form.
+// delivery probe's commit verb of plan 10-13 — the ProbeForward fail-closed
+// form verbatim (see ProbeDeleteSurrounding for the gate rationale).
 func (s *Svc) ProbeCommit(text string) (reply string, err *dbus.Error) {
 	defer recoverMethod("ProbeCommit", &err)
 
-	_ = text
+	if s.deps.ProbeCommit == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeCommit(text); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
 
-	return "", nil
+	return "probe committed", nil
 }
 
 // renderStatus formats the snapshot as the Status method's single-line

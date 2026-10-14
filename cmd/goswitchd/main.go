@@ -238,6 +238,15 @@ func newCtlDeps(actor *session.Actor, reload ctlsvc.Reloader, debug bool) ctlsvc
 		deps.ProbeForward = func(spec string) error {
 			return session.ProbeForward(actor.ProbeEmitter(), spec)
 		}
+		// The delivery probes (plan 10-13) ride the same gate: their deps
+		// exist ONLY under -debug — a production daemon answers "probe
+		// disabled" at the ctl surface and emits nothing (T-10-13-01).
+		deps.ProbeDeleteSurrounding = func(offset int32, nchars uint32) error {
+			return session.ProbeDeleteSurrounding(actor.ProbeEmitter(), offset, nchars)
+		}
+		deps.ProbeCommit = func(text string) error {
+			return session.ProbeCommit(actor.ProbeEmitter(), text)
+		}
 	}
 
 	return deps

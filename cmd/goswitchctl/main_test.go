@@ -144,12 +144,11 @@ const (
 	cliProbeCommit            = "probe-commit"
 )
 
-// TestRun_ProbeDeliveryCli pins the delivery probes' client half (plan
-// 10-13): the exact positional shapes (anything else is the bare errUsage —
-// the message-identity comparison keeps the unknown-subcommand wrapper
-// out), the usage segments, and the dials through the seam with TYPED wire
-// arguments (int32/uint32 — the D-Bus (i u) signature).
-func TestRun_ProbeDeliveryCli(t *testing.T) {
+// TestRun_ProbeDeliveryCliUsage pins the delivery probes' usage grammar
+// (plan 10-13): the exact positional shapes (anything else is the bare
+// errUsage — the message-identity comparison keeps the unknown-subcommand
+// wrapper out) and the usage segments.
+func TestRun_ProbeDeliveryCliUsage(t *testing.T) {
 	t.Run("no arguments are the usage refusal", func(t *testing.T) {
 		for _, verb := range []string{cliProbeDeleteSurrounding, cliProbeCommit} {
 			err := run(context.Background(), []string{verb})
@@ -176,6 +175,12 @@ func TestRun_ProbeDeliveryCli(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestRun_ProbeDeliveryCliDials pins the dials of both delivery probes
+// (plan 10-13): the seam carries TYPED wire arguments (int32/uint32 — the
+// D-Bus (i u) signature), and every refusal names the subcommand.
+func TestRun_ProbeDeliveryCliDials(t *testing.T) {
 	t.Run("valid arguments dial the probe methods", func(t *testing.T) {
 		var dialedMethod string
 		var dialedArgs []any
@@ -208,6 +213,12 @@ func TestRun_ProbeDeliveryCli(t *testing.T) {
 			t.Errorf("seam dialed args %#v, want exactly [привет]", dialedArgs)
 		}
 	})
+}
+
+// TestRun_ProbeDeliveryCliRefusals pins the refusal corpus of the delivery
+// probes (plan 10-13): every parse/arity/dial failure names the subcommand
+// (ASVS V5 — every cause distinct).
+func TestRun_ProbeDeliveryCliRefusals(t *testing.T) {
 	t.Run("non-integer offset names the subcommand", func(t *testing.T) {
 		err := run(context.Background(), []string{cliProbeDeleteSurrounding, "six", "6"})
 		if err == nil || !strings.Contains(err.Error(), cliProbeDeleteSurrounding) {

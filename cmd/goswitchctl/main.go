@@ -51,6 +51,7 @@ var errDaemonNotRunning = errors.New("daemon not running? (org.djarvur.goswitch 
 // errUsage is the subcommand grammar (err113: static).
 var errUsage = errors.New(
 	"usage: goswitchctl status [--json] | reload | correct | probe-forward <keyspec>" +
+		" | probe-delete-surrounding <offset> <nchars> | probe-commit <text>" +
 		" | install | uninstall [--purge] | selfcheck")
 
 // configErrorKey terminates the status token grammar: its value is the
@@ -68,6 +69,91 @@ var probeForwardCall = callMethod
 // exactly one positional keyspec.
 const probeForwardArgCount = 2
 
+// The delivery-probe verbs' argv shapes (plan 10-13): the subcommand plus
+// its positionals — offset and nchars for probe-delete-surrounding, the
+// text for probe-commit.
+const (
+	probeDeliveryArgCount = 3
+	probeCommitArgCount   = 2
+)
+
+// verbProbeDeleteSurrounding is the delivery probe's subcommand name — one
+// definition (goconst) reused by the refusal wraps.
+const verbProbeDeleteSurrounding = "probe-delete-surrounding"
+
+// runProbeVerb dispatches the three debug-gated probe verbs (plans 09-02
+// and 10-13, the extraction that keeps run under the complexity budget):
+// each carries the ctl timeout, its exact positional shape (anything else
+// is the bare errUsage) and the dial through the probe seam. handled
+// reports whether args[0] named a probe verb at all.
+func runProbeVerb(ctx context.Context, args []string) (handled bool, err error) {
+	var positional func(ctx context.Context, args []string) error
+	switch args[0] {
+	case "probe-forward":
+		if len(args) != probeForwardArgCount { // exactly one positional keyspec
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, args []string) error {
+			return runProbeForward(ctx, args[1])
+		}
+	case verbProbeDeleteSurrounding:
+		if len(args) != probeDeliveryArgCount { // exactly two positionals
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, args []string) error {
+			return runProbeDeleteSurrounding(ctx, args[1], args[2])
+		}
+	case "probe-commit":
+		if len(args) != probeCommitArgCount { // exactly one positional text
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, args []string) error {
+			return runProbeCommit(ctx, args[1])
+		}
+	default:
+		return false, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, ctlCallTimeout)
+	defer cancel()
+
+	return true, positional(ctx, args)
+}
+
+// runProbeDeleteSurrounding drives the delivery probe's erase-then-ask verb
+// (plan 10-13): two integer positionals (offset may be negative — the
+// after-cursor form; nchars is unsigned), one control call with TYPED wire
+// arguments (the D-Bus (i u) signature), one reply line.
+func runProbeDeleteSurrounding(ctx context.Context, offsetArg, ncharsArg string) error {
+	offset, err := strconv.ParseInt(offsetArg, 10, 32)
+	if err != nil {
+		return fmt.Errorf(verbProbeDeleteSurrounding+": parse offset: %w", err)
+	}
+	nchars, err := strconv.ParseUint(ncharsArg, 10, 32)
+	if err != nil {
+		return fmt.Errorf(verbProbeDeleteSurrounding+": parse nchars: %w", err)
+	}
+	reply, err := probeForwardCall(ctx, "ProbeDeleteSurrounding", int32(offset), uint32(nchars))
+	if err != nil {
+		return fmt.Errorf(verbProbeDeleteSurrounding+": %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
+
+// runProbeCommit drives the delivery probe's commit verb (plan 10-13): the
+// text rides verbatim (the wire type is already string), one control call,
+// one reply line.
+func runProbeCommit(ctx context.Context, text string) error {
+	reply, err := probeForwardCall(ctx, "ProbeCommit", text)
+	if err != nil {
+		return fmt.Errorf("probe-commit: %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
+
 func main() {
 	// No defer here: os.Exit skips defers, so error reporting lives in main
 	// itself (the goswitchd skeleton).
@@ -84,6 +170,10 @@ func main() {
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errUsage
+	}
+
+	if handled, perr := runProbeVerb(ctx, args); handled {
+		return perr
 	}
 
 	switch args[0] {
@@ -110,20 +200,6 @@ func run(ctx context.Context, args []string) error {
 			return fmt.Errorf("correct: %w", err)
 		}
 		printLine(reply)
-	case "probe-forward":
-		ctx, cancel := context.WithTimeout(ctx, ctlCallTimeout)
-		defer cancel()
-
-		if len(args) != probeForwardArgCount { // exactly one positional keyspec
-			return errUsage
-		}
-		if err := runProbeForward(ctx, args[1]); err != nil {
-			return err
-		}
-	case "probe-delete-surrounding":
-		return errUsage // RED stub — GREEN parses the two positionals and dials
-	case "probe-commit":
-		return errUsage // RED stub — GREEN dials the verb
 	case "install":
 		return runInstallCmd(ctx)
 	case "uninstall":
