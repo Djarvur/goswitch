@@ -9074,3 +9074,401 @@ func TestCorrectionBusy_SecondEntrySkipsNotSecondBurst(t *testing.T) {
 		t.Errorf("done records = %d, want exactly 1; log:\n%s", got, logged)
 	}
 }
+
+// The plan 10-11 corpus (round-2 G-10-1 delivery closure): the host
+// re-acceptance rows of 2026-10-14 09:39 (DEBUG-term-host-live-failures.md,
+// Closure validation — verdict REJECTED, «вижу привет, и он удаляется» in
+// BOTH terminals) replayed on the unit seams. Both host gestures rode
+// LEVEL-1 (done in 1,9–2,4 ms), where executeCorrection emits
+// DeleteSurroundingText and CommitText back-to-back with no confirming
+// boundary — and the host client's processing reorders the tight pair (the
+// A2 reorder class documented live by the 10-05 rows for the
+// forwards/commit pair): the insertion lands first and is VISIBLE, the
+// late deletion erases the fresh word. The fix under test: a two-phase
+// level-1 — delete, then the commit ONLY after the client proves the
+// deletion applied (a push or Require answer no longer ending with
+// token+tail), with a budget fallback that degrades to today's pair with a
+// loud INFO mark; the level-1 flip defers onto the 10-08 machine. The
+// journal latencies (1,9–2,4 мс; the E3 +16 ms push) live only in origin
+// comments — no timings are synthesized.
+//
+// Level-1 OLD-semantics pins inventoried for migration (each keeps its
+// meaning; the commit phase moves behind the confirm window and the
+// verify-after arm moves into the flush): TestActor_DoubleTapCorrects,
+// TestActor_CachedSurroundingCorrects, TestActor_AfterSpaceCorrects,
+// TestActor_DoubleTapPunctuationStretch, TestActor_ToggleRepeat,
+// TestActor_DebugCorrectionRecord, TestActor_TripleTapCorrectsPhrase,
+// TestActor_PhraseMixedCorrects, TestActor_VerifyAfterLevel1,
+// TestActor_MixedWordInvertsPerChar, TestActor_OwnFlipMixedWordCorrectsWhole,
+// TestActor_ComboWordThenFlip, TestActor_ComboStillSingleFlipWithCorrectionFlip,
+// TestActor_FlipAfterWordCorrection, TestActor_FlipAfterPhraseCorrection,
+// TestActor_FlipDirectionFollowsConvertedScript,
+// TestActor_CorrectionFlipSetsResultEngine, TestActor_FlipOrderPinned,
+// TestActor_FlipSoundsSink, TestActor_ClipboardRungAfterMismatch,
+// TestActor_SwitcherFailureWarnsNotFatal, TestActor_SwitcherDeadlineBounded,
+// TestActor_NilSwitcherInternalFlip, TestActor_ReentrantAttachDuringFlip,
+// TestActor_AttachEngineWhileFlipInFlight,
+// TestReplayHost0939_SpontaneousPushClientNotRouted, and the autocorrect
+// pipeline rounds that settle a word correction level-1
+// (TestAutoCorrect_FiresThroughPipeline et al.). Selection, level-2,
+// combo-flip and flip=false worlds are byte-frozen and stay untouched.
+
+// level1Budget is the pinned confirm budget of the two-phase level-1
+// delivery: the production constant's corpus mirror (the termFlipGrace
+// form) — the healthy E3 push ×4 headroom, never a config key.
+const level1Budget = 60 * time.Millisecond
+
+// invertingField is the model-B simulated field (plan 10-11): a consumer
+// that applies the sink's ops to a string state with the A2 reorder class —
+// within ONE arrival batch the COMMIT lands before the DELETE (the
+// host-class client processes the tight pair inverted, the cursor riding
+// the committed text), so the deletion erases the fresh word. Across
+// batches every received op is applied — the client is late, never lossy.
+// The delete model: the range ends at the (end-of-text) cursor, nchars
+// runes come off the tail.
+type invertingField struct {
+	text []rune
+}
+
+// apply replays one arrival batch in the client's inverted order.
+func (f *invertingField) apply(ops []string) {
+	var commits []string
+	var deletes []deleteCall
+	for _, op := range ops {
+		switch {
+		case strings.HasPrefix(op, "commit("):
+			commits = append(commits, strings.TrimSuffix(strings.TrimPrefix(op, "commit("), ")"))
+		case strings.HasPrefix(op, "delete("):
+			var off int32
+			var n uint32
+			if _, err := fmt.Sscanf(op, "delete(%d,%d)", &off, &n); err != nil {
+				panic("unparseable delete op: " + op)
+			}
+			deletes = append(deletes, deleteCall{offset: off, nchars: n})
+		}
+	}
+	for _, c := range commits {
+		f.text = append(f.text, []rune(c)...)
+	}
+	for _, d := range deletes {
+		if int(d.nchars) > len(f.text) {
+			panic("delete beyond the simulated field")
+		}
+		f.text = f.text[:len(f.text)-int(d.nchars)]
+	}
+}
+
+// typeCachedWord types wordEN with the spontaneously-pushing client's push
+// after every keystroke — the cache tracks the run (cacheNil=false at arm),
+// so the 10-10 route never fires and the gesture rides the cached-push
+// instant level-1: the model-B world of the 09:39 rows.
+func typeCachedWord(a *session.Actor) {
+	for i, r := range wordEN {
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r)})
+		line := wordEN[:i+1]
+		a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Release: true})
+	}
+}
+
+// TestTwoPhaseLevel1_InvertingConsumerKeepsReplacement replays the 09:39
+// «вижу привет, и он удаляется» on the model-B consumer: the
+// spontaneously-pushing client (identity/role unavailable, no flap pairs)
+// whose gesture lands the cached instant level-1. RED truth: the commit
+// shares the delete's arrival batch and the inverting consumer ends with
+// the replacement ERASED. Required: the commit is absent from the wire
+// right after the delete; it appears only after the client's confirming
+// push (its state no longer ends with token+tail); the simulated field
+// holds «привет» at the end — under ANY client processing order.
+func TestTwoPhaseLevel1_InvertingConsumerKeepsReplacement(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	// The 09:39 host identity: the role source errors (ac_role_errors), no
+	// appid — nothing classifies the context terminal; the client pushes,
+	// so the answer-only route stays closed.
+	a.UseRole(&fakeRole{err: errAppidBusDead})
+	field := &invertingField{text: []rune(wordEN)}
+
+	typeCachedWord(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // action n=2 — the cached match arms the instant level-1
+
+	// Arrival batch 1: what followed the decision. The commit must not
+	// share the delete's batch — that co-arrival IS the A2 inversion.
+	n0 := len(sink.opLog())
+	batch1 := sink.opLog()
+	if !slices.Contains(batch1, "delete(-6,6)") {
+		t.Fatalf("no deletion in the gesture batch: %q — the model-B round must run level-1", batch1)
+	}
+	if slices.Contains(batch1, "commit("+wordRU+")") {
+		t.Fatalf("CommitText shares the delete's arrival batch (%q) — the A2 inversion erases the "+
+			"fresh word on a reordering client; the commit phase must wait for the deletion proof", batch1)
+	}
+	field.apply(batch1)
+
+	// The client processed the deletion and pushes the post-delete state —
+	// the confirming push. Only now may the commit phase run.
+	a.HandleSurroundingText("", 0, 0)
+	batch2 := sink.opLog()[n0:]
+	if !slices.Contains(batch2, "commit("+wordRU+")") {
+		t.Fatalf("no commit after the confirming push: %q — the ladder must complete once the "+
+			"deletion is proven applied", batch2)
+	}
+	field.apply(batch2)
+
+	if got := string(field.text); got != wordRU {
+		t.Fatalf("simulated field after the inverted processing = %q, want %q — the replacement must "+
+			"survive ANY client processing order", got, wordRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done","changed":true`) {
+		t.Errorf("INFO completion record missing; log:\n%s", buf.String())
+	}
+}
+
+// TestTwoPhaseLevel1_SilentClientDegradesLoud pins the fallback: a client
+// that stays silent the whole budget degrades to TODAY'S pair (delete+commit
+// — never a «deletion without replacement»), with the loud INFO outcome
+// slug in the journal, and the verify-after round armed on the exit — the
+// checks never disappear, whatever the client does.
+func TestTwoPhaseLevel1_SilentClientDegradesLoud(t *testing.T) {
+	buf := captureLogsLevel(t, slog.LevelDebug)
+	a, sink := wiredActor()
+	clock := &flipClock{} // the level1ConfirmBudget recorder (the flipClock form)
+	a.UseLevel1Timer(clock.arm)
+
+	typeCachedWord(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if calls := sink.deleteCalls(); len(calls) != 1 {
+		t.Fatalf("deletions after the gesture = %d, want exactly 1", len(calls))
+	}
+	if got := sink.commitTexts(); len(got) != 0 {
+		t.Fatalf("commits right after the delete = %q, want none — the commit phase waits for the "+
+			"deletion proof (the silent client has not given it yet)", got)
+	}
+	armed := clock.armedDurations()
+	if len(armed) != 1 || armed[0] != level1Budget {
+		t.Fatalf("confirm budgets armed = %v, want exactly [%v] — the fallback deadline is the "+
+			"silent client's only completion path", armed, level1Budget)
+	}
+	if got := sink.requireCount(); got != 0 {
+		t.Fatalf("requires before the fallback = %d, want 0 — the verify-after arms at the flush, "+
+			"not at the delete", got)
+	}
+
+	clock.fire() // the budget closed with no proof — today's pair, loudly marked
+
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits after the fallback = %q, want exactly one %q — the silent client degrades "+
+			"to the today's semantics, never a deletion without replacement", texts, wordRU)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction confirm","outcome":"timeout"`) {
+		t.Errorf("the loud confirm-timeout INFO slug is missing; log:\n%s", buf.String())
+	}
+	if got := sink.requireCount(); got != 1 {
+		t.Errorf("requires after the fallback = %d, want exactly 1 — the verify-after arms on the "+
+			"exit, the checks never disappear", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done","changed":true`) {
+		t.Errorf("INFO completion record missing after the fallback; log:\n%s", buf.String())
+	}
+}
+
+// TestTwoPhaseLevel1_FlipDeferredUntilConfirmingPush pins the level-1 flip
+// moving onto the 10-08 machine: after the delete there is NO switcher
+// traffic until the delivery is proven; the confirming push flushes the
+// commit and ARMS the flip (no traffic yet); the verify-after's confirming
+// push (the match) releases it exactly once (the FlipDeferredUntilConfirmed
+// form). The owner rule «режим следует за скриптом результата» is deferred,
+// not cancelled.
+func TestTwoPhaseLevel1_FlipDeferredUntilConfirmingPush(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(flipOnOptions()) // the owner's config: flip follows the correction
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	typeCachedWord(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	// RED truth: today the level-1 flip is IMMEDIATE — the mode record and
+	// the SetGlobalEngine sit right next to the done row (the 09:39 rows'
+	// «mode to ru +0,03 ms»), the exact orphaning geometry E3 convicted.
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records right after the delete = %d, want 0 — the level-1 flip must defer "+
+			"onto the 10-08 machine; log:\n%s", got, buf.String())
+	}
+	if got := probe.targets(); len(got) != 0 {
+		t.Fatalf("SetGlobalEngine before any delivery proof = %q, want none", got)
+	}
+
+	// The confirming push completes the ladder; the flip is armed, not fired.
+	a.HandleSurroundingText("", 0, 0)
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records after the confirming push = %d, want 0 — the flip waits for its own "+
+			"delivery confirmation; log:\n%s", got, buf.String())
+	}
+	if got := probe.targets(); len(got) != 0 {
+		t.Fatalf("SetGlobalEngine after the ladder flush but before the flip proof = %q, want none", got)
+	}
+
+	// The verify-after's confirming push (the field ends with converted) —
+	// the same match criterion the 10-08 release reads — fires the flip.
+	line := wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records after the flip proof = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("switch targets = %q, want exactly [%s]", got, engine.NameRU)
+	}
+	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
+		t.Errorf("panel symbols = %q, want exactly [ru]", got)
+	}
+}
+
+// TestTwoPhaseLevel1_FlipReleasedByNextKey pins the push-less client's
+// level-1 release site (the wezterm-class silence): the first keystroke
+// after the delete flushes the ladder (the replacement is on the wire
+// before the next input) and releases the flip STRICTLY before the key is
+// processed — the key already types in the RESULT mode (the
+// FlipReleasedByNextKey form, plan 10-11's feedKey entry).
+func TestTwoPhaseLevel1_FlipReleasedByNextKey(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.SetOptions(flipOnOptions())
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	typeCachedWord(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records before the next key = %d, want 0 — the flip waits; log:\n%s",
+			got, buf.String())
+	}
+	wireBefore := len(sink.opLog())
+
+	a.HandleKey(engine.EngineEvent{Keyval: 'x'}) // EN-mode keyval — the flush and the release first
+
+	ops := sink.opLog()[wireBefore:]
+	join := func(ops []string) string { return strings.Join(ops, " ") }
+	delIdx := slices.Index(ops, "delete(-6,6)")
+	comIdx := slices.Index(ops, "commit("+wordRU+")")
+	modeIdx := slices.Index(ops, termFlipRUOp)
+	keyIdx := slices.Index(ops, "commit(ч)")
+	if delIdx < 0 || comIdx < 0 || modeIdx < 0 || keyIdx < 0 {
+		t.Fatalf("flush-at-keystroke op batch = %s — want the delete, the flushed commit, the "+
+			"released flip and the key's own commit all present", join(ops))
+	}
+	if delIdx >= comIdx || comIdx >= modeIdx || modeIdx >= keyIdx {
+		t.Fatalf("op batch order = %s — want delete < flushed commit < mode(ru) < commit(ч): the "+
+			"replacement is on the wire before the next input and the release precedes the key's "+
+			"processing (the key types in the result mode)", join(ops))
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records after the key = %d, want exactly 1 — one flip per correction; log:\n%s",
+			got, buf.String())
+	}
+}
+
+// TestFlapWindowContextIdentity_RealSwitchWipesClass pins the WR-03 fix
+// (10-REVIEW :119-148): a REAL window switch completing inside the flap
+// window — between the FocusOut and the FocusIn the input context is
+// re-minted (AttachEngine of a NEW engine object) — must NOT cancel the
+// deferred wipe: the learned class dies with the OLD context, the fresh
+// context starts unclassified (the invariant «класс живого контекста»).
+func TestFlapWindowContextIdentity_RealSwitchWipesClass(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	clock := &flapClock{}
+	a.UseFlapTimer(clock.arm)
+
+	teachVerifyDead(t, a, wordEN)
+	a.HandleLifecycle(engine.LifecycleFocusOut) // arms the window over THIS context's emitter
+	a.AttachEngine(&fakeSink{})                 // the context was re-minted between the pair
+	a.HandleLifecycle(engine.LifecycleFocusIn)  // a DIFFERENT engine object — no cancellation
+	clock.fire()                                // the window expires — the class wipes
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
+		t.Fatalf("terminal-class markers after the real switch = %d, want exactly 2 (learn + clear) — "+
+			"a different engine object in the FocusIn must not cancel the wipe (WR-03); log:\n%s",
+			got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `"verify_dead":false`) {
+		t.Errorf("the cleared-class marker is missing — the class leaked into the new context; log:\n%s",
+			buf.String())
+	}
+
+	// The fresh context learns afresh: the state, not just the log, reset.
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	teachVerifyDead(t, a, wordEN)
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 3 {
+		t.Errorf("terminal-class markers after the re-learn = %d, want 3 — the new context must "+
+			"classify from zero", got)
+	}
+}
+
+// TestFlapWindowContextIdentity_SameEnginePairSurvives is the protective
+// pin riding the WR-03 fix: the same-engine flap pair (the journal's 1–3 ms
+// churn pairs, one engine object on both halves) cancels the wipe exactly
+// as before — the 10-07 fix does not regress (the
+// TestTerminalClass_VerifyDeadSurvivesFlapPair control, re-expressed on the
+// identity seam; it must stay green UNCHANGED).
+func TestFlapWindowContextIdentity_SameEnginePairSurvives(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+
+	teachVerifyDead(t, a, wordEN)
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	a.HandleLifecycle(engine.LifecycleFocusIn) // the same engine object — the flap pair completes
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 1 {
+		t.Fatalf("terminal-class markers after the same-engine pair = %d, want exactly 1 (learn "+
+			"only) — the pair must cancel the wipe as in 10-07; log:\n%s", got, buf.String())
+	}
+	if strings.Contains(buf.String(), `"verify_dead":false`) {
+		t.Errorf("the class was wiped by a same-engine flap pair — the 10-07 fix regressed; log:\n%s",
+			buf.String())
+	}
+}
+
+// TestLevel1ConfirmFlush_FocusOutUsesCapturedSnapshot pins the flush
+// safety contract (T-10-11-02): the ladder's completion commits through the
+// emitter snapshot CAPTURED AT ARM — never the current emitter(). A context
+// re-mint between the arm and the flush (the churn reality) must not pour
+// the replacement into the NEW application's engine: the stale object goes
+// to the old sink, the new sink stays byte-silent.
+func TestLevel1ConfirmFlush_FocusOutUsesCapturedSnapshot(t *testing.T) {
+	a, sink := wiredActor()
+
+	typeCachedWord(a)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := sink.commitTexts(); len(got) != 0 {
+		t.Fatalf("commits right after the delete = %q, want none — the ladder is mid-confirmation", got)
+	}
+
+	fresh := &fakeSink{}
+	a.AttachEngine(fresh)                       // the context was re-minted after the arm
+	a.HandleLifecycle(engine.LifecycleFocusOut) // the flush runs — over the CAPTURED snapshot
+
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits on the captured engine = %q, want exactly one %q — the flush must complete "+
+			"the ladder over the armed snapshot (byte-parity: both ops already on the wire today)", texts, wordRU)
+	}
+	if got := fresh.commitTexts(); len(got) != 0 {
+		t.Fatalf("commits into the RE-MINTED engine = %q, want none — a flush must never read the "+
+			"current emitter(), the text would land in another application (T-10-11-02)", got)
+	}
+}

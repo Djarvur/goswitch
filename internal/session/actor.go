@@ -72,6 +72,20 @@ const terminalChunkKeys = 8
 // user preference.
 const focusFlapWindow = 10 * time.Millisecond
 
+// level1ConfirmBudget is the confirmation budget of the two-phase level-1
+// delivery (plan 10-11, round-2 G-10-1, the 09:39 host rows): the level-1
+// ladder's commit phase waits this long for the client's proof that the
+// deletion applied (a push or a Require answer whose text-before-cursor no
+// longer ends with token+tail), then degrades to today's delete+commit pair
+// with a loud INFO mark — never a «deletion without replacement». Origin of
+// the value: a healthy client's confirming push lands ~16 ms after the
+// emission (the E3 -debug host trace of 2026-10-13), and the x4 headroom
+// rides out the churn-delayed clients the host journals show; an internal
+// constant with a journal provenance, never a config key (the
+// flipConfirmGrace precedent) — the fallback guarantees that an oversized
+// budget degrades to today's semantics, not to a worse one.
+const level1ConfirmBudget = 60 * time.Millisecond
+
 // flipConfirmGrace is the grace deadline of the terminal branch's deferred
 // correction flip (plan 10-08, G-10-1 cause B, the E3 verdict of 2026-10-13):
 // a healthy confirming push lands ~16 ms after the commit (the E3 -debug
@@ -356,6 +370,16 @@ type Actor struct {
 	// production arm is time.AfterFunc (defaultFlapAfter); the corpus
 	// installs a deterministic recorder. The daemon path never calls it.
 	verifyAfter func(d time.Duration, fn func()) (stop func())
+	// l1 is the open confirmation window of the two-phase level-1 delivery
+	// (plan 10-11, round-2 G-10-1, the 09:39 host rows): the level-1 ladder
+	// emitted its DeleteSurroundingText and the commit phase waits for the
+	// client's proof the deletion applied. Nil whenever no ladder is
+	// mid-flight. l1Epoch is the fallback budget's stale-deadline guard
+	// (the afterExpiry discipline) and l1After the timer seam (the
+	// flipAfter form).
+	l1      *level1Confirm
+	l1Epoch uint64
+	l1After func(d time.Duration, fn func()) (stop func())
 	// level2Busy is the write branch's re-entrancy guard (plan 10-10,
 	// WR-01): executeLevel2 checks-and-sets it BEFORE the first destructive
 	// emission and clears it on EVERY exit (the backspace-cap refusal, the
@@ -662,6 +686,32 @@ type deferredFlip struct {
 	epoch  uint64
 }
 
+// level1Confirm is the open confirmation window of the two-phase level-1
+// delivery (plan 10-11, round-2 G-10-1, the 09:39 host rows): the ladder's
+// DeleteSurroundingText is on the wire while the commit phase waits for the
+// client's proof the deletion applied — a push or Require answer whose
+// text-before-cursor no longer ends with match (token+tail). Everything the
+// completion needs is captured HERE, at arm: the emitter snapshot rides the
+// whole window (the :3444 one-snapshot precedent), so a flush after the
+// context's death or re-mint can never pour the text into a NEW
+// application's engine — the stale object is discarded by the client, the
+// same mechanic that was the E3 vector now working as the fuse. rng carries
+// the replace hook and the tail; level/token feed the frozen done row;
+// armed keeps the latency origin. epoch is the stale-deadline guard of the
+// fallback budget (the afterExpiry discipline); stop cancels the armed
+// budget at flush.
+type level1Confirm struct {
+	eng       engine.Emitter
+	commit    []rune
+	rng       correctionRange
+	converted []rune
+	match     []rune
+	armed     time.Time
+	level     correct.Level
+	epoch     uint64
+	stop      func()
+}
+
 // NewActor returns an actor deciding tap series inside the given
 // disambiguation window (D-05). The daemon passes hotkey.DefaultWindow.
 // The series key starts at the documented default (shift_r); an attached
@@ -679,6 +729,9 @@ func NewActor(window time.Duration) *Actor {
 		// time.AfterFunc deadline, stoppable — the corpus replaces it via
 		// UseFlapTimer with a deterministic recorder.
 		flapAfter: defaultFlapAfter,
+		// The level-1 confirm budget's production arm (plan 10-11): the
+		// defaultFlapAfter form — the corpus replaces it via UseLevel1Timer.
+		l1After: defaultFlapAfter,
 		// The role-episode clock's production form (plan 10-07): the real
 		// wall clock; the corpus installs a controllable double via
 		// UseRoleClock.
@@ -824,6 +877,18 @@ func (a *Actor) UseFlipTimer(arm func(d time.Duration, fn func()) (stop func()))
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.flipAfter = arm
+}
+
+// UseLevel1Timer installs the level-1 confirm budget seam (plan 10-11, the
+// UseFlipTimer form): arm(d, fn) arms one confirmation budget and returns
+// the stop function canceling a still-pending firing. The production arm is
+// time.AfterFunc (defaultFlapAfter); the corpus installs a deterministic
+// recorder.
+func (a *Actor) UseLevel1Timer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.l1After = arm
 }
 
 // UseVerifyTimer installs the pre-correction verify-deadline seam (plan
@@ -1511,6 +1576,74 @@ func (a *Actor) verifyDeadWipeExpiry(epoch uint64) {
 	}
 	a.flapStop = nil
 	a.setVerifyDead(false)
+}
+
+// armLevel1Confirm opens the two-phase level-1 confirmation window (the
+// caller holds the mutex, plan 10-11): the ladder's DeleteSurroundingText
+// is already on the wire and the commit phase waits — either for the
+// client's proof the deletion applied (the handleSurroundingLocked confirm
+// check) or for this budget's deadline, whose fallback reproduces today's
+// delete+commit pair with a loud INFO mark. One window at a time: arming
+// cancels a still-pending budget of a superseded window (the
+// armVerifyDeadWipe form) and the epoch advance turns its queued callback
+// stale.
+func (a *Actor) armLevel1Confirm(w *level1Confirm) {
+	if a.l1 != nil && a.l1.stop != nil {
+		a.l1.stop()
+	}
+	a.l1Epoch++
+	w.epoch = a.l1Epoch
+	a.l1 = w
+	epoch := a.l1Epoch
+	arm := a.l1After
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	w.stop = arm(level1ConfirmBudget, func() { a.level1ConfirmExpiry(epoch) })
+}
+
+// level1ConfirmExpiry is the confirmation budget's deadline callback: the
+// client stayed silent the whole budget, so the ladder degrades to today's
+// delete+commit pair (the fallback is the CURRENT semantics, never a
+// «deletion without replacement») with the loud INFO outcome mark —
+// push-spontaneous clients confirm in milliseconds, so a timeout row is
+// rare and worth hearing (T-10-11-04). A stale epoch (the window was
+// flushed or re-armed) is a no-op — the afterExpiry form.
+func (a *Actor) level1ConfirmExpiry(epoch uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.l1 == nil || a.l1.epoch != epoch {
+		return // stale deadline — the window was flushed or re-armed
+	}
+	a.flushLevel1Confirm()
+}
+
+// flushLevel1Confirm is the ONE completion point of the two-phase level-1
+// ladder (the caller holds the mutex, plan 10-11): the replacement commits
+// through the window's CAPTURED emitter snapshot — never the current
+// emitter(), so a flush after the context's death or re-mint cannot pour
+// the text into another application's engine (T-10-11-02; the stale object
+// is discarded by the client) — then the post-commit half runs in the
+// today's order: buffer replace, the frozen done row, the DEFERRED flip
+// (the 10-08 machine — the level-1 flip waits for its own delivery
+// confirmation), the combo settle and the verify-after arm. Idempotent by
+// the nil-check: every flush site (the confirm check, the budget fallback,
+// the feedKey entry, FocusOut/Reset, a new gesture's entry) passes through
+// untouched when no ladder is mid-flight.
+func (a *Actor) flushLevel1Confirm() {
+	if a.l1 == nil {
+		return
+	}
+	w := a.l1
+	a.l1 = nil
+	if w.stop != nil {
+		w.stop()
+		w.stop = nil
+	}
+	// Plan 10-11 RED scaffolding: the commit phase is not gated behind the
+	// confirmation yet (executeCorrection still emits it inline) — the
+	// window retires silently here; GREEN moves the commit phase in.
 }
 
 // soundSinkFor returns the installed sink when the sound switch is ON —
@@ -3530,6 +3663,18 @@ func (a *Actor) executeCorrection() {
 	eng := a.emitter() // one atomic snapshot for the whole ladder emission
 	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, a.backspaceCap())
 	eng.DeleteSurroundingText(plan.Offset, plan.NChars)
+	// Plan 10-11 RED scaffolding: the confirm window arms, the commit phase
+	// still executes inline — the byte-today behavior while the corpus is
+	// red; the GREEN move gates the commit behind the client's proof.
+	a.armLevel1Confirm(&level1Confirm{
+		eng:       eng,
+		commit:    plan.Commit,
+		rng:       p.rng,
+		converted: p.converted,
+		match:     concatRunes(p.rng.token, p.rng.tail),
+		armed:     p.armed,
+		level:     plan.Level,
+	})
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
 	a.logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
