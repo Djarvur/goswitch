@@ -6,10 +6,10 @@ current_phase: 10
 current_phase_name: TERM-слово
 status: verifying
 stopped_at: Completed 10-12-PLAN.md (owner re-acceptance pending)
-last_updated: "2026-10-14T10:02:45.537Z"
+last_updated: "2026-10-14T16:23:42.436Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: a1abd21b6d6881cba51472678941cc5e745d4491
+state_head: 9883eb0af5713212f6c9e1008caa1f82f479b307
 progress:
   total_phases: 5
   completed_phases: 0
@@ -110,6 +110,7 @@ None yet.
 - Ячейка silence-matrix role-60 мигрирована на арминг-ожидание terminal-veto (D-55 переносит вердикт из confirm в арминг) — записана в WINDOWS.md как deviation, открытой до фазовой верификации
 - [Phase 10 / 10-08] CHECKPOINT (blocking-human, 2026-10-13): Задача 1 (машина отложенного флипа defer-until-confirmed) закоммичена (5a47555 RED, bfdeaf1 GREEN, mise ci зелёный). Задача 2 (стенд: re-pin замороженных рядов + term-word-vte-flip + амендмент ADR-008) заблокирована дрейфом стенда: wezterm-nightly клиент на ВМ минтит caps 0x29 (surrounding-бит анонсируется) против запиненного 0x9 и отвечает на RequireSurroundingText протухшим кэшем; подпись стабильна через ibus-restart и reboot ВМ, пакеты старше зелёных рядов 10-06. Починка в демоне = смена семантик 10-04/ADR-004 (Rule 4). Ждёт вердикт владельца: (1) семантическая дельта плана, (2) ручная активация стенда кликами, (3) поиск источника дрейфа 0x9→0x29, (4) закрыть план с задокументированным окруженческим хвостом. Возобновление: SendMessage агенту agent_5a61967f-ffab-4383-afff-962bf2450d7b с выбранным вариантом. 10-09 (хост-ревалидация) стоит за 10-08.
 - [Phase 10 / G-10-1] Re-acceptance 2026-10-14 09:39 MSK — REJECTED владельцем: в обоих терминалах «вижу привет, и он удаляется». Журнально: оба жеста прошли уровнем-1 (done за 1,9–2,4 мс, мгновенный флип +0,03 мс) — терминальная ветка и оба фикса не получили управления, классификация терминала на хосте не включается (a11y-identity недоступна ac_role_errors=47, verifyDead не выучен к жесту); «появляется и удаляется» = инверсия delete-surrounding/commit на уровне-1. Нужен новый gap-цикл: /gsd-plan-phase 10 --gaps — фикс обязан реплеем журнальных рядов 09:39 доказываться ДО запуска владельцем (урок 2026-10-12). Откат на v1.1.1 по запросу владельца (не запрашивался). Ряды: DEBUG-term-host-live-failures.md Closure validation 2026-10-14 09:39; UAT Тест 3 rejected.
+- [Phase 10 / G-10-1] Re-acceptance round-2 (2026-10-14 19:21 MSK) — REJECTED: «поведение в wezterm НЕ изменилось». Журнал: терминальная ветка ВОШЛА в работу на хосте (done +144 мс vs 2 мс вчера; флип отложен +104 мс; terminal-veto +2 с — класс выучен впервые), т.е. фиксы round-2 работают как задумано; потеря сместилась на доставку пакета level-2 (перестановка вставка/BackSpace-форварды под хостовой задержкой wezterm; класс A2 внутри level-2; стенд невоспроизводим; verify-после слеп — answer-only клиент не пушит). Нужен цикл №3: доказуемая доставка чанков терминальной записи (двухфазность по Require-ответам клиента ИЛИ delete_surrounding_text вместо форвард-бекспейсов — поддержку проверить на стенде). Ряды: DEBUG Closure validation 19:21; UAT Тест 4 rejected. Откат владельцем не запрошен.
 
 ## Deferred Items
 
