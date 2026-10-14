@@ -1,277 +1,244 @@
 ---
 phase: 10-term-slovo
-reviewed: 2026-10-13T22:15:24Z
+reviewed: 2026-10-14T10:29:42Z
 depth: standard
-files_reviewed: 16
+files_reviewed: 5
 files_reviewed_list:
   - internal/session/actor.go
   - internal/session/actor_test.go
-  - internal/config/config.go
-  - internal/config/config_test.go
-  - internal/config/load.go
-  - internal/ctlsvc/ctlsvc.go
   - internal/ctlsvc/ctlsvc_test.go
-  - test/e2e/case_term_word_vte.go
-  - test/e2e/case_term_word_vte_flip.go
-  - test/e2e/main.go
-  - test/e2e/wezterm.go
-  - mise.toml
-  - docs/CONFIG.md
   - docs/adr/ADR-008-terminal-transport.md
   - docs/adr/adr-008-spike-log.md
-  - skills/goswitch-config/SKILL.md
 findings:
   critical: 0
-  warning: 4
-  info: 6
-  total: 10
+  warning: 1
+  info: 3
+  total: 4
 status: issues_found
 ---
 
-# Phase 10: Code Review Report (incremental re-review, delta 10-07/10-08)
+# Phase 10: Code Review Report (incremental re-review, round-2 delta 10-10/10-11/10-12)
 
-**Reviewed:** 2026-10-13T22:15:24Z
+**Reviewed:** 2026-10-14T10:29:42Z
 **Depth:** standard
-**Files Reviewed:** 16
+**Files Reviewed:** 5
 **Status:** issues_found
 
 ## Summary
 
-Incremental re-review of the gap-closure delta since 59eb02f (plans 10-07/10-08):
-the flap-tolerant verifyDead erasure, the default terminal identity anchor,
-loud/sticky role diagnostics, the deferred terminal flip (defer-until-confirmed),
-the stale-cache terminal route, the term-word-vte-flip e2e case and the machine
-focus nudge. Verification gates run green on this tree: `go build ./...`,
-`go vet`, `go test -race` over internal/session, internal/config, internal/ctlsvc.
-The xrandr probe and the ydotool CLI forms were verified empirically against the
-target system (ydotool 0.1.8, real xrandr output).
+Инкрементальный ревью round-2 дельты с `ec56c123` (планы 10-10/10-11/10-12):
+answer-only маршрут терминального контекста на обеих ветках вердикта
+`HandleSurroundingText`, фиксы WR-01 (`level2Busy`) и WR-02 (epoch-тег
+`VerifyExpiry`), миграция 16+1 nil-cache level-1 пинов на honest-push мир,
+двухфазный уровень-1 (delete → доказательство удаления → commit) с бюджетом
+`level1ConfirmBudget` = 60 мс, отложенный флип уровня-1 на машине 10-08,
+WR-03 same-context флап-дисциплина (`flapEng`), docs-ряды 10-12. Проверочные
+гейты на этом дереве зелёные: `go build ./...`, `go vet`, `go test -race`
+(internal/session 10.8 s, internal/ctlsvc), `golangci-lint run` — 0 issues.
 
-The delta itself is well built. The defer/flip state machine follows the epoch
-discipline at every timer site (flipEpoch guards the grace deadline, flapEpoch
-guards the wipe deadline) with all state under the actor mutex; the owner-pinned
-invariants hold — FocusOut touches no flip slot, flip_after_correction=false
-arms nothing (byte-identical ops paths, pinned by test), the stale-cache route
-stays fail-closed for cache evidence (selection and autocorrect-boundary rounds
-excluded, pinned by test), and the level-1 GTK path sees only no-op
-releaseDeferredFlip calls. The config nil-vs-empty normalization is pinned by
-Load-level tests; the watcher reload path routes through the same Load; docs,
-SKILL.md and mise task are consistent with the code; the spike journal is honest
-(FAIL/blocked rows retained).
+**Верификация folded-находок прошлого раунда (все три подтверждены
+закрытыми):**
 
-Four warnings survive. Two are the prior review's race-shaped findings in the
-terminal write branch, still unresolved — and WR-02's blast radius grew with
-this delta (a falsely taught verifyDead now also arms the deferred-flip machine
-for a GTK context). Two are new: the flap-window FocusIn cancellation cannot
-distinguish a same-engine flap pair from a real window switch (the actor
-receives no context identity, internal/engine/engine.go:466 — a wezterm-learned
-class can leak into the next focused context), and the focus nudge's xrandr
-geometry probe is provably dead (verified against real xrandr output on the
-target).
+- **WR-01 (закрыт).** `level2Busy` ставится до BuildPlan и первого
+  деструктивного форварда, снимается на всех трёх выходах (backspace-cap,
+  context-changed, успех; actor.go:3813-3865). Отказ второго входа идёт через
+  `skipCorrection("correction-busy")` + `settleCombo`. Пин
+  `TestCorrectionBusy_SecondEntrySkipsNotSecondBurst` воспроизводит реальную
+  гонку (запаркованный sleeper, второй вход через chunk-boundary окно,
+  5-секундный страж дедлока) — ровно один бурст, один коммит, один done.
+- **WR-02 (закрыт).** `pendingFix.epoch` + `pendingEpoch` назначаются в
+  `armVerifyDeadline` под мьютексом (actor.go:1559-1568), колбэк несёт тег,
+  `VerifyExpiry` no-op при несовпадении (actor.go:1484-1486) — форма afterExpiry,
+  байт-в-байт. Обе точки армирования (selection, word) переведены на шов.
+  Пин `TestVerifyExpiryStaleRound_DoesNotEatNextRound` с no-op-stop двойником
+  таймера честно моделирует окно «fired-and-blocked».
+- **WR-03 (закрыт).** `flapEng` снимается реальным FocusOut при арминге окна,
+  FocusIn отменяет стирание только при равенстве объектов движка
+  (actor.go:1216), снимается вместе со слотом на cancel/expiry. Пара пинов:
+  `TestFlapWindowContextIdentity_RealSwitchWipesClass` (подмена эмиттера между
+  половинами пары — класс стёрт, новый контекст учится с нуля) и
+  `..._SameEnginePairSurvives` (10-07 не регрессировал).
+- **WR-04** — вне кодовой дельты (harness), статус известен; round-2 ряд
+  журнала спайка подтверждает («xrandr-проба нуджа мертва — факт харнесса»).
+
+**Замороженные инварианты round-2 — все удержаны:**
+
+- `go.mod`/`go.sum` нетронуты (git diff с базы пуст — проверено).
+- flip_after_correction=false: `deferCorrectionFlip`/`settleCorrectionFlip`
+  выходят до всякого арминга — ops-пути байт-прежние (мигрированные пины
+  зелёные без правок семантики).
+- D-55 вето живёт в единственном шве `classifyTerminal`, оба потребителя
+  (arming-veto actor.go:3072, write-branch actor.go:3684) читают один шов;
+  `TestReplayHost0939_RouteLearnsVetoSeam` прибивает сопряжённость.
+- Fail-closed мир клиентов с кэш-свидетельством сохранён на обеих ветках:
+  selection-раунды (range-anchored) и autocorrect-boundary-раунды исключены из
+  `pendingStaleCache`; честно-пушащий GTK держит байт-прежний verify-mismatch
+  (`TestReplayHost0939_SpontaneousPushClientNotRouted`).
+- Two-phase level-1: все пять flush-сайтов (confirm-проверка, бюджет,
+  вход feedKey, FocusOut/Reset, вход нового жеста) и фолбэк-бюджет сходятся в
+  единственную точку `flushLevel1Confirm`; коммит едет только в захваченный
+  снапшот эмиттера («удаление без замены» невоспроизводимо при произвольном
+  порядке клиентской обработки — реплей `TwoPhaseLevel1_InvertingConsumer…`
+  с моделью-инвертором это доказывает).
+- Replay-пины честны: evidence-файлы существуют и показывают ровно целевые
+  падения при зелёных защитных пинах (10-10: fail 4 — MatchAnswer/
+  RejectionSignatures/VerifyExpiryStale/CorrectionBusy при ok
+  SpontaneousPushClientNotRouted; 10-11: fail 5 целевых TwoPhase/Flap/Flush
+  при ok SameEnginePairSurvives); тайминги журнала (1,9–2,4 мс) живут только
+  в origin-комментариях, не синтезируются; пины кодируют решения и порядок
+  ops, не тайминги. Коммиты журнальных рядов резолвятся (2c1ae04, 2fbfee1 —
+  предки HEAD).
+
+**Одна новая находка (warning).** Двухфазное окно уровня-1 отсрочило замену
+буфера, на которую опирался CR-01 тест устарелости autocorrect-подтверждения:
+`autoConfirm` может армировать свежий pending-раунд поверх незавершённой
+ладдера (единственный не-flush'ащий вход в `startRangeCorrection`),
+воспроизводя класс последствий WR-02 — ложное обучение verifyDead — через
+новый интерлив. Детали и фикс ниже (WR-05). Поле текста не страдает ни на
+одной ветке; страдает классификация/диагностика.
 
 ## Narrative Findings (AI reviewer)
 
 ## Warnings
 
-### WR-01: No re-entrancy guard on the terminal write branch — a second correction can interleave a second destructive burst (prior, unresolved)
+### WR-05: Двухфазное окно уровня-1 ломает посылку CR-01 у autocorrect-подтверждения — autoConfirm армирует pending-раунд поверх незавершённой ладдера, и её бюджет может ложного выучить verifyDead (новое, 10-11)
 
-**File:** `internal/session/actor.go:3502-3565` (executeLevel2, chunk loop 3518-3540), `3573-3579` (chunkBoundaryMoved)
-**Issue:** carried over from the 2026-10-12 review unchanged — the delta did not
-touch the guard surface. executeLevel2 releases the actor mutex at every chunk
-boundary (one Gosched) so a real lifecycle callback can be observed; the
-ctxEpoch re-check stops the round ONLY on FocusOut/Reset. A second correction
-decision can still enter through the same unlocked window: a tap-series expiry
-(Expiry → Double → startCorrection), a fired autocorrect confirm re-acquiring
-the mutex mid-burst (autoConfirm:3026 → startRangeCorrection → classifyTerminal
-→ executeLevel2 — the buffer is still pre-replace until the burst's commit, so
-acConfirmRefusals passes), CorrectNow over ctl, or — new with 10-08 — a second
-surrounding push racing the stale-cache route's own burst. Both bursts compute
-BuildPlan from the same un-replaced buffer and both replay Backspaces over the
-same field range; in a terminal that erases user text beyond intent. Exposure
-with the default cap is ~1 s (20 ms per key).
-**Fix:** arm a write-branch generation/flag under the mutex at executeLevel2
-entry and refuse a second entry while one is in flight — the rungMu TryLock
-precedent (skip with a D-20 reason, e.g. `correction-busy`, via skipCorrection +
-settleCombo). Set before the first forward, clear on every return path
-(including the context-changed branch).
+**File:** `internal/session/actor.go:3335-3379` (autoConfirm → startRangeCorrection), `3412-3418` (acConfirmRefusals — буферная посылка), `1684` (rng.replace, отсроченный в flush), `1628-1641` + `2111-2118` (окно l1 и его consume-all ветка)
+**Issue:** До 10-11 `executeCorrection` исполнял delete+commit+`rng.replace`
+синхронно на вердикте, поэтому к моменту любого более позднего решения буфер
+уже отражал поле, и CR-01 проверка `acConfirmRefusals`
+(`slices.Equal(a.buf.Token(), payload.expectToken)`) честно отвечала
+«геометрия больше не та» → payload-stale. Дельта 10-11 перенесла
+`rng.replace` в `flushLevel1Confirm` — теперь до 60 мс после вердикта поле и
+буфер остаются в ДО-коррекционном состоянии, и confirm автокоррекции,
+прилетевший в это окно, проходит все refusals и зовёт
+`startRangeCorrection`. `autoConfirm` — единственный вход в
+`startRangeCorrection`, который НЕ зовёт `flushLevel1Confirm` (жестовые пути
+flush'ат; boundary-полезная нагрузка самого AC-раунда дальше всё равно едет
+в fresh-answer ветку). Возникает интерлив:
 
-### WR-02: VerifyExpiry carries no per-round tag — a stale deadline can consume the next pending round and falsely teach verify-dead (prior, unresolved; impact raised by 10-08)
+1. «ghbdtn » → граница пробела армирует AC-payload (expectToken=ghbdtn);
+2. Double-жест (или машинный `CorrectNow`) уходит в cached-match level-1:
+   delete на проводе, окно l1 открыто, буфер ещё «ghbdtn »;
+3. confirm AC (role RTT ≤ 25 мс) видит: generation текущ, буфер равен
+   ожиданию (замена ещё не случилась) → `acFired++` → новый pending-раунд
+   армируется ПОВЕРХ открытого окна l1;
+4. пуш клиента попадает в l1-ветку `handleSurroundingLocked` (actor.go:2111)
+   и ПОГЛОЩАЕТСЯ ею — settlement-трафик, которого ждал AC-раунд, окну достался;
+5. исход A (честный клиент пушит после flush): AC-раунд умирает как
+   `verify-mismatch` — отказ правильный по существу, но слаг лжив и счётчик
+   verify-mismatch загрязняется;
+6. исход B (клиент молчит под churn дольше бюджета): `VerifyExpiry` видит
+   живой pending со своим тегом → `setVerifyDead(true)` на честном GTK
+   контексте, который бюджет не пропускал — окно l1 съело его раунд.
+   Это в точности класс последствий WR-02 («ложно выученный класс: вето
+   автокоррекции на весь эпизод + buffer-trust level-2 + машина отложенного
+   флипа»), восстановленный через новый интерлив, который фиксированная форма
+   WR-02 (epoch-тег) не покрывает — тег здесь СВОЙ, раунд действительно
+   истёк, но причиной истечения стало чужое окно.
 
-**File:** `internal/session/actor.go:1336-1356` (VerifyExpiry), arm sites `3308`, `3416`; contrast the epoch form `2013-2023` (afterExpiry)
-**Issue:** still open. pendingFix rounds all share the bare `a.VerifyExpiry`
-callback with no round tag, while every 10-07/10-08 timer (flap wipe, flip
-grace, verify-after) got the epoch discipline this delta built. The unguarded
-window is unchanged: round 1's deadline fires and blocks on a.mu; the main path
-resolves round 1 (Stop is a no-op — already fired) and arms round 2; the stale
-callback then sees round 2's pending, drops it, records verify-timeout — and
-`setVerifyDead(true)` teaches the behavioral terminal class for a context that
-never missed a budget. The 10-08 delta RAISED the consequence: a falsely taught
-verifyDead now (a) persists across flap pairs (10-07), (b) misroutes every
-correction of the context to the destructive write branch, and (c) arms the
-deferred-flip machine for a GTK context (mode flips deferred to the next
-keystroke or 300 ms). The corpus pins only the settled-round case
-(pending == nil), not the new-round case.
-**Fix:** tag pendingFix with a monotonic epoch (the verifyEpoch field already
-exists): capture `epoch := a.verifyEpoch` in the AfterFunc closure, pass it to
-VerifyExpiry (or a wrapped callback), and no-op unless
-`a.pending != nil && a.pending.epoch == epoch` — the afterExpiry form, byte
-for byte.
+Плина человека: нужна двойная тапка < 25 мс от границы слова —
+неправдоподобно. Плина машины: реальна — `CorrectNow` через ctl
+(программный/трей-вход) в момент RTT-окна AC-подтверждения; e2e-стенды
+водят `CorrectNow` программно. Коррупции текста нет ни на одной ветке:
+AC-раунд исполняется только при match, match требует реального
+token+tail в поле, а это значит, что клиент отбросил и первый ладдер —
+повторное исполнение геометрически идемпотентно (разобрано, см. ниже).
+Страдают классификация (ложное вето D-55 на эпизод), маршрутизация и
+диагностические счётчики — то, ради чего round-2 и затевался.
+**Fix:** в `autoConfirm` под мьютексом, сразу после generation-проверки
+(actor.go:3337-3339), отказаться от payload, пока ладдер в полёте — посылка
+CR-01 в этом окне недействительна:
 
-### WR-03: The flap-window FocusIn cancellation has no context identity — a real window switch inside 10 ms leaks the learned terminal class into the next context
+```go
+if payload.gen != a.acGeneration {
+    return // superseded mid-flight by a newer boundary — the stale verdict drops
+}
+if a.l1 != nil {
+    a.recordACAbstain(acReasonPayloadStale) // two-phase window: the armed
+    return                                  // geometry no longer certifies the field
+}
+```
 
-**File:** `internal/session/actor.go:1074-1090` (FocusIn branch, cancel at 1080), `1415-1451` (arm/cancel/expiry), `73` (focusFlapWindow); evidence `internal/engine/engine.go:250-273,466`
-**Issue:** the actor's verifyDead is documented as "the behavioral terminal
-class of the LIVE input context" (actor.go:304-312), but the wipe-deferral
-mechanism cannot scope it to a context. HandleLifecycle receives only the kind
-— every engine object (one per input context) forwards to the same actor
-handler with no identity (engine.go:466; the engine logs its own `e.name` but
-the handler signature drops it). So a REAL window switch — old context's
-FocusOut arming the 10 ms wipe, then the new context's FocusIn arriving within
-the window (the mint/switch round trip between the two D-Bus calls is
-plausibly sub-10 ms on the local socket, the same magnitude as the 1–3 ms flap
-pairs the journal shows) — cancels the wipe exactly like a flap pair. The
-learned class (e.g. wezterm's verifyDead) then survives into the freshly
-focused GTK context: every correction there routes to the terminal write
-branch — no ADR-004 pre-verification, 20 ms/key pacing, and the 10-08
-deferred-flip machine armed — for the whole focus episode (until that context
-loses focus with no FocusIn within 10 ms). The unit corpus cannot catch this:
-TestTerminalClass_VerifyDeadSurvivesFlapPair exercises the same
-FocusOut→FocusIn sequence a real switch produces, and the 10 ms justification
-("a real window change costs orders of magnitude more", actor.go:63-73) is an
-assumption the cited journal does not cover (it measured same-engine flap
-pairs only). Not corruption — the write branch corrects a GTK field correctly —
-but it silently downgrades honest contexts to the legacy degradation path and
-breaks the stated live-context invariant.
-**Fix:** deliver the engine identity with lifecycle events (the engine already
-holds `e.name`/`e.path`; the journal prints it) and cancel the armed wipe only
-when the FocusIn's identity matches the one whose FocusOut armed it — or
-compare emitter snapshots (the engine object that sent FocusIn vs the one that
-armed the window). Different identity ⇒ let the wipe expire.
-
-### WR-04: The focus nudge's xrandr geometry probe is provably dead — the click always rides the hardcoded 1280x800 fallback
-
-**File:** `test/e2e/wezterm.go:345` (probe), `354-364` (nudgeFocusClick), `335-343` (constants)
-**Issue:** `nudgeXrandrProbe` greps xrandr output for `[0-9]*x[0-9]* screen`,
-but no real xrandr line has that shape — the header prints `current 2048 x 1280`
-with spaces around the x and no "screen" suffix, mode lines print `2048x1280`
-with no "screen". Verified on the target system: the grep exits 1 with no
-output on the stand's real Xwayland display. The probe therefore NEVER answers,
-`nudgeFocusClick` always falls back to (640,400), and the comments' claims —
-"reads the live geometry of the stand's Xwayland display" and "the documented
-1280x800 otherwise" — are false (2048x1280 is what the stand actually runs;
-the fallback center is off-center at 31%/31%). On this stand's geometry the
-point still lands inside a centered default-size terminal window, so the rows
-pass by luck; on any other resolution/window size the nudge clicks outside the
-fixture — focusing another window fires the daemon focus_in the gate awaits,
-and the row types into the wrong surface (caught only downstream by the pty
-oracle as a confusing failure).
-**Fix:** parse the real header format, e.g.
-`xrandr --current | grep -oP 'current \K[0-9]+ x [0-9]+'` split on `" x "`, or
-drop the probe and read the geometry once via `xdpyinfo`/`xrandr --query` with
-an honest error if unparseable; assert the clicked point inside the expected
-window geometry if precision matters.
+(Альтернатива — `a.flushLevel1Confirm()` перед refusals: замена буфера
+сделает проверку CR-01 честной; отказ-форма дешевле и не двигает момент
+коммита.) Слаг из закрытого словаря; новый slug не нужен.
 
 ## Info
 
-### IN-01: caseListUsage still omits term-negative-witnesses while claiming "every registry name" (prior, refreshed)
+### IN-07: armLevel1Confirm снимает бюджет вытесненного окна, не завершив ладдер — инвариант держится анализом графа вызовов, а не по построению
 
-**File:** `test/e2e/main.go:117-131` (caseListUsage) vs `341` (registry), `275-278` (error text)
-**Issue:** the 10-08 delta added term-word-vte-flip to the usage string, but
-term-negative-witnesses — in the registry since 10-05, named by the
-unknown-case error — is still missing from the `-case` help. The drift the
-prior review flagged has grown by one entry.
-**Fix:** add `" | term-negative-witnesses"`, or derive the usage from
-caseRegistry() so the two cannot drift.
+**File:** `internal/session/actor.go:1628-1634`
+**Issue:** Повторный арминг при открытом окне вызывает только `a.l1.stop()` —
+старый ладдер (его delete уже на проводе) молча теряет коммит: ровно
+«удаление без замены», против которого построен весь план 10-11. Сегодня
+ветка недостижима: оба не-жестовых пути в `executeCorrection` невозможны при
+открытом окне (l1-ветка `handleSurroundingLocked` поглощает пуши раньше
+pending-ветки; `autoConfirm` армит только acBoundary-раунды, которые всегда
+едут в fresh-answer ветку, мимо instant-пути), а оба жестовых пути зовут
+`flushLevel1Confirm` на входе. Но сам факт, что WR-05 возник из эволюции
+графа вызовов, показывает цену этой недостижимости. Фикс — одна строка рядом
+с существующим кодом.
+**Fix:** в `armLevel1Confirm` перед `a.l1.stop()` звать
+`a.flushLevel1Confirm()` (идемпотентен по nil-check) — инвариант «окно
+никогда не умирает некоммитом» станет конструктивным, а не аналитическим.
 
-### IN-02: Save/Primary discard the wl-paste stderr diagnostic on the empty-classification path (prior, carried; file outside the current delta list)
+### IN-08: flapEng сравнивает interface-значения через == — безопасно, пока все реализации Emitter — указатели
 
-**File:** `internal/clipboard/clipboard.go:85-97` (Save), `108-120` (Primary)
-**Issue:** carried over from the 2026-10-12 review, still unresolved (the file
-was not part of the 10-07/10-08 delta). wl-paste exit 1 with a non-empty
-stderr can be a genuine connection/service failure, and the
-empty-classification branch drops the whole error — had=false with no trace of
-why. Diagnosability cost only; the CR-03 signal-kill guard is correct.
-**Fix:** on the empty-classification branch, emit a Debug record with the
-swallowed error (it carries exit status + stderr, never clipboard content).
+**File:** `internal/session/actor.go:1216` (сравнение), `394` (поле)
+**Issue:** `a.flapEng == eng` паникует в рантайме для динамического типа с
+несравнимым типом (структура со слайсом/картой по значению). Все три живые
+реализации — указатели (`*engine.Engine`, тестовые `*fakeSink`,
+`*probeSink` — проверено grep'ом), и комментарий поля это закрепляет; корпус
+под `-race` ловил бы панику мгновенно. Чисто оборонительная заметка для
+будущего третьего реализации `engine.Emitter`.
+**Fix:** ничего сейчас; при появлении value-типизированного эмиттера —
+сравнивать через captured pointer/identity-поле, либо document+assert в
+AttachEngine.
 
-### IN-03: boundRowText truncates by bytes and can split a UTF-8 rune (prior, unresolved; blast radius grew)
+### IN-09: flush расширяет (до 60 мс) до-существующее окно устаревшего раунда поверх тихой смены движка
 
-**File:** `test/e2e/case_term_word_vte.go:72-78`; now also used by `test/e2e/case_term_word_vte_flip.go:293` (the flip case's honest-abort row)
-**Issue:** the 200-byte cap slices at a byte offset, so a multi-byte Cyrillic
-rune at the boundary lands as an invalid sequence in the journal cell. The
-10-08 flip case's abort path reuses the helper, so the artifact can now also
-land in the flip section's rows.
-**Fix:** back the cut off to a rune boundary, e.g. walk back while
-`!utf8.RuneStart(text[termRowTextBound])`, or pass the result through
-`strings.ToValidUTF8`.
-
-### IN-04: The flip case's settlement gate accepts mismatch/timeout, but the comment and pass verdict claim "released by delivery confirmation"
-
-**File:** `test/e2e/case_term_word_vte_flip.go:39-60` (isSettleRecord accepts match/timeout/mismatch), `137-141` + `218-222` (comment and verdict text)
-**Issue:** the case comment defines the settlement рубеж as «the client's
-confirming push (match) or the quiet budget (timeout)» — mismatch is not
-listed — yet isSettleRecord accepts the mismatch conclusion too. That mirrors
-the daemon's actual release sites (settleAfter releases the flip on mismatch
-as well), so the ORDER oracle is faithful to the implementation; but when the
-settlement was a timeout/mismatch, delivery was by definition NOT confirmed,
-and the row's pass verdict «флип освободился подтверждением доставки»
-overstates what happened. The pty-hex oracle still independently proves the
-word landed, so the row's evidential value holds; this is journal-honesty
-drift between the documented рубеж, the gate, and the verdict text.
-**Fix:** record the settlement form in the observables cell
-(`settlement=match|timeout|mismatch`) and soften the verdict text to name the
-actual form, or restrict the gate to match/timeout to match the comment.
-
-### IN-05: The E3 hazard is knowingly kept on the combo path of the terminal branch
-
-**File:** `internal/session/actor.go:1580-1597` (deferCorrectionFlip's comboPending guard), `3545-3557` (executeLevel2 flip fork)
-**Issue:** a combo-launched terminal correction never defers its flip: the
-comboPending guard makes deferCorrectionFlip a no-op and settleCombo fires
-flipTo synchronously right after the commit — the exact SetGlobalEngine-after-
-commit ordering the E3 verdict forbids on the keystroke path. This is
-deliberate and pinned (TestTerminalBranch_ComboFlipImmediateNotDeferred;
-ADR-008 amendment: «combo-путь и путь flip=false байт-прежние»), and a
-Shift+Control_R combo inside a terminal is a rare gesture. Recorded here so
-the accepted residual is visible to the next revision of the flip machine.
-**Fix:** none required now; if E3 ever reproduces on the combo path, the
-deferred slot can serve it by letting settleCombo arm instead of execute when
-the round was terminal.
-
-### IN-06: newActor's SetOptions wiring omits Terminals — the identity anchor reaches the actor only through the watcher fold
-
-**File:** `cmd/goswitchd/main.go:521-534` (SetOptions call; file outside the current delta list, cited as the consumer of the in-scope config surface), `internal/config/config.go:266-317` (Defaults claims), `internal/session/actor.go:1707-1740` (applySnapshot fold)
-**Issue:** config.Defaults() documents that "an absent document and no document
-classify identically" — but the startup SetOptions passes BackspaceCap,
-ClipboardRung, FlipAfterCorrection, ModeSwitchChord and SoundEnabled and NOT
-Correction.Terminals (nor the autocorrect fields). Every real desktop path is
-covered because a watcher is always attached and the startup FoldAppliedConfig
-folds the snapshot (including the anchor) — the degenerate no-HOME path
-(`config.DefaultPath() == ""` → watcher nil) is the only one where the anchor
-documented in Defaults() never reaches the actor, silently leaving
-classification to the behavioral/role sources only. Moot without a desktop
-session, hence Info — but the wiring contradicts the Defaults() comment and is
-one new Options field away from being uniform.
-**Fix:** add `Terminals: cfg.Correction.Terminals` (and the autocorrect
-fields, for the same uniformity) to newActor's SetOptions literal.
+**File:** `internal/session/actor.go:1683-1690` (flush → deferCorrectionFlip + armAfterVerify на текущем emitter()), `2324-2326` (armAfterVerify читает текущий emitter())
+**Issue:** Класс старше дельты: verify-after всегда читал текущий
+`emitter()`, а paste-rung по двойному mismatch существовал до 10-11. Дельта
+раздвинула окно: коммит + арминг verify-after теперь могут уехать на 60 мс
+после delete, и рестарт ibus/тихая смерть клиента внутри окна оставляют
+чужой контекст отвечать на Require устаревшего раунда: два mismatching
+ответа при включённом (opt-in) ClipboardRung дают Ctrl+V в постороннее
+приложение, отложенный флип стреляет по grace. FocusOut-путь покрыт (тот же
+lifecycle делает clearAfter); открыты только тихие смерти без lifecycle.
+Цепь узкая, направление фейла прежнее, поведение grace — задокументированное
+(«правило режима не ждёт дальше своих release-сайтов»). Записано, чтобы
+следующая ревизия машины флипа видела окно целиком.
+**Fix:** ничего сейчас; кандидат на следующую ревизию — тегировать
+`pendingAfter` идентичностью эмиттера на арме и глушить rung/флип при
+несовпадении с ответчиком.
 
 ---
 
-_Considered, no finding_: the defer/flip epoch discipline is applied uniformly
-(flipGraceExpiry and verifyDeadWipeExpiry both re-check under the mutex; a
-second correction supersedes a pending flip via the same slot, pinned by test);
-the stale-cache route settles the combo on every executeLevel2 exit including
-the backspace-cap refusal; phrase rounds ride the same stale-cache semantics
-correctly; flip_after_correction=false leaves the ops paths byte-identical
-(pinned); the GTK level-1 path and combo flips see only no-op release calls;
-the ydotool `click --delay N 1` / `mousemove --delay N x y` forms are valid
-0.1.8 syntax (verified against the installed binary's --help — the stand rows
-at 21:32 confirm the nudge path live); the ac_role_errors token insertion
-moves no old token and is pinned in ctlsvc_test; the terminals decode corpus
-pins nil→anchor, `[]`→opt-out and the strict list; watch.go routes every
-reload through Load, so hot reload honors the normalization; adoptLoad serves
-Defaults for the absent adopted file (anchor in force); the ADR-008 amendment
-and spike-log sections are dated, journal-anchored, and keep the FAIL/blocked
-rows (honest evidence); the D7 contract text in docs/CONFIG.md is preserved.
+_Рассмотрено, без находки_: answer-only маршрут на match-ветке консистентен с
+одобренной владельцем семантикой (ключ — КАНАЛ: cacheNil на арме; честный
+первый пуш позже арминга = задокументированный T-10-10-01 остаток, доставка
+уровень-2 корректна и в GTK); `pendingStaleCache` исключает selection- и
+boundary-раунды (двойная защита: и по `p.sel`, и по `p.rng.acBoundary`);
+BuildPlan с caps-битом всегда Level1 — LevelNone в `executeCorrection`
+недостижим, нулевой план невозможен; `MatchesSuffix` с пустым match
+невозможен (match = token+tail, token непуст по empty-buffer отказу);
+verify-after с paste-нагрузкой не может пережить обучение класса в терминал
+(класс учится только при открытом pending, а pending исключает открытый
+after — clearAfter на каждом арминге); все реализации `engine.Emitter` —
+указатели, интерфейсное `==` сравнимо; миграция honestPush (16 сайтов в
+session + ctlsvc) механически честна — байт-семантика level-1 пинов
+сохранена добавлением пуша-свидетельства, не ослаблением ассертов;
+`level1Budget` в тестах — задокументированное зеркальце продовой константы
+(прецедент termFlipGrace); амendez-секции ADR-008 (10-10, 10-11) датированы,
+якорены только журнальными рядами, D1–D7 не переписаны, Status Accepted,
+Reversibility дополнена обеими ревизиями; журнал спайка хранит честные
+FAIL/aborted-ряды (word-a 09:47:22 FAIL с мусорным префиксом записан
+дословно, заезд 2 зелёный); флаги `2c1ae04`/`2fbfee1` в ряды 10-12 резолвятся
+предками HEAD; prior-round IN-01…IN-06 — файлы вне текущей дельты, не
+перепроверялись, статус переносится как есть.
 
-_Reviewed: 2026-10-13T22:15:24Z_
+_Reviewed: 2026-10-14T10:29:42Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
