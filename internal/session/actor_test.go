@@ -309,6 +309,10 @@ func TestActor_DoubleTapCorrects(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
 		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the token range, no tail", calls)
 	}
+	// The two-phase completion (plan 10-11): the client reports the
+	// deletion applied (the field is back to «abc ») — only then does the
+	// replacement commit.
+	a.HandleSurroundingText("abc ", 4, 4)
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU {
 		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU)
@@ -353,12 +357,20 @@ func TestActor_CachedSurroundingCorrects(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	if got := sink.requireCount(); got != 1 {
-		t.Errorf("require calls = %d, want exactly 1 — the verify-after round, never a pre-correction one", got)
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("require calls before the completion = %d, want 0 — the verify-after arms at the "+
+			"flush (plan 10-11), never a pre-correction one", got)
 	}
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
 		t.Fatalf("deletions = %+v, want exactly one (-6,6)", calls)
+	}
+	// The two-phase completion (plan 10-11): the client reports the
+	// deletion applied (the field is empty) — the replacement commits and
+	// the verify-after Require rides the flush.
+	a.HandleSurroundingText("", 0, 0)
+	if got := sink.requireCount(); got != 1 {
+		t.Errorf("require calls after the completion = %d, want exactly 1 — the verify-after round", got)
 	}
 	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
 		t.Fatalf("commits = %q, want one %q", texts, wordRU)
@@ -555,6 +567,9 @@ func TestActor_AfterSpaceCorrects(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -7, nchars: 7}) {
 		t.Fatalf("deletions = %+v, want exactly one (-7,7) — token+tail, D-13", calls)
 	}
+	// The two-phase completion (plan 10-11): the client reports the
+	// deletion applied («abc ») — the replacement commits.
+	a.HandleSurroundingText("abc ", 4, 4)
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU+" " {
 		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU+" ")
@@ -584,12 +599,20 @@ func TestActor_DoubleTapPunctuationStretch(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	if got := sink.requireCount(); got != 1 {
-		t.Errorf("require calls = %d, want exactly 1 — the verify-after round, never a pre-correction one", got)
+	if got := sink.requireCount(); got != 0 {
+		t.Errorf("require calls before the completion = %d, want 0 — the verify-after arms at the "+
+			"flush (plan 10-11), never a pre-correction one", got)
 	}
 	calls := sink.deleteCalls()
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -4, nchars: 4}) {
 		t.Fatalf("deletions = %+v, want exactly one (-4,4) — the whole stretch, not the 3-rune token", calls)
+	}
+	// The two-phase completion (plan 10-11): the client reports the
+	// deletion applied (the field is empty) — the replacement commits and
+	// the verify-after Require rides the flush.
+	a.HandleSurroundingText("", 0, 0)
+	if got := sink.requireCount(); got != 1 {
+		t.Errorf("require calls after the completion = %d, want exactly 1 — the verify-after round", got)
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != "нет," {
@@ -614,12 +637,14 @@ func TestActor_ToggleRepeat(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 	a.HandleSurroundingText(wordEN, runeLen(wordEN), runeLen(wordEN))
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 
 	// Repeat: the buffer holds привет, the field too.
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 	a.HandleSurroundingText(wordRU, runeLen(wordRU), runeLen(wordRU))
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 
 	texts := sink.commitTexts()
 	if len(texts) != 2 || texts[0] != wordRU || texts[1] != wordEN {
@@ -651,6 +676,7 @@ func TestActor_DebugCorrectionRecord(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 	a.HandleSurroundingText(wordEN, runeLen(wordEN), runeLen(wordEN))
+	a.HandleSurroundingText("abc ", 4, 4) // the deletion proof completes the ladder (plan 10-11)
 
 	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
 		t.Fatalf("commits = %q, want one %q (precondition of the log pin)", texts, wordRU)
@@ -727,6 +753,9 @@ func TestActor_TripleTapCorrectsPhrase(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -13, nchars: 13}) {
 		t.Fatalf("deletions = %+v, want exactly one (-13,13) — the whole phrase range", calls)
 	}
+	// The two-phase completion (plan 10-11): the client reports the
+	// deletion applied («abc ») — the replacement commits.
+	a.HandleSurroundingText("abc ", 4, 4)
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != phraseRU {
 		t.Fatalf("commits = %q, want exactly one %q", texts, phraseRU)
@@ -919,6 +948,10 @@ func verifyAfterSettled(t *testing.T) (*session.Actor, *fakeSink, *syncBuffer) {
 	a.ExpiryAt(expiryAfterWindow)
 	line := "abc " + wordEN
 	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-correction round
+	// The two-phase completion (plan 10-11): the client's confirming push
+	// completes the ladder — the verify-after arms here (the require
+	// counter's second call).
+	a.HandleSurroundingText("abc ", 4, 4)
 
 	return a, sink, buf
 }
@@ -1403,6 +1436,7 @@ func TestActor_RUScriptTrueAllBranches(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -3, nchars: 3}) {
 		t.Fatalf("deletions = %+v, want exactly one (-3,3) — the whole script-true token", calls)
 	}
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	if texts := sink.commitTexts(); len(texts) != 3 || texts[2] != "g2[" {
 		t.Fatalf("correction commits = %q, want the last one to be [g2[]", texts)
 	}
@@ -1435,6 +1469,7 @@ func TestActor_RUDigitsFullPipeline(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -10, nchars: 10}) {
 		t.Fatalf("deletions = %+v, want exactly one (-10,10) — 10 runes, not 14 bytes", calls)
 	}
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	if texts := sink.commitTexts(); len(texts) != 7 || texts[6] != wordEN+"2026" {
 		t.Fatalf("correction commits = %q, want the last one to be [%s2026]", texts, wordEN)
 	}
@@ -1464,6 +1499,7 @@ func TestActor_ScriptTrueBuffer(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
 		t.Fatalf("deletions = %+v, want exactly one (-6,6)", calls)
 	}
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	if texts := sink.commitTexts(); len(texts) != 7 || texts[6] != wordEN {
 		t.Fatalf("RU→EN correction commits = %q, want the last one to be [%s]", texts, wordEN)
 	}
@@ -1512,6 +1548,7 @@ func TestActor_MixedWordInvertsPerChar(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -9, nchars: 9}) {
 		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole mixed token range", calls)
 	}
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	texts := sink.commitTexts()
 	if len(texts) != 7 || texts[6] != mixedRU {
 		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, mixedRU)
@@ -1577,6 +1614,7 @@ func TestActor_OwnFlipMixedWordCorrectsWhole(t *testing.T) {
 		t.Fatalf("deletions = %+v, want exactly one (-9,9) — the whole mixed token; the synthetic"+
 			" FocusOut of the own flip must not hard-reset the buffer", calls)
 	}
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	texts := sink.commitTexts()
 	if len(texts) != 7 || texts[6] != mixedRU {
 		t.Fatalf("correction commits = %q, want the last one to be [паиghbdtn]", texts)
@@ -1675,6 +1713,7 @@ func TestActor_PhraseMixedCorrects(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -13, nchars: 13}) {
 		t.Fatalf("deletions = %+v, want exactly one (-13,13) — the whole mixed phrase range", calls)
 	}
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	texts := sink.commitTexts()
 	if len(texts) != 7 || texts[6] != wordRU+" "+wordEN {
 		t.Fatalf("correction commits = %q, want the last one to be [%s]", texts, wordRU+" "+wordEN)
@@ -1738,6 +1777,7 @@ func TestActor_ComboWordThenFlip(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
 		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the word range of the Double semantics", calls)
 	}
+	a.HandleSurroundingText("abc ", 4, 4) // the deletion proof completes the ladder (plan 10-11)
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU {
 		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU)
@@ -1965,6 +2005,7 @@ func TestActor_NoSelectionStillWord(t *testing.T) {
 	if len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
 		t.Fatalf("deletions = %+v, want exactly one (-6,6) — the token geometry of Phase 2", calls)
 	}
+	a.HandleSurroundingText("abc ", 4, 4) // the deletion proof completes the ladder (plan 10-11)
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != wordRU {
 		t.Fatalf("commits = %q, want exactly one %q", texts, wordRU)
@@ -2121,6 +2162,10 @@ func settledWordCorrection(a *session.Actor) {
 	a.ExpiryAt(expiryAfterWindow)
 	line := "abc " + wordEN
 	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-round
+	// The two-phase completion (plan 10-11): the client's confirming push
+	// (the deletion applied — the field is back to «abc ») completes the
+	// ladder; the rung keys on the verify-after stale answers below.
+	a.HandleSurroundingText("abc ", 4, 4)
 	uncorrected := "abc " + wordEN
 	// Stale answer 1: the debounce re-requires instead of verdicting.
 	a.HandleSurroundingText(uncorrected, runeLen(uncorrected), runeLen(uncorrected))
@@ -3475,7 +3520,10 @@ func settleWordCorrection(a *session.Actor) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 	line := "abc " + wordEN
-	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-round
+	// The two-phase completion (plan 10-11): the client's confirming push
+	// completes the ladder — the commit phase runs on the deletion proof.
+	a.HandleSurroundingText("abc ", 4, 4)
 }
 
 // TestActor_FlipAfterWordCorrection pins the owner decision 2 word path: a
@@ -3494,6 +3542,11 @@ func TestActor_FlipAfterWordCorrection(t *testing.T) {
 	if !strings.Contains(logged, `"msg":"correction","outcome":"done"`) {
 		t.Fatalf("INFO completion record missing; log:\n%s", logged)
 	}
+	// The deferred level-1 flip (plan 10-11) fires on its delivery proof:
+	// the verify-after's confirming push (the field ends with converted).
+	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	logged = buf.String()
 	if got := countModeRecords(buf); got != 1 {
 		t.Fatalf("mode records after a changed word correction = %d, want exactly 1; log:\n%s", got, logged)
 	}
@@ -3540,6 +3593,10 @@ func TestActor_FlipAfterPhraseCorrection(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 	line := "abc " + phraseEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	a.HandleSurroundingText("abc ", 4, 4) // the deletion proof completes the ladder (plan 10-11)
+	// The deferred level-1 flip (plan 10-11) fires on its delivery proof.
+	line = "abc " + phraseRU
 	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 
 	logged := buf.String()
@@ -3995,7 +4052,26 @@ func settleRUWordCorrection(a *session.Actor) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // settles the pre-round
+	a.HandleSurroundingText("abc ", 4, 4)                       // the deletion proof completes the ladder (plan 10-11)
+}
+
+// TestActor_HotReloadFlipOn pins the flip-on document's first half: the
+// attached document's correction.flip_after_correction=true flips a settled
+// CHANGED correction — the deferred level-1 flip (plan 10-11) fires on its
+// delivery proof.
+func TestActor_HotReloadFlipOn(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.AttachConfig(flipSrc(true))
+
+	settleWordCorrection(a)
+	line := "abc " + wordRU
 	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+
+	if got := countModeRecords(buf); got != 1 {
+		t.Fatalf("mode records under a flip-on document = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
 }
 
 // TestActor_HotReloadFlipAfterCorrection pins the CONF-02 wiring of the flip
@@ -4003,18 +4079,6 @@ func settleRUWordCorrection(a *session.Actor) {
 // snapshot, so a reload true→false stops the flip for the NEXT correction
 // and false→true restores it — no restart, no SetOptions.
 func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
-	t.Run("on: the attached document flips", func(t *testing.T) {
-		buf := captureLogs(t)
-		a, _ := wiredActor()
-		a.AttachConfig(flipSrc(true))
-
-		settleWordCorrection(a)
-
-		if got := countModeRecords(buf); got != 1 {
-			t.Fatalf("mode records under a flip-on document = %d, want exactly 1; log:\n%s", got, buf.String())
-		}
-	})
-
 	t.Run("true to false stops the flip", func(t *testing.T) {
 		buf := captureLogs(t)
 		a, _ := wiredActor()
@@ -4022,6 +4086,9 @@ func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
 		a.AttachConfig(src)
 
 		settleWordCorrection(a) // EN mode: done + one flip (the mode is now RU)
+		// The deferred level-1 flip (plan 10-11) fires on its delivery proof.
+		line := "abc " + wordRU
+		a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 		if got := countModeRecords(buf); got != 1 {
 			t.Fatalf("mode records before the reload = %d, want exactly 1; log:\n%s", got, buf.String())
 		}
@@ -4055,6 +4122,9 @@ func TestActor_HotReloadFlipAfterCorrection(t *testing.T) {
 		src.set(on)
 		pressEnter(a)
 		settleWordCorrection(a) // the mode is still EN (no flip happened above)
+		// The deferred level-1 flip (plan 10-11) fires on its delivery proof.
+		line := "abc " + wordRU
+		a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 
 		logged := buf.String()
 		if got := countModeRecords(buf); got != 1 {
@@ -4310,12 +4380,17 @@ func TestActor_CorrectionFlipSetsResultEngine(t *testing.T) {
 	a.SetSwitcher(probe.switcher)
 
 	settleWordCorrection(a) // lat→cyr: the result script is Cyrillic
+	// The deferred level-1 flips (plan 10-11) fire on their delivery proofs.
+	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
 		t.Fatalf("after ghbdtn→привет the switch targets = %q, want exactly [%s] (the result script's engine)",
 			got, engine.NameRU)
 	}
 
 	settleRUWordCorrection(a) // cyr→lat: привет corrects back to ghbdtn
+	line = "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
 	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU, engine.NameEN}) {
 		t.Errorf("after привет→ghbdtn the switch targets = %q, want [%s %s]", got, engine.NameRU, engine.NameEN)
 	}
@@ -5180,6 +5255,7 @@ func fireAutocorrectRole(t *testing.T, a *session.Actor, sink *fakeSink, token, 
 		"the pipeline never armed after the boundary (no RequireSurroundingText)")
 	tokenEnd := uint32(len([]rune(token)) + 1)
 	a.HandleSurroundingText(token+" ", tokenEnd, tokenEnd)
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	eventually(t, func() bool { return sink.requireCount() >= 2 },
 		"the verify-after round never armed (the correction never executed)")
 	convEnd := uint32(len([]rune(converted)) + 1)
@@ -5221,6 +5297,7 @@ func TestActor_AutocorrectBoundaryArms(t *testing.T) {
 	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
 		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the range is token+tail", deletes)
 	}
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
 		t.Fatalf("commits = %q, want [%q] — the conversion plus the tail", commits, wordRU+" ")
 	}
@@ -5280,6 +5357,7 @@ func TestActor_AutocorrectEarlyVerifyAnswerWaits(t *testing.T) {
 	if len(deletes) != 1 || deletes[0].offset != -7 || deletes[0].nchars != 7 {
 		t.Fatalf("deletes = %+v, want exactly [{-7 7}] — the range is token+tail", deletes)
 	}
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 	if commits := sink.commitTexts(); len(commits) != 1 || commits[0] != wordRU+" " {
 		t.Fatalf("commits = %q, want [%q] — the conversion plus the tail", commits, wordRU+" ")
 	}
@@ -5409,6 +5487,7 @@ func TestActor_ManualOverrideAfterAutocorrect(t *testing.T) {
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
+	a.HandleSurroundingText("", 0, 0) // the deletion proof completes the ladder (plan 10-11)
 
 	commits := sink.commitTexts()
 	if len(commits) != 2 || commits[1] != wordEN+" " {
@@ -7440,6 +7519,7 @@ func TestTerminalClass_StaleVerifyExpiryLearnsNothing(t *testing.T) {
 	// The fresh push is the freshest report — the round executes.
 	end := uint32(len([]rune("abc " + wordEN)))
 	a.HandleSurroundingText("abc "+wordEN, end, end)
+	a.HandleSurroundingText("abc ", 4, 4) // the deletion proof completes the ladder (plan 10-11)
 	if got := len(sink.commitTexts()); got != 1 {
 		t.Fatalf("commits after the cached push = %d, want 1 — the round never executed", got)
 	}
@@ -8908,6 +8988,7 @@ func TestReplayHost0939_SpontaneousPushClientNotRouted(t *testing.T) {
 	a.ExpiryAt(expiryAfterWindow) // the pending armed over the NON-nil cache
 	end := runeLen("abc " + wordEN)
 	a.HandleSurroundingText("abc "+wordEN, end, end) // the fresh matching answer
+	a.HandleSurroundingText("abc ", 4, 4)            // the deletion proof completes the level-1 ladder (plan 10-11)
 
 	logged := buf.String()
 	if !strings.Contains(logged, `"msg":"correction","outcome":"done","changed":true`) {
@@ -9001,6 +9082,7 @@ func TestVerifyExpiryStaleRound_DoesNotEatNextRound(t *testing.T) {
 	// honest world), byte-as-today.
 	end := runeLen("abc " + wordEN)
 	a.HandleSurroundingText("abc "+wordEN, end, end)
+	a.HandleSurroundingText("abc ", 4, 4) // the deletion proof completes the ladder (plan 10-11)
 	if texts := sink.commitTexts(); len(texts) != 1 {
 		t.Errorf("commits after round 2's answer = %d, want exactly 1 — round 2 must survive the "+
 			"stale deadline", len(texts))
@@ -9355,20 +9437,23 @@ func TestTwoPhaseLevel1_FlipReleasedByNextKey(t *testing.T) {
 			got, buf.String())
 	}
 	wireBefore := len(sink.opLog())
+	all := sink.opLog()
+	if !slices.Contains(all, "delete(-6,6)") {
+		t.Fatalf("no deletion before the keystroke: %q — the model-B round must run level-1", all)
+	}
 
 	a.HandleKey(engine.EngineEvent{Keyval: 'x'}) // EN-mode keyval — the flush and the release first
 
 	ops := sink.opLog()[wireBefore:]
 	join := func(ops []string) string { return strings.Join(ops, " ") }
-	delIdx := slices.Index(ops, "delete(-6,6)")
 	comIdx := slices.Index(ops, "commit("+wordRU+")")
 	modeIdx := slices.Index(ops, termFlipRUOp)
 	keyIdx := slices.Index(ops, "commit(ч)")
-	if delIdx < 0 || comIdx < 0 || modeIdx < 0 || keyIdx < 0 {
-		t.Fatalf("flush-at-keystroke op batch = %s — want the delete, the flushed commit, the "+
+	if comIdx < 0 || modeIdx < 0 || keyIdx < 0 {
+		t.Fatalf("flush-at-keystroke op batch = %s — want the flushed commit, the "+
 			"released flip and the key's own commit all present", join(ops))
 	}
-	if delIdx >= comIdx || comIdx >= modeIdx || modeIdx >= keyIdx {
+	if comIdx >= modeIdx || modeIdx >= keyIdx {
 		t.Fatalf("op batch order = %s — want delete < flushed commit < mode(ru) < commit(ч): the "+
 			"replacement is on the wire before the next input and the release precedes the key's "+
 			"processing (the key types in the result mode)", join(ops))

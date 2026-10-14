@@ -315,6 +315,9 @@ func TestSvc_CorrectNow(t *testing.T) {
 	if got := sink.deleteCount(); got != 1 {
 		t.Fatalf("deletions after the matching push = %d, want 1", got)
 	}
+	// The two-phase completion (plan 10-11): the client's confirming push
+	// (the deletion applied) completes the ladder.
+	a.HandleSurroundingText("", 0, 0)
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != ctlWordRU {
 		t.Fatalf("commits after the matching push = %q, want exactly one %q", texts, ctlWordRU)

@@ -380,6 +380,18 @@ type Actor struct {
 	l1      *level1Confirm
 	l1Epoch uint64
 	l1After func(d time.Duration, fn func()) (stop func())
+	// flapEng is the emitter snapshot of the flap window (plan 10-11,
+	// WR-03 of the 10-REVIEW): captured by the REAL FocusOut that arms the
+	// deferred verify-dead wipe, compared by the completing FocusIn — the
+	// wipe cancels ONLY for the same pair of engine objects (the journal's
+	// 1–3 ms same-engine flap pairs); a different object is a real window
+	// switch completing inside the 10 ms window and the class must die
+	// with the old context (the invariant «класс живого контекста»).
+	// Cleared together with the window slot (cancel/expiry); accessed only
+	// under a.mu (HandleLifecycle serializes on it). The comparison is
+	// interface identity (==): both live implementations are pointers
+	// (*engine.Engine, the corpus *fakeSink).
+	flapEng engine.Emitter
 	// level2Busy is the write branch's re-entrancy guard (plan 10-10,
 	// WR-01): executeLevel2 checks-and-sets it BEFORE the first destructive
 	// emission and clears it on EVERY exit (the backspace-cap refusal, the
@@ -1137,6 +1149,15 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 			a.flipCredit--
 			synthetic = true
 		}
+		// The two-phase level-1 ladder's flush site (plan 10-11): the input
+		// context is leaving — the ladder completes over the window's
+		// CAPTURED emitter snapshot, never the current emitter() (the stale
+		// object is discarded by the client). Byte-parity with today's pair:
+		// delete and commit are already both on the wire by the time a
+		// FocusOut could observe them. The verify-after the flush arms
+		// retires with the context below (clearAfter) — the same retirement
+		// a post-commit lifecycle executes today.
+		a.flushLevel1Confirm()
 		a.fsm.Feed(hotkey.Reset{}, a.elapsed())
 		if !synthetic {
 			a.buf.HardReset()
@@ -1183,8 +1204,18 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		if kind == engine.LifecycleFocusIn {
 			// Plan 10-07 (G-10-1 cause A): the flap pair completed within
 			// the window — the context never left; the learned class
-			// survives and the pending wipe dies with the window.
-			a.cancelVerifyDeadWipe()
+			// survives and the pending wipe dies with the window. Plan
+			// 10-11 (WR-03 of the 10-REVIEW): «completed» now means the
+			// SAME pair of engine objects — the wipe cancels only when the
+			// FocusIn's emitter is the one whose FocusOut armed the window
+			// (the journal's 1–3 ms same-engine pairs). A different object
+			// is a REAL window switch that happened to complete inside the
+			// 10 ms window: the wipe is left to expire and the class dies
+			// with the old context — the freshly focused context classifies
+			// from zero. A nil snapshot (no window armed) cancels nothing.
+			if eng := a.emitter(); a.flapEng != nil && a.flapEng == eng {
+				a.cancelVerifyDeadWipe()
+			}
 		}
 		// The panel indicator self-heals on every focus gain (owner
 		// decision 1, quick plan 260927-way): engine objects are minted
@@ -1542,6 +1573,10 @@ func (a *Actor) armVerifyDeadline() {
 // turns a deadline from a superseded window stale (the afterExpiry form).
 func (a *Actor) armVerifyDeadWipe() {
 	a.cancelVerifyDeadWipe() // one window at a time, never a second timer
+	// The window's context identity (plan 10-11, WR-03): one snapshot per
+	// window — a repeated FocusOut re-arms the snapshot together with the
+	// window (the internal cancel cleared it first).
+	a.flapEng = a.emitter()
 	epoch := a.flapEpoch
 	arm := a.flapAfter
 	if arm == nil {
@@ -1552,14 +1587,16 @@ func (a *Actor) armVerifyDeadWipe() {
 
 // cancelVerifyDeadWipe stops a pending deferred wipe (the caller holds the
 // mutex): the epoch advance turns an already-queued callback stale, so a
-// racing expiry is a no-op — the completing FocusIn and every immediate
-// wipe (Reset, the own flip's synthetic pair) land here.
+// racing expiry is a no-op — the completing SAME-ENGINE FocusIn and every
+// immediate wipe (Reset, the own flip's synthetic pair) land here. The
+// window's emitter snapshot clears with the slot (plan 10-11, WR-03).
 func (a *Actor) cancelVerifyDeadWipe() {
 	if a.flapStop != nil {
 		a.flapStop()
 		a.flapStop = nil
 	}
 	a.flapEpoch++
+	a.flapEng = nil
 }
 
 // verifyDeadWipeExpiry is the deferred wipe's deadline callback: the flap
@@ -1575,6 +1612,7 @@ func (a *Actor) verifyDeadWipeExpiry(epoch uint64) {
 		return // stale deadline — a newer FocusIn/FocusOut owns the window
 	}
 	a.flapStop = nil
+	a.flapEng = nil // the window's context identity dies with the window (plan 10-11, WR-03)
 	a.setVerifyDead(false)
 }
 
@@ -1616,6 +1654,7 @@ func (a *Actor) level1ConfirmExpiry(epoch uint64) {
 	if a.l1 == nil || a.l1.epoch != epoch {
 		return // stale deadline — the window was flushed or re-armed
 	}
+	slog.Info("correction confirm", "outcome", "timeout") // loud and rare — the loud-mark fallback
 	a.flushLevel1Confirm()
 }
 
@@ -1641,9 +1680,14 @@ func (a *Actor) flushLevel1Confirm() {
 		w.stop()
 		w.stop = nil
 	}
-	// Plan 10-11 RED scaffolding: the commit phase is not gated behind the
-	// confirmation yet (executeCorrection still emits it inline) — the
-	// window retires silently here; GREEN moves the commit phase in.
+	w.eng.CommitText(engine.NewIBusText(string(w.commit)))
+	w.rng.replace(w.converted) // the buffer keeps mirroring the field — repeat converts back
+	a.logCorrectionDone(w.level, w.rng.token, w.converted, time.Since(w.armed))
+	// The owner rule 2026-09-28, DEFERRED (plan 10-11): the mode follows
+	// the converted script once the delivery confirms (the 10-08 machine).
+	a.deferCorrectionFlip(w.converted)
+	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
+	a.armAfterVerify(w.converted, w.rng.tail)
 }
 
 // soundSinkFor returns the installed sink when the sound switch is ON —
@@ -2053,6 +2097,25 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 	// text to see what a correction actually left behind (2026-09-28).
 	slog.Debug("surrounding push", "text", text,
 		"cursor", cursorPos, "anchor", anchorPos)
+	// The level-1 confirm check (plan 10-11, the two-phase delivery): a
+	// ladder is mid-confirmation — its delete is on the wire and this push
+	// is the client's report. A text-before-cursor that no longer ends
+	// with token+tail PROVES the deletion applied and reported — the commit
+	// phase runs now, through the window's captured snapshot. A
+	// still-matching push is the client's stale pre-delete state — the
+	// window lives to its budget. The window is separate state from the
+	// pending round (resolvePending happened in executeCorrection), so the
+	// check sits ahead of the pending branch and consumes the push: the
+	// verify-after the flush arms settles on the client's NEXT report, not
+	// on this pre-commit one.
+	if a.l1 != nil {
+		if !correct.MatchesSuffix(a.surr, a.l1.match) {
+			slog.Debug("correction confirm", "outcome", "confirmed")
+			a.flushLevel1Confirm()
+		}
+
+		return nil, false
+	}
 	if a.pending != nil {
 		p := a.pending
 		switch {
@@ -2829,6 +2892,14 @@ func (a *Actor) modeSymbol() string {
 // The CORR-09 reset keyvals (Enter and its keypad variant, Tab, Escape)
 // end the phrase instead of feeding it. The caller holds the mutex.
 func (a *Actor) feedKey(ev engine.EngineEvent) bool {
+	// The two-phase level-1 ladder's flush site (plan 10-11): the
+	// replacement is on the wire before the next input processes — a
+	// keystroke arriving without the client's push is the delivery proof
+	// of last resort. The flip the flush arms releases right below
+	// (strictly before the key's processing — the 10-08 release order).
+	// A nil window is a no-op.
+	a.flushLevel1Confirm()
+
 	// The deferred terminal flip's second confirmation site (plan 10-08, E3):
 	// the first keystroke after the correction proves the commit delivered —
 	// release STRICTLY before processing, so the key already types in the
@@ -3436,6 +3507,11 @@ func (a *Actor) modeSwitchChord(ev engine.EngineEvent) bool {
 // keeps consuming the bare Token() (D-13/D-14 unchanged). The caller holds
 // the mutex.
 func (a *Actor) startCorrection() {
+	// The two-phase level-1 ladder's flush site (plan 10-11): the next
+	// gesture starts with a clean ladder — a superseded window must not
+	// pour its stale replacement over the new round's field state. A nil
+	// window is a no-op.
+	a.flushLevel1Confirm()
 	if sel, runes, ok := a.activeSelection(); ok {
 		a.startSelectionCorrection(sel, runes)
 
@@ -3533,6 +3609,11 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 // hard reset — words and separators alike, no tail, no artificial length
 // cap. The same pipeline runs over it (D-23). The caller holds the mutex.
 func (a *Actor) startPhraseCorrection() {
+	// The ladder flush of plan 10-11 extended to the phrase gesture: the
+	// same «next gesture starts with a clean ladder» invariant — a Triple
+	// decision landing inside a confirm window must not race the stale
+	// replacement. A nil window is a no-op.
+	a.flushLevel1Confirm()
 	a.startRangeCorrection(correctionRange{
 		token:   a.buf.Phrase(),
 		replace: a.buf.ReplacePhrase,
@@ -3641,14 +3722,18 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 }
 
 // executeCorrection runs the level-1 ladder plan of the settled pending fix
-// — one DeleteSurroundingText exactly over the token+tail range, one commit
-// of the converted token plus the tail (CORR-07) — replaces the range in
-// the buffer so a repeated correction converts back, and arms the
-// verify-after round: the deletion is ack-less on 1.5.29, so the correction
-// itself asks for the surrounding text back and checks the suffix
-// (ADR-003/ADR-004). A selection fix runs its own geometry instead
-// (executeSelectionCorrection). The caller holds the mutex and pending !=
-// nil.
+// — one DeleteSurroundingText exactly over the token+tail range (CORR-07) —
+// and arms the two-phase confirmation window (plan 10-11, round-2 G-10-1,
+// the 09:39 host rows): the commit phase does NOT follow the deletion on
+// the wire. The host client's processing reorders the tight pair (the A2
+// class: the insertion lands first and is visible, the late deletion erases
+// the fresh word — «вижу привет, и он удаляется»), so the replacement waits
+// for the client's proof the deletion applied; flushLevel1Confirm is the
+// ONE completion point, reached by the deletion proof, the budget fallback
+// (today's pair, loudly marked) or a flush site. The emitter snapshot is
+// captured here and rides the whole window (:3444 precedent). A selection
+// fix runs its own geometry instead (executeSelectionCorrection). The
+// caller holds the mutex and pending != nil.
 func (a *Actor) executeCorrection() {
 	p := a.pending
 	a.pending = nil
@@ -3663,9 +3748,6 @@ func (a *Actor) executeCorrection() {
 	eng := a.emitter() // one atomic snapshot for the whole ladder emission
 	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, a.backspaceCap())
 	eng.DeleteSurroundingText(plan.Offset, plan.NChars)
-	// Plan 10-11 RED scaffolding: the confirm window arms, the commit phase
-	// still executes inline — the byte-today behavior while the corpus is
-	// red; the GREEN move gates the commit behind the client's proof.
 	a.armLevel1Confirm(&level1Confirm{
 		eng:       eng,
 		commit:    plan.Commit,
@@ -3675,12 +3757,6 @@ func (a *Actor) executeCorrection() {
 		armed:     p.armed,
 		level:     plan.Level,
 	})
-	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
-	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
-	a.logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
-	a.settleCorrectionFlip(p.converted) // owner rule 2026-09-28: the mode follows the converted script
-	a.settleCombo()                     // D-36: the flip lands strictly after the settled completion record
-	a.armAfterVerify(p.converted, p.rng.tail)
 }
 
 // executeSelectionCorrection runs the ladder over the selection range: one
