@@ -440,12 +440,14 @@ func TestActor_VerifyPaths(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		buf := captureLogs(t)
 		a, sink := wiredActor()
+		clock := &flipClock{} // the verify-deadline recorder (plan 10-10, UseVerifyTimer)
+		a.UseVerifyTimer(clock.arm)
 
 		typeWord(a, wordEN)
 		tapShift(a)
 		tapShift(a)
 		a.ExpiryAt(expiryAfterWindow)
-		a.VerifyExpiry() // deterministic injection of the 100 ms deadline
+		clock.fire() // deterministic injection of the 100 ms deadline
 
 		if !strings.Contains(buf.String(), `"reason":"verify-timeout"`) {
 			t.Errorf("verify-timeout record missing; log:\n%s", buf.String())
@@ -3654,11 +3656,13 @@ func TestActor_RefusalsNeverFlip(t *testing.T) {
 
 	t.Run("verify timeout", func(t *testing.T) {
 		refusalFlipProbe(t, "verify-timeout", func(a *session.Actor) {
+			clock := &flipClock{} // the verify-deadline recorder (plan 10-10, UseVerifyTimer)
+			a.UseVerifyTimer(clock.arm)
 			typeWord(a, wordEN)
 			tapShift(a)
 			tapShift(a)
 			a.ExpiryAt(expiryAfterWindow)
-			a.VerifyExpiry()
+			clock.fire() // deterministic injection of the 100 ms deadline
 		})
 	})
 }
@@ -7068,14 +7072,18 @@ func TestActor_A11yNilSinkNoOp(t *testing.T) {
 // teachVerifyDead drives one manual Double whose pre-correction verify
 // budget expires while the context is still alive — the exact behavioral
 // signature the seam learns (RESEARCH Pattern 1, source 3). The callers
-// own every assertion; this helper only drives the deterministic round.
+// own every assertion; this helper only drives the deterministic round
+// through the verify-deadline seam (plan 10-10, UseVerifyTimer): the
+// recorder fires the SAME epoch-tagged closure the real timer would.
 func teachVerifyDead(t *testing.T, a *session.Actor, word string) {
 	t.Helper()
+	clock := &flipClock{} // reused as the one-shot verify-deadline recorder (the arm/fire/stop shape)
+	a.UseVerifyTimer(clock.arm)
 	typeWord(a, word)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	a.VerifyExpiry() // deterministic injection of the 100 ms deadline
+	clock.fire() // deterministic injection of the 100 ms deadline
 }
 
 // TestTerminalClass_VerifyDeadLearnedOnVerifyTimeout pins the learning: a
@@ -7396,17 +7404,22 @@ func TestTerminalClass_StaleVerifyExpiryLearnsNothing(t *testing.T) {
 	a, sink := wiredActor()
 
 	typeWord(a, wordEN)
+	// The honest-GTK world (plan 10-10 migration, the VerifyPaths form):
+	// the client pushed its field state during typing — cache evidence at
+	// arm. The nil-cache form of this scenario is the answer-only terminal
+	// signature now (TestReplayHost0939_MatchAnswerRoutesTerminalBranch).
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
-	// The cached push is the freshest report — the round executes.
+	// The fresh push is the freshest report — the round executes.
 	end := uint32(len([]rune("abc " + wordEN)))
 	a.HandleSurroundingText("abc "+wordEN, end, end)
 	if got := len(sink.commitTexts()); got != 1 {
 		t.Fatalf("commits after the cached push = %d, want 1 — the round never executed", got)
 	}
 
-	a.VerifyExpiry() // the stale deadline — a settled round teaches nothing
+	a.VerifyExpiry(0) // the stale deadline — a settled round teaches nothing (any epoch: pending is nil)
 
 	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 0 {
 		t.Errorf("verify-timeout records after the stale deadline = %d, want 0", got)
@@ -8686,5 +8699,328 @@ func TestTerminalBranch_StaleRouteFlipStillDeferred(t *testing.T) {
 	}
 	if got := sink.modeSymbols(); !slices.Equal(got, []string{"ru"}) {
 		t.Errorf("panel symbols = %q, want exactly [ru]", got)
+	}
+}
+
+// The plan 10-10 corpus (round-2 G-10-1 routing closure): the host
+// re-acceptance rows of 2026-10-14 09:39–09:41 MSK (DEBUG-term-host-live-
+// failures.md, Closure validation) replayed on the unit seams. On the host
+// BOTH gestures ran LEVEL-1 (done in 1.9–2.4 ms, instant flip +0.03 ms)
+// because terminal classification never engaged: the a11y identity is
+// unavailable (role-unknown, ac_role_errors=47), the behavioral class is
+// unlearned at gesture time, and the correction.terminals anchor has no
+// identity source. The one live discriminator left in the journals is the
+// ANSWER-ONLY push channel: the client never reported a field state in the
+// context's whole life (the round arms over the empty cache — cacheNil) and
+// answers Require with fresh state holding the typed word (the
+// pendingVerdict MATCH branch — the branch the 10-08 amendment does not
+// cover). The owner's approved stale-cache semantics (2026-10-13,
+// «обещает окружение, но отвечает протухшим кэшем = всё равно терминал»)
+// extends from the answer's CONTENT (10-08, the mismatch branch) to the
+// answer's CHANNEL (plan 10-10, both verdict branches). The fixture pins
+// decisions and op order; the journal latencies (1,9–2,4 мс) live only in
+// origin comments — no timings are synthesized.
+
+// TestReplayHost0939_MatchAnswerRoutesTerminalBranch replays the 09:39:41
+// row: a fresh context whose role source errors at the decision, whose
+// appid identity is unknown, whose client never pushed (nil cache at arm)
+// and whose single Require answer is FRESH state holding the typed word —
+// the match verdict. RED truth: the terminal write branch must receive
+// control (learn + level-2 burst + the deferred flip + the noRung
+// verify-after arm), level-1 must not run.
+func TestReplayHost0939_MatchAnswerRoutesTerminalBranch(t *testing.T) {
+	buf := captureLogsLevel(t, slog.LevelDebug)
+	a, sink := wiredActor() // the caps bit announced — the 09:39 clients carry correct.CapSurroundingText
+	// The host a11y state on the unit seams: the role source is consulted
+	// at the decision and ALWAYS errors (ac_role_errors grows — 47 in the
+	// host window); no appid source is started — the identity is unknown
+	// and the config anchor answers nothing.
+	a.UseRole(&fakeRole{err: errAppidBusDead})
+	a.SetOptions(flipOnOptions()) // the host config: flip_after_correction=true (mode +0,03 ms after done)
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	// The typing window: the client NEVER pushes — the round arms over the
+	// empty cache (otherwise the cached-push instant path had answered with
+	// a.surr != nil and the host rows would look different).
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // action n=2 — the Require is out, nothing else
+
+	if got := sink.opLog(); !slices.Equal(got, []string{requireOp}) {
+		t.Fatalf("ops before the answer = %q, want exactly [%s] — the replay arms the pending round", got, requireOp)
+	}
+
+	// The client's single answer: FRESH state holding the typed word — the
+	// pendingVerdict MATCH branch (the host done row +1,9–2,4 ms ran
+	// level-1 here; the route must take this branch to the terminal write).
+	end := runeLen(wordEN)
+	a.HandleSurroundingText(wordEN, end, end)
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"terminal class","verify_dead":true`) {
+		t.Errorf("the answer-only signature did not learn the behavioral class; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done","changed":true`) {
+		t.Fatalf("the replayed round never completed — the word was abandoned; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"correction","level":2`) {
+		t.Errorf("no level-2 DEBUG record — the terminal write branch did not receive control "+
+			"(the host row ran level-1 here); log:\n%s", logged)
+	}
+	// The write shape: BackSpace burst + ONE commit — no level-1
+	// DeleteSurroundingText+Commit pair (the host's «появляется и
+	// удаляется» inversion lives on that pair).
+	want := append([]string{requireOp}, burstOps(len([]rune(wordEN)), wordRU)...)
+	want = append(want, requireOp) // the terminal verify-after arm (noRung)
+	if got := sink.opLog(); !slices.Equal(got, want) {
+		t.Fatalf("op log = %q, want the arm + the chunked terminal write %q + the verify-after arm — "+
+			"the terminal branch must receive control, level-1 must not run", got, want)
+	}
+	// Defer-until-confirmed rides the routed round (the 10-08 form): no
+	// flip traffic before the delivery confirmation — the host's instant
+	// flip (+0,03 ms) is the level-1 misroute signature, never this path's.
+	if got := countModeRecords(buf); got != 0 {
+		t.Errorf("mode records before the confirming push = %d, want 0 — the routed round defers "+
+			"its flip; log:\n%s", got, logged)
+	}
+	if got := probe.targets(); len(got) != 0 {
+		t.Errorf("SetGlobalEngine before the confirmation = %q, want none (E3)", got)
+	}
+	if got := a.StatusSnapshot().AutoCorrectRoleErrors; got == 0 {
+		t.Errorf("ac_role_errors = 0 — the replay must reproduce the host's erroring role source")
+	}
+
+	// The confirming push releases the deferred flip exactly once.
+	line := "abc " + wordRU
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records after the confirming push = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("switch targets = %q, want exactly [%s]", got, engine.NameRU)
+	}
+}
+
+// TestReplayHost0939_RejectionSignaturesAbsent pins the replay's fidelity
+// to the 09:39 block, NOT the 16:20 one: the window carries NO
+// verify-timeout, NO verify-mismatch, and NO flap wipe — the learned class
+// survives (exactly one terminal-class marker, zero verify_dead:false
+// transitions), and the erroring role source is part of the reproduced
+// state (ac_role_errors grows).
+func TestReplayHost0939_RejectionSignaturesAbsent(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	a.UseRole(&fakeRole{err: errAppidBusDead})
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	end := runeLen(wordEN)
+	a.HandleSurroundingText(wordEN, end, end)
+
+	logged := buf.String()
+	for _, rejection := range []string{`"reason":"verify-timeout"`, `"reason":"verify-mismatch"`} {
+		if got := strings.Count(logged, rejection); got != 0 {
+			t.Errorf("%s rows in the replay window = %d, want 0 — the replay must reproduce the "+
+				"09:39 block (clean of rejection signatures), not the 16:20 one", rejection, got)
+		}
+	}
+	if got := strings.Count(logged, `"verify_dead":false`); got != 0 {
+		t.Errorf("class wipes in the replay window = %d, want 0 — no flap pairs in the 09:39 window", got)
+	}
+	if got := strings.Count(logged, `"msg":"terminal class"`); got != 1 {
+		t.Errorf("terminal-class markers = %d, want exactly 1 (the route's learn)", got)
+	}
+	if got := a.StatusSnapshot().AutoCorrectRoleErrors; got == 0 {
+		t.Errorf("ac_role_errors = 0 — the 09:39 signature includes the erroring role source (47 in the host window)")
+	}
+}
+
+// TestReplayHost0939_SpontaneousPushClientNotRouted pins the route's
+// boundary from the honest side: a client whose push channel is ALIVE
+// (spontaneous pushes tracked the typing — cache evidence at arm,
+// cacheNil=false) keeps the byte-as-today world on the match verdict too —
+// a fresh matching answer settles level-1, the route never fires, no class
+// learns, no burst replays.
+func TestReplayHost0939_SpontaneousPushClientNotRouted(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor() // identity/role unknown — no sources installed
+
+	typeWord(a, wordEN)
+	// The honest client's spontaneous push: the field state tracked during
+	// typing — the cache carries evidence the push channel is alive.
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // the pending armed over the NON-nil cache
+	end := runeLen("abc " + wordEN)
+	a.HandleSurroundingText("abc "+wordEN, end, end) // the fresh matching answer
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done","changed":true`) {
+		t.Fatalf("the honest round never completed; log:\n%s", logged)
+	}
+	if strings.Contains(logged, `"msg":"terminal class"`) {
+		t.Errorf("a push-tracking client learned the terminal class — the route must key on the "+
+			"answer-only CHANNEL, never on content alone; log:\n%s", logged)
+	}
+	if calls := sink.deleteCalls(); len(calls) != 1 {
+		t.Errorf("deletions = %+v, want exactly one level-1 delete — the honest world stays byte-as-today", calls)
+	}
+	if got := len(sink.forwardCalls()); got != 0 {
+		t.Errorf("forwards = %d, want 0 — no terminal burst on the honest world", got)
+	}
+}
+
+// timerRecorder is the verify-deadline seam double of the WR-02 corpus: it
+// records EVERY armed callback in arrival order, and its stop is a
+// deliberate no-op — the production Stop is a no-op against an ALREADY
+// FIRED deadline, which is exactly the callback the WR-02 window leaves
+// runnable past the resolution of its own round.
+type timerRecorder struct {
+	mu  sync.Mutex
+	fns []func()
+}
+
+// arm records one armed callback and returns the no-op stop (see above).
+func (r *timerRecorder) arm(_ time.Duration, fn func()) func() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.fns = append(r.fns, fn)
+
+	return func() {} // Stop after fire: the callback stays runnable — the race under test
+}
+
+// nth hands out the n-th armed callback (0-based).
+func (r *timerRecorder) nth(n int) func() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.fns[n]
+}
+
+// TestVerifyExpiryStaleRound_DoesNotEatNextRound pins the WR-02 fix (the
+// 10-REVIEW scenario): round 1's deadline already fired and waits on the
+// actor mutex; the main path resolves round 1 and arms round 2 (Stop — a
+// no-op against the fired callback); the stale callback then runs. Today
+// it sees round 2's pending, consumes it (verify-timeout) and TEACHES the
+// behavioral class for a context that never missed a budget — whose blast
+// radius grew with 10-08 (the false class now also arms the deferred-flip
+// machine). The pin: a stale callback is a no-op, round 2 lives, no class.
+func TestVerifyExpiryStaleRound_DoesNotEatNextRound(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	arms := &timerRecorder{}
+	a.UseVerifyTimer(arms.arm)
+
+	// Round 1 in the honest-push world (cache evidence — a mismatching
+	// answer resolves it byte-today, no terminal route involved).
+	typeWord(a, wordEN)
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // round 1 armed — its callback is recorded
+	stale := arms.nth(0)
+
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine)) // round 1 resolved
+	if !strings.Contains(buf.String(), `"reason":"verify-mismatch"`) {
+		t.Fatalf("round 1 never resolved by mismatch — the scenario is not set up; log:\n%s", buf.String())
+	}
+
+	// Round 2 arms while the stale callback is already runnable (the fired
+	// deadline's Stop lost the race — the WR-02 window).
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	stale() // the fired-and-blocked callback finally runs against round 2
+
+	logged := buf.String()
+	if strings.Contains(logged, `"reason":"verify-timeout"`) {
+		t.Errorf("the stale deadline consumed the live round (verify-timeout) — the WR-02 hole; log:\n%s", logged)
+	}
+	if strings.Contains(logged, `"msg":"terminal class"`) {
+		t.Errorf("the stale deadline taught the behavioral class for a context that never missed a "+
+			"budget — the WR-02 blast radius; log:\n%s", logged)
+	}
+
+	// Round 2 lives: the fresh matching answer settles it (level-1 — the
+	// honest world), byte-as-today.
+	end := runeLen("abc " + wordEN)
+	a.HandleSurroundingText("abc "+wordEN, end, end)
+	if texts := sink.commitTexts(); len(texts) != 1 {
+		t.Errorf("commits after round 2's answer = %d, want exactly 1 — round 2 must survive the "+
+			"stale deadline", len(texts))
+	}
+	if calls := sink.deleteCalls(); len(calls) != 1 {
+		t.Errorf("deletions = %d, want exactly 1 — round 2 settles level-1 in the honest world", len(calls))
+	}
+}
+
+// TestCorrectionBusy_SecondEntrySkipsNotSecondBurst pins the WR-01 guard:
+// while a level-2 burst is IN FLIGHT (the pacing seam parked, the mutex
+// released at the chunk boundary), a second correction entry — CorrectNow
+// over ctl — must refuse with the correction-busy slug and settle the
+// combo instead of executing a second BuildPlan over the same un-replaced
+// buffer: exactly ONE burst, exactly ONE commit, exactly ONE done.
+func TestCorrectionBusy_SecondEntrySkipsNotSecondBurst(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	a.UseRole(&fakeRole{role: acRoleForbiddenTerminal}) // both entries route the terminal branch at the decision
+
+	// The pacing seam parks the burst inside the FIRST chunk (under the
+	// mutex) until the second entry is blocked on the actor mutex — the
+	// in-flight window WR-01 describes.
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var sleeps atomic.Int64
+	a.UseLevel2Sleeper(func(time.Duration) {
+		if sleeps.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+	})
+
+	typeWord(a, termWord20) // 20 runes → 8+8+4 chunks: two boundary windows
+	burstDone := make(chan struct{})
+	go func() {
+		defer close(burstDone)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+	}()
+	<-started // the burst is in flight, holding the mutex
+
+	second := make(chan struct{})
+	go func() {
+		close(second)
+		a.CorrectNow() // the ctl entry: blocks on the mutex until a boundary window
+	}()
+	<-second
+	time.Sleep(20 * time.Millisecond) // past the 1 ms starvation threshold — the handoff is direct
+	close(release)
+
+	select {
+	case <-burstDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the burst never settled — deadlock in the busy interleave")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"reason":"correction-busy"`) {
+		t.Errorf("no correction-busy refusal — the second entry executed instead of skipping; log:\n%s", logged)
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 {
+		t.Errorf("commits = %d, want exactly 1 — a second destructive burst replayed over the same "+
+			"un-replaced buffer (WR-01)", len(texts))
+	}
+	if got := len(sink.forwardCalls()); got != len([]rune(termWord20)) {
+		t.Errorf("forwards = %d, want exactly %d — one burst, never two", got, len([]rune(termWord20)))
+	}
+	if got := strings.Count(logged, `"msg":"correction","outcome":"done","changed":true`); got != 1 {
+		t.Errorf("done records = %d, want exactly 1; log:\n%s", got, logged)
 	}
 }

@@ -230,6 +230,11 @@ type Actor struct {
 	pending     *pendingFix
 	after       *pendingAfter
 	verifyEpoch uint64 // monotonic verify-after round tag (stale-timer guard)
+	// pendingEpoch is the pre-correction round tag counter (plan 10-10,
+	// WR-02): armed with every pending fix and captured by the deadline's
+	// callback — the VerifyExpiry stale-timer guard. The verifyEpoch
+	// discipline: a monotonic tag, read and written under the mutex.
+	pendingEpoch uint64
 	// ctxEpoch is the input-context generation tag (plan 10-04): the
 	// context-death branch of HandleLifecycle bumps it on every
 	// FocusOut/Reset, and the terminal write branch compares it between
@@ -345,6 +350,12 @@ type Actor struct {
 	flipEpoch   uint64
 	flipStop    func()
 	flipAfter   func(d time.Duration, fn func()) (stop func())
+	// verifyAfter is the pre-correction verify-deadline seam (plan 10-10,
+	// WR-02, the flipAfter form): arm(d, fn) arms one verify budget and
+	// returns the stop function canceling a still-pending firing. The
+	// production arm is time.AfterFunc (defaultFlapAfter); the corpus
+	// installs a deterministic recorder. The daemon path never calls it.
+	verifyAfter func(d time.Duration, fn func()) (stop func())
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -584,8 +595,15 @@ type pendingFix struct {
 	converted []rune
 	match     []rune
 	armed     time.Time
-	deadline  *time.Timer
+	stop      func()
 	sel       *selectionSpec
+	// epoch is the round's tag of the WR-02 fix (plan 10-10): the monotonic
+	// counter's value at arm — the armed deadline's callback carries it, and
+	// VerifyExpiry no-ops unless the live pending round owns the same tag
+	// (the afterExpiry form). A stale deadline from a resolved round can
+	// never consume the next round nor teach the behavioral class for a
+	// context that never missed a budget.
+	epoch uint64
 	// cacheNil snapshots the push cache at arm time (plan 10-08, the
 	// owner-approved client-drift amendment of 2026-10-13): the word round
 	// armed over an EMPTY cache — the client has never reported a field
@@ -795,6 +813,19 @@ func (a *Actor) UseFlipTimer(arm func(d time.Duration, fn func()) (stop func()))
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.flipAfter = arm
+}
+
+// UseVerifyTimer installs the pre-correction verify-deadline seam (plan
+// 10-10, WR-02, the UseFlipTimer form): arm(d, fn) arms one verify budget
+// and returns the stop function canceling a still-pending firing. The
+// production arm is time.AfterFunc (defaultFlapAfter); the corpus installs
+// a deterministic recorder — the epoch-tagged callback stays captured
+// behind the seam, so the deterministic injection fires the SAME closure
+// the real timer would. The daemon path never calls it.
+func (a *Actor) UseVerifyTimer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.verifyAfter = arm
 }
 
 // UseRoleClock installs the role-episode clock seam (plan 10-07, the
@@ -1332,8 +1363,12 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 // an answer — the correction is dropped silently (ADR-004, Pitfall 4: the
 // wait lives in a timer, never in a handler). The timeout also retires any
 // pendingAfter: a round that never executed leaves its would-be post-check
-// moot. Tests inject it directly (deterministic deadline).
-func (a *Actor) VerifyExpiry() {
+// moot. The epoch argument is the armed round's tag (WR-02, plan 10-10): a
+// callback whose deadline belonged to a RESOLVED round is a quiet no-op —
+// it must never consume the next pending round nor teach the behavioral
+// class for a context that never missed a budget (the afterExpiry form).
+// Tests inject it directly (deterministic deadline).
+func (a *Actor) VerifyExpiry(epoch uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -1342,6 +1377,9 @@ func (a *Actor) VerifyExpiry() {
 	if a.pending == nil {
 		return // already settled — a stale timer is a no-op
 	}
+	// WR-02 (plan 10-10): the epoch guard — a callback whose tag no longer
+	// matches the live round's epoch is a quiet no-op — arrives with the
+	// route commit; the tag itself is already captured at both arm points.
 	// The behavioral terminal class (Phase 10, RESEARCH Pattern 1 source
 	// 3): the budget expired while the context is still alive — the
 	// pending guard above already retired every context-death case, so
@@ -1406,6 +1444,23 @@ func (a *Actor) FoldAppliedConfig() {
 		return
 	}
 	a.applySnapshot()
+}
+
+// armVerifyDeadline arms the pending round's verify budget through the
+// timer seam (the caller holds the mutex, pending != nil): the callback is
+// wrapped with the round's epoch tag (WR-02, plan 10-10) — the afterExpiry
+// form on both arm points (selection and word). The tag assignment and the
+// closure capture happen under the same critical section as the arm, so no
+// interleaving can pair a callback with a foreign round.
+func (a *Actor) armVerifyDeadline() {
+	a.pendingEpoch++
+	a.pending.epoch = a.pendingEpoch
+	epoch := a.pending.epoch
+	arm := a.verifyAfter
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	a.pending.stop = arm(a.verifyWait, func() { a.VerifyExpiry(epoch) })
 }
 
 // armVerifyDeadWipe re-arms the single deferred wipe deadline of the flap
@@ -3305,7 +3360,7 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 
 		return
 	}
-	a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
+	a.armVerifyDeadline()
 	eng.RequireSurroundingText()
 }
 
@@ -3413,7 +3468,7 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	// (ADR-004). For the space boundary the round is one extra
 	// sub-millisecond trip; for the reset boundaries it is the only guard.
 	if rng.acBoundary || !correct.MatchesSuffix(a.surr, a.pending.match) {
-		a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
+		a.armVerifyDeadline()
 		eng.RequireSurroundingText()
 
 		return
@@ -3433,8 +3488,8 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 func (a *Actor) executeCorrection() {
 	p := a.pending
 	a.pending = nil
-	if p.deadline != nil {
-		p.deadline.Stop()
+	if p.stop != nil {
+		p.stop()
 	}
 	if p.sel != nil {
 		a.executeSelectionCorrection(p)
@@ -3603,8 +3658,8 @@ func (a *Actor) resolvePending() {
 	if a.pending == nil {
 		return
 	}
-	if a.pending.deadline != nil {
-		a.pending.deadline.Stop()
+	if a.pending.stop != nil {
+		a.pending.stop()
 	}
 	a.pending = nil
 }
