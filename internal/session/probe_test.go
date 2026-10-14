@@ -20,14 +20,15 @@ import (
 // KEY_LEFT=105:180, KEY_RIGHT=106:181, KEY_END=107:182, KEY_A=30:105,
 // KEY_X=45:120, KEY_1=2:77, KEY_SPACE=57:132 (line numbers in the header).
 const (
-	tcKeyHome  = 102
-	tcKeyEnd   = 107
-	tcKeyLeft  = 105
-	tcKeyRight = 106
-	tcKeyA     = 30
-	tcKeyX     = 45
-	tcKey1     = 2
-	tcKeySpace = 57
+	tcKeyHome      = 102
+	tcKeyEnd       = 107
+	tcKeyLeft      = 105
+	tcKeyRight     = 106
+	tcKeyA         = 30
+	tcKeyX         = 45
+	tcKey1         = 2
+	tcKeySpace     = 57
+	tcKeyBackspace = 14
 )
 
 // probeEvent is one recorded ForwardKeyEvent call.
@@ -79,6 +80,7 @@ func TestParseProbeKey_Named(t *testing.T) {
 		{spec: "End", wantKV: engine.KeyEnd, wantKC: tcKeyEnd},
 		{spec: "Left", wantKV: engine.KeyLeft, wantKC: tcKeyLeft},
 		{spec: "Right", wantKV: engine.KeyRight, wantKC: tcKeyRight},
+		{spec: "BackSpace", wantKV: engine.KeyBackSpace, wantKC: tcKeyBackspace},
 		{spec: "home", wantKV: engine.KeyHome, wantKC: tcKeyHome},
 		{spec: "SHIFT+Home", wantKV: engine.KeyHome, wantKC: tcKeyHome, wantMod: engine.MaskShift},
 		{spec: "ctrl+shift+Left", wantKV: engine.KeyLeft, wantKC: tcKeyLeft,

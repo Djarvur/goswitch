@@ -13,7 +13,7 @@ import (
 // (plan 09-02, ASVS V5: every cause distinct and errors.Is-checkable).
 var (
 	ErrProbeEmptySpec   = errors.New("probe keyspec is empty")
-	ErrProbeSpecFormat  = errors.New("probe keyspec must be [mod+]{Home|End|Left|Right} or one key")
+	ErrProbeSpecFormat  = errors.New("probe keyspec must be [mod+]{Home|End|Left|Right|BackSpace} or one key")
 	ErrProbeKeyUnknown  = errors.New("probe key unknown")
 	ErrProbeModUnknown  = errors.New("probe modifier unknown")
 	ErrProbeKeyUnmapped = errors.New("probe key has no physical keycode mapping")
@@ -23,10 +23,11 @@ var (
 //
 //nolint:gochecknoglobals // the keyspec grammar's static lookup tables (read-only)
 var probeKeysyms = map[string]uint32{
-	"home":  engine.KeyHome,
-	"end":   engine.KeyEnd,
-	"left":  engine.KeyLeft,
-	"right": engine.KeyRight,
+	"home":      engine.KeyHome,
+	"end":       engine.KeyEnd,
+	"left":      engine.KeyLeft,
+	"right":     engine.KeyRight,
+	"backspace": engine.KeyBackSpace, // the drain probe's replay key (plan 10-13 P3)
 }
 
 // probeModifiers maps the keyspec modifier tokens to their IBus masks.
@@ -47,13 +48,14 @@ var probeModifiers = map[string]uint32{
 // Z..M = 44..50 — lines 91-125 of the header), NOT alphabetical: the
 // corpus caught the +offset shortcut live (KEY_X=45, not 30+23).
 const (
-	probeKeycodeHome  = 102
-	probeKeycodeEnd   = 107
-	probeKeycodeLeft  = 105
-	probeKeycodeRight = 106
-	probeKeycode1     = 2
-	probeKeycode0     = 11
-	probeKeycodeSpace = 57
+	probeKeycodeHome      = 102
+	probeKeycodeEnd       = 107
+	probeKeycodeLeft      = 105
+	probeKeycodeRight     = 106
+	probeKeycode1         = 2
+	probeKeycode0         = 11
+	probeKeycodeSpace     = 57
+	probeKeycodeBackspace = 14 // KEY_BACKSPACE=14 — the level-2 replay code (input-event-codes.h; backSpaceKeycode)
 )
 
 // probeLetterKeycodes is the physical evdev code of every letter key on the
@@ -124,6 +126,8 @@ func probeKeysymKeycode(keyval uint32) uint32 {
 		return probeKeycodeLeft
 	case engine.KeyRight:
 		return probeKeycodeRight
+	case engine.KeyBackSpace:
+		return probeKeycodeBackspace
 	}
 
 	return 0

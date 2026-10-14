@@ -347,7 +347,7 @@ func (s *stand) wezWordRow(
 // overwrite of the pre-state is documented in the row (D5).
 func (s *stand) wezClipFrozenRow(ctx context.Context, caseName string, wf *wezFixtureRound) error {
 	const rowTag = "clip-frozen"
-	if err := clipCopy(ctx, primarySentinelMark); err != nil {
+	if err := clipCopy(ctx); err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
 	before := clipReadNoNewline(ctx)

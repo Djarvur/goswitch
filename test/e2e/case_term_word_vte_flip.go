@@ -246,7 +246,7 @@ func (s *stand) flipRowClipFrozen(ctx context.Context, caseName string) error {
 	if err := s.termArmGate(ctx, caseName); err != nil {
 		return err
 	}
-	if err := clipCopy(ctx, primarySentinelMark); err != nil {
+	if err := clipCopy(ctx); err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
 	before := clipReadNoNewline(ctx)

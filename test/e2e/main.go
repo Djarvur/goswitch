@@ -129,6 +129,7 @@ func caseListUsage() string {
 		" | term-word-vte" +
 		" | term-word-wezterm" +
 		" | term-word-vte-flip" +
+		" | term-cap-delivery" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -276,6 +277,7 @@ func pickCase(name string) (caseSpec, error) {
 			" autocorrect-blocklist-silent, menu-v2,"+
 			" term-word-vte, term-negative-witnesses,"+
 			" term-word-wezterm, term-word-vte-flip,"+
+			" term-cap-delivery,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 
@@ -338,6 +340,11 @@ func caseRegistry() map[string]caseSpec {
 		"term-word-vte":                {fn: runTermWordVTE, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-word-wezterm":            {fn: runTermWordWezterm, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-word-vte-flip":           {fn: runTermWordVTEFlip, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		// term-cap-delivery (plan 10-13): six probe rows (3 probes × 2
+		// clients), each probe on a fresh fixture with its own focus gate —
+		// six spawn+gate cycles plus the daemon/config setup ride inside
+		// the standard recipe budget.
+		"term-cap-delivery": {fn: runTermCapDelivery, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-negative-witnesses": {
 			fn:                 runTermNegativeWitnesses,
 			noSurfacePreflight: true,

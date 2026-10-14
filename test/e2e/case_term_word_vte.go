@@ -330,7 +330,7 @@ func (s *stand) termRowClipFrozen(ctx context.Context, caseName string) error {
 	if err := s.termArmGate(ctx, caseName); err != nil {
 		return err
 	}
-	if err := clipCopy(ctx, primarySentinelMark); err != nil {
+	if err := clipCopy(ctx); err != nil {
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
 	before := clipReadNoNewline(ctx)
@@ -361,11 +361,11 @@ func (s *stand) termRowClipFrozen(ctx context.Context, caseName string) error {
 }
 
 // clipCopy sets a known CLIPBOARD pre-state (the primarySentinel form,
-// CLIPBOARD target).
+// CLIPBOARD target) — every caller rides the same sentinel.
 //
 //nolint:noctx // best-effort clipboard write; bounded by the caller's step
-func clipCopy(ctx context.Context, mark string) error {
-	cmd := exec.Command("bash", "-c", "printf %s "+mark+" | wl-copy")
+func clipCopy(ctx context.Context) error {
+	cmd := exec.Command("bash", "-c", "printf %s "+primarySentinelMark+" | wl-copy")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("set CLIPBOARD sentinel: %w", err)
 	}

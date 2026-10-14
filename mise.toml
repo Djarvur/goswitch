@@ -191,6 +191,10 @@ run = "go run ./test/e2e -case term-word-wezterm"
 description = "e2e: 10-08 term-word-vte-flip — the mechanism row of the deferred flip (G-10-1 cause B): the VTE word round under flip_after_correction: true with the JOURNAL DELIVERY ORDER oracle (done < settlement < mode/switch — SetGlobalEngine never between the commit and its confirmation, the E3 contract) plus the frozen CLIPBOARD sentinel under the flip config; rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case term-word-vte-flip"
 
+[tasks.e2e-term-cap-delivery]
+description = "e2e: 10-13 term-cap-delivery — the round-3 delivery-capability probe (G-10-1): three probes × two terminal clients (P1 DeleteSurroundingText honored — the field shrinks exactly nchars; P2 the Require answer reflects a just-committed text; P3 the Require answer reflects applied BackSpace forwards), budgeted DST(0,0)+Require polls (honest never-row on silence, never a hang), the frozen CLIPBOARD sentinel; rows to adr-008-spike-log.md — the routing input of plan 10-14 (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-cap-delivery"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"
