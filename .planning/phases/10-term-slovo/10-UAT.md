@@ -3,7 +3,7 @@ status: testing
 phase: 10-term-slovo
 source: [10-VERIFICATION.md]
 started: 2026-10-12T22:20:00Z
-updated: 2026-10-13T22:35:25Z
+updated: 2026-10-14T06:47:56Z
 ---
 
 ## Current Test
@@ -39,15 +39,18 @@ result: [pending]
 
 ### 3. Повторная приёмка владельца (re-acceptance) — критерий 1 на gap-сборке (6 пунктов)
 expected: Все шесть пунктов зелёные на живом столе при gap-сборке v1.1.1-124-g7ace3fd; журнальные ряды приёмки без verify-timeout/verify-mismatch; done-ряд не теряется по E3-критерию (следующий surrounding-push содержит исправленное слово); флип-рубежи видны после settlement-рубежей.
-result: [pending]
-instruction: ".planning/debug/DEBUG-term-host-live-failures.md — секция «## Closure validation (G-10-1)» (ряды приёмки снимает оркестратор/исполнитель после ваших жестов)"
+result: issue
+reported: "п.1 wezterm: «вижу привет, и он удаляется»; п.2 GNOME Terminal: «тот же результат»; п.3 флап-бурст — владелец выполнять отказался; п.4 «ghbdtn ghbdtn привет» — исправлено только последнее слово (соответствует дизайну, разъяснено); п.5 «работает»; п.6 владелец: «проверь сам» — проверен оркестратором, зелёный"
+severity: major
+evidence: "journalctl 2026-10-14 09:39:41 и 09:40:28 +03: оба жеста — correction done changed=true за 1,9–2,4 мс (эталон терминального прогона 145 мс) = УРОВЕНЬ-1, терминальная ветка не получила управления; mode to ru через 0,03 мс после done = мгновенный флип, defer-until-confirmed не армился; verify-timeout/verify-mismatch отсутствуют; флап-пар в окне приёмки нет; ac_role_errors=47 (диагностика жива), autocorrect_fired=0. Интерпретация: классификация терминала на хосте не включается (identity недоступна, verifyDead не выучен) → уровень-1, где фиксов нет; «появляется и удаляется» = инверсия delete-surrounding/commit на уровне-1. Полные ряды: DEBUG-term-host-live-failures.md, Closure validation, блок 2026-10-14 09:39"
+verdict: rejected
 
 ## Summary
 
 total: 3
 passed: 0
-issues: 1
-pending: 2
+issues: 2
+pending: 1
 skipped: 0
 blocked: 0
 
@@ -76,4 +79,4 @@ blocked: 0
     - "host-валидированная стратегия доставки commit: флип режима не должен осиротять in-flight commit (отложить флип до подтверждающего push/нажатия, commit после флипа, либо переиспользование объекта движка); темп 20 мс сам по себе разрыв не закрывает"
     - "ревалидация на хосте (venue host) до закрытия разрыва"
   debug_session: .planning/debug/DEBUG-term-host-live-failures.md
-  remediation: "Обе причины закрыты в коде: 10-07 (флап-стойкое стирание verifyDead focusFlapWindow 10 мс, дефолтный якорь correction.terminals [gnome-terminal, wezterm], громкая role-диагностика ac_role_errors) и 10-08 (defer-until-confirmed: флип не осиротяет commit — освобождение по подтверждающему push/клавише/grace 300 мс; stale-cache-маршрут по дословному одобрению владельца 2026-10-13). Реверификация 2026-10-14: 16/17 машинных истин зелёные, обе причины VERIFIED. Сборка v1.1.1-124-g7ace3fd установлена на хост (ряд host-install-gap в spike-log). Закрытие разрыва — за Тестом 3 (re-acceptance владельца)."
+  remediation: "Обе причины закрыты в коде: 10-07 (флап-стойкое стирание verifyDead focusFlapWindow 10 мс, дефолтный якорь correction.terminals [gnome-terminal, wezterm], громкая role-диагностика ac_role_errors) и 10-08 (defer-until-confirmed: флип не осиротяет commit — освобождение по подтверждающему push/клавише/grace 300 мс; stale-cache-маршрут по дословному одобрению владельца 2026-10-13). Реверификация 2026-10-14: 16/17 машинных истин зелёные, обе причины VERIFIED. Сборка v1.1.1-124-g7ace3fd установлена на хост (ряд host-install-gap в spike-log). **Re-acceptance 2026-10-14 09:39 REJECTED:** на хосте классификация терминала не включается (a11y-identity недоступна, verifyDead не выучен к жесту) — жесты уходят на уровень-1, где фиксов физически нет; «появляется и удаляется» = инверсия delete-surrounding/commit на уровне-1. Ряды: DEBUG-term-host-live-failures.md Closure validation 2026-10-14 09:39. Следующий цикл обязан реплеем этих рядов доказать фикс до запуска владельцем."
