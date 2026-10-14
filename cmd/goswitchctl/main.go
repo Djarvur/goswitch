@@ -120,6 +120,10 @@ func run(ctx context.Context, args []string) error {
 		if err := runProbeForward(ctx, args[1]); err != nil {
 			return err
 		}
+	case "probe-delete-surrounding":
+		return errUsage // RED stub — GREEN parses the two positionals and dials
+	case "probe-commit":
+		return errUsage // RED stub — GREEN dials the verb
 	case "install":
 		return runInstallCmd(ctx)
 	case "uninstall":

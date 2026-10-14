@@ -83,6 +83,12 @@ type Deps struct {
 	// field is the fail-closed state — ProbeForward answers "probe
 	// disabled" and emits nothing.
 	ProbeForward func(spec string) error
+	// ProbeDeleteSurrounding and ProbeCommit are the delivery probes'
+	// emission deps (plan 10-13, the ProbeForward form): the daemon assigns
+	// them ONLY under -debug. A nil field is the fail-closed state — the
+	// method answers "probe disabled" and emits nothing.
+	ProbeDeleteSurrounding func(offset int32, nchars uint32) error
+	ProbeCommit            func(text string) error
 }
 
 // Svc is the object exported at ObjectPath on BusName; godbus dispatches
@@ -154,6 +160,29 @@ func (s *Svc) ProbeForward(spec string) (reply string, err *dbus.Error) {
 	}
 
 	return "probe forwarded", nil
+}
+
+// ProbeDeleteSurrounding implements org.djarvur.goswitch.
+// ProbeDeleteSurrounding (i u) → s: the delivery probe's erase-then-ask
+// verb (plan 10-13). RED stub — GREEN implements the fail-closed form.
+func (s *Svc) ProbeDeleteSurrounding(offset int32, nchars uint32) (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeDeleteSurrounding", &err)
+
+	_ = offset
+	_ = nchars
+
+	return "", nil
+}
+
+// ProbeCommit implements org.djarvur.goswitch.ProbeCommit (s) → s: the
+// delivery probe's commit verb (plan 10-13). RED stub — GREEN implements
+// the fail-closed form.
+func (s *Svc) ProbeCommit(text string) (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeCommit", &err)
+
+	_ = text
+
+	return "", nil
 }
 
 // renderStatus formats the snapshot as the Status method's single-line

@@ -178,6 +178,30 @@ func ProbeForward(eng engine.Emitter, spec string) error {
 	return nil
 }
 
+// ErrProbeNoEngine is the delivery probes' fail-closed state name (plan
+// 10-13): the actor has no attached input-context emitter yet — nothing can
+// be emitted.
+var ErrProbeNoEngine = errors.New("probe has no engine (no input context attached)")
+
+// ProbeDeleteSurrounding emits the delivery probe's erase-then-ask pair
+// (plan 10-13). RED stub — GREEN implements the emission.
+func ProbeDeleteSurrounding(eng engine.Emitter, offset int32, nchars uint32) error {
+	_ = eng
+	_ = offset
+	_ = nchars
+
+	return nil
+}
+
+// ProbeCommit emits the delivery probe's commit (plan 10-13). RED stub —
+// GREEN implements the emission.
+func ProbeCommit(eng engine.Emitter, text string) error {
+	_ = eng
+	_ = text
+
+	return nil
+}
+
 // ProbeEmitter returns the engine emitter of the currently attached input
 // context — the probe verb's sink (plan 09-02): nil before the first mint,
 // exactly like emitter().

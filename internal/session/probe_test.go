@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -215,5 +216,136 @@ func TestProbeForward_Logged(t *testing.T) {
 	}
 	if strings.Contains(out, `"spec"`) {
 		t.Errorf("probe forward log leaks the keyspec argument: %s", out)
+	}
+}
+
+// The delivery-probe corpus (plan 10-13): ProbeDeleteSurrounding must emit
+// EXACTLY DeleteSurroundingText(offset, nchars) then RequireSurroundingText
+// (the ordered IM channel the routing verdict rides), ProbeCommit exactly
+// one CommitText — both fail-closed without an engine emitter, both
+// journalled at DEBUG without the field content.
+
+// probeOpSink is the delivery-probe emitter double: every emission recorded
+// IN ORDER under a mutex — the op log pins the DST→Require order.
+type probeOpSink struct {
+	mu      sync.Mutex
+	ops     []string
+	commits []string
+}
+
+func (p *probeOpSink) ForwardKeyEvent(keyval, keycode, state uint32) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.ops = append(p.ops, fmt.Sprintf("forward(0x%x,%d,0x%x)", keyval, keycode, state))
+}
+
+func (p *probeOpSink) RequireSurroundingText() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.ops = append(p.ops, "require")
+}
+
+func (p *probeOpSink) DeleteSurroundingText(offset int32, nchars uint32) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.ops = append(p.ops, fmt.Sprintf("delete(%d,%d)", offset, nchars))
+}
+
+func (p *probeOpSink) CommitText(text engine.IBusText) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.ops = append(p.ops, "commit")
+	p.commits = append(p.commits, text.Text)
+}
+
+func (p *probeOpSink) UpdateModeSymbol(string) {}
+
+// opsSnapshot returns the ordered op log and the committed texts.
+func (p *probeOpSink) opsSnapshot() ([]string, []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return append([]string(nil), p.ops...), append([]string(nil), p.commits...)
+}
+
+// TestProbeDeleteSurrounding_NilEngineFailClosed pins the fail-closed half:
+// without an emitter the probe errors (the named ErrProbeNoEngine) and can
+// emit nothing.
+func TestProbeDeleteSurrounding_NilEngineFailClosed(t *testing.T) {
+	if err := session.ProbeDeleteSurrounding(nil, 0, 6); !errors.Is(err, session.ErrProbeNoEngine) {
+		t.Fatalf("ProbeDeleteSurrounding(nil) error = %v, want ErrProbeNoEngine", err)
+	}
+}
+
+// TestProbeDeleteSurrounding_EmitsDeleteThenRequire pins the emission
+// order: exactly DeleteSurroundingText(offset, nchars) followed by
+// RequireSurroundingText — nothing else, never reordered.
+func TestProbeDeleteSurrounding_EmitsDeleteThenRequire(t *testing.T) {
+	sink := &probeOpSink{}
+	if err := session.ProbeDeleteSurrounding(sink, 0, 6); err != nil {
+		t.Fatalf("ProbeDeleteSurrounding(0, 6) error = %v, want nil", err)
+	}
+	ops, _ := sink.opsSnapshot()
+	want := []string{"delete(0,6)", "require"}
+	if !slices.Equal(ops, want) {
+		t.Fatalf("ops = %v, want exactly %v (DST before Require)", ops, want)
+	}
+}
+
+// TestProbeCommit_NilEngineFailClosed pins the commit probe's fail-closed
+// half.
+func TestProbeCommit_NilEngineFailClosed(t *testing.T) {
+	if err := session.ProbeCommit(nil, "x"); !errors.Is(err, session.ErrProbeNoEngine) {
+		t.Fatalf("ProbeCommit(nil) error = %v, want ErrProbeNoEngine", err)
+	}
+}
+
+// TestProbeCommit_EmitsOneCommit pins the commit shape: exactly one
+// CommitText carrying the text, no other emission.
+func TestProbeCommit_EmitsOneCommit(t *testing.T) {
+	sink := &probeOpSink{}
+	if err := session.ProbeCommit(sink, "привет"); err != nil {
+		t.Fatalf("ProbeCommit error = %v, want nil", err)
+	}
+	ops, commits := sink.opsSnapshot()
+	if !slices.Equal(ops, []string{"commit"}) {
+		t.Fatalf("ops = %v, want exactly [commit]", ops)
+	}
+	if len(commits) != 1 || commits[0] != "привет" {
+		t.Fatalf("commits = %q, want exactly one привет", commits)
+	}
+}
+
+// TestProbeVerbs_Logged pins the DEBUG journal of both probes: parameters
+// and rune counts only — never the committed text (the «passwords become
+// visible» discipline of the probe family).
+func TestProbeVerbs_Logged(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	sink := &probeOpSink{}
+	if err := session.ProbeDeleteSurrounding(sink, 0, 6); err != nil {
+		t.Fatalf("ProbeDeleteSurrounding error = %v, want nil", err)
+	}
+	if err := session.ProbeCommit(sink, "привет"); err != nil {
+		t.Fatalf("ProbeCommit error = %v, want nil", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`"msg":"probe delete-surrounding"`, `"offset":0`, `"nchars":6`,
+		`"msg":"probe commit"`, `"runes":6`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("probe log missing %s: %s", want, out)
+		}
+	}
+	if strings.Contains(out, "привет") {
+		t.Errorf("probe log leaks the committed text: %s", out)
 	}
 }

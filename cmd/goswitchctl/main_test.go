@@ -136,3 +136,100 @@ func TestRun_ProbeForwardCli(t *testing.T) {
 		}
 	})
 }
+
+// The delivery-probe verb names (plan 10-13) — the goconst form of
+// cliProbeForward.
+const (
+	cliProbeDeleteSurrounding = "probe-delete-surrounding"
+	cliProbeCommit            = "probe-commit"
+)
+
+// TestRun_ProbeDeliveryCli pins the delivery probes' client half (plan
+// 10-13): the exact positional shapes (anything else is the bare errUsage —
+// the message-identity comparison keeps the unknown-subcommand wrapper
+// out), the usage segments, and the dials through the seam with TYPED wire
+// arguments (int32/uint32 — the D-Bus (i u) signature).
+func TestRun_ProbeDeliveryCli(t *testing.T) {
+	t.Run("no arguments are the usage refusal", func(t *testing.T) {
+		for _, verb := range []string{cliProbeDeleteSurrounding, cliProbeCommit} {
+			err := run(context.Background(), []string{verb})
+			if err == nil || err.Error() != errUsage.Error() {
+				t.Fatalf("%s with no argument = %v, want the bare errUsage", verb, err)
+			}
+		}
+		if seg := cliProbeDeleteSurrounding + " <offset> <nchars>"; !strings.Contains(errUsage.Error(), seg) {
+			t.Errorf("errUsage %q missing the %q segment", errUsage.Error(), seg)
+		}
+		if seg := cliProbeCommit + " <text>"; !strings.Contains(errUsage.Error(), seg) {
+			t.Errorf("errUsage %q missing the %q segment", errUsage.Error(), seg)
+		}
+	})
+	t.Run("wrong argument counts are the usage refusal", func(t *testing.T) {
+		for _, argv := range [][]string{
+			{cliProbeDeleteSurrounding, "0"},
+			{cliProbeDeleteSurrounding, "0", "6", "7"},
+			{cliProbeCommit, "a", "b"},
+		} {
+			err := run(context.Background(), argv)
+			if err == nil || err.Error() != errUsage.Error() {
+				t.Fatalf("%v = %v, want the bare errUsage", argv, err)
+			}
+		}
+	})
+	t.Run("valid arguments dial the probe methods", func(t *testing.T) {
+		var dialedMethod string
+		var dialedArgs []any
+		prev := probeForwardCall
+		probeForwardCall = func(_ context.Context, method string, args ...any) (string, error) {
+			dialedMethod = method
+			dialedArgs = args
+
+			return "probe emitted", nil
+		}
+		t.Cleanup(func() { probeForwardCall = prev })
+
+		if err := run(context.Background(), []string{cliProbeDeleteSurrounding, "-3", "6"}); err != nil {
+			t.Fatalf("probe-delete-surrounding -3 6 error = %v, want nil", err)
+		}
+		if dialedMethod != "ProbeDeleteSurrounding" {
+			t.Errorf("seam dialed method %q, want ProbeDeleteSurrounding", dialedMethod)
+		}
+		if len(dialedArgs) != 2 || dialedArgs[0] != int32(-3) || dialedArgs[1] != uint32(6) {
+			t.Errorf("seam dialed args %#v, want [int32(-3) uint32(6)]", dialedArgs)
+		}
+
+		if err := run(context.Background(), []string{cliProbeCommit, "привет"}); err != nil {
+			t.Fatalf("probe-commit привет error = %v, want nil", err)
+		}
+		if dialedMethod != "ProbeCommit" {
+			t.Errorf("seam dialed method %q, want ProbeCommit", dialedMethod)
+		}
+		if len(dialedArgs) != 1 || dialedArgs[0] != "привет" {
+			t.Errorf("seam dialed args %#v, want exactly [привет]", dialedArgs)
+		}
+	})
+	t.Run("non-integer offset names the subcommand", func(t *testing.T) {
+		err := run(context.Background(), []string{cliProbeDeleteSurrounding, "six", "6"})
+		if err == nil || !strings.Contains(err.Error(), cliProbeDeleteSurrounding) {
+			t.Fatalf("probe-delete-surrounding six 6 = %v, want a parse refusal naming the verb", err)
+		}
+	})
+	t.Run("negative nchars names the subcommand", func(t *testing.T) {
+		err := run(context.Background(), []string{cliProbeDeleteSurrounding, "0", "-6"})
+		if err == nil || !strings.Contains(err.Error(), cliProbeDeleteSurrounding) {
+			t.Fatalf("probe-delete-surrounding 0 -6 = %v, want a refusal naming the verb", err)
+		}
+	})
+	t.Run("dial error names the subcommand", func(t *testing.T) {
+		prev := probeForwardCall
+		probeForwardCall = func(context.Context, string, ...any) (string, error) {
+			return "", errStubProbeDisabled
+		}
+		t.Cleanup(func() { probeForwardCall = prev })
+
+		err := run(context.Background(), []string{cliProbeCommit, "x"})
+		if err == nil || !strings.Contains(err.Error(), cliProbeCommit) {
+			t.Fatalf("probe-commit dial error = %v, want a wrap naming the subcommand", err)
+		}
+	})
+}

@@ -374,6 +374,82 @@ func TestCtlsvc_ProbeForwardDelegates(t *testing.T) {
 	}
 }
 
+// TestCtlsvc_ProbeDeliveryNilDepsFailClosed pins the debug gate's server
+// half for the delivery probes (plan 10-13, the ProbeForward form): nil
+// deps answer the errFailed error naming the disabled state — never a
+// panic, never a silent no-op.
+func TestCtlsvc_ProbeDeliveryNilDepsFailClosed(t *testing.T) {
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{})
+
+	reply, err := svc.ProbeDeleteSurrounding(0, 6)
+	if err == nil {
+		t.Fatalf("ProbeDeleteSurrounding with a nil dep = (%q, nil), want the fail-closed error", reply)
+	}
+	var derr *dbus.Error
+	if !errors.As(err, &derr) {
+		t.Fatalf("ProbeDeleteSurrounding nil-dep error = %T, want *dbus.Error", err)
+	}
+	if !strings.Contains(err.Error(), "probe disabled") {
+		t.Errorf("ProbeDeleteSurrounding nil-dep error %q missing the disabled verdict", err.Error())
+	}
+
+	reply, err = svc.ProbeCommit("привет")
+	if err == nil {
+		t.Fatalf("ProbeCommit with a nil dep = (%q, nil), want the fail-closed error", reply)
+	}
+	if !errors.As(err, &derr) || !strings.Contains(err.Error(), "probe disabled") {
+		t.Errorf("ProbeCommit nil-dep error %v missing the disabled verdict", err)
+	}
+}
+
+// TestCtlsvc_ProbeDeliveryDelegates pins the delegation of both delivery
+// probes (plan 10-13): the live deps receive the arguments verbatim and the
+// methods answer ok lines; a dep failure surfaces as errFailed carrying the
+// dep's error text.
+func TestCtlsvc_ProbeDeliveryDelegates(t *testing.T) {
+	var gotOffset int32
+	var gotNchars uint32
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{ProbeDeleteSurrounding: func(offset int32, nchars uint32) error {
+		gotOffset, gotNchars = offset, nchars
+
+		return nil
+	}})
+	reply, err := svc.ProbeDeleteSurrounding(-3, 6)
+	if err != nil {
+		t.Fatalf("ProbeDeleteSurrounding with a live dep error = %v, want nil", err)
+	}
+	if reply == "" {
+		t.Fatal("ProbeDeleteSurrounding ok reply is empty, want the acknowledgment line")
+	}
+	if gotOffset != -3 || gotNchars != 6 {
+		t.Errorf("dep received (%d, %d), want (-3, 6)", gotOffset, gotNchars)
+	}
+
+	var gotText string
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeCommit: func(text string) error {
+		gotText = text
+
+		return nil
+	}})
+	if reply, err = svc.ProbeCommit("привет"); err != nil || reply == "" {
+		t.Fatalf("ProbeCommit with a live dep = (%q, %v), want an ok line", reply, err)
+	}
+	if gotText != "привет" {
+		t.Errorf("dep received %q, want привет", gotText)
+	}
+
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{
+		ProbeDeleteSurrounding: func(int32, uint32) error { return errStubEmitterDetached },
+	})
+	if _, err = svc.ProbeDeleteSurrounding(0, 6); err == nil || !strings.Contains(err.Error(), "emitter detached") {
+		t.Errorf("ProbeDeleteSurrounding dep-failure error %v missing the dep's text", err)
+	}
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeCommit: func(string) error { return errStubEmitterDetached }})
+	if _, err = svc.ProbeCommit("x"); err == nil || !strings.Contains(err.Error(), "emitter detached") {
+		t.Errorf("ProbeCommit dep-failure error %v missing the dep's text", err)
+	}
+}
+
 // runeLen is the cursor position at the end of s (the surrounding-text
 // argument shape, self-computed).
 func runeLen(s string) uint32 {

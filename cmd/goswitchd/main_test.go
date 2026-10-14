@@ -964,3 +964,27 @@ sound:
 		t.Errorf("sound option at startup = false, want the document truth true")
 	}
 }
+
+// TestNewCtlDeps_ProbeDeliveryDebugGated pins the debug gate's wiring half
+// for the delivery probes (plan 10-13, the T-09-02-01 form): the emission
+// deps exist ONLY under -debug — a production daemon's Deps carries nils
+// (the ctl methods fail closed), the -debug daemon carries live closures.
+func TestNewCtlDeps_ProbeDeliveryDebugGated(t *testing.T) {
+	actor := session.NewActor(time.Millisecond)
+
+	prod := newCtlDeps(actor, nil, false)
+	if prod.ProbeDeleteSurrounding != nil {
+		t.Fatal("production Deps carries ProbeDeleteSurrounding — the debug gate is open")
+	}
+	if prod.ProbeCommit != nil {
+		t.Fatal("production Deps carries ProbeCommit — the debug gate is open")
+	}
+
+	dbg := newCtlDeps(actor, nil, true)
+	if dbg.ProbeDeleteSurrounding == nil {
+		t.Fatal("debug Deps missing ProbeDeleteSurrounding")
+	}
+	if dbg.ProbeCommit == nil {
+		t.Fatal("debug Deps missing ProbeCommit")
+	}
+}

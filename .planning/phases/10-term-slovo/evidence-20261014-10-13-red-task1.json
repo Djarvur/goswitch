@@ -1,0 +1,9 @@
+{
+  "command": "mise exec -- go test ./internal/session/ ./internal/ctlsvc/ ./cmd/goswitchctl/ ./cmd/goswitchd/ -race -count=1 -run 'Probe|ProbeDelivery|ProbeForward|ParseProbeKey|NewCtlDeps' -v (transcribed to TAP verbatim from the go test -v run)",
+  "exitCode": 1,
+  "output": "ok 1 - TestParseProbeKey_Named\nok 2 - TestParseProbeKey_Printable\nok 3 - TestParseProbeKey_Rejects\nok 4 - TestProbeForward_EmitsPressRelease\nok 5 - TestProbeForward_RejectsInvalidSpec\nok 6 - TestProbeForward_Logged\nnot ok 7 - TestProbeDeleteSurrounding_NilEngineFailClosed\nnot ok 8 - TestProbeDeleteSurrounding_EmitsDeleteThenRequire\nnot ok 9 - TestProbeCommit_NilEngineFailClosed\nnot ok 10 - TestProbeCommit_EmitsOneCommit\nnot ok 11 - TestProbeVerbs_Logged\nok 12 - TestCtlsvc_ProbeForwardNilDepFailClosed\nok 13 - TestCtlsvc_ProbeForwardDelegates\nnot ok 14 - TestCtlsvc_ProbeDeliveryNilDepsFailClosed\nnot ok 15 - TestCtlsvc_ProbeDeliveryDelegates\nok 16 - TestRun_ProbeForwardCli\nnot ok 17 - TestRun_ProbeDeliveryCli\nnot ok 18 - TestNewCtlDeps_ProbeDeliveryDebugGated\n# tests 18\n# pass 9\n# fail 9",
+  "targetTest": "TestProbeDeleteSurrounding_EmitsDeleteThenRequire",
+  "targetFile": "internal/session/probe_test.go",
+  "expected": "ProbeDeleteSurrounding emits exactly delete(0,6) then require; ProbeCommit one commit; both fail-closed ErrProbeNoEngine; Svc methods answer probe-disabled on nil deps; CLI errUsage carries the two segments and dials typed args; daemon wires the deps only under -debug",
+  "actual": "RED stubs return nil/errUsage: 11 target tests fail on assertions, pre-existing probe corpus stays green"
+}
