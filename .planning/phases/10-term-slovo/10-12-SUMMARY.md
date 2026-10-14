@@ -195,3 +195,7 @@ status: complete
 ---
 *Phase: 10-term-slovo*
 *Completed: 2026-10-14*
+
+## Self-Check: PASSED
+
+SUMMARY exists; все 4 коммита от базы плана 2c1ae04 верифицированы в git log (2fbfee1/76752fe/a1abd21 — задачи, 024eb56 — метаданные; ledger gsd-plan-head-before-10-12 на диске, rev-list count = 4, из них 3 задачных); файлы созданы (SUMMARY) и модифицированы (adr-008-spike-log.md — 16 вхождений маркера round-2, DEBUG-term-host-live-failures.md — 2) — все FOUND; deletions в diff плана — ноль; mise run ci зелёный на HEAD (build+vet+golangci-lint 0 issues+test -race, exit 0); go.mod/go.sum нетронуты (git diff --exit-code); хост-санити (read-only): unit active на v1.1.1-142-g2fbfee1, status config_valid=true, autocorrect_fired=0; откат-путь v1.1.1 нетронут (ls mtime Oct 8); вердикт re-acceptance round-2 честно ОЖИДАНИЕ (D4 human_judgment: true, unrun — записан в WINDOWS ledger); stub-скан — ноль (код планом не писался); чужие untracked-файлы не тронуты (.gsd/, .zcode/, draft.txt, test/e2e/e2e, .planning/debug/09-02-*.md и 2026-10-12-*.md, .planning/milestone.lock, evidence-*.log, 10-PATTERNS.md — вне коммитов).
