@@ -30,10 +30,12 @@ const ctlTestWindow = time.Hour
 const configFilePerm = 0o600
 
 // ctlWordEN/ctlWordRU are the corpus pair of the forced correction (the
-// 02-01 pair, named once for goconst).
+// 02-01 pair, named once for goconst). ctlMismatchLine is the honest push's
+// non-matching field state (the session corpus's mismatchLine form).
 const (
-	ctlWordEN = "ghbdtn"
-	ctlWordRU = "привет"
+	ctlWordEN       = "ghbdtn"
+	ctlWordRU       = "привет"
+	ctlMismatchLine = "abc другойтекст"
 )
 
 // fakeStatus is the snapshot-provider double of the service corpus: one
@@ -284,6 +286,10 @@ func TestSvc_CorrectNow(t *testing.T) {
 		a.HandleKey(engine.EngineEvent{Keyval: uint32(r)})
 		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Release: true})
 	}
+	// The honest-GTK world (plan 10-10 migration): one spontaneous client
+	// push — cache evidence at arm; the nil-cache form of a matched round is
+	// the answer-only terminal signature now (the session corpus pins it).
+	a.HandleSurroundingText(ctlMismatchLine, runeLen(ctlMismatchLine), runeLen(ctlMismatchLine))
 
 	svc := ctlsvc.NewSvc(ctlsvc.Deps{Correct: a})
 	reply, err := svc.CorrectNow()

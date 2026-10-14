@@ -287,6 +287,7 @@ func TestActor_DoubleTapCorrects(t *testing.T) {
 	a, sink := wiredActor()
 
 	typeWord(a, wordEN)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -321,6 +322,15 @@ func TestActor_DoubleTapCorrects(t *testing.T) {
 // argument shape every test uses (self-computed, never hand-counted).
 func runeLen(s string) uint32 {
 	return uint32(len([]rune(s)))
+}
+
+// honestPush is the migration idiom of plan 10-10: one spontaneous client
+// push before the gesture — the push channel is ALIVE, the round arms over
+// cache evidence (cacheNil=false). The nil-cache form of a matched round is
+// the answer-only terminal signature now (TestReplayHost0939_*); every pin
+// of the byte-as-today level-1 world drives the honest-GTK world.
+func honestPush(a *session.Actor) {
+	a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
 }
 
 // TestActor_CachedSurroundingCorrects pins the live transport behavior of
@@ -529,6 +539,7 @@ func TestActor_AfterSpaceCorrects(t *testing.T) {
 
 	typeWord(a, wordEN)
 	pressSpace(a)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -598,6 +609,7 @@ func TestActor_ToggleRepeat(t *testing.T) {
 
 	// First correction: ghbdtn → привет.
 	typeWord(a, wordEN)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -634,6 +646,7 @@ func TestActor_DebugCorrectionRecord(t *testing.T) {
 	a, sink := wiredActor()
 
 	typeWord(a, wordEN)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -691,6 +704,7 @@ func TestActor_TripleTapCorrectsPhrase(t *testing.T) {
 	typeWord(a, wordEN)
 	pressSpace(a)
 	typeWord(a, wordEN)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	tapShift(a)
@@ -899,6 +913,7 @@ func verifyAfterSettled(t *testing.T) (*session.Actor, *fakeSink, *syncBuffer) {
 	a, sink := wiredActor()
 
 	typeWord(a, wordEN)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -1378,6 +1393,7 @@ func TestActor_RUScriptTrueAllBranches(t *testing.T) {
 
 	// The buffer must hold the field runes "п2х": the double-tap
 	// correction converts the whole token back through RUToEN.
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -1409,6 +1425,7 @@ func TestActor_RUDigitsFullPipeline(t *testing.T) {
 		t.Fatalf("RU typing commits = %q, want the six runes of %q (digits transit)", texts, wordRU)
 	}
 
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -1437,6 +1454,7 @@ func TestActor_ScriptTrueBuffer(t *testing.T) {
 		t.Fatalf("RU typing commits = %q, want the six runes of %q", texts, wordRU)
 	}
 
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -1473,6 +1491,7 @@ func TestActor_MixedWordInvertsPerChar(t *testing.T) {
 		t.Fatalf("RU typing commits = %q, want the six runes of %q", texts, wordRU)
 	}
 
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -1539,6 +1558,7 @@ func TestActor_OwnFlipMixedWordCorrectsWhole(t *testing.T) {
 		t.Fatalf("RU typing commits = %q, want the six runes of %q", texts, wordRU)
 	}
 
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -1638,6 +1658,7 @@ func TestActor_PhraseMixedCorrects(t *testing.T) {
 	flipMode(a)         // EN → RU
 	typeWord(a, wordEN) // RU word: commits "привет", buffer script-true
 
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	tapShift(a)
@@ -1700,6 +1721,7 @@ func TestActor_ComboWordThenFlip(t *testing.T) {
 	a, sink := wiredActor()
 
 	typeWord(a, wordEN)
+	honestPush(a)
 	pressComboDefault(a)
 
 	if got := sink.requireCount(); got != 1 {
@@ -2093,6 +2115,7 @@ func (r *clipRunner) sequence() []string {
 // debounce's retry also mismatches and the second push concludes).
 func settledWordCorrection(a *session.Actor) {
 	typeWord(a, wordEN)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -3447,6 +3470,7 @@ func countModeRecords(buf *syncBuffer) int {
 // done-record presence to the caller's judgment.
 func settleWordCorrection(a *session.Actor) {
 	typeWord(a, wordEN)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
@@ -3510,6 +3534,7 @@ func TestActor_FlipAfterPhraseCorrection(t *testing.T) {
 	typeWord(a, wordEN)
 	pressSpace(a)
 	typeWord(a, wordEN)
+	honestPush(a)
 	tapShift(a)
 	tapShift(a)
 	tapShift(a)
@@ -8800,6 +8825,31 @@ func TestReplayHost0939_MatchAnswerRoutesTerminalBranch(t *testing.T) {
 	}
 	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
 		t.Errorf("switch targets = %q, want exactly [%s]", got, engine.NameRU)
+	}
+}
+
+// TestReplayHost0939_RouteLearnsVetoSeam pins the D-55 consequence of the
+// route: the class the route learns silences the autocorrect boundary of
+// the SAME context — classifyTerminal is the ONE seam both consumers read
+// (the write pipeline and the arming veto), so they cannot diverge by
+// construction (the plan's prohibition: the veto follows the same seam).
+func TestReplayHost0939_RouteLearnsVetoSeam(t *testing.T) {
+	a, _ := wiredActor()
+	a.UseRole(&fakeRole{err: errAppidBusDead})
+	a.SetOptions(session.Options{FlipAfterCorrection: true, AutoCorrectEnabled: true})
+
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	end := runeLen(wordEN)
+	a.HandleSurroundingText(wordEN, end, end) // the answer-only match route — the class learns
+
+	a.HandleKey(spaceKey()) // a boundary in the routed context — the veto fires before the detector
+
+	if got := a.AutoCorrectCounters().Reasons[acReasonTerminalVeto]; got != 1 {
+		t.Errorf("terminal-veto abstentions after the route = %d, want 1 — the learned class must "+
+			"silence the autocorrect boundary through the same seam", got)
 	}
 }
 

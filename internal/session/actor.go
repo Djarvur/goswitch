@@ -356,6 +356,17 @@ type Actor struct {
 	// production arm is time.AfterFunc (defaultFlapAfter); the corpus
 	// installs a deterministic recorder. The daemon path never calls it.
 	verifyAfter func(d time.Duration, fn func()) (stop func())
+	// level2Busy is the write branch's re-entrancy guard (plan 10-10,
+	// WR-01): executeLevel2 checks-and-sets it BEFORE the first destructive
+	// emission and clears it on EVERY exit (the backspace-cap refusal, the
+	// context-changed stop, the success return). A second correction entry
+	// through the chunk-boundary mutex window (a CorrectNow over ctl, a
+	// fired autocorrect confirm, a tap-series expiry) refuses with the
+	// correction-busy slug — never a second BuildPlan replayed over the
+	// same un-replaced buffer, which in a terminal erases text beyond
+	// intent. The flag never crosses rounds: cleared at each exit, the
+	// next executeLevel2 passes.
+	level2Busy bool
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -1374,12 +1385,9 @@ func (a *Actor) VerifyExpiry(epoch uint64) {
 
 	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
 
-	if a.pending == nil {
-		return // already settled — a stale timer is a no-op
+	if a.pending == nil || a.pending.epoch != epoch {
+		return // already settled, or a stale deadline from a resolved round (WR-02) — a no-op
 	}
-	// WR-02 (plan 10-10): the epoch guard — a callback whose tag no longer
-	// matches the live round's epoch is a quiet no-op — arrives with the
-	// route commit; the tag itself is already captured at both arm points.
 	// The behavioral terminal class (Phase 10, RESEARCH Pattern 1 source
 	// 3): the budget expired while the context is still alive — the
 	// pending guard above already retired every context-death case, so
@@ -1916,6 +1924,25 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 		p := a.pending
 		switch {
 		case a.pendingVerdict():
+			if pendingStaleCache(p) {
+				// The answer-only route (plan 10-10, G-10-1 round 2, the
+				// 09:39 host rows): the same stale-cache signature as the
+				// mismatch branch below, now on the MATCH verdict — the
+				// client never pushed a field state (empty cache at arm)
+				// and its single answer holds what the daemon watched being
+				// typed. The 2026-10-13 owner-approved semantics extend
+				// from the answer's CONTENT (10-08) to its CHANNEL: the
+				// host's wezterm/GNOME-Terminal clients answered fresh and
+				// matching, yet level-1 (done in 1.9–2.4 ms) is exactly
+				// where both 10-07/10-08 fixes physically do not stand.
+				// Byte-the-same form as the mismatch branch: the class
+				// learns, the round routes to the terminal write branch.
+				a.resolvePending()
+				a.setVerifyDead(true)
+				a.executeLevel2(p.rng, p.converted, p.armed, true)
+
+				return nil, false
+			}
 			a.executeCorrection()
 		case a.pendingEarlyAnswer():
 			// The pre-boundary early answer of an autocorrect round: the
@@ -1965,16 +1992,20 @@ func (a *Actor) pendingVerdict() bool {
 }
 
 // pendingStaleCache reports the stale-cache terminal signature of the
-// 2026-10-13 client-drift amendment (plan 10-08, owner verdict, G-10-1):
-// the word round armed over an EMPTY push cache — the client has never
-// reported a field state in this context episode (an honest GTK client
-// pushes on every change) — and its only answer does not hold the typed
-// stretch. Such a client (the 0x29-drifted wezterm nightly) is the
-// behavioral terminal class, not a GTK verify-mismatch. Cache evidence
-// (the pushes tracked the typing) keeps the byte-as-today fail-closed
-// world; selection rounds are range-anchored (Pitfall 6) and autocorrect
-// boundary rounds carry their own CR-02 fail-closed semantics — both
-// excluded.
+// 2026-10-13 client-drift amendment (plan 10-08, owner verdict, G-10-1),
+// extended by plan 10-10 to BOTH verdict branches: the round armed over an
+// EMPTY push cache — the client has never reported a field state in this
+// context episode (an honest GTK client pushes on every change), the
+// ANSWER-ONLY push channel — whatever its single answer holds. Content
+// does not distinguish: a fresh matching answer routed level-1 on the host
+// (the 09:39 rows — done in 1.9–2.4 ms, the branch where the 10-07/10-08
+// fixes physically do not stand), a stale non-matching one died a GTK
+// verify-mismatch (the 0x29-drifted wezterm nightly). The channel
+// distinguishes, per the owner's approved semantics («обещает окружение,
+// но отвечает протухшим кэшем = всё равно терминал»). Cache evidence (the
+// pushes tracked the typing) keeps the byte-as-today fail-closed world;
+// selection rounds are range-anchored (Pitfall 6) and autocorrect boundary
+// rounds carry their own CR-02 fail-closed semantics — both excluded.
 func pendingStaleCache(p *pendingFix) bool {
 	return p.sel == nil && !p.rng.acBoundary && p.cacheNil
 }
@@ -3555,11 +3586,23 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 // Task 3); the legacy degradation arms nothing, byte as today. The caller
 // holds the mutex.
 func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time, terminal bool) {
+	// The WR-01 re-entrancy guard (plan 10-10): checked-and-set BEFORE the
+	// plan build and the first forward — a second entry while a burst is in
+	// flight (the chunk-boundary window releases the mutex) refuses here,
+	// honestly and non-destructively.
+	if a.level2Busy {
+		a.skipCorrection("correction-busy")
+		a.settleCombo()
+
+		return
+	}
+	a.level2Busy = true
 	eng := a.emitter() // one atomic snapshot for the whole burst
 	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps&^correct.CapSurroundingText, a.backspaceCap())
 	if plan.Level == correct.LevelNone {
 		// D-27: the Backspace series would exceed the cap and this client
 		// has no DeleteSurroundingText — refuse silently, not one deletion.
+		a.level2Busy = false // the guard clears on EVERY exit (WR-01)
 		a.skipCorrection("backspace-cap")
 		a.settleCombo()
 
@@ -3588,6 +3631,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		// destructive key there is no достройка — criterion 4).
 		if a.chunkBoundaryMoved(gen) {
 			slog.Info("correction", "outcome", "context-changed")
+			a.level2Busy = false // the guard clears on EVERY exit (WR-01)
 			a.settleCombo()
 
 			return
@@ -3597,6 +3641,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
+	a.level2Busy = false // the guard clears on the success exit (WR-01)
 	if terminal {
 		// E3 delivery-order safety (plan 10-08, G-10-1 cause B): the
 		// SetGlobalEngine of the post-correction flip may not follow the
