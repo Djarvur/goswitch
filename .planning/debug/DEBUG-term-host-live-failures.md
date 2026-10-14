@@ -2,7 +2,7 @@
 status: investigating
 trigger: "Phase-10 terminal word correction (double right Shift, EN<->RU) is byte-exact green on the VM stand but fails on the owner's host desktop in two modes: (A) wezterm — daemon self-aborts via verify-timeout (after terminal class verify_dead=true) and verify-mismatch, owner sees nothing; (B) GNOME Terminal (VTE) — daemon reports correction done changed=true (6 times), owner sees backspaces render but the committed replacement word never appears (final CommitText lost). Mode: find_root_cause_only. Host daemon is the owner's live input method — read-only host access only; VM stand experiments allowed with logging."
 created: 2026-10-13T00:00:00+03:00
-updated: 2026-10-14T00:50:00+03:00
+updated: 2026-10-14T12:58:00+03:00
 ---
 
 ## Current Focus
@@ -393,3 +393,111 @@ end-of-phase (workflow.human_verify_mode=end-of-phase); автоматическ
 рядов доказать фикс ДО запуска владельцем (урок 2026-10-12). Откат по запросу
 владельца: `~/.local/share/goswitch/releases/v1.1.1/goswitchctl install` (на
 момент записи не запрашивался, сборка оставлена активной).
+
+## Closure validation round-2 (G-10-1) — host-ревалидация (план 10-12, 2026-10-14)
+
+Против блока **REJECTED 09:39** (выше). Урок 2026-10-12/09:39 исполнен до запуска
+владельцем: реплей-гейт реальных рядов 09:39 (юнит-корпус ReplayHost0939*/TwoPhaseLevel1*)
+зелёный на HEAD **до** стенда и установки; стенд не регрессировал (четыре терминальных
+кейса байт-точные зелёные — секция «Фаза 10 re-pin round-2 G-10-1» в adr-008-spike-log.md).
+
+**Установленная сборка (round-2 G-10-1 closure build):** v1.1.1-142-g2fbfee1
+(HEAD 2fbfee1 рабочего дерева, mise run ci зелёный перед установкой; обе половины
+round-2: 10-10 answer-only маршрут терминального контекста на ОБЕИХ ветках вердикта
+HandleSurroundingText + WR-01 correction-busy + WR-02 epoch; 10-11 двухфазный уровень-1
+— delete → подтверждающий рубеж → commit, фолбэк по бюджету 60 мс — + отложенный флип
+уровня-1 на машине 10-08 + WR-03 same-context флап-дисциплина).
+Датированный ряд установки: docs/adr/adr-008-spike-log.md, ряд host-install-gap-round2
+2026-10-14 12:55 MSK.
+
+**Фиксированный путь goswitchctl для ВСЕХ машинных проверок round-2** (бинарник не на
+PATH; резолв новейшим по mtime среди releases):
+`/home/nil/.local/share/goswitch/releases/v1.1.1-142-g2fbfee1/goswitchctl`
+
+**Откат по запросу владельца (назван ДО приёмки):**
+`~/.local/share/goswitch/releases/v1.1.1/goswitchctl install`
+(релизный каталог v1.1.1 нетронут; прежний release-dir v1.1.1-124-g7ace3fd не
+перезаписывался). Исполнение — немедленно по запросу.
+
+### Машинные предпроверки (read-only; 2026-10-14 12:55–12:58 MSK)
+
+- unit: `systemctl --user is-active goswitchd` → **active**; ExecStart =
+  /home/nil/.local/share/goswitch/releases/v1.1.1-142-g2fbfee1/goswitchd, старт
+  12:55:53 MSK (инсталлятор выполнил daemon-reload + restart сам).
+- Журнал поднятия (ошибок регистрации нет): connected → ctl service listening →
+  **component registered (engines:2)** → engine created goswitch-en/1, /2.
+- status по фикс. пути: парсится, **config_valid=true**, config_error= (пуст);
+  счётчики на нуле — чистая база приёмки: autocorrect_fired=0, autocorrect_abstained=0,
+  corrections_done=0, ac_role_errors=0.
+- Host-мутации: ТОЛЬКО санкционированная установка (build из рабочего дерева →
+  НОВЫЙ release-dir → goswitchctl install; рестарт unit'а выполнен инсталлятором).
+  После неё — строго read-only: инъекций нет, окон не создавалось, чужие сервисы
+  не перезапускались, ydotool не запускался. Жесты приёмки исполняет владелец (ниже).
+
+### Критерии журнальных рядов round-2 (сверка ПОСЛЕ жестов владельца)
+
+Окно приёмки снимается `journalctl --user -u goswitchd` и сверяется:
+
+- НЕТ skip-рядов **verify-timeout / verify-mismatch** (подписи отказов round-1:
+  16:20:00 / 16:20:33; в блоке 09:39 их уже не было — требование сохраняется);
+- **НЕТ инверсии класса A2** («вижу привет, и он удаляется» — дословные ряды
+  владельца 09:39 в ОБОИХ терминалах): done-ряд несёт **changed=true**, и первый
+  surrounding-push ПОСЛЕ коррекции трекает текст С исправленным словом — НЕ пустоту
+  (`text="\n"` = сигнатура E3-потери) и НЕ старое слово (инверсия delete/commit);
+  на уровне-1 двухфазность делает инверсию невоспроизводимой по построению (commit
+  не идёт в провод одновременно с delete — подтверждающий рубеж), фолбэк по бюджету
+  60 мс несёт громкий INFO-слаг «correction confirm timeout»;
+- флип-рубежи (mode / switch_engine) видны **СТРОГО ПОСЛЕ settlement-рубежей**
+  (подтверждающий push / первая клавиша / grace 300 мс) — SetGlobalEngine между
+  commit и settlement = E3-сигнатура = провал; мгновенный «mode через 0,03 мс после
+  done» (форма 09:39) больше невозможен — defer-until-confirmed армится на обеих
+  ветках записи (терминальная executeLevel2 и level-1 flush);
+- уровень коррекции: answer-only клиент (терминалы не пушат спонтанно) маршрутизируется
+  в терминальную ветку (10-10) — терминальная геометрия executeLevel2 (латентность
+  ≥40 мс); клиент с кэш-свидетельством идёт двухфазным уровнем-1 (10-11) — либо путь
+  честен, инверсия и потеря исключены на обоих; Info-ряды демона без содержимого
+  (D-20/D-21) — исходы/счётчики/латентности;
+- при п.6 — счётчики: autocorrect_fired не вырос (машинная проверка по фикс. пути),
+  ac_role_errors/ac_skip_terminal_veto задокументированы.
+
+### Re-acceptance round-2 владельца — инструкция (форма 10-UAT Current Test, шесть пунктов)
+
+Разрыв G-10-1 закрывается ТОЛЬКО ответом владельца — на живом столе, на
+установленной сборке round-2 v1.1.1-142-g2fbfee1:
+
+1. **wezterm:** набрать «ghbdtn», двойной правый Shift → увидеть «привет» —
+   слово ОСТАЁТСЯ (не «появляется и удаляется» — дословный отказ 09:39).
+2. **GNOME Terminal:** то же — «ghbdtn» + двойной правый Shift → «привет», слово остаётся.
+3. **Флап-бурст:** быстро пощёлкать фокус между окнами туда-сюда несколько раз и
+   СРАЗУ выполнить жест в терминале — исправление срабатывает (в 09:39 пункт был
+   пропущен владельцем; флап-тряска в окне приёмки отсутствовала — отказ
+   воспроизвёлся и без churn).
+4. **Середина фразы:** набрать слово в середине фразы и исправить жестом (рецепт
+   середины из 09:39: «ghbdtn » + хвостовое слово текущей раскладкой, курсор в конце
+   — жест правит пробег у курсора; вся строка — Фаза 12).
+5. **Пунктуация:** «ytn?» + жест → «нет,».
+6. **Молчание автокоррекции:** в терминалах во время всех ручных проб автокоррекция
+   молчала (машинная проверка:
+   `/home/nil/.local/share/goswitch/releases/v1.1.1-142-g2fbfee1/goswitchctl status`
+   — autocorrect_fired не вырос).
+
+Ответ владельца: **«approved»** или описание отклонений.
+Откат по запросу владельца — немедленно: `~/.local/share/goswitch/releases/v1.1.1/goswitchctl install`.
+
+### Журнальные ряды приёмки round-2 (снимаются ПОСЛЕ жестов владельца)
+
+Статус: **ОЖИДАНИЕ — жесты и вердикт владельца** (human-check; не синтезируется).
+После жестов снять ряды за окно приёмки и сверить с критериями round-2 выше
+(нет verify-timeout/verify-mismatch; нет инверсии — первый push трекает исправленное
+слово; флипы строго после settlement). Записать ряды и вердикт ДОСЛОВНО:
+
+- «approved» → ряд закрытия G-10-1 (gap closed by owner re-acceptance round-2, дата);
+- «rejected» с наблюдаемыми → честные журнальные ряды, СТОП без правок кода вне
+  нового цикла планирования (следующий цикл обязан реплеем НОВЫХ рядов доказать
+  фикс до owner-запуска); откат по запросу владельца — немедленно.
+
+**Вердикт владельца:** [ОЖИДАНИЕ — не синтезируется]
+
+Routing для верификатора: human-check round-2 маршрутизируется к владельцу через UAT
+end-of-phase (workflow.human_verify_mode=end-of-phase); автоматическое исполнение/
+синтез вердикта запрещены — машинные проверки его не заменяют.
