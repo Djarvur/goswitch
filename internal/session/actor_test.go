@@ -9625,6 +9625,11 @@ func TestDstGuard_NeverMaterializedContextGetsForwards(t *testing.T) {
 		t.Errorf("the guard boundary carries field content (D-20/D-21 — outcomes and counters only); "+
 			"log:\n%s", logged)
 	}
+	// The diversion is machine-visible in the status surface (T-10-16-04,
+	// the ac_role_errors form).
+	if got := a.StatusSnapshot().CorrDstGuarded; got != 1 {
+		t.Errorf("corr_dst_guarded counter = %d, want 1 — the diversion must be countable", got)
+	}
 	// The dead generation's engine stays untouched by the fresh round.
 	if calls := sink.deleteCalls(); len(calls) != 0 {
 		t.Errorf("deletions on the previous generation's engine = %+v, want none", calls)
@@ -9669,6 +9674,10 @@ func TestDstGuard_MaterializedContextByteUnchanged(t *testing.T) {
 	if got := len(sink.forwardCalls()); got != 0 {
 		t.Errorf("forwards on the honest world = %d, want 0 — the forward branch must never touch "+
 			"a materialized context", got)
+	}
+	// The guard never fired — the counter reads zero on the honest world.
+	if got := a.StatusSnapshot().CorrDstGuarded; got != 0 {
+		t.Errorf("corr_dst_guarded on the honest world = %d, want 0", got)
 	}
 }
 

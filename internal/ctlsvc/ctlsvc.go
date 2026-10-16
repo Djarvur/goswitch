@@ -282,6 +282,12 @@ func renderStatus(st session.Status) string {
 		// (D-20/D-21); the token rides the ac_ family before the config
 		// block, and no old key moves or renames.
 		"ac_role_errors="+strconv.Itoa(st.AutoCorrectRoleErrors),
+		// The DST guard's diversion counter (plan 10-16, the 2026-10-16
+		// bisection): level-1 corrections rerouted to the forward branch for
+		// the missing materialization evidence — the owner's machine-visible
+		// WHY of a forwards-delivered replacement (T-10-16-04). Same
+		// counts-only discipline, same fixed-token form, no old key moves.
+		"corr_dst_guarded="+strconv.Itoa(st.CorrDstGuarded),
 		"sound_enabled="+strconv.FormatBool(st.SoundEnabled),
 	)
 	for _, reason := range slices.Sorted(maps.Keys(st.AutoCorrectSkipReasons)) {

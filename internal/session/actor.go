@@ -238,8 +238,23 @@ type Actor struct {
 	// never wait for a.mu (G-6-1). Reads go through the emitter() snapshot
 	// accessor; nil before the first mint, exactly like the plain field it
 	// replaced.
-	engSlot     atomic.Pointer[emitterSlot]
-	surr        []rune // cached text-before-cursor from the latest client push
+	engSlot atomic.Pointer[emitterSlot]
+	surr    []rune // cached text-before-cursor from the latest client push
+	// surrSeen is the DST guard's generation-scoped materialization evidence
+	// (plan 10-16, the 2026-10-16 bisection): set together with the
+	// surrounding cache — EVERY push or materializing Require answer of the
+	// current generation proves the composer-side surrounding state exists —
+	// and cleared exactly where the cache dies (the FocusOut/Reset branch,
+	// a.surr=nil + ctxEpoch++). surrEng binds the evidence to the emitter it
+	// was seen on (the flapEng interface-identity form: engine objects are
+	// minted per input context), so a churn-missed re-mint cannot inherit a
+	// dead generation's evidence. On mutter 46.2 a DeleteSurroundingText
+	// toward a never-materialized context segfaults gnome-shell (strlen over
+	// the virgin state, meta-wayland-text-input.c:254 — ANY parameters, the
+	// ~1.5 s virgin window; three cores, one frame), so the correction
+	// machine emits DST only over this evidence (executeCorrection).
+	surrSeen    bool
+	surrEng     engine.Emitter
 	sel         selectionState
 	pending     *pendingFix
 	after       *pendingAfter
@@ -293,6 +308,13 @@ type Actor struct {
 	corrDone    int
 	corrSkipped int
 	skipReasons map[string]int
+	// corrDstGuarded counts the DST guard's diversions (plan 10-16, the
+	// 2026-10-16 bisection): level-1 rounds whose DeleteSurroundingText was
+	// WITHHELD for the missing generation-scoped materialization evidence
+	// and served by the forward branch instead (the T-10-16-04 visibility —
+	// the owner must see WHY a replacement went forwards). Counts only,
+	// never content (D-20/D-21).
+	corrDstGuarded int
 	// Autocorrect counters (plan 06-06, D-54): the fired corrections, the
 	// fail-closed abstentions with their reason slugs — counts and closed
 	// slugs only, never the typed or corrected word (D-20/D-21, Pitfall 6).
@@ -996,6 +1018,12 @@ type Status struct {
 	// episode is counted — the 11:00:16 episode stayed silent for the rest
 	// of the day behind its single WARN. A healthy answer zeroes it.
 	AutoCorrectRoleErrors int
+	// CorrDstGuarded is the DST guard's diversion counter (plan 10-16, the
+	// 2026-10-16 bisection): level-1 corrections rerouted to the forward
+	// branch for the missing generation-scoped materialization evidence —
+	// the machine-visible WHY of a forwards-delivered replacement
+	// (T-10-16-04). Counts only (D-20/D-21).
+	CorrDstGuarded int
 	// SoundEnabled is the applied sound switch (plan 07-05) — the
 	// EffectiveEnabled truth of the applied snapshot (an absent section
 	// reads ON, the owner's default), the `sound_enabled` status token the
@@ -1040,6 +1068,7 @@ func (a *Actor) StatusSnapshot() Status {
 
 		AutoCorrectSkipReasons: maps.Clone(a.acReasons),
 		AutoCorrectRoleErrors:  a.acRoleErrors,
+		CorrDstGuarded:         a.corrDstGuarded,
 		ConfigValid:            true, // built-in defaults, or a source without a status surface
 	}
 	if a.mode == modeRU {
@@ -1165,6 +1194,12 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// the caches belong to the input context that just left
 		a.surr = nil
 		a.sel = selectionState{}
+		// The DST guard's materialization evidence dies WITH the cache
+		// (plan 10-16): the generation that proved the composer-side
+		// surrounding state exists is gone, and a fresh generation starts
+		// unevidenced — the virgin-window rule.
+		a.surrSeen = false
+		a.surrEng = nil
 		// the context generation moves with it (plan 10-04): the terminal
 		// write branch reads this tag between chunks — any death of the
 		// context inside the burst's boundary windows stops the round
@@ -2092,6 +2127,16 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 
 	a.surr = beforeCursor(text, cursorPos)
 	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
+	// The DST guard's materialization evidence (plan 10-16, the 2026-10-16
+	// bisection): EVERY push or materializing Require answer of the current
+	// generation proves the composer-side surrounding state exists — the
+	// bisection made materialization, not emission parameters or timing, the
+	// crash discriminator (R1b warm survive vs R2/R6b/R7 virgin crash). The
+	// evidence binds to THIS generation's emitter (the flapEng identity
+	// form), so a churn-missed re-mint cannot inherit a dead generation's
+	// proof; it dies with the cache in the FocusOut/Reset branch.
+	a.surrSeen = true
+	a.surrEng = a.emitter()
 	// -debug only, same sensitivity class as the key trace (diagnosis mode
 	// is opt-in and short-lived); the live hunt needs the pushed field
 	// text to see what a correction actually left behind (2026-09-28).
@@ -3722,8 +3767,10 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 }
 
 // executeCorrection runs the level-1 ladder plan of the settled pending fix
-// — one DeleteSurroundingText exactly over the token+tail range (CORR-07) —
-// and arms the two-phase confirmation window (plan 10-11, round-2 G-10-1,
+// — one DeleteSurroundingText exactly over the token+tail range (CORR-07),
+// gated by the DST guard (plan 10-16: only over the generation-scoped
+// materialization evidence, else the forward branch) — and arms the
+// two-phase confirmation window (plan 10-11, round-2 G-10-1,
 // the 09:39 host rows): the commit phase does NOT follow the deletion on
 // the wire. The host client's processing reorders the tight pair (the A2
 // class: the insertion lands first and is visible, the late deletion erases
@@ -3746,6 +3793,32 @@ func (a *Actor) executeCorrection() {
 		return
 	}
 	eng := a.emitter() // one atomic snapshot for the whole ladder emission
+	if !a.surrSeen || a.surrEng != eng {
+		// The DST guard (plan 10-16, the 2026-10-16 bisection verdict): the
+		// surrounding state of THIS generation was never materialized in the
+		// composer — no spontaneous push, no materializing answer — and on
+		// mutter 46.2 a DeleteSurroundingText toward such a context segfaults
+		// gnome-shell (strlen over the virgin state,
+		// meta-wayland-text-input.c:254; ANY parameters, the ~1.5 s virgin
+		// window — a guarantee a layout corrector cannot honestly make, so
+		// the machine makes it structurally). The emission is withheld and
+		// the replacement rides the PROVEN forward branch — the existing
+		// executeLevel2 form (chunks ≤ terminalChunkKeys, level2ForwardGap
+		// pacing, the ctxEpoch re-check, one commit; the WR-01 busy guard
+		// covers the window) with no new transport code (verdict (c)). This
+		// round was classified NON-terminal to reach the level-1 ladder, so
+		// the branch runs in its non-terminal form. The boundary is loud and
+		// content-free (D-20/D-21) and the diversion is counted for the
+		// status surface (T-10-16-04). RequireSurroundingText is never
+		// suppressed and the two-phase machine of a materialized context is
+		// byte-untouched (TestDstGuard_MaterializedContextByteUnchanged).
+		a.corrDstGuarded++
+		slog.Info("correction", "outcome", "dst-guarded",
+			"latency_ms", time.Since(p.armed).Milliseconds())
+		a.executeLevel2(p.rng, p.converted, p.armed, false)
+
+		return
+	}
 	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, a.backspaceCap())
 	eng.DeleteSurroundingText(plan.Offset, plan.NChars)
 	a.armLevel1Confirm(&level1Confirm{
