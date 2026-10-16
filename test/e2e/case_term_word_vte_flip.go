@@ -45,6 +45,16 @@ const (
 	termFlipModeMark      = `"msg":"mode","to"`
 	termFlipSwitchMark    = `"msg":"switch_engine"`
 
+	// termFlipRelKeyMark is the round-4 machine's honest release cause
+	// (plan 10-17): the terminal flip slot has NO grace and NO verify
+	// releases — the deferred flip survives the settlement conclusion and
+	// fires only on the next keystroke or confirming push. The case's own
+	// trailing newline (the pty flush) IS that keystroke: the row waits
+	// for the flip-released(keystroke) mark between the settlement and the
+	// mode/switch marks, so the order oracle proves the full round-4
+	// chain done < settlement < keystroke-release < mode.
+	termFlipRelKeyMark = `"stage":"flip-released","reason":"keystroke"`
+
 	// termFlipDocFlipLine replaces the frozen false pin of the
 	// autocorrectConfigDoc form — the case owns its document (the 03-02
 	// no-overlay rule); the frozen configs are never touched.
@@ -104,10 +114,12 @@ func termFlipRow(label, cmd, observed, verdict string) error {
 
 // flipWordRound drives one word round and gates the JOURNAL DELIVERY
 // ORDER: done, then the settlement (the client's confirming push — the
-// verify-after match), then the mode/switch marks. The gate reads the
-// daemon journal between the marks — a mode/switch record between done and
-// settlement is the E3 loss signature and fails the row. The final newline
-// (the pty flush) comes only after the settlement is proven.
+// verify-after match, or the quiet budget conclusion), then the round-4
+// release cause — the case's own newline keystroke, whose
+// flip-released(keystroke) mark proves the terminal slot's no-grace
+// discipline (plan 10-17) — and only then the mode/switch marks. The gate
+// reads the daemon journal between the marks — a mode/switch record
+// between done and settlement is the E3 loss signature and fails the row.
 func (s *stand) flipWordRound(ctx context.Context, caseName, text string) error {
 	keyBase := s.countSub(keyTraceMark)
 	if err := s.injectText(ctx, text); err != nil {
@@ -148,6 +160,19 @@ func (s *stand) flipWordRound(ctx context.Context, caseName, text string) error 
 			return err
 		}
 	}
+	// The round-4 release cause (plan 10-17): the terminal flip slot has
+	// no grace and no verify releases — the flip survives the settlement
+	// conclusion BY DESIGN (the verify-timeout above is a conclusion, not
+	// a cause). The case's own newline (the pty flush) is the honest
+	// keystroke cause: the flip-released(keystroke) mark must appear
+	// between the settlement and the mode/switch marks.
+	relBase := s.countSub(termFlipRelKeyMark)
+	if err := s.injectText(ctx, "\n"); err != nil {
+		return fmt.Errorf("%s: release keystroke (pty flush): %w", caseName, err)
+	}
+	if err := s.waitForNew(ctx, termFlipRelKeyMark, relBase+1, correctionWait); err != nil {
+		return fmt.Errorf("%s: flip-released(keystroke) after the settlement: %w", caseName, err)
+	}
 	if err := s.waitForNew(ctx, termFlipModeMark, modeBase+1, correctionWait); err != nil {
 		return fmt.Errorf("%s: mode record after the settlement: %w", caseName, err)
 	}
@@ -158,7 +183,7 @@ func (s *stand) flipWordRound(ctx context.Context, caseName, text string) error 
 		return fmt.Errorf("%s: %w", caseName, err)
 	}
 
-	return s.injectText(ctx, "\n")
+	return nil
 }
 
 // assertFlipDeliveryOrder greps the daemon journal for the E3 contract: no
