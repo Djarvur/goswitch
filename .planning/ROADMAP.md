@@ -68,7 +68,7 @@ Plans:
   4. До первого разрушающего действия (первый ForwardKeyEvent BackSpace) отмена бесплатна и ничего не мутирует; после — verify-сверка при расхождении логирует и останавливается, никогда не «чинит» сама; фокус-переключение между чанками (≤8 клавиш) перечекается
   5. Двухразрешительная модель Фазы 9 живая: замороженные негативные ряды матрицы зелёные — автокоррекция в терминале молчит при работающей ручной коррекции (vim-insert/htop-свидетели)
 
-**Plans**: 13/15 plans executed + 12 gap-closure plans (10-07…10-09 round 1, 10-10…10-12 round 2, round 3: 10-13 blocked крахом gnome-shell / 10-14+10-15 superseded; gap G-10-1) + round-4: 10-16…10-18 (бисекция 2026-10-16: DST — compositor-killer в девственном окне mutter 46.2; Require-receipt для wezterm-класса неформулируем — новый механизм: форварды + pty-drain-доказательства стенда + delivery-метки + флип вне окна + DST-гард безопасности)
+**Plans**: 14/18 plans executed + 12 gap-closure plans (10-07…10-09 round 1, 10-10…10-12 round 2, round 3: 10-13 blocked крахом gnome-shell / 10-14+10-15 superseded; gap G-10-1) + round-4: 10-16…10-18 (бисекция 2026-10-16: DST — compositor-killer в девственном окне mutter 46.2; Require-receipt для wezterm-класса неформулируем — новый механизм: форварды + pty-drain-доказательства стенда + delivery-метки + флип вне окна + DST-гард безопасности)
 
 Plans:
 
@@ -87,7 +87,7 @@ Plans:
 - [x] 10-13-PLAN.md — gap G-10-1 round 3 (проба): debug-вербы probe-delete-surrounding/probe-commit + стенд-кейс term-cap-delivery (P1/P2/P3 × wezterm/VTE) + вердикт-таблица маршрутизации доставки
 - [ ] 10-14-PLAN.md — ~~gap G-10-1 round 3 (фикс): машина доказуемой доставки уровня-2 (drain-proof/receipt по Require-ответам)~~ — SUPERSEDED round-4: Require-receipt для wezterm-класса неформулируем, DST как примитив мёртв (бисекция 2026-10-16); не исполнялся
 - [ ] 10-15-PLAN.md — ~~gap G-10-1 round 3: хост-установка + owner re-acceptance~~ — SUPERSEDED round-4 (переигран 10-18); не исполнялся
-- [ ] 10-16-PLAN.md — gap G-10-1 round 4 (безопасность): DST-гард девственного окна (подавление эмиссии к контекстам без перегенерационного свидетельства, фолбэк форварды) + пин апстрим-фикса mutter + амендмент ADR-008
+- [x] 10-16-PLAN.md — gap G-10-1 round 4 (безопасность): DST-гард девственного окна (подавление эмиссии к контекстам без перегенерационного свидетельства, фолбэк форварды) + пин апстрим-фикса mutter + амендмент ADR-008
 - [ ] 10-17-PLAN.md — gap G-10-1 round 4 (механизм): реплей-корпус 19:21:26/19:36:00 (RED→GREEN) + drain-settle перед коммитом + флип вне окна коррекции + журнальные delivery-метки + debug-gated pacing + стенд-кейс term-word-drain
 - [ ] 10-18-PLAN.md — gap G-10-1 round 4: реплей-гейт ДО стенда + стенд re-pin ×4 + живой drain-ряд + хост-установка + owner re-acceptance (гейт: слово в wezterm остаётся; human-check)
 
@@ -142,7 +142,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 9. Спайк и дефект wezterm | v1.2 | 1/4 | In Progress|  |
-| 10. TERM-слово | v1.2 | 13/15 | In Progress|  |
+| 10. TERM-слово | v1.2 | 14/18 | In Progress|  |
 | 11. MENU — пункт «в чёрный список» | v1.2 | 0/? | Not started | - |
 | 12. TERM-строка | v1.2 | 0/? | Not started | - |
 | 13. A11Y — рецепты Telegram/ZCode | v1.2 | 0/? | Not started | - |
