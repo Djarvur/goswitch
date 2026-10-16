@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
 status: verifying
-stopped_at: Completed 10-16-PLAN.md
-last_updated: "2026-10-16T20:29:41.338Z"
+stopped_at: Completed 10-17-PLAN.md
+last_updated: "2026-10-16T21:29:04.956Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: c727d86bb18ef487a04b0c29d81feb34333a72aa
+state_head: 9ca615f6ba5316386f4f572686edd2f70cf28ad3
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 22
-  completed_plans: 14
+  completed_plans: 15
   percent: 0
 ---
 
@@ -62,6 +62,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P12 | 18min | 3 tasks | 2 files |
 | Phase 10 P13 | 48min | 3 tasks | 17 files |
 | Phase 10 P16 | 18min | 3 tasks | 7 files |
+| Phase 10 P17 | 54min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,7 @@ Recent decisions affecting current work:
 - [Phase 10]: Реплей-гейт реальных рядов 09:39 исполнен ДО стенда и установки round-2: ReplayHost0939*/TwoPhaseLevel1* зелёные на HEAD, четыре стенд-кейса байт-точные зелёные, gap-сборка v1.1.1-142-g2fbfee1 установлена (откат v1.1.1 назван до приёмки), вердикт владельца — честное ОЖИДАНИЕ — Урок 2026-10-12 (стенд-зелень без реплея = два раунда ложной уверенности) и REJECTED 09:39 обязывают доказывать фикс реплеем реальных журнальных рядов до всякого owner-запуска; владелец — единственный закрывающий оракул G-10-1, его вердикт не синтезируется (T-10-12-01/03)
 - [Phase 10]: Роутинг 10-14 по живым рядам отменён: эмиссия DST+Require валит gnome-shell стенда (4/4 signal 11), Require-доказуемая доставка непроверяема как минимум на стенде — Эскалация владельцу (Rule 4): редизайн формы доставки (Require-свободные пробы/раздельная эмиссия/разбор краха) — архитектурное решение; 10-14 без журнального входа не стартует
 - [Phase 10]: Гвард DST-эмиссии: DeleteSurroundingText только при перегенерационном свидетельстве материализованности (surrSeen+surrEng — bind к эмиттеру поколения, форма flapEng; clear в FocusOut/Reset-ветке), иначе диверсия в executeLevel2-форму + INFO dst-guarded + corr_dst_guarded в status — план 10-16, T-10-16-01/02 закрыты на уровне машины — Бисекция 2026-10-16 (R2/R6b/R7): DST с любыми параметрами к непроэнерженному контексту в девственном окне валит gnome-shell (mutter 46.2, strlen по NULL, meta-wayland-text-input.c:254); гарантии «окно тёплое» корректор дать не может — свидетельство стало машинным. Bind к эмиттеру (Rule 2 сверх плана) закрывает churn-реминт без жизненной пары (AttachEngine — чистый store); апстрим-фикс проверен GitLab REST API и НЕ СУЩЕСТВУЕТ (strlen по NULL жив до 51.1 + main; частичное харденение 48.0 — 2c42a284/fb86d5d5) — ретест-гейт закрыт на всех существующих версиях, DST-для-терминалов депрекирован, probe-вербы exempt под тем же гейтом
+- [Phase 10]: Машина round-4 (план 10-17): drain-settle 150 мс перед коммитом терминальной ветки (мьютекс освобождён на окно — WR-01 накрывает, константа с журнальным происхождением 19:21:26/E3, НЕ конфиг; -debug env-оверрайд fail-closed), флип вне окна (терминальный слот без grace и verify-релизов — только следующая клавиша/подтверждающий пуш; правило 2026-09-28 отложено-не-отменено, валидация владельцем 10-18), delivery-метки INFO без содержимого, abort/commit-дисциплина: свободный стоп только до первого форварда, после — коммит на захваченном снапшоте за меткой context-changed-midflow
 
 ### Pending Todos
 
@@ -132,8 +134,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T20:29:20.496Z
-Stopped at: Completed 10-16-PLAN.md
+Last session: 2026-10-16T21:28:46.801Z
+Stopped at: Completed 10-17-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
