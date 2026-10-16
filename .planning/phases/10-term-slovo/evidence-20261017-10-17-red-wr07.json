@@ -1,0 +1,11 @@
+{
+  "command": "mise exec -- go test ./internal/session/ -race -count=1 -run 'TestProbeForward_NilEngineFailClosed' -v",
+  "exitCode": 2,
+  "output": "not ok 1 - TestProbeForward_NilEngineFailClosed\n# tests 1\n# pass 0\n# fail 1\n--- FAIL: TestProbeForward_NilEngineFailClosed\npanic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]\n[signal SIGSEGV: segmentation violation code=0x1 addr=0x28 pc=0x7b435b]\ngithub.com/Djarvur/goswitch/internal/session.ProbeForward({0x0, 0x0}, {0x850000, 0x1})\n\t/home/nil/DiskD/W/Djarvur/goswitch/internal/session/probe.go:173 +0x9b\nFAIL\tgithub.com/Djarvur/goswitch/internal/session 0.163s\nFAIL",
+  "failures": "--- FAIL: TestProbeForward_NilEngineFailClosed (panic: nil pointer dereference at probe.go:173)",
+  "targetTest": "TestProbeForward_NilEngineFailClosed",
+  "targetFile": "internal/session/probe_test.go",
+  "expected": "WR-07 of the 10-REVIEW: ProbeForward without an emitter fails closed with ErrProbeNoEngine — the family contract the other four probe verbs carry (the TestProbe*_NilEngineFailClosed pins)",
+  "actual": "On the UNCHANGED HEAD ProbeForward is the family's only verb without the nil guard: the call panics on the nil interface (SIGSEGV at probe.go:173, eng.ForwardKeyEvent on nil) instead of the contract refusal — reachable from goswitchctl probe-forward against a -debug daemon with no minted input context",
+  "pinGreenOnHead": "The existing TestProbeForward_EmitsPressRelease/RejectsInvalidSpec/Logged pins and the other four NilEngineFailClosed pins PASS on the same HEAD"
+}

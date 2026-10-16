@@ -194,6 +194,17 @@ func TestProbeForward_RejectsInvalidSpec(t *testing.T) {
 	}
 }
 
+// TestProbeForward_NilEngineFailClosed pins the family contract (WR-07 of
+// the 10-REVIEW): without an emitter the probe fails closed with
+// ErrProbeNoEngine — the same guard the other four verbs carry. RED truth:
+// ProbeForward is the family's only verb without the nil guard — the call
+// panics on the nil interface instead of the contract refusal.
+func TestProbeForward_NilEngineFailClosed(t *testing.T) {
+	if err := session.ProbeForward(nil, "x"); !errors.Is(err, session.ErrProbeNoEngine) {
+		t.Fatalf("ProbeForward(nil) error = %v, want ErrProbeNoEngine", err)
+	}
+}
+
 // TestProbeForward_Logged pins the emission journal: a structured
 // "probe forward" record per event (press + release) carrying keyval, mods
 // and the release flag — never the keyspec content itself.

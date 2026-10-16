@@ -165,10 +165,16 @@ func probePrintableKeycode(r rune) (uint32, bool) {
 // forwardCtrlV's pair discipline (press with the event mods, release with
 // MaskRelease); each emission is journalled at DEBUG — the -debug key-trace
 // class («passwords become visible»), never the keyspec argument itself.
+// Without an emitter the probe fails closed (WR-07 of the 10-REVIEW) — the
+// family contract of the other four verbs; ProbeForward was the only one
+// without the guard and panicked on the nil interface instead.
 func ProbeForward(eng engine.Emitter, spec string) error {
 	keyval, keycode, mods, err := ParseProbeKey(spec)
 	if err != nil {
 		return err
+	}
+	if eng == nil {
+		return ErrProbeNoEngine
 	}
 	eng.ForwardKeyEvent(keyval, keycode, mods)
 	slog.Debug("probe forward",
