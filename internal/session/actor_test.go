@@ -9727,3 +9727,604 @@ func TestDstGuard_EvidenceDiesWithGeneration(t *testing.T) {
 		t.Errorf("deletions on the dead generation's engine = %+v, want none", calls)
 	}
 }
+
+// The round-4 replay corpus (plan 10-17, gap G-10-1, the owner mandate of
+// 2026-10-14/16 «вижу исправленное слово, после чего оно удаляется»): the
+// REAL host journal rows of 2026-10-14 19:21:26 (DEBUG-term-host-live-
+// failures.md round-2 block — terminal level-2, done +144 ms, deferred flip
+// +104 ms, the word seen then erased) and 19:36:00 (done +76 ms, the
+// second sample) replayed on the unit seams — RED before the round-4
+// machine exists (the 2026-10-12 lesson: a fix is proven by replaying the
+// literal rows BEFORE any stand run and any owner question).
+//
+// The consumer model (the TwoPhaseLevel1_InvertingConsumer form, adapted to
+// the level-2 reorder class): an answer-only terminal client whose
+// CommitText applies SYNCHRONOUSLY while every ForwardKeyEvent(BackSpace)
+// queues and applies LATE (the host client-drain class — the 2026-10-12
+// live finding «ghbdtn»→«ghприв»). The client's clock is the machine's own
+// pacing (the level2Sleep seam records every sleep duration), so a
+// per-forward processing lag is expressed deterministically: a forward
+// applies when the machine's elapsed pacing time reaches arrival+lag.
+//
+// RED truth (strict TDD, directive 1): on the unguarded HEAD the terminal
+// branch sleeps only level2ForwardGap before the commit, so a host-class
+// lag reorders the commit against the queued forwards — the field loses
+// the word (the owner's exact symptom); the flip still releases on the
+// grace deadline and the verify outcomes (SetGlobalEngine inside the
+// delivery window — the round-2 hypothesis the mandate convicts); the
+// mid-flow context change aborts the round with the deletions on the wire
+// and NO commit («удаление без замены»); and no delivery marks exist —
+// the journal is silent about every one of these outcomes.
+
+// replayDrainedLag is the client lag INSIDE the machine's delivery window:
+// the E3 healthy push class (16 ms) at the host-churn scale — a lag the
+// window must absorb for the word to survive by construction.
+const replayDrainedLag = 60 * time.Millisecond
+
+// replayBeyondLag is the client lag BEYOND the whole correction package:
+// the 19:21:26 row class (done +144 ms with the entire 6×20 ms package
+// behind it — the host client was still draining when the commit landed).
+// Past the window the machine claims NO persistence — the zone's contract
+// is loudness (delivery marks on every boundary), never a field promise.
+const replayBeyondLag = 300 * time.Millisecond
+
+// replayTailWord is the replayed row's field content: «ghbdtn» (6 runes)
+// plus the trailing space of the UAT recipe — 7 BackSpaces, commit
+// «привет » (the D-13 tail rides the replay, the TailRidesReplay form).
+var replayTailWord = wordEN + " "
+
+// replayTailConverted is the same range after the EN→RU conversion.
+var replayTailConverted = wordRU + " "
+
+// replayWezterm is the answer-only terminal client of the 19:21:26 class:
+// the field starts at the typed stretch, commits apply synchronously,
+// forwarded BackSpaces queue and apply late by the fixed lag. The clock
+// advances only by the machine's own pacing sleeps (the level2Sleep seam)
+// plus explicit advance() calls — deterministic, no real timers.
+type replayWezterm struct {
+	field    []rune
+	lag      time.Duration
+	clock    time.Duration
+	arrivals []time.Duration
+}
+
+// tick advances the client clock by one machine sleep and applies every
+// forward whose lag has elapsed (the sleeper seam callback).
+func (c *replayWezterm) tick(d time.Duration) {
+	c.clock += d
+	c.applyDue()
+}
+
+// forward records one queued BackSpace at the current machine time (the
+// sink's forwardHook callback).
+func (c *replayWezterm) forward() {
+	c.arrivals = append(c.arrivals, c.clock)
+}
+
+// commit applies the due forwards FIRST, then the replacement
+// synchronously — the client class the host rows convict (the commit
+// never waits for the queue).
+func (c *replayWezterm) commit(text string) {
+	c.applyDue()
+	c.field = append(c.field, []rune(text)...)
+}
+
+// advance moves the client clock forward after the round (the post-commit
+// queue drain) and applies whatever became due.
+func (c *replayWezterm) advance(d time.Duration) {
+	c.tick(d)
+}
+
+// applyDue erases one trailing rune per due BackSpace (the cursor sits at
+// the end of the simulated field).
+func (c *replayWezterm) applyDue() {
+	due := 0
+	for _, at := range c.arrivals {
+		if c.clock >= at+c.lag {
+			due++
+		}
+	}
+	if due == 0 {
+		return
+	}
+	c.arrivals = c.arrivals[due:]
+	for range due {
+		if len(c.field) > 0 {
+			c.field = c.field[:len(c.field)-1]
+		}
+	}
+}
+
+// replayRow rounds drives one literal 19:21:26-class row: the learned
+// terminal class (the host row's own state — «выученный класс терминала
+// жив на хосте впервые»), the typed «ghbdtn » stretch, the double Right
+// Shift gesture, the terminal level-2 write. Returns the pieces the cells
+// assert on.
+func replayRow(t *testing.T, lag time.Duration) (*session.Actor, *fakeSink, *switchProbe, *flipClock, *replayWezterm, *syncBuffer) {
+	t.Helper()
+	buf := captureLogs(t) // capture BEFORE the teach round: the cells assert the row's own records
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+	a.SetOptions(flipOnOptions()) // the owner's config: flip follows the correction
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+	clock := &flipClock{}
+	a.UseFlipTimer(clock.arm)
+	client := &replayWezterm{field: []rune(replayTailWord), lag: lag}
+	a.UseLevel2Sleeper(client.tick)
+	sink.forwardHook = func(forwardCall) { client.forward() }
+	sink.commitHook = client.commit
+
+	typeWord(a, replayTailWord)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	return a, sink, probe, clock, client, buf
+}
+
+// refuteModeRecord fails the cell the moment a mode record lands — the
+// deterministic refutation of an early flip release (the grace fire, the
+// verify outcomes): the round-4 machine's flip must never ride them.
+func refuteModeRecord(t *testing.T, buf *syncBuffer) {
+	t.Helper()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if got := countModeRecords(buf); got != 0 {
+			t.Fatalf("a mode record released the flip outside its cause (%d records) — SetGlobalEngine "+
+				"fired between the commit and the honest release; log:\n%s", got, buf.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestReplayWezterm1921_ZonedDeliveryMatrix is the zoned matrix of the
+// 19:21:26 row: client lag (inside vs beyond the machine's delivery
+// window) × flip release cause (confirming push / next keystroke / grace
+// fire / verify timeout / verify mismatch). Contracts: (а) inside the
+// window the field holds «привет » under ANY release cause; (б) beyond it
+// persistence is NOT claimed but every boundary is loud (delivery marks,
+// no silent paths); (в) at NO matrix point does SetGlobalEngine fire
+// between the commit and the flip's honest release cause — a grace release
+// or a verify-outcome release is a failure.
+func TestReplayWezterm1921_ZonedDeliveryMatrix(t *testing.T) {
+	for _, cell := range []struct {
+		name    string
+		lag     time.Duration
+		release string
+		zone    string
+	}{
+		{"drained-push", replayDrainedLag, "push", "drained"},
+		{"drained-keystroke", replayDrainedLag, "keystroke", "drained"},
+		{"drained-grace-dead", replayDrainedLag, "grace", "drained"},
+		{"drained-verify-timeout", replayDrainedLag, "timeout", "drained"},
+		{"drained-verify-mismatch", replayDrainedLag, "mismatch", "drained"},
+		{"beyond-push-loud", replayBeyondLag, "push", "beyond"},
+		{"beyond-keystroke-loud", replayBeyondLag, "keystroke", "beyond"},
+	} {
+		t.Run(cell.name, func(t *testing.T) {
+			a, _, probe, clock, client, buf := replayRow(t, cell.lag)
+
+			// The row's form signature: the terminal branch executed (done) and
+			// the flip is still deferred (no mode record yet — the +104 ms flip
+			// of the row rode a release cause, never the commit itself).
+			if !strings.Contains(buf.String(), `"msg":"correction","outcome":"done","changed":true`) {
+				t.Fatalf("the replayed round never completed; log:\n%s", buf.String())
+			}
+			if got := countModeRecords(buf); got != 0 {
+				t.Fatalf("mode records right after the round = %d, want 0 — the flip is deferred; log:\n%s",
+					got, buf.String())
+			}
+			// (в) mid-window: no SetGlobalEngine between the commit and any
+			// release cause.
+			if got := probe.targets(); len(got) != 0 {
+				t.Fatalf("SetGlobalEngine between the commit and the release cause = %q, want none", got)
+			}
+
+			if cell.zone == "drained" {
+				// (а) inside the window the field keeps the word under ANY
+				// release cause — the mandate's core promise. Asserted BEFORE
+				// the release cause runs: a keystroke cause types its own
+				// character, which is not the correction's doing.
+				client.advance(time.Second)
+				if got := string(client.field); got != replayTailConverted {
+					t.Fatalf("simulated field after the drained round = %q, want %q — the client lag "+
+						"reordered the commit against the queued forwards (the owner's «вижу привет — "+
+						"и он удаляется»)", got, replayTailConverted)
+				}
+			} else {
+				// (б) beyond the window persistence is NOT claimed; drain the
+				// queue so the model lands where the host's client lands —
+				// the assertions below own the loudness contract.
+				client.advance(2 * replayBeyondLag)
+			}
+
+			switch cell.release {
+			case "push":
+				line := replayTailConverted
+				a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // the confirming push
+				client.field = []rune(line)
+				if got := countModeRecords(buf); got != 1 {
+					t.Fatalf("mode records after the confirming push = %d, want exactly 1; log:\n%s",
+						got, buf.String())
+				}
+				if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+					t.Errorf("switch targets = %q, want exactly [%s]", got, engine.NameRU)
+				}
+			case "keystroke":
+				a.HandleKey(engine.EngineEvent{Keyval: 'x'}) // released first, consumed in RU
+				if got := countModeRecords(buf); got != 1 {
+					t.Fatalf("mode records after the next keystroke = %d, want exactly 1; log:\n%s",
+						got, buf.String())
+				}
+				if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+					t.Errorf("switch targets = %q, want exactly [%s]", got, engine.NameRU)
+				}
+			case "grace":
+				// The round-4 rule: the terminal flip arms NO grace deadline —
+				// the slot waits for the next keystroke or a confirming push,
+				// and a grace fire is a stale no-op.
+				if armed := clock.armedDurations(); len(armed) != 0 {
+					t.Fatalf("deferred flips armed a grace deadline = %v, want none — the flip must not "+
+						"release inside the delivery window (the round-2 hypothesis)", armed)
+				}
+				clock.fire()
+				refuteModeRecord(t, buf)
+				if got := probe.targets(); len(got) != 0 {
+					t.Fatalf("SetGlobalEngine after a grace fire = %q, want none — the grace is not a "+
+						"release cause anymore", got)
+				}
+			case "timeout":
+				// The verify-after quiet timeout must NOT release the terminal
+				// flip either: the verify machinery judges the field, the mode
+				// rule waits for its own cause. The cell drives its own round
+				// with the short budget attached BEFORE the gesture (the
+				// quiet-timeout corpus form) so the arm reads the folded 30 ms.
+				buf := captureLogs(t)
+				a, sink := wiredActor()
+				teachTerminalClass(t, a)
+				a.SetOptions(flipOnOptions())
+				cfg := reloadCfg(300, "shift+ctrl_r")
+				cfg.Timeouts.VerifyWaitMs = 30
+				a.AttachConfig(&reloadSource{cfg: cfg}) // the NEXT event folds the budget
+				probe := &switchProbe{}
+				a.SetSwitcher(probe.switcher)
+				clock := &flipClock{}
+				a.UseFlipTimer(clock.arm)
+				client := &replayWezterm{field: []rune(replayTailWord), lag: cell.lag}
+				a.UseLevel2Sleeper(client.tick)
+				sink.forwardHook = func(forwardCall) { client.forward() }
+				sink.commitHook = client.commit
+
+				typeWord(a, replayTailWord)
+				tapShift(a)
+				tapShift(a)
+				a.ExpiryAt(expiryAfterWindow)
+
+				if !waitLogUntil(t, buf, `"outcome":"timeout"`, 1, 2*time.Second) {
+					t.Fatalf("the quiet timeout never landed; log:\n%s", buf.String())
+				}
+				refuteModeRecord(t, buf)
+				if got := probe.targets(); len(got) != 0 {
+					t.Fatalf("SetGlobalEngine after the verify timeout = %q, want none — the timeout is "+
+						"not a release cause anymore", got)
+				}
+			case "mismatch":
+				// WR-05: the first mismatching answer re-requires, the second
+				// concludes — and the concluding mismatch must NOT release the
+				// terminal flip.
+				a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
+				a.HandleSurroundingText(mismatchLine, runeLen(mismatchLine), runeLen(mismatchLine))
+				if !strings.Contains(buf.String(), `"msg":"correction verify","outcome":"mismatch"`) {
+					t.Fatalf("the mismatch never concluded; log:\n%s", buf.String())
+				}
+				refuteModeRecord(t, buf)
+				if got := probe.targets(); len(got) != 0 {
+					t.Fatalf("SetGlobalEngine after the mismatch = %q, want none — the mismatch is not "+
+						"a release cause anymore", got)
+				}
+			}
+
+			// (б) loudness on every boundary — INFO delivery marks with
+			// outcomes and counters, never field content (D-20/D-21).
+			logged := buf.String()
+			iChunks := strings.Index(logged, `"msg":"correction delivery","stage":"chunks-sent"`)
+			iCommit := strings.Index(logged, `"msg":"correction delivery","stage":"commit-sent"`)
+			iArmed := strings.Index(logged, `"msg":"correction delivery","stage":"flip-armed"`)
+			iReleased := strings.Index(logged, `"msg":"correction delivery","stage":"flip-released"`)
+			if iChunks < 0 || iCommit < 0 || iArmed < 0 {
+				t.Fatalf("delivery marks missing (chunks@%d commit@%d flip-armed@%d) — a silent boundary "+
+					"is the three-round lesson; log:\n%s", iChunks, iCommit, iArmed, logged)
+			}
+			if !(iChunks < iCommit && iCommit < iArmed) {
+				t.Fatalf("delivery marks out of order (chunks@%d commit@%d flip-armed@%d); log:\n%s",
+					iChunks, iCommit, iArmed, logged)
+			}
+			switch cell.release {
+			case "push", "keystroke":
+				if iReleased < 0 || iReleased < iArmed {
+					t.Fatalf("the released flip carries no delivery mark after its cause "+
+						"(flip-released@%d, flip-armed@%d); log:\n%s", iReleased, iArmed, logged)
+				}
+			default:
+				if iReleased >= 0 {
+					t.Fatalf("a flip-released mark exists without an honest release cause; log:\n%s", logged)
+				}
+			}
+			if strings.Contains(logged, wordEN) || strings.Contains(logged, wordRU) {
+				t.Errorf("the delivery marks carry field content (D-20/D-21); log:\n%s", logged)
+			}
+		})
+	}
+}
+
+// TestReplayWezterm1921_FlipFalseByteStable is pin (г): with the off gate
+// (the stand configs' world) the whole matrix stays byte-stable — zero
+// armed flips, zero switch traffic, the frozen burst+commit+verify-arm
+// shape, in BOTH lag zones.
+func TestReplayWezterm1921_FlipFalseByteStable(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+	a.SetOptions(session.Options{FlipAfterCorrection: false})
+	clock := &flipClock{}
+	a.UseFlipTimer(clock.arm)
+	client := &replayWezterm{field: []rune(replayTailWord), lag: replayDrainedLag}
+	a.UseLevel2Sleeper(client.tick)
+	sink.forwardHook = func(forwardCall) { client.forward() }
+	sink.commitHook = client.commit
+	opsBefore := len(sink.opLog()) // the teaching round's own records stay out
+
+	typeWord(a, replayTailWord)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if armed := clock.armedDurations(); len(armed) != 0 {
+		t.Fatalf("flip_after_correction=false armed %d deferred flips, want 0", len(armed))
+	}
+	if got := countModeRecords(buf); got != 0 {
+		t.Errorf("mode records with the gate off = %d, want 0; log:\n%s", got, buf.String())
+	}
+	want := append(burstOps(len([]rune(replayTailWord)), replayTailConverted), "require")
+	if got := sink.opLog()[opsBefore:]; !slices.Equal(got, want) {
+		t.Errorf("op log = %q, want the byte-stable frozen shape %q", got, want)
+	}
+	client.advance(time.Second)
+	if got := string(client.field); got != replayTailConverted {
+		t.Errorf("simulated field = %q, want %q — the off-gate world keeps the delivery contract",
+			got, replayTailConverted)
+	}
+}
+
+// TestReplayWezterm1921_ContextChangeAfterFirstForwardCommits is cell (д)
+// of the matrix: the context generation moves AFTER the first forward (the
+// FocusOut form between chunks — a real window switch) and the commit must
+// NOT be cancelled: the replacement lands on the emitter snapshot CAPTURED
+// at the round's start (the fresh re-minted engine stays byte-silent) with
+// a loud mid-flow mark. RED truth: the current chunk-boundary discipline
+// («criterion 4») stops the round WITHOUT the commit — the deletions are
+// on the wire and the replacement never follows (the «удаление без
+// замены» the mandate forbids). The multi-chunk form (termWord20) is the
+// reachable shape of the boundary window on every tree.
+func TestReplayWezterm1921_ContextChangeAfterFirstForwardCommits(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+	a.SetOptions(flipOnOptions())
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+	fresh := &fakeSink{}
+	client := &replayWezterm{field: []rune(termWord20), lag: replayDrainedLag}
+	a.UseLevel2Sleeper(client.tick)
+	sent := atomic.Int32{}
+	sink.forwardHook = func(forwardCall) {
+		if sent.Add(1) == 1 {
+			go func() {
+				a.HandleLifecycle(engine.LifecycleFocusOut) // the generation moves mid-flow
+				a.AttachEngine(fresh)                       // the context re-mints onto a new object
+			}()
+		}
+		client.forward()
+	}
+	sink.commitHook = client.commit
+
+	typeWord(a, termWord20)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	forwards := sink.forwardCalls()
+	if len(forwards) != len([]rune(termWord20)) {
+		t.Fatalf("forwards = %d, want %d — a mid-flow generation change must not stop the burst after "+
+			"the first destructive key", len(forwards), len([]rune(termWord20)))
+	}
+	texts := sink.commitTexts()
+	if len(texts) != 1 || texts[0] != termWord20Converted {
+		t.Fatalf("commits = %q, want exactly one %q on the captured snapshot — a mid-flow context "+
+			"change must never leave the field deleted without its replacement", texts, termWord20Converted)
+	}
+	if got := fresh.commitTexts(); len(got) != 0 {
+		t.Errorf("commits into the RE-MINTED engine = %q, want none — the commit rides the captured "+
+			"snapshot, never the current emitter()", got)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction delivery","stage":"context-changed-midflow"`) {
+		t.Errorf("the loud mid-flow boundary is missing — a silent context change inside the window "+
+			"is the quiet-loss class; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done","changed":true`) {
+		t.Errorf("the round never logged its completion; log:\n%s", logged)
+	}
+	client.advance(time.Second)
+	if got := string(client.field); got != termWord20Converted {
+		t.Errorf("simulated field = %q, want %q", got, termWord20Converted)
+	}
+	// The flip still waits for its honest cause.
+	if got := countModeRecords(buf); got != 0 {
+		t.Errorf("mode records before the release = %d, want 0; log:\n%s", got, logged)
+	}
+	if got := probe.targets(); len(got) != 0 {
+		t.Errorf("SetGlobalEngine before any release cause = %q, want none", got)
+	}
+}
+
+// TestReplayWezterm1921_ContextChangeBeforeFirstForwardStops pins the
+// preserved abort: a generation change landing BEFORE the first forward is
+// still a free stop — zero forwards, zero commits, the context-changed
+// boundary (nothing has been destroyed, so nothing needs replacing). RED
+// truth: the pre-first-forward discipline does not exist on HEAD — the
+// burst replays anyway.
+func TestReplayWezterm1921_ContextChangeBeforeFirstForwardStops(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+	client := &replayWezterm{field: []rune(termWord20), lag: replayDrainedLag}
+	var landed sync.Once
+	var sleeps atomic.Int64
+	a.UseLevel2Sleeper(func(d time.Duration) {
+		if sleeps.Add(1) == 1 {
+			landed.Do(func() { go a.HandleLifecycle(engine.LifecycleFocusOut) })
+		}
+		client.tick(d)
+	})
+	sink.forwardHook = func(forwardCall) { client.forward() }
+	sink.commitHook = client.commit
+
+	typeWord(a, termWord20)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := len(sink.forwardCalls()); got != 0 {
+		t.Errorf("forwards = %d, want 0 — a generation change before the first forward is a free "+
+			"stop, the burst must never start", got)
+	}
+	if texts := sink.commitTexts(); len(texts) != 0 {
+		t.Errorf("commits = %q, want none — nothing was destroyed, nothing commits", texts)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"context-changed"`) {
+		t.Errorf("the round-stop INFO boundary is missing; log:\n%s", buf.String())
+	}
+	if got := strings.Count(buf.String(), `"outcome":"done"`); got != 0 {
+		t.Errorf("a stopped round logged a done outcome; log:\n%s", buf.String())
+	}
+}
+
+// TestReplayWezterm1921_BusyGuardCoversDeliveryWindow pins T-10-17-01: the
+// WR-01 re-entrancy guard covers the WHOLE machine window including the
+// delivery wait — a second correction entry that lands while the round is
+// parked inside it refuses with the correction-busy slug instead of
+// building a second plan over the same un-replaced buffer.
+func TestReplayWezterm1921_BusyGuardCoversDeliveryWindow(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+
+	// Park the machine inside the delivery window: the word is 7 forwards
+	// (7 pacing sleeps), the window's own wait is the 8th sleep.
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var sleeps atomic.Int64
+	a.UseLevel2Sleeper(func(time.Duration) {
+		if sleeps.Add(1) == int64(len([]rune(replayTailWord))+1) {
+			close(started)
+			<-release
+		}
+	})
+
+	burstDone := make(chan struct{})
+	go func() {
+		defer close(burstDone)
+		typeWord(a, replayTailWord)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the machine never parked inside its delivery window — the bounded wait does not " +
+			"exist on this tree")
+	}
+
+	second := make(chan struct{})
+	go func() {
+		close(second)
+		a.CorrectNow() // the ctl entry: must refuse against the in-flight window
+	}()
+	<-second
+	if !waitLogUntil(t, buf, `"reason":"correction-busy"`, 1, 2*time.Second) {
+		t.Fatalf("the second entry never refused — WR-01 does not cover the delivery window; log:\n%s",
+			buf.String())
+	}
+	close(release)
+
+	select {
+	case <-burstDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the burst never settled — deadlock in the busy interleave")
+	}
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != replayTailConverted {
+		t.Errorf("commits = %q, want exactly one %q — a second destructive burst must never ride the "+
+			"window", texts, replayTailConverted)
+	}
+	if got := len(sink.forwardCalls()); got != len([]rune(replayTailWord)) {
+		t.Errorf("forwards = %d, want exactly %d — one burst, never two", got, len([]rune(replayTailWord)))
+	}
+}
+
+// TestReplayHost1936_SecondSampleKeepsWord replays the second host sample
+// (2026-10-14 19:36:00 — done +76 ms, a signature line, not a full block):
+// the same consumer at the row's faster client lag, one zone (inside the
+// machine's delivery window), the signature pins of the form — the done
+// row, the chunked terminal write, the deferred flip released exactly once
+// by the confirming push, and the delivery marks — with the field holding
+// «привет » at the end.
+func TestReplayHost1936_SecondSampleKeepsWord(t *testing.T) {
+	const hostSampleLag = 76 * time.Millisecond // the row's own done latency class
+	a, sink, probe, _, client, buf := replayRow(t, hostSampleLag)
+
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"done","changed":true`) {
+		t.Fatalf("the replayed round never completed; log:\n%s", logged)
+	}
+	// The terminal write's shape: seven BackSpace forwards, ONE commit, the
+	// verify-after arm — never the level-1 pair. Compared as the op log's
+	// SUFFIX: the teaching round's own records stay out.
+	want := append(burstOps(len([]rune(replayTailWord)), replayTailConverted), "require")
+	got := sink.opLog()
+	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
+		t.Fatalf("op log tail = %q, want the terminal write %q", got, want)
+	}
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records before the release = %d, want 0 — the flip is deferred; log:\n%s",
+			got, logged)
+	}
+	if got := probe.targets(); len(got) != 0 {
+		t.Fatalf("SetGlobalEngine before the release cause = %q, want none", got)
+	}
+	// The delivery marks are present and ordered.
+	iChunks := strings.Index(logged, `"msg":"correction delivery","stage":"chunks-sent"`)
+	iCommit := strings.Index(logged, `"msg":"correction delivery","stage":"commit-sent"`)
+	if iChunks < 0 || iCommit < 0 || !(iChunks < iCommit) {
+		t.Fatalf("delivery marks missing or unordered (chunks@%d commit@%d); log:\n%s", iChunks, iCommit, logged)
+	}
+
+	line := replayTailConverted
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line)) // the confirming push
+	client.field = []rune(line)
+	client.advance(time.Second)
+
+	if got := string(client.field); got != replayTailConverted {
+		t.Fatalf("simulated field after the row = %q, want %q — the second host sample loses the "+
+			"word too", got, replayTailConverted)
+	}
+	if got := countModeRecords(buf); got != 1 {
+		t.Errorf("mode records after the confirming push = %d, want exactly 1; log:\n%s", got, buf.String())
+	}
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("switch targets = %q, want exactly [%s]", got, engine.NameRU)
+	}
+}
