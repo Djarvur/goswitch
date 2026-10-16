@@ -745,11 +745,17 @@ type pendingAfter struct {
 // terminal flip ignores the verify outcomes and arms no grace deadline —
 // only the next keystroke or a confirming push releases it — while the
 // level-1 flip keeps the full 10-08 machine byte-as-today. armedAt feeds
-// the terminal release's delivery-mark latency.
+// the terminal release's delivery-mark latency. gesture marks a PARKED
+// gesture-driven flip (CR-01 of the 10-REVIEW, the round-4 fix session):
+// a flip that arrived while the delivery machine was in flight and must
+// not SetGlobalEngine mid-window — the owner's explicit command, armed
+// regardless of flip_after_correction and superseding the correction's
+// own post-correction arming (never a silent drop).
 type deferredFlip struct {
 	target   scriptMode
 	epoch    uint64
 	terminal bool
+	gesture  bool
 	armedAt  time.Time
 }
 
@@ -1920,6 +1926,15 @@ func (a *Actor) deferCorrectionFlip(converted []rune, terminal bool) {
 	if a.comboPending || !a.opts.FlipAfterCorrection {
 		return
 	}
+	if flip := a.flipPending; flip != nil && flip.gesture {
+		// CR-01: a gesture-parked flip owns the slot — the owner's explicit
+		// command arrived LATER than the correction's own mode rule and
+		// supersedes it; re-arming here would silently drop the parked
+		// gesture (the slot is one, the gesture wins, the drop is the one
+		// outcome the mandate forbids). The parked flip keeps its own
+		// release causes (the next keystroke or a confirming push).
+		return
+	}
 	target := scriptOf(converted)
 	if target == a.mode {
 		return
@@ -2883,8 +2898,26 @@ func (a *Actor) backspaceCap() int {
 // A flipTo to the CURRENT mode is a no-op: the SET-semantics site
 // (settleCorrectionFlip) names its target from the corrected text's script,
 // and a same-script correction flip changes nothing.
+//
+// CR-01 (the 10-REVIEW, the round-4 fix session): while the delivery
+// machine is in flight (level2Busy — the drain-settle window holds the
+// mutex RELEASED, so every gesture entry converges here INSIDE the window),
+// flipTo must not execute: SetGlobalEngine between the forwards and the
+// still-pending commit re-mints the engine objects and orphans the commit
+// riding the captured snapshot — the E3 verdict, «удаление без замены»,
+// the one outcome the ADR-008 amendment (6) forbids. The flip PARKS into
+// the deferred slot with the terminal release discipline (parkGestureFlip):
+// the mode switch happens, just after the correction settles. The gate
+// covers every gesture entry by construction — the combo's busy-refusal
+// settleCombo, the mode-switch chord, the Single-tap expiry, the tray
+// ToggleMode/SwitchMode all reach this one seam.
 func (a *Actor) flipTo(target scriptMode) {
 	if target == a.mode {
+		return
+	}
+	if a.level2Busy {
+		a.parkGestureFlip(target)
+
 		return
 	}
 	a.mode = target
@@ -2937,6 +2970,38 @@ func (a *Actor) flipTo(target scriptMode) {
 	if s := a.soundSinkFor(); s != nil {
 		s.Flip()
 	}
+}
+
+// parkGestureFlip arms a gesture-driven flip that arrived while the delivery
+// machine is in flight (CR-01 of the 10-REVIEW): the flip rides the EXISTING
+// deferred-flip slot with the TERMINAL release discipline — no grace
+// deadline, immune to the verify outcomes, released by the next keystroke or
+// a confirming push — so the SetGlobalEngine fires only after the pending
+// commit landed (the machine's own exit clears level2Busy before the release
+// sites can run). NOT gated on flip_after_correction: the gesture flip is the
+// owner's explicit command — settleCombo's own flip never consulted the gate
+// and neither does the park. The target arrives as a scriptMode (the gesture
+// entries are toggles, not converted text). The slot is one: a second park
+// supersedes the first (the LATEST gesture is the owner's intent), and the
+// machine's post-correction arming skips a gesture-occupied slot
+// (deferCorrectionFlip) — the gesture is never silently dropped. The caller
+// holds the mutex.
+func (a *Actor) parkGestureFlip(target scriptMode) {
+	if target == a.mode {
+		return
+	}
+	a.cancelFlipGrace()
+	a.flipEpoch++
+	a.flipPending = &deferredFlip{
+		target:   target,
+		epoch:    a.flipEpoch,
+		terminal: true,
+		gesture:  true,
+		armedAt:  time.Now(),
+	}
+	// The loud boundary (D-20/D-21): outcomes only, never content — the
+	// journal's proof that the gesture was captured, not lost.
+	slog.Info("correction delivery", "stage", "flip-parked")
 }
 
 // oppositeMode is the toggle target of the gesture flips (the Single

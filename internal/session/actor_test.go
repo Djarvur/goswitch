@@ -10431,3 +10431,122 @@ func TestReplayHost1936_SecondSampleKeepsWord(t *testing.T) {
 		t.Errorf("switch targets = %q, want exactly [%s]", got, engine.NameRU)
 	}
 }
+
+// drainPark is the parked-round handle of parkRoundInDrainWindow: release
+// unblocks the machine's window wait; wait fails the cell if the round never
+// settles after it.
+type drainPark struct {
+	release func()
+	wait    func(t *testing.T)
+}
+
+// parkRoundInDrainWindow drives one full terminal round (round types the
+// stretch and the gesture) and parks the machine INSIDE the drain window:
+// the word is 7 forwards (7 pacing sleeps), the window's own wait is the
+// 8th sleep — it blocks until release. The shared interleave rig of the
+// CR-01/CR-02 cells.
+func parkRoundInDrainWindow(t *testing.T, a *session.Actor, round func()) *drainPark {
+	t.Helper()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var sleeps atomic.Int64
+	a.UseLevel2Sleeper(func(time.Duration) {
+		if sleeps.Add(1) == int64(len([]rune(replayTailWord))+1) {
+			close(started)
+			<-release
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		round()
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the machine never parked inside its drain window — the bounded wait does not " +
+			"exist on this tree")
+	}
+
+	return &drainPark{
+		release: func() { close(release) },
+		wait: func(t *testing.T) {
+			t.Helper()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the round never settled — deadlock in the drain-window interleave")
+			}
+		},
+	}
+}
+
+// TestReplayWezterm1921_GestureFlipDuringWindowParksNotSwitches is corpus
+// cell (α) of the round-4 review (CR-01, 10-REVIEW): a gesture-driven flip
+// arriving INSIDE the drain-settle window must not SetGlobalEngine between
+// the forwards and the still-pending commit — the re-mint orphans the commit
+// on the captured snapshot (the E3 verdict, «удаление без замены», the one
+// outcome the ADR-008 amendment (6) forbids). The review's most probable
+// entry drives the cell: the word-layout combo pressed mid-window refuses by
+// the WR-01 guard (correction-busy) and its own settleCombo reaches flipTo —
+// the gate parks the flip into the deferred slot with the terminal release
+// discipline: the mode switch happens AFTER the correction settles, on the
+// next keystroke or a confirming push. Never a silent drop. RED truth:
+// flipTo executes immediately — the switch lands mid-window, before the
+// commit, with no park boundary in the journal.
+func TestReplayWezterm1921_GestureFlipDuringWindowParksNotSwitches(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+	// The gesture flip is isolated: the correction arms nothing itself.
+	a.SetOptions(session.Options{FlipAfterCorrection: false})
+	probe := &switchProbe{}
+	a.SetSwitcher(probe.switcher)
+
+	park := parkRoundInDrainWindow(t, a, func() {
+		typeWord(a, replayTailWord)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+	})
+
+	pressComboDefault(a) // the combo arrives INSIDE the window: busy refusal → settleCombo → flipTo
+
+	if got := probe.targets(); len(got) != 0 {
+		t.Fatalf("SetGlobalEngine fired inside the drain window = %q, want none — a gesture flip must "+
+			"park until the correction settles (CR-01, the E3 loss); log:\n%s", got, buf.String())
+	}
+	if got := countModeRecords(buf); got != 0 {
+		t.Fatalf("mode records inside the window = %d, want 0; log:\n%s", got, buf.String())
+	}
+	park.release()
+	park.wait(t)
+
+	// The correction itself landed — the deletion-without-replacement is
+	// absent at the unit seam: exactly one burst, the replacement first.
+	if got := len(sink.forwardCalls()); got != len([]rune(replayTailWord)) {
+		t.Errorf("forwards = %d, want exactly %d — one burst", got, len([]rune(replayTailWord)))
+	}
+	texts := sink.commitTexts()
+	if len(texts) < 1 || texts[0] != replayTailConverted {
+		t.Errorf("commits = %q, want the replacement %q first", texts, replayTailConverted)
+	}
+	// The parked flip still waits for its honest cause — nothing released it.
+	if got := probe.targets(); len(got) != 0 {
+		t.Errorf("SetGlobalEngine before any release cause = %q, want none", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction delivery","stage":"flip-parked"`) {
+		t.Errorf("the park boundary is missing from the journal; log:\n%s", buf.String())
+	}
+
+	// The honest release cause: the next keystroke — the mode switch happens
+	// NOW, after the correction landed (the owner's intent preserved).
+	typeWord(a, "x")
+	if got := probe.targets(); !slices.Equal(got, []string{engine.NameRU}) {
+		t.Errorf("switch targets after the release keystroke = %q, want exactly [%s] — the parked "+
+			"gesture flip must still happen (never a silent drop)", got, engine.NameRU)
+	}
+	if !strings.Contains(buf.String(), `"stage":"flip-released","reason":"keystroke"`) {
+		t.Errorf("the released mark is missing; log:\n%s", buf.String())
+	}
+}
