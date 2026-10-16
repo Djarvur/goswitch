@@ -9557,3 +9557,164 @@ func TestLevel1ConfirmFlush_FocusOutUsesCapturedSnapshot(t *testing.T) {
 			"current emitter(), the text would land in another application (T-10-11-02)", got)
 	}
 }
+
+// The DST-guard corpus (plan 10-16, round-4 gap G-10-1, the 2026-10-16
+// bisection): the stand bisection proved DeleteSurroundingText with ANY
+// parameters toward a text-input-v3 bridge context whose surrounding state
+// was never materialized — no spontaneous push, no materializing answer in
+// the context's CURRENT generation — segfaults gnome-shell (mutter 46.2,
+// strlen over the virgin surrounding state, meta-wayland-text-input.c:254;
+// three cores, one frame — R2/R6b/R7). The guard rule under test: the
+// correction machine emits DST only with the generation-scoped evidence of
+// materialization; without it the replacement rides the proven forward
+// branch (the executeLevel2 form — chunked BackSpace forwards + one commit,
+// the write primitive verdict (c) reuses) behind a loud, content-free
+// boundary. The guard is safety, not a behavior change: an honestly pushing
+// client keeps the byte-as-today two-phase level-1 (TestDstGuard_
+// MaterializedContextByteUnchanged), RequireSurroundingText is never
+// suppressed (safe by R5b), and the selection path stays untouched.
+// RED truth (strict TDD, directive 1): on the unguarded tree
+// executeCorrection emits DST unconditionally — a delete lands on the wire
+// toward a never-materialized context, and both negative tests fail on that
+// observable (evidence-20261016-10-16-red-task1.json).
+
+// TestDstGuard_NeverMaterializedContextGetsForwards pins the guard's core
+// rule: a level-1 round toward a context whose CURRENT generation never
+// materialized its surrounding state (no push, no answer — a fresh engine
+// object with the push channel silent) gets ZERO DeleteSurroundingText on
+// the wire; the replacement arrives the forward way (the burstOps shape:
+// chunked BackSpace forwards, then ONE commit, in order) behind the loud
+// content-free diversion boundary (D-20/D-21). RED truth: the unguarded
+// executeCorrection rides the previous generation's stale cache straight
+// into the virgin context — the delete lands (the gnome-shell killer).
+func TestDstGuard_NeverMaterializedContextGetsForwards(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	// Generation 1: ONE spontaneous push materializes the cache on THIS
+	// engine object.
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	// The context generation is re-minted WITHOUT a lifecycle pair (engine
+	// objects are minted per input context; the host churn can swallow the
+	// focus pair): a fresh VIRGIN generation on a new engine object. The
+	// cache of the dead generation survives the mint — the exact residual
+	// route the guard exists for.
+	fresh := &fakeSink{}
+	a.AttachEngine(fresh)
+	// The gesture types on the fresh generation; the push channel stays
+	// silent the whole time — nothing materializes the fresh context.
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // the stale cache matches — the level-1 round
+
+	if calls := fresh.deleteCalls(); len(calls) != 0 {
+		t.Fatalf("DeleteSurroundingText toward the never-materialized context = %+v, want none — "+
+			"DST into a fresh generation is the compositor killer (bisection 2026-10-16, "+
+			"R2/R6b/R7: any parameters, ≲1.5 s window)", calls)
+	}
+	if got, want := fresh.opLog(), burstOps(len([]rune(wordEN)), wordRU); !slices.Equal(got, want) {
+		t.Fatalf("op log on the fresh engine = %q, want the forward-branch replacement %q — "+
+			"forwards then one commit, in order (verdict (c))", got, want)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, `"msg":"correction","outcome":"dst-guarded"`) {
+		t.Errorf("the loud diversion boundary is missing from the journal; log:\n%s", logged)
+	}
+	if strings.Contains(logged, wordEN) || strings.Contains(logged, wordRU) {
+		t.Errorf("the guard boundary carries field content (D-20/D-21 — outcomes and counters only); "+
+			"log:\n%s", logged)
+	}
+	// The dead generation's engine stays untouched by the fresh round.
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("deletions on the previous generation's engine = %+v, want none", calls)
+	}
+}
+
+// TestDstGuard_MaterializedContextByteUnchanged is the protective pin riding
+// the guard: an honestly pushing client (the pushes track the typing on THIS
+// generation's engine — the materialization evidence is live) keeps the
+// byte-as-today two-phase level-1 — exactly one delete over the token+tail
+// range (the CORR-07 geometry), the commit waiting behind the 10-11
+// confirmation machine, ZERO forwards, the guard silent. Green on the
+// unguarded tree by construction; it must STAY green once the guard exists —
+// safety must never cost the honest clients their delivery shape.
+func TestDstGuard_MaterializedContextByteUnchanged(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+
+	typeCachedWord(a) // the pushes track the typing — the evidence is live
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // the fresh cached match — the instant level-1
+
+	if calls := sink.deleteCalls(); len(calls) != 1 || calls[0] != (deleteCall{offset: -6, nchars: 6}) {
+		t.Fatalf("deletions on the materialized context = %+v, want exactly one delete(-6,6) over "+
+			"token+tail (CORR-07)", calls)
+	}
+	if got := sink.commitTexts(); len(got) != 0 {
+		t.Fatalf("commits before the deletion proof = %q, want none — the two-phase machine (plan "+
+			"10-11) must not be diverted by the guard", got)
+	}
+	if strings.Contains(buf.String(), `"outcome":"dst-guarded"`) {
+		t.Errorf("the guard fired on a materialized context — safety degraded an honest client; "+
+			"log:\n%s", buf.String())
+	}
+
+	// The confirming push completes the ladder byte-as-today.
+	a.HandleSurroundingText("", 0, 0)
+	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != wordRU {
+		t.Fatalf("commits after the confirming push = %q, want exactly one %q", texts, wordRU)
+	}
+	if got := len(sink.forwardCalls()); got != 0 {
+		t.Errorf("forwards on the honest world = %d, want 0 — the forward branch must never touch "+
+			"a materialized context", got)
+	}
+}
+
+// TestDstGuard_EvidenceDiesWithGeneration pins the generation scoping of the
+// materialization evidence: it must live and die WITH the context's cache.
+// The push materializes on generation 1; the FocusOut/Reset branch (форма
+// ~:1166 — a.surr=nil, ctxEpoch++) kills both; a post-reset push re-arms the
+// evidence BOUND to that generation's engine object; and the churn-missed
+// re-mint onto a fresh virgin engine object must NOT inherit it. RED truth:
+// the unguarded tree knows no evidence at all — the fresh round rides the
+// stale cache and the delete lands on the virgin context.
+func TestDstGuard_EvidenceDiesWithGeneration(t *testing.T) {
+	buf := captureLogs(t)
+	a, sink := wiredActor()
+	// Generation 1: the push materializes cache and evidence together.
+	line := "abc " + wordEN
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	// The generation dies (the FocusOut/Reset form): cache and evidence die
+	// with it.
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	// Generation 2: the client pushes again — the evidence re-arms, bound
+	// to THIS generation's engine object...
+	a.HandleSurroundingText(line, runeLen(line), runeLen(line))
+	// ...and the context is re-minted WITHOUT a lifecycle pair: a fresh
+	// VIRGIN generation whose engine object never saw a push. The evidence
+	// of the dead object must not vouch for it.
+	fresh := &fakeSink{}
+	a.AttachEngine(fresh)
+	// The fresh round rides the stale cache of the dead generation.
+	typeWord(a, wordEN)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if calls := fresh.deleteCalls(); len(calls) != 0 {
+		t.Fatalf("DST reached the fresh generation after the evidence died = %+v, want none — "+
+			"evidence that outlives its generation is the virgin-window hole (T-10-16-02)", calls)
+	}
+	if got, want := fresh.opLog(), burstOps(len([]rune(wordEN)), wordRU); !slices.Equal(got, want) {
+		t.Fatalf("op log on the fresh engine = %q, want the forward-branch replacement %q", got, want)
+	}
+	if !strings.Contains(buf.String(), `"msg":"correction","outcome":"dst-guarded"`) {
+		t.Errorf("the loud diversion boundary is missing from the journal; log:\n%s", buf.String())
+	}
+	// The dead generation's engine stays untouched by the fresh round.
+	if calls := sink.deleteCalls(); len(calls) != 0 {
+		t.Errorf("deletions on the dead generation's engine = %+v, want none", calls)
+	}
+}
