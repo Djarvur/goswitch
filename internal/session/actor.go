@@ -125,6 +125,16 @@ const defaultLevel2ForwardGap = 20 * time.Millisecond
 // from config.
 const defaultTerminalDrainSettle = 150 * time.Millisecond
 
+// keyHoldSlack is the scheduling slack of the key-hold bound (CR-02): the
+// parked keystroke's wait is terminalDrainSettle + the machine's whole
+// pacing budget (cap×gap — a keystroke may catch the FIRST chunk-boundary
+// Gosched window of a maximum-cap burst) plus this quantum for the commit's
+// own bookkeeping and the goroutine handoffs. A bound, never an eternity:
+// past it the hold degrades loudly to arrival processing (keys are never
+// lost — the owner's typing is sacred), accepting the pre-fix inversion for
+// that pathological overrun only.
+const keyHoldSlack = 250 * time.Millisecond
+
 // switchTimeout bounds the SetGlobalEngine round trip on the flip path —
 // the FAILURE-path wedge guard (Pitfall 4, T-05-03-01), not a slice of the
 // <50 ms SPEC reaction budget: it bounds only how long a wedged ibus-daemon
@@ -452,6 +462,26 @@ type Actor struct {
 	// intent. The flag never crosses rounds: cleared at each exit, the
 	// next executeLevel2 passes.
 	level2Busy bool
+	// machineDone is the close-on-exit channel of the in-flight delivery
+	// machine (CR-02 of the 10-REVIEW, the round-4 fix session): armed
+	// together with level2Busy (machineArm), closed on EVERY machine exit
+	// (machineSettle — the backspace-cap refusal, the free abort, the
+	// success return). The key-hold path waits on it bounded, so a keystroke
+	// that arrived inside the unlocked drain-settle window can never ride
+	// the wire ahead of the machine's pending commit. Accessed only under
+	// a.mu; busy==true implies machineDone!=nil.
+	machineDone chan struct{}
+	// holdQueue is the FIFO of key events parked while the delivery machine
+	// is in flight (CR-02): typed-layout input (printables and BackSpace)
+	// must not hit the wire before the pending commit — the parked events
+	// process post-settle in arrival order and their transits re-emit from
+	// the daemon (HandleKey consumed them at arrival, so ibus's own
+	// forwarding never happened). Gestures, bare modifiers and the reset
+	// keys never park — their semantics belong to the arrival instant. The
+	// queue drains on the goroutine of the FIRST parked key (holdDrain is
+	// the single-flight flag); accessed only under a.mu.
+	holdQueue []engine.EngineEvent
+	holdDrain bool
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
@@ -1182,30 +1212,25 @@ func (a *Actor) CorrectNow() string {
 // A6): the committed Cyrillic rune on a RU commit, the original keyval on
 // every transit the client will insert. A Backspace press pops the buffer
 // honestly, so it keeps mirroring the field (Pitfall 7).
+//
+// CR-02 (the 10-REVIEW, the round-4 fix session): typed-layout input
+// arriving while the delivery machine is in flight must not hit the wire
+// before the machine's pending commit — the round-3 machine held the mutex
+// through burst+commit so the serialization guaranteed the order, and the
+// drain window released it, making the inversion («xпривет » instead of
+// «привет x») routine for typing continued right after the gesture. The
+// hold path parks the event (the arrival verdict is CONSUMED — ibus's own
+// forwarding never happens) and processes it post-settle, re-emitting its
+// transit from the daemon: wire order = deletes → commit → held keys, FIFO.
 func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
-
-	if ev.Release {
-		a.fsm.Feed(hotkey.KeyRelease{Keyval: ev.Keyval}, a.elapsed())
-		if ev.Keyval == a.tapKeyval {
-			// Only a release of the CONFIGURED tap key can move the series
-			// deadline (the FSM counts taps on clean releases); re-arming
-			// on any other event would either extend the deadline from the
-			// wrong instant or arm a timer over a cancelled series. A stale
-			// expiry is a no-op in the FSM, so over-arming is harmless,
-			// under-arming would silently drop the decision.
-			a.armTimer()
-		}
-		a.macrKeyRelease(ev)
-
-		return false
+	if (a.level2Busy && holdableKey(ev)) || len(a.holdQueue) > 0 {
+		return a.holdDuringDelivery(ev)
 	}
-	a.fsm.Feed(hotkey.KeyPress{Keyval: ev.Keyval}, a.elapsed())
 
-	return a.feedKey(ev)
+	return a.handleKeyArrived(ev)
 }
 
 // HandleLifecycle implements engine.EventHandler: FocusOut and Reset disarm
@@ -4060,13 +4085,13 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 
 		return
 	}
-	a.level2Busy = true
+	a.machineArm()     // the WR-01 guard arms the key-hold's close-on-exit channel with it (CR-02)
 	eng := a.emitter() // one atomic snapshot for the whole burst and its commit
 	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps&^correct.CapSurroundingText, a.backspaceCap())
 	if plan.Level == correct.LevelNone {
 		// D-27: the Backspace series would exceed the cap and this client
 		// has no DeleteSurroundingText — refuse silently, not one deletion.
-		a.level2Busy = false // the guard clears on EVERY exit (WR-01)
+		a.machineSettle() // the guard clears on EVERY exit (WR-01); the held keys ride free
 		a.skipCorrection("backspace-cap")
 		a.settleCombo()
 
@@ -4105,7 +4130,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	}
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
-	a.level2Busy = false // the guard clears on the success exit (WR-01)
+	a.machineSettle() // the guard clears on the success exit (WR-01); the held keys ride free
 	if terminal {
 		// E3 delivery-order safety (plan 10-08, G-10-1 cause B), narrowed by
 		// plan 10-17: the SetGlobalEngine of the post-correction flip may
@@ -4156,7 +4181,7 @@ func (a *Actor) freeAbortBeforeFirstForward(gen uint64) bool {
 		return false
 	}
 	slog.Info("correction", "outcome", "context-changed")
-	a.level2Busy = false // the guard clears on EVERY exit (WR-01)
+	a.machineSettle() // the guard clears on EVERY exit (WR-01); the held keys ride free
 	a.settleCombo()
 
 	return true
@@ -4216,6 +4241,144 @@ func (a *Actor) drainSettleWindow(gen uint64, sleep func(time.Duration)) {
 	if a.ctxEpoch != gen {
 		slog.Info("correction delivery", "stage", "context-changed-midflow")
 	}
+}
+
+// machineArm raises the WR-01 re-entrancy guard and arms the key-hold's
+// close-on-exit channel with it (CR-02): one raise, one channel, both under
+// the mutex the caller holds. machineSettle is its mirror — every machine
+// exit (the backspace-cap refusal, the free abort, the success return)
+// closes the channel so the keystrokes parked inside the unlocked window
+// ride free the moment the machine settles. The caller holds the mutex.
+func (a *Actor) machineArm() {
+	a.level2Busy = true
+	a.machineDone = make(chan struct{})
+}
+
+func (a *Actor) machineSettle() {
+	a.level2Busy = false
+	if a.machineDone != nil {
+		close(a.machineDone)
+		a.machineDone = nil
+	}
+}
+
+// holdableKey reports whether the event is TYPED-LAYOUT input the hold path
+// must park while the delivery machine is in flight (CR-02): printable
+// characters (the runes the buffer tracks and the field receives — the RU
+// branch's own daemon-side commit included) and BackSpace (the buffer's
+// erase — a mid-window pop would also corrupt the pending round's replace
+// geometry). Gestures, bare modifiers and the reset keys never park: their
+// semantics (the busy refusal, the chord, the FSM, the CORR-09 boundary)
+// belong to the arrival instant, and a parked combo would re-enter the
+// correction pipeline post-settle over the already-replaced buffer.
+func holdableKey(ev engine.EngineEvent) bool {
+	if ev.Keyval == engine.KeyBackSpace {
+		return true
+	}
+
+	return printableKeyval(ev.Keyval) && ev.Mods&comboMask == 0
+}
+
+// holdDuringDelivery parks ev while the delivery machine is in flight and
+// drains the parked queue once it settles (CR-02). The arrival verdict is
+// always TRUE — consumed: ibus's own forwarding never happens, the daemon
+// owes the wire the event after the machine's commit (reemitTransit). The
+// first parked event's goroutine drains the whole FIFO (holdDrain is the
+// single-flight flag); later arrivals append and return — the drainer
+// processes them in arrival order. Every wait is bounded
+// (awaitDeliverySettle): past the bound the hold degrades loudly to arrival
+// processing — keys are never lost, the owner's typing is sacred. The
+// caller holds the mutex on entry and on return.
+func (a *Actor) holdDuringDelivery(ev engine.EngineEvent) bool {
+	a.holdQueue = append(a.holdQueue, ev)
+	if a.holdDrain {
+		return true // a drainer already owns the parked queue
+	}
+	a.holdDrain = true
+	defer func() { a.holdDrain = false }()
+	for len(a.holdQueue) > 0 {
+		if a.level2Busy && !a.awaitDeliverySettle() {
+			slog.Warn("key hold bound expired", "parked", len(a.holdQueue))
+		}
+		ev := a.holdQueue[0]
+		a.holdQueue = a.holdQueue[1:]
+		consume := a.handleKeyArrived(ev)
+		a.reemitTransit(ev, consume)
+	}
+
+	return true
+}
+
+// awaitDeliverySettle waits (bounded) for the in-flight delivery machine to
+// settle: the mutex is RELEASED for the wait — the machine needs it to
+// finish (its pacing sleeps hold it) — and re-taken on return. The bound
+// covers the machine's whole worst case (the drain window plus a full-cap
+// burst's pacing plus one slack quantum — a keystroke may catch the first
+// chunk-boundary Gosched window of a maximum burst), so an expiry is a
+// pathological overrun, never routine. Returns whether the machine settled.
+// The caller holds the mutex on entry and on return.
+func (a *Actor) awaitDeliverySettle() bool {
+	done := a.machineDone
+	bound := a.terminalDrainSettle + time.Duration(a.backspaceCap())*a.level2ForwardGap + keyHoldSlack
+	a.mu.Unlock()
+	timer := time.NewTimer(bound)
+	select {
+	case <-done:
+	case <-timer.C:
+	}
+	timer.Stop()
+	a.mu.Lock()
+
+	return !a.level2Busy
+}
+
+// handleKeyArrived is HandleKey's arrival body minus the hold gate — the
+// form the drainer runs for every parked event post-settle (the exact
+// semantics the key would have received at arrival on an idle machine).
+// The caller holds the mutex.
+func (a *Actor) handleKeyArrived(ev engine.EngineEvent) (consume bool) {
+	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
+
+	if ev.Release {
+		a.fsm.Feed(hotkey.KeyRelease{Keyval: ev.Keyval}, a.elapsed())
+		if ev.Keyval == a.tapKeyval {
+			// Only a release of the CONFIGURED tap key can move the series
+			// deadline (the FSM counts taps on clean releases); re-arming
+			// on any other event would either extend the deadline from the
+			// wrong instant or arm a timer over a cancelled series. A stale
+			// expiry is a no-op in the FSM, so over-arming is harmless,
+			// under-arming would silently drop the decision.
+			a.armTimer()
+		}
+		a.macrKeyRelease(ev)
+
+		return false
+	}
+	a.fsm.Feed(hotkey.KeyPress{Keyval: ev.Keyval}, a.elapsed())
+
+	return a.feedKey(ev)
+}
+
+// reemitTransit puts a held key's transit back on the wire AFTER the
+// machine's commit (CR-02): HandleKey consumed the event at arrival, so
+// ibus's own forwarding never happened — the daemon owes the client the
+// key. A consumed verdict needs nothing (the RU branch already committed
+// the rune post-settle; gestures emit nothing); a nil emitter fails closed
+// (no engine — no wire to owe). The release bit rides the wire state word,
+// the modsMask decoding convention. The caller holds the mutex.
+func (a *Actor) reemitTransit(ev engine.EngineEvent, consume bool) {
+	if consume {
+		return
+	}
+	eng := a.emitter()
+	if eng == nil {
+		return
+	}
+	mods := ev.Mods
+	if ev.Release {
+		mods |= engine.MaskRelease
+	}
+	eng.ForwardKeyEvent(ev.Keyval, ev.Keycode, mods)
 }
 
 // logCorrectionDone counts and writes the completion pair of one ladder

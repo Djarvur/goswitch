@@ -10550,3 +10550,60 @@ func TestReplayWezterm1921_GestureFlipDuringWindowParksNotSwitches(t *testing.T)
 		t.Errorf("the released mark is missing; log:\n%s", buf.String())
 	}
 }
+
+// TestReplayWezterm1921_KeysDuringWindowRideAfterCommit is corpus cell (β)
+// of the round-4 review (CR-02): keystrokes processed inside the unlocked
+// drain-settle window hit the wire BEFORE the pending commit — the
+// daemon-side inversion («xпривет » instead of «привет x», deterministic on
+// every interleave of fast typing after the gesture). The hold path parks
+// typed-layout input (printables and BackSpace — the keys the buffer tracks)
+// for the machine's settle and re-emits the transits AFTER the commit:
+// wire order = deletes → commit → held keys, FIFO. RED truth: the keystroke
+// processes at arrival (verdict false, ibus forwards it immediately) and no
+// daemon emission of it exists at all.
+func TestReplayWezterm1921_KeysDuringWindowRideAfterCommit(t *testing.T) {
+	a, sink := wiredActor()
+	teachTerminalClass(t, a)
+	a.SetOptions(session.Options{FlipAfterCorrection: false})
+
+	park := parkRoundInDrainWindow(t, a, func() {
+		typeWord(a, replayTailWord)
+		tapShift(a)
+		tapShift(a)
+		a.ExpiryAt(expiryAfterWindow)
+	})
+
+	// Two keystrokes land inside the window — the routine interleave of fast
+	// typing continued right after the gesture (the ~100-150 ms key pitch vs
+	// the 150 ms window).
+	v1 := make(chan bool, 1)
+	v2 := make(chan bool, 1)
+	go func() { v1 <- a.HandleKey(engine.EngineEvent{Keyval: 'x', Keycode: 45}) }()
+	time.Sleep(20 * time.Millisecond) // the first key parks and blocks on the machine's settle
+	go func() { v2 <- a.HandleKey(engine.EngineEvent{Keyval: 'y', Keycode: 21}) }()
+	time.Sleep(20 * time.Millisecond) // the second key parks behind it (FIFO)
+
+	park.release()
+	park.wait(t)
+	for i, ch := range []chan bool{v1, v2} {
+		select {
+		case c := <-ch:
+			if !c {
+				t.Errorf("held keystroke #%d arrival verdict = false, want true (consumed — the daemon "+
+					"owes the wire emission)", i+1)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("held keystroke #%d never returned — the hold path deadlocked", i+1)
+		}
+	}
+
+	// Wire order: the machine's deletes, the commit (and the verify-after
+	// arm riding the same exit) first — the held keys strictly after, FIFO.
+	// Never «xпривет».
+	want := append(burstOps(len([]rune(replayTailWord)), replayTailConverted),
+		"require", "forward(120,45,0)", "forward(121,21,0)")
+	got := sink.opLog()
+	if len(got) < len(want) || !slices.Equal(got[len(got)-len(want):], want) {
+		t.Errorf("op log tail = %q, want the held-key order %q (deletes → commit → held keys)", got, want)
+	}
+}
