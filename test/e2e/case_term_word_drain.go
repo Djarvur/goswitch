@@ -246,14 +246,24 @@ func drainPtyOrder(data []byte) (lastBS, wordAt int, ok bool) {
 // the marks must be ordered chunks-sent < commit-sent < flip-armed, and
 // the flip-released mark must exist strictly AFTER its release cause — the
 // last key-trace record that followed the commit (a confirming push or the
-// probe keystroke releases; nothing releases inside the window).
+// probe keystroke releases; nothing releases inside the window). The cause
+// search is scoped to the CURRENT round's segment — the tail from the
+// flip-armed mark (WR-08 of the 10-REVIEW): the matrix accumulates all
+// three combo rows into ONE journal (restartDaemonWithArgs never
+// rotates), and an unscoped whole-log Contains would close this row on a
+// PREVIOUS row's honest cause even when the current release rode a
+// dishonest reason — the round-2 geometry the oracle exists to convict.
 func drainMarkOrder(log string) (ok bool, observed string) {
 	chunks := strings.LastIndex(log, drainChunksMark)
 	commit := strings.LastIndex(log, drainCommitMark)
 	armed := strings.LastIndex(log, drainFlipArmMark)
 	released := strings.LastIndex(log, drainFlipRelMark)
 	ordered := chunks >= 0 && commit > chunks && armed > commit && released > armed
-	cause := strings.Contains(log, drainFlipRelPush) || strings.Contains(log, drainFlipRelKey)
+	tail := log
+	if armed >= 0 {
+		tail = log[armed:]
+	}
+	cause := strings.Contains(tail, drainFlipRelPush) || strings.Contains(tail, drainFlipRelKey)
 	ok = ordered && cause
 	observed = fmt.Sprintf("marks: chunks@%d commit@%d flip-armed@%d flip-released@%d cause-honest=%v",
 		chunks, commit, armed, released, cause)
