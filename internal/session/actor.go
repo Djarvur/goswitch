@@ -105,6 +105,21 @@ const flipConfirmGrace = 300 * time.Millisecond
 // chunk geometry stay untouched (the op-log pins hold).
 const level2ForwardGap = 20 * time.Millisecond
 
+// terminalDrainSettle is the bounded delivery window the terminal branch
+// holds between its last BackSpace forward and the commit (plan 10-17, the
+// round-4 machine). Origin (the journal rows, never a config key — the
+// level1ConfirmBudget precedent): the 19:21:26 host row
+// (DEBUG-term-host-live-failures.md, round-2 block) reports done +144 ms
+// with the whole 6×20 ms package behind it — the host client was STILL
+// DRAINING its forward queue when the commit landed; the healthy client's
+// confirming push (the E3 -debug trace of 2026-10-13) lands ~16 ms after
+// the emission. The window gives the queue an honest term to drain before
+// the replacement is committed; past the window the machine claims NO
+// persistence — every outcome beyond it carries the loud delivery marks
+// instead of a field promise (the honest uncertainty of the round-4
+// mandate).
+const terminalDrainSettle = 150 * time.Millisecond
+
 // switchTimeout bounds the SetGlobalEngine round trip on the flip path —
 // the FAILURE-path wedge guard (Pitfall 4, T-05-03-01), not a slice of the
 // <50 ms SPEC reaction budget: it bounds only how long a wedged ibus-daemon
@@ -709,15 +724,21 @@ type pendingAfter struct {
 	noRung bool
 }
 
-// deferredFlip is the armed post-correction mode flip of the terminal write
-// branch (plan 10-08, G-10-1 cause B, the E3 verdict): the SET-semantics
-// target — the corrected text's script, the owner rule «режим следует за
-// скриптом результата» — plus the armed slot's epoch. The epoch makes a
-// stale grace deadline from a released or re-armed slot a no-op (the
-// afterExpiry discipline).
+// deferredFlip is the armed post-correction mode flip (plan 10-08, G-10-1
+// cause B, the E3 verdict): the SET-semantics target — the corrected
+// text's script, the owner rule «режим следует за скриптом результата» —
+// plus the armed slot's epoch. The epoch makes a stale grace deadline from
+// a released or re-armed slot a no-op (the afterExpiry discipline).
+// terminal marks the branch that armed the slot (plan 10-17): the
+// terminal flip ignores the verify outcomes and arms no grace deadline —
+// only the next keystroke or a confirming push releases it — while the
+// level-1 flip keeps the full 10-08 machine byte-as-today. armedAt feeds
+// the terminal release's delivery-mark latency.
 type deferredFlip struct {
-	target scriptMode
-	epoch  uint64
+	target   scriptMode
+	epoch    uint64
+	terminal bool
+	armedAt  time.Time
 }
 
 // level1Confirm is the open confirmation window of the two-phase level-1
@@ -1720,8 +1741,8 @@ func (a *Actor) flushLevel1Confirm() {
 	a.logCorrectionDone(w.level, w.rng.token, w.converted, time.Since(w.armed))
 	// The owner rule 2026-09-28, DEFERRED (plan 10-11): the mode follows
 	// the converted script once the delivery confirms (the 10-08 machine).
-	a.deferCorrectionFlip(w.converted)
-	a.settleCombo() // D-36: the flip lands strictly after the settled completion record
+	a.deferCorrectionFlip(w.converted, false) // the level-1 flip keeps the full 10-08 machine (plan 10-17)
+	a.settleCombo()                           // D-36: the flip lands strictly after the settled completion record
 	a.armAfterVerify(w.converted, w.rng.tail)
 }
 
@@ -1841,18 +1862,26 @@ func scriptOf(converted []rune) scriptMode {
 	return modeEN // letterless — the caller's transition is false either way
 }
 
-// deferCorrectionFlip arms the terminal branch's post-correction mode flip
-// instead of executing it (plan 10-08, G-10-1 cause B, the E3 verdict): the
-// decision reuses settleCorrectionFlip's EXACT guards — a combo gesture
-// keeps its own settleCombo flip, the off gate arms nothing, and a target
-// equal to the current mode is a no-op flip, so nothing is armed. The armed
-// flip fires on the FIRST delivery confirmation (releaseDeferredFlip): a
-// confirming push, the next keystroke, or the flipConfirmGrace deadline.
-// One slot at a time — arming cancels a still-pending deadline (a second
-// correction can reach this site only off the keystroke path, e.g.
-// CorrectNow, and its own flip supersedes the pending one). The caller
-// holds the mutex.
-func (a *Actor) deferCorrectionFlip(converted []rune) {
+// deferCorrectionFlip arms a post-correction mode flip instead of
+// executing it (plan 10-08, G-10-1 cause B, the E3 verdict): the decision
+// reuses settleCorrectionFlip's EXACT guards — a combo gesture keeps its
+// own settleCombo flip, the off gate arms nothing, and a target equal to
+// the current mode is a no-op flip, so nothing is armed. The terminal
+// flag (plan 10-17) selects the release machine: the TERMINAL flip arms
+// NO grace deadline — SetGlobalEngine must be impossible between the
+// commit and the flip's honest release cause (the next keystroke or a
+// confirming push; the round-2 hypothesis: the +104 ms flip re-mints the
+// engine and drives the client to flush its forward queue) — and it is
+// immune to the verify outcomes. The level-1 flip (flushLevel1Confirm)
+// keeps the full 10-08 machine byte-as-today, the grace deadline its last
+// release site (T-10-08-02). The owner rule 2026-09-28 «режим следует за
+// скриптом результата» is deferred, not cancelled: the flip still follows
+// the result — on the next gesture; the release-site narrowing is
+// owner-validated in 10-18. One slot at a time — arming cancels a
+// still-pending deadline (a second correction can reach this site only
+// off the keystroke path, e.g. CorrectNow, and its own flip supersedes
+// the pending one). The caller holds the mutex.
+func (a *Actor) deferCorrectionFlip(converted []rune, terminal bool) {
 	if a.comboPending || !a.opts.FlipAfterCorrection {
 		return
 	}
@@ -1862,7 +1891,17 @@ func (a *Actor) deferCorrectionFlip(converted []rune) {
 	}
 	a.cancelFlipGrace()
 	a.flipEpoch++
-	a.flipPending = &deferredFlip{target: target, epoch: a.flipEpoch}
+	a.flipPending = &deferredFlip{
+		target:   target,
+		epoch:    a.flipEpoch,
+		terminal: terminal,
+		armedAt:  time.Now(),
+	}
+	if terminal {
+		slog.Info("correction delivery", "stage", "flip-armed")
+
+		return
+	}
 	epoch := a.flipEpoch
 	arm := a.flipAfter
 	if arm == nil {
@@ -1879,8 +1918,11 @@ func (a *Actor) deferCorrectionFlip(converted []rune) {
 // verify settlements) is idempotent. A nil slot is a no-op: the release
 // sites on the shared paths (settleAfter, afterExpiry, feedKey) pass
 // through untouched for the GTK corrections and the flip-disabled
-// terminals. The caller holds the mutex.
-func (a *Actor) releaseDeferredFlip() {
+// terminals. A released TERMINAL flip carries its delivery mark — the
+// release reason and the pending latency, outcomes only, never field
+// content (D-20/D-21); the level-1 flip's journal stays byte-as-today.
+// The caller holds the mutex.
+func (a *Actor) releaseDeferredFlip(reason string) {
 	if a.flipStop != nil {
 		a.flipStop()
 		a.flipStop = nil
@@ -1890,7 +1932,25 @@ func (a *Actor) releaseDeferredFlip() {
 	}
 	flip := a.flipPending
 	a.flipPending = nil
+	if flip.terminal {
+		slog.Info("correction delivery", "stage", "flip-released",
+			"reason", reason, "latency_ms", time.Since(flip.armedAt).Milliseconds())
+	}
 	a.flipTo(flip.target)
+}
+
+// releaseDeferredFlipOnVerifyOutcome is the verify-outcome release site,
+// branchy under plan 10-17: a TERMINAL deferred flip IGNORES the verify
+// outcomes — the verify machinery judges the field, the mode rule waits
+// for its own cause (the next keystroke or a confirming push; a
+// SetGlobalEngine riding a verify settlement is exactly the round-2 loss
+// geometry) — while every other flip keeps the byte-as-today release. The
+// caller holds the mutex.
+func (a *Actor) releaseDeferredFlipOnVerifyOutcome() {
+	if flip := a.flipPending; flip != nil && flip.terminal {
+		return
+	}
+	a.releaseDeferredFlip("verify")
 }
 
 // cancelFlipGrace stops a pending grace deadline (the caller holds the
@@ -1916,7 +1976,7 @@ func (a *Actor) flipGraceExpiry(epoch uint64) {
 	if a.flipPending == nil || a.flipPending.epoch != epoch {
 		return // stale deadline — the flip was released or re-armed
 	}
-	a.releaseDeferredFlip()
+	a.releaseDeferredFlip("grace")
 }
 
 // skipCorrection records one D-20 refusal: the INFO reason record (one
@@ -2294,7 +2354,7 @@ func (a *Actor) settleAfter() ([]rune, bool) {
 	if a.afterVerdict(round.expected, round.start, round.atRange) {
 		a.clearAfter()
 		slog.Debug("correction verify", "outcome", "match")
-		a.releaseDeferredFlip() // the confirming push: delivery proven — the deferred flip fires now
+		a.releaseDeferredFlip("push") // the confirming push: delivery proven — the deferred flip fires now
 
 		return nil, false
 	}
@@ -2308,7 +2368,7 @@ func (a *Actor) settleAfter() ([]rune, bool) {
 	}
 	a.clearAfter()
 	slog.Info("correction verify", "outcome", "mismatch")
-	a.releaseDeferredFlip() // the verify outcome never owns the mode rule: the flip fires on the settlement too
+	a.releaseDeferredFlipOnVerifyOutcome() // branchy (plan 10-17): the terminal flip ignores the verify outcomes
 	if round.noRung {
 		// The terminal branch (plan 10-04, ADR-008 D4, owner verdict OQ 2
 		// «contract»): the mismatch LOGS and STOPS — the round carries no
@@ -2346,7 +2406,7 @@ func (a *Actor) afterExpiry(epoch uint64) {
 	}
 	a.clearAfter()
 	slog.Debug("correction verify", "outcome", "timeout")
-	a.releaseDeferredFlip() // the quiet timeout also releases the flip — the rule never waits past it
+	a.releaseDeferredFlipOnVerifyOutcome() // branchy (plan 10-17): the terminal flip ignores the verify outcomes
 }
 
 // armAfterVerify starts the verify-after round (the caller holds the
@@ -2945,11 +3005,12 @@ func (a *Actor) feedKey(ev engine.EngineEvent) bool {
 	// A nil window is a no-op.
 	a.flushLevel1Confirm()
 
-	// The deferred terminal flip's second confirmation site (plan 10-08, E3):
-	// the first keystroke after the correction proves the commit delivered —
-	// release STRICTLY before processing, so the key already types in the
-	// RESULT mode. A nil slot is a no-op.
-	a.releaseDeferredFlip()
+	// The deferred terminal flip's second confirmation site (plan 10-08, E3;
+	// plan 10-17 made it the FIRST cause): the first keystroke after the
+	// correction proves the commit delivered — release STRICTLY before
+	// processing, so the key already types in the RESULT mode. A nil slot
+	// is a no-op.
+	a.releaseDeferredFlip("keystroke")
 
 	if a.macrIntercept(ev) {
 		return true
@@ -3865,25 +3926,34 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 
 // executeLevel2 runs the ladder's Backspace level: the plan's Backspaces —
 // counted in runes by BuildPlan, the tail included — replayed as
-// ForwardKeyEvent(BackSpace) in chunks of at most terminalChunkKeys with a
-// context re-check between chunks (plan 10-04, criterion 4), followed by
-// ONE commit of the converted token plus the tail. The burst→commit order
-// is the wire contract (research A4: the daemon preserves it for every
-// client). The write branch serves two callers: the legacy no-caps
-// degradation (ADR-003) and — owner verdict OQ 1 «unified» — the whole
-// terminal class, which may ANNOUNCE the surrounding-text bit (VTE's 0x29
-// lie, the wezterm bit-set signature with no pushes ever coming): the
-// level-2 geometry is therefore forced by masking the bit, and BuildPlan
-// itself stays untouched (the D-13 tail semantics ride verbatim). The
-// terminal argument marks the class-routed call: only it arms the
-// verify-after round (armAfterVerifyTerminal — no paste payload, plan 10-04
-// Task 3); the legacy degradation arms nothing, byte as today. The caller
-// holds the mutex.
+// ForwardKeyEvent(BackSpace) in chunks of at most terminalChunkKeys with
+// context re-checks, followed by ONE commit of the converted token plus
+// the tail. The burst→commit order is the wire contract (research A4: the
+// daemon preserves it for every client). The write branch serves two
+// callers: the legacy no-caps degradation (ADR-003) and — owner verdict
+// OQ 1 «unified» — the whole terminal class, which may ANNOUNCE the
+// surrounding-text bit (VTE's 0x29 lie, the wezterm bit-set signature
+// with no pushes ever coming): the level-2 geometry is therefore forced by
+// masking the bit, and BuildPlan itself stays untouched (the D-13 tail
+// semantics ride verbatim). The terminal argument marks the class-routed
+// call: only it gets the round-4 delivery machine (plan 10-17 — the
+// drain-settle bounded window before the commit, the narrowed flip
+// release sites, the INFO delivery marks) and arms the verify-after round
+// (armAfterVerifyTerminal — no paste payload, plan 10-04 Task 3); the
+// legacy degradation keeps today's byte-exact shape, one pacing gap
+// before the commit, no marks, no deferred flip. The context discipline
+// is plan 10-17's: BEFORE the first destructive key a generation change
+// is a free stop (nothing destroyed — nothing to replace); AFTER it the
+// commit is NOT cancellable («удаление без замены» is forbidden — the
+// ADR-008 amendment (6)) — the replacement rides the captured emitter
+// snapshot behind the loud mid-flow mark. The caller holds the mutex.
 func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time, terminal bool) {
 	// The WR-01 re-entrancy guard (plan 10-10): checked-and-set BEFORE the
 	// plan build and the first forward — a second entry while a burst is in
-	// flight (the chunk-boundary window releases the mutex) refuses here,
-	// honestly and non-destructively.
+	// flight (the chunk-boundary window and the terminal branch's unlocked
+	// delivery wait release the mutex) refuses here, honestly and
+	// non-destructively. The guard covers the WHOLE machine window
+	// (T-10-17-01): chunks, the drain-settle wait, every exit.
 	if a.level2Busy {
 		a.skipCorrection("correction-busy")
 		a.settleCombo()
@@ -3891,7 +3961,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		return
 	}
 	a.level2Busy = true
-	eng := a.emitter() // one atomic snapshot for the whole burst
+	eng := a.emitter() // one atomic snapshot for the whole burst and its commit
 	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps&^correct.CapSurroundingText, a.backspaceCap())
 	if plan.Level == correct.LevelNone {
 		// D-27: the Backspace series would exceed the cap and this client
@@ -3907,44 +3977,43 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	if sleep == nil {
 		sleep = time.Sleep
 	}
-	for sent := 0; sent < plan.Backspaces; {
-		chunk := min(terminalChunkKeys, plan.Backspaces-sent)
-		for range chunk {
-			sleep(level2ForwardGap)
-			eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
-		}
-		sent += chunk
-		if sent >= plan.Backspaces {
-			break
-		}
-		// The chunk-boundary re-check: the mutex is released for one
-		// scheduling quanta so a real lifecycle callback — it serializes on
-		// this same mutex and would otherwise only land AFTER the whole
-		// burst — can be observed between chunks. A generation change stops
-		// the round: no commit, no completion, no repair (after the first
-		// destructive key there is no достройка — criterion 4).
-		if a.chunkBoundaryMoved(gen) {
-			slog.Info("correction", "outcome", "context-changed")
-			a.level2Busy = false // the guard clears on EVERY exit (WR-01)
-			a.settleCombo()
-
-			return
-		}
+	if a.replayBurst(eng, plan.Backspaces, gen, sleep) {
+		return // the free stop BEFORE the first forward — the round is settled
 	}
-	sleep(level2ForwardGap)
+	if terminal {
+		// The drain-settle bounded window (plan 10-17): the replacement
+		// commits only after the window that gives the client's forward
+		// queue an honest term to drain (the constant's journal provenance
+		// above). The WR-01 guard covers the wait (T-10-17-01); a
+		// generation change inside it is loud, never an abort.
+		a.drainSettleWindow(gen, sleep)
+		// The delivery marks (plan 10-17): the host's ONLY observability of
+		// the machine — outcomes, counters and latencies, never field
+		// content (D-20/D-21). The frozen grep-forms
+		// («msg correction, outcome done») keep matching; the attributes
+		// extend, never rename.
+		slog.Info("correction delivery", "stage", "chunks-sent",
+			"forwards", plan.Backspaces,
+			"pacing_ms", (time.Duration(plan.Backspaces) * level2ForwardGap).Milliseconds())
+	} else {
+		sleep(level2ForwardGap) // the legacy branch, byte as today
+	}
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
+	if terminal {
+		slog.Info("correction delivery", "stage", "commit-sent",
+			"latency_ms", time.Since(armed).Milliseconds())
+	}
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
 	a.level2Busy = false // the guard clears on the success exit (WR-01)
 	if terminal {
-		// E3 delivery-order safety (plan 10-08, G-10-1 cause B): the
-		// SetGlobalEngine of the post-correction flip may not follow the
-		// commit at 2–8 ms — under host churn the client processes the
-		// commit late, the re-minted context discards the stale engine's
-		// signal, and the committed word is LOST. The flip ARMS instead and
-		// fires on the first delivery confirmation (a confirming push, the
-		// next keystroke, or the grace deadline).
-		a.deferCorrectionFlip(converted)
+		// E3 delivery-order safety (plan 10-08, G-10-1 cause B), narrowed by
+		// plan 10-17: the SetGlobalEngine of the post-correction flip may
+		// not follow the commit — the flip ARMS and fires ONLY on the next
+		// keystroke or a confirming push; the grace deadline and the verify
+		// outcomes release nothing (the release sites inside the delivery
+		// window are exactly the round-2 loss geometry).
+		a.deferCorrectionFlip(converted, true)
 	} else {
 		a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
 	}
@@ -3963,13 +4032,90 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 // bumped by HandleLifecycle's FocusOut/Reset branch (the verifyEpoch
 // discipline: a monotonic tag compared under the mutex). A second boundary
 // always catches a callback that missed the first window. The caller holds
-// the mutex on both entry and return.
+// the mutex on both entry and return. (The abort semantics around this
+// window are plan 10-17's: a free stop only BEFORE the first forward;
+// after it the round continues to its commit, loudly marked.)
 func (a *Actor) chunkBoundaryMoved(gen uint64) bool {
 	a.mu.Unlock()
 	runtime.Gosched()
 	a.mu.Lock()
 
 	return a.ctxEpoch != gen
+}
+
+// freeAbortBeforeFirstForward is the round's LAST free stop (plan 10-17):
+// a generation change observed before the first destructive key ends the
+// round without a commit, without a completion and without a repair — the
+// context that must receive the replacement no longer exists and nothing
+// has been destroyed yet. The chunk-boundary window releases the mutex so
+// the lifecycle callback can land. The caller holds the mutex on both
+// entry and return; a true answer means the round is ALREADY settled (the
+// caller just returns).
+func (a *Actor) freeAbortBeforeFirstForward(gen uint64) bool {
+	if !a.chunkBoundaryMoved(gen) {
+		return false
+	}
+	slog.Info("correction", "outcome", "context-changed")
+	a.level2Busy = false // the guard clears on EVERY exit (WR-01)
+	a.settleCombo()
+
+	return true
+}
+
+// replayBurst emits the plan's BackSpace forwards — chunked at
+// terminalChunkKeys with the context re-checks between chunks (plan 10-04)
+// — and reports whether the round took the free stop BEFORE its first
+// forward (plan 10-17). A generation change after the first destructive
+// key is loud but no longer fatal (the chunk-boundary mark): the round can
+// only go forward to its commit on the captured snapshot — the old
+// criterion-4 stop (no commit after forwards) is replaced by the ADR-008
+// amendment (6): a deletion without its replacement is the one outcome the
+// machine may never produce. The caller holds the mutex.
+func (a *Actor) replayBurst(eng engine.Emitter, backspaces int, gen uint64, sleep func(time.Duration)) bool {
+	emitted := 0
+	for sent := 0; sent < backspaces; {
+		chunk := min(terminalChunkKeys, backspaces-sent)
+		for range chunk {
+			sleep(level2ForwardGap)
+			// The free-abort window (plan 10-17): BEFORE the first
+			// destructive key a generation change still stops the round for
+			// free — nothing has been destroyed, so nothing needs replacing.
+			if emitted == 0 && a.freeAbortBeforeFirstForward(gen) {
+				return true
+			}
+			eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
+			emitted++
+		}
+		sent += chunk
+		if sent >= backspaces {
+			break
+		}
+		// The chunk-boundary re-check: a generation change here is LOUD but
+		// no longer fatal — see replayBurst's contract above.
+		if a.chunkBoundaryMoved(gen) {
+			slog.Info("correction delivery", "stage", "context-changed-midflow")
+		}
+	}
+
+	return false
+}
+
+// drainSettleWindow holds the terminal branch's bounded delivery wait
+// (plan 10-17, T-10-17-05): the actor mutex is RELEASED for the window —
+// a second correction entry lands here and is refused by the WR-01 guard
+// (T-10-17-01, level2Busy covers the whole window), a real lifecycle
+// callback lands freely, and the epoch re-check marks it loud WITHOUT
+// aborting: after the first forward the commit is not cancellable (the
+// ADR-008 amendment (6)). The settle constant bounds the wait — the
+// window can never hold the machine hostage. The caller holds the mutex
+// on both entry and return; sleep is the branch's pacing seam.
+func (a *Actor) drainSettleWindow(gen uint64, sleep func(time.Duration)) {
+	a.mu.Unlock()
+	sleep(terminalDrainSettle)
+	a.mu.Lock()
+	if a.ctxEpoch != gen {
+		slog.Info("correction delivery", "stage", "context-changed-midflow")
+	}
 }
 
 // logCorrectionDone counts and writes the completion pair of one ladder
