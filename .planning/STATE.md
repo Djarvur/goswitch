@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
 status: verifying
-stopped_at: Completed 10-17-PLAN.md
-last_updated: "2026-10-16T21:29:04.956Z"
+stopped_at: Completed 10-18-PLAN.md (owner re-acceptance pending)
+last_updated: "2026-10-16T21:56:52.301Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: 9ca615f6ba5316386f4f572686edd2f70cf28ad3
+state_head: fd555a0d1964896862bc7f36f6b3c64314d2304e
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 22
-  completed_plans: 15
+  completed_plans: 16
   percent: 0
 ---
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P13 | 48min | 3 tasks | 17 files |
 | Phase 10 P16 | 18min | 3 tasks | 7 files |
 | Phase 10 P17 | 54min | 3 tasks | 10 files |
+| Phase 10 P18 | 25min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,7 @@ Recent decisions affecting current work:
 - [Phase 10]: Роутинг 10-14 по живым рядам отменён: эмиссия DST+Require валит gnome-shell стенда (4/4 signal 11), Require-доказуемая доставка непроверяема как минимум на стенде — Эскалация владельцу (Rule 4): редизайн формы доставки (Require-свободные пробы/раздельная эмиссия/разбор краха) — архитектурное решение; 10-14 без журнального входа не стартует
 - [Phase 10]: Гвард DST-эмиссии: DeleteSurroundingText только при перегенерационном свидетельстве материализованности (surrSeen+surrEng — bind к эмиттеру поколения, форма flapEng; clear в FocusOut/Reset-ветке), иначе диверсия в executeLevel2-форму + INFO dst-guarded + corr_dst_guarded в status — план 10-16, T-10-16-01/02 закрыты на уровне машины — Бисекция 2026-10-16 (R2/R6b/R7): DST с любыми параметрами к непроэнерженному контексту в девственном окне валит gnome-shell (mutter 46.2, strlen по NULL, meta-wayland-text-input.c:254); гарантии «окно тёплое» корректор дать не может — свидетельство стало машинным. Bind к эмиттеру (Rule 2 сверх плана) закрывает churn-реминт без жизненной пары (AttachEngine — чистый store); апстрим-фикс проверен GitLab REST API и НЕ СУЩЕСТВУЕТ (strlen по NULL жив до 51.1 + main; частичное харденение 48.0 — 2c42a284/fb86d5d5) — ретест-гейт закрыт на всех существующих версиях, DST-для-терминалов депрекирован, probe-вербы exempt под тем же гейтом
 - [Phase 10]: Машина round-4 (план 10-17): drain-settle 150 мс перед коммитом терминальной ветки (мьютекс освобождён на окно — WR-01 накрывает, константа с журнальным происхождением 19:21:26/E3, НЕ конфиг; -debug env-оверрайд fail-closed), флип вне окна (терминальный слот без grace и verify-релизов — только следующая клавиша/подтверждающий пуш; правило 2026-09-28 отложено-не-отменено, валидация владельцем 10-18), delivery-метки INFO без содержимого, abort/commit-дисциплина: свободный стоп только до первого форварда, после — коммит на захваченном снапшоте за меткой context-changed-midflow
+- [Phase 10]: Round-4 re-acceptance: установка v1.1.1-180-gefac750 по дословному ритуалу (реплей-ряд 21:32 UTC → стенд re-pin ×4 + drain-ряд 21:39-21:48 → установка 00:51 MSK в новый release-dir); оракул term-word-vte-flip переведён на round-4 release-семантику (keystroke-причина, Rule 3) — Урок 2026-10-12/09:39 обязывает доказывать фикс реплеем ДО всякого запуска; машина round-4 (10-17) не имеет grace/verify-релизов терминального флипа — замороженный оракул кейса 10-08 ждал старый релиз и не мог пройти зелёным на правильной машине; суженная семантика флипа и честный стек доказательств (машинного чтения поля хоста нет) предъявлены владельцу явно; вердикт не синтезируется — UAT end-of-phase
 
 ### Pending Todos
 
@@ -134,8 +136,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T21:28:46.801Z
-Stopped at: Completed 10-17-PLAN.md
+Last session: 2026-10-16T21:56:24.264Z
+Stopped at: Completed 10-18-PLAN.md (owner re-acceptance pending)
 Resume file: None
 
 ## Operator Next Steps
