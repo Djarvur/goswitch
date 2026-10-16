@@ -283,6 +283,18 @@
 | witness-htop 21:32:27 | `htop + type ghbdtn␠ (counters oracle + process alive)` | activation: focus-detected; venue: vm (kvm); fired=0; veto Δ=1; htop жив (pid 5989); контент-свидетельство несёт witness-vim — у TUI нет текстового буфера | Verdict: pass (fired=0, terminal-veto воздержания >0, процесс жив) |
 | positive-control 21:32:29 | `armGate + type ghbdtn + double Shift_R + pty-hex oracle` | activation: focus-detected; venue: vm (kvm); pty_hex=d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-hex содержит ожидаемые байты; done+level-2 в журнале демона) |
 | autocorrect-terminal-silent-repin 21:32:33 | `runAutocorrectTerminalSilent in-process (existing case)` | activation: focus-detected; case error: autocorrect-terminal-silent: 1 fired records — the field must never fire | Verdict: blocked (полный wezterm re-pin остаётся за планом 10-06) |
+| word-bash 21:39:55 | `armGate + type ghbdtn + double Shift_R + pty-hex oracle` | activation: focus-detected; venue: vm (kvm); pty_hex=d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-hex содержит ожидаемые байты; done+level-2 в журнале демона) |
+| word-zsh 21:39:58 | `armGate + type ghbdtn + double Shift_R + pty-hex oracle` | activation: focus-detected; venue: vm (kvm); pty_hex=d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-hex содержит ожидаемые байты; done+level-2 в журнале демона) |
+| mid-line 21:40:01 | `armGate + type echo ghbdtn + double Shift_R + pty-hex oracle` | activation: focus-detected; venue: vm (kvm); pty_hex=6563686f20d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-hex содержит ожидаемые байты; done+level-2 в журнале демона) |
+| clip-frozen 21:40:04 | `printf %s GS-SPIKE-SENTINEL | wl-copy → word round → wl-paste --no-newline` | activation: focus-detected; venue: vm (kvm); clip_before=GS-SPIKE-SENTINEL; clip_after=GS-SPIKE-SENTINEL; pty_hex=d0bfd180d0b8d0b2d0b5d1820a (CLIPBOARD перезаписан сентинелом — синтетика, пред-стейт задокументирован затиранием) | Verdict: pass (CLIPBOARD байт-нетронут терминальной коррекцией, слово исправлено) |
+| witness-vim 21:46:52 | `vim insert-mode + type ghbdtn␠ + esc + :wq (counters + buffer-file oracle)` | activation: focus-detected; venue: vm (kvm); fired=0; veto Δ=1; buffer_hex=67686264746e200a | Verdict: pass (fired=0, terminal-veto воздержания >0, буфер не изменён) |
+| witness-htop 21:46:55 | `htop + type ghbdtn␠ (counters oracle + process alive)` | activation: focus-detected; venue: vm (kvm); fired=0; veto Δ=1; htop жив (pid 8051); контент-свидетельство несёт witness-vim — у TUI нет текстового буфера | Verdict: pass (fired=0, terminal-veto воздержания >0, процесс жив) |
+| positive-control 21:46:58 | `armGate + type ghbdtn + double Shift_R + pty-hex oracle` | activation: focus-detected; venue: vm (kvm); pty_hex=d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-hex содержит ожидаемые байты; done+level-2 в журнале демона) |
+| autocorrect-terminal-silent-repin 21:47:03 | `runAutocorrectTerminalSilent in-process (existing case)` | activation: focus-detected; case error: autocorrect-terminal-silent: 2 correction records — nothing may enter the ladder | Verdict: blocked (полный wezterm re-pin остаётся за планом 10-06) |
+
+
+
+
 
 
 ## Фаза 10 re-pin после классификационных правок 10-07 (G-10-1 причина A)
@@ -337,6 +349,24 @@ role-диагностика). Зеркало ресинчено рецептом
 | mid-line 21:31:35 | `armGate + type echo ghbdtn + double Shift_R (learning handshake) + pty-delta oracle` | activation: focus-detected; venue: vm (kvm); learning=false; pty_delta_hex=6563686f20d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-дельта байт-точна; done+level-2 в журнале демона) |
 | clip-frozen 21:31:38 | `printf %s GS-SPIKE-SENTINEL | wl-copy → word round → wl-paste --no-newline` | activation: focus-detected; venue: vm (kvm); learning=true; clip_before=GS-SPIKE-SENTINEL; clip_after=GS-SPIKE-SENTINEL; pty_delta_hex=67686264746e6e6e6e6e6e6e6e6e6e6e6e6e6ed0bfd180d0b8d0b2d0b5d1820a (CLIPBOARD перезаписан сентинелом — синтетика, пред-стейт задокументирован затиранием) | Verdict: FAIL (клипборд изменён или слово не исправлено) |
 | leg-probe 21:31:40 | `sentinel → goswitchctl probe-forward Home, shift+End → wl-paste --primary` | activation: focus-detected; venue: vm (kvm); sentinel=GS-SPIKE-SENTINEL; primary_after=GS-SPIKE-SENTINEL; token_hex=67686264746e | Verdict: leg-probe red (лег не подключён — буфер-доверие остаётся единственным механизмом по вердикту OQ 2 «contract»; граница D7 задокументирована) |
+| caps re-pin 21:45:51 | `SetCapabilities в журнале демона для контекста wezterm-nightly (до решений)` | activation: focus-detected; venue: vm (kvm); caps=0x9 (наблюдаемая подпись ночника; легаси-строки 0x9 исторические — Pitfall 4) | Verdict: подпись записана до решений (маршрутизация живая — classifyTerminal, не зашитая) |
+| word-a 21:46:03 | `armGate + type ghbdtn + double Shift_R (learning handshake) + pty-delta oracle` | activation: focus-detected; venue: vm (kvm); learning=false; pty_delta_hex=d187d0bfd180d0b8d0b2d0b5d1820a | Verdict: FAIL (pty-дельта не байт-точна) |
+| term-word-wezterm 21:46:03 | `wezterm word round` | activation: focus-detected; case aborted: capture delta d187d0bfd180d0b8d0b2d0b5d1820a, want exactly d0bfd180d0b8d0b2d0b5d1820a | Verdict: aborted |
+| caps re-pin 21:46:23 | `SetCapabilities в журнале демона для контекста wezterm-nightly (до решений)` | activation: focus-detected; venue: vm (kvm); caps=0x9 (наблюдаемая подпись ночника; легаси-строки 0x9 исторические — Pitfall 4) | Verdict: подпись записана до решений (маршрутизация живая — classifyTerminal, не зашитая) |
+| word-a 21:46:25 | `armGate + type ghbdtn + double Shift_R (learning handshake) + pty-delta oracle` | activation: focus-detected; venue: vm (kvm); learning=false; pty_delta_hex=d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-дельта байт-точна; done+level-2 в журнале демона) |
+| word-b 21:46:27 | `armGate + type ghbdtn + double Shift_R (learning handshake) + pty-delta oracle` | activation: focus-detected; venue: vm (kvm); learning=false; pty_delta_hex=d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-дельта байт-точна; done+level-2 в журнале демона) |
+| mid-line 21:46:29 | `armGate + type echo ghbdtn + double Shift_R (learning handshake) + pty-delta oracle` | activation: focus-detected; venue: vm (kvm); learning=false; pty_delta_hex=6563686f20d0bfd180d0b8d0b2d0b5d1820a | Verdict: pass (pty-дельта байт-точна; done+level-2 в журнале демона) |
+| clip-frozen 21:46:32 | `printf %s GS-SPIKE-SENTINEL | wl-copy → word round → wl-paste --no-newline` | activation: focus-detected; venue: vm (kvm); learning=false; clip_before=GS-SPIKE-SENTINEL; clip_after=GS-SPIKE-SENTINEL; pty_delta_hex=d0bfd180d0b8d0b2d0b5d1820a (CLIPBOARD перезаписан сентинелом — синтетика, пред-стейт задокументирован затиранием) | Verdict: pass (CLIPBOARD байт-нетронут терминальной коррекцией, слово исправлено) |
+| leg-probe 21:46:33 | `sentinel → goswitchctl probe-forward Home, shift+End → wl-paste --primary` | activation: focus-detected; venue: vm (kvm); sentinel=GS-SPIKE-SENTINEL; primary_after=GS-SPIKE-SENTINEL; token_hex=67686264746e | Verdict: leg-probe red (лег не подключён — буфер-доверие остаётся единственным механизмом по вердикту OQ 2 «contract»; граница D7 задокументирована) |
+
+
+
+
+
+
+
+
+
 
 
 ## Фаза 10 живой ряд VTE flip (term-word-vte-flip)
@@ -349,6 +379,11 @@ role-диагностика). Зеркало ресинчено рецептом
 |---|---|---|---|
 | flip-word-bash 21:32:54 | `armGate + type ghbdtn + double Shift_R + journal order oracle (done<settle<mode) + pty-hex` | activation: focus-detected; venue: vm (kvm); pty_hex=d0bfd180d0b8d0b2d0b5d1820a; delivery_order=done<settlement<mode | Verdict: pass (pty байт-точен; флип освободился подтверждением доставки — E3 порядок держится) |
 | flip-clip-frozen 21:32:57 | `printf %s GS-SPIKE-SENTINEL | wl-copy → flip word round → wl-paste --no-newline` | activation: focus-detected; venue: vm (kvm); clip_before=GS-SPIKE-SENTINEL; clip_after=GS-SPIKE-SENTINEL; pty_hex=67686264746e0a (набор шёл в перевернутом режиме — коррекция вернула латиницу; CLIPBOARD перезаписан сентинелом — синтетика) | Verdict: pass (CLIPBOARD байт-нетронут и при активной машине флипа; слово исправлено) |
+| term-word-vte-flip 21:40:26 | `VTE flip round` | activation: focus-detected; case aborted: term-word-vte-flip: mode record after the settlement: timeout after 5s: daemon log has 0 occurrences of "\"msg\":\"mode\",\"to\"", want >= 1 | Verdict: aborted |
+| flip-word-bash 21:45:33 | `armGate + type ghbdtn + double Shift_R + journal order oracle (done<settle<mode) + pty-hex` | activation: focus-detected; venue: vm (kvm); pty_hex=d0bfd180d0b8d0b2d0b5d1820a; delivery_order=done<settlement<mode | Verdict: pass (pty байт-точен; флип освободился подтверждением доставки — E3 порядок держится) |
+| flip-clip-frozen 21:45:36 | `printf %s GS-SPIKE-SENTINEL | wl-copy → flip word round → wl-paste --no-newline` | activation: focus-detected; venue: vm (kvm); clip_before=GS-SPIKE-SENTINEL; clip_after=GS-SPIKE-SENTINEL; pty_hex=67686264746e0a (набор шёл в перевернутом режиме — коррекция вернула латиницу; CLIPBOARD перезаписан сентинелом — синтетика) | Verdict: pass (CLIPBOARD байт-нетронут и при активной машине флипа; слово исправлено) |
+
+
 
 ## Фаза 10 дрейф клиента wezterm и амендмент семантики (план 10-08, G-10-1 причина B, 2026-10-13)
 
@@ -426,6 +461,12 @@ never-ряд, не зависание. Критерий «отражает» —
 | Строка | Команда | Наблюдаемое | Вердикт |
 |---|---|---|---|
 | секция открыта 2026-10-16 (план 10-17) | `код кейса доставлен планом 10-17 (test/e2e/case_term_word_drain.go, mise-задача e2e-term-word-drain — NOT in ci); ЖИВОЙ РЯД исполняет план 10-18` | машина round-4 под явной матрицей pacing (default / tight 5 мс / loose 50 мс + удлинённый drain-settle через -debug оверрайд, fail-closed без него): RAW pty-захват (stty raw — поток байтов, не приготовленные строки), оракулы — pty-дельта порядка (каждый 0x7f строго прежде байтов «привет», ни одного после), порядок delivery-меток (chunks-sent → commit-sent → flip-armed; flip-released только после честной причины — push/keystroke), CLIPBOARD-сентинел байт-нетронут; flip_after_correction: true (паритет хоста) | Verdict: pending — рядов ещё нет, живой прогон за планом 10-18 |
+| row-default 21:47:23 | `armGate + type ghbdtn + double Shift_R + pty-порядок (0x7f прежде байтов слова) + порядок delivery-меток + release-причина флипа` | activation: focus-detected; venue: vm (kvm); combo=default (gap="" settle=""); pty_hex=787f67686264746e7f7f7f7f7f7fd0bfd180d0b8d0b2d0b5d182; marks marks: chunks@12040 commit@12176 flip-armed@12592 flip-released@13267 cause-honest=true; clip_after=GS-SPIKE-SENTINEL | Verdict: pass (каждый 0x7f в pty строго прежде байтов слова; delivery-метки упорядочены, флип-релиз после своей причины; CLIPBOARD байт-нетронут) |
+| row-tight 21:47:30 | `armGate + type ghbdtn + double Shift_R + pty-порядок (0x7f прежде байтов слова) + порядок delivery-меток + release-причина флипа` | activation: focus-detected; venue: vm (kvm); combo=tight (gap="5" settle="150"); pty_hex=787f67686264746e7f7f7f7f7f7fd0bfd180d0b8d0b2d0b5d182; marks marks: chunks@26112 commit@26247 flip-armed@26662 flip-released@27336 cause-honest=true; clip_after=GS-SPIKE-SENTINEL | Verdict: pass (каждый 0x7f в pty строго прежде байтов слова; delivery-метки упорядочены, флип-релиз после своей причины; CLIPBOARD байт-нетронут) |
+| row-loose 21:47:39 | `armGate + type ghbdtn + double Shift_R + pty-порядок (0x7f прежде байтов слова) + порядок delivery-меток + release-причина флипа` | activation: focus-detected; venue: vm (kvm); combo=loose (gap="50" settle="400"); pty_hex=787f67686264746e7f7f7f7f7f7fd0bfd180d0b8d0b2d0b5d182; marks marks: chunks@40097 commit@40233 flip-armed@40649 flip-released@41323 cause-honest=true; clip_after=GS-SPIKE-SENTINEL | Verdict: pass (каждый 0x7f в pty строго прежде байтов слова; delivery-метки упорядочены, флип-релиз после своей причины; CLIPBOARD байт-нетронут) |
+
+
+
 
 ## Фаза 10 round-4 машина доставки (план 10-17), 2026-10-16
 
@@ -495,3 +536,23 @@ bffefc2 = финальный HEAD, верифицированный 10-17 (ег�
 | Строка | Команда | Наблюдаемое | Вердикт |
 |---|---|---|---|
 | repin-round4 2026-10-16 21:32–21:38 UTC | `mise exec -- go test ./internal/session/ -run 'ReplayWezterm1921\|ReplayHost1936\|ReplayHost0939\|TwoPhaseLevel1\|FlapWindowContextIdentity\|Level1ConfirmFlush\|TestDstGuard' -race -count=1; mise run ci; git diff --exit-code -- go.mod go.sum` | реплей-гейты 10-17 (обе подписи 19:21:26/19:36:00 + рампа 09:39/TwoPhaseLevel1/FlapWindowContextIdentity/Level1ConfirmFlush/DstGuard) — `ok github.com/Djarvur/goswitch/internal/session 3.767s` на HEAD bffefc2; `mise run ci` — зелёный (21 пакет ok, build+vet+lint+test -race; прогон 2 и прогон 3, REAL_EXIT=0; прогон 1 — ОДИНОЧНЫЙ флак, имя пакета утеряно окном вывода при параллельных mise-задачах — класс до-существующего deferred-пункта «ctlsvc/config/appid флаки под -race нагрузкой» v1.0.0, повторён 2× подряд зелёным; никакой правки кода между прогонами не было); `git diff --exit-code -- go.mod go.sum` — чисто (зависимости заморожены, T-10-18-SC) | Verdict: pass — реплей-гейт round-4 ЗЕЛЁНЫЙ на финальном HEAD и записан ДО стенда; стенд (×4 кейса + drain-ряд) и установка разблокированы |
+
+## Фаза 10 re-pin round-4 G-10-1 (план 10-18): четыре кейса + живой drain-ряд, 2026-10-16
+
+Re-pin замороженных стенд-рядов на машине round-4 (10-17: drain-settle 150 мс, флип вне
+окна, delivery-метки, abort/commit-дисциплина; 10-16: DST-гард) + живой drain-ряд нового
+кейса term-word-drain. Порядок: реплей-гейт (ряд repin-round4 выше, 21:32–21:38) → стенд.
+Зеркало re-sync rsync-рецептом 10-08 (HEAD fb8e403 → заезды; затем фикс кейса bf70ff8 →
+заезды flip/wezterm/witnesses/drain); go build + go vet зеркала зелёные; unit -debug
+перезапущен (component registered engines:2, engine goswitch-en, 21:39:18). Сессионный env
+ssh-прогонов по находке round-3: DISPLAY=:0 + XDG_RUNTIME_DIR=/run/user/1000 +
+DBUS_SESSION_BUS_ADDRESS + XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.* (НЕ в $HOME).
+Ряды ниже — дословно с зеркала стенда; отдельные ряды кейсов лежат в своих секциях
+(указатели в строке-сводке). Прobe-вербы 10-13 в прогонах round-4 НЕ использовались;
+ни один кейс не эмитит DeleteSurroundingText (гвард 10-16 в сборке стенда; TestDstGuard
+в реплей-гейте). Крахов gnome-shell в окне прогонов НОЛЬ (сессия пережила все пять
+заездов; ядро 6.8.0-147 дефолтное).
+
+| Строка | Команда | Наблюдаемое | Вердикт |
+|---|---|---|---|
+| repin-round4-stand 2026-10-16 21:39–21:48 UTC | `mise run e2e-term-word-vte; mise run e2e-term-word-vte-flip; mise run e2e-term-word-wezterm; mise run e2e-term-negative-witnesses; mise run e2e-term-word-drain (на площадке: go run ./test/e2e -case … с сессионным env)` | term-word-vte PASS с первого заезда (ряды word-bash 21:39:55 / word-zsh 21:39:58 / mid-line 21:40:01 / clip-frozen 21:40:04 — секция «Фаза 10 живые ряды VTE»; pty_hex=d0bfd180d0b8d0b2d0b5d1820a все); term-word-vte-flip: заезд 1 ЧЕСТНЫЙ abort 21:40:26 (оракул кейса ждал mode после verify-таймаута — семантика round-2; машина round-4 держит флип армед по построению — пины FlipImmuneToVerify*; фикс кейса bf70ff8: хвостовой newline кейса = честная keystroke-причина, ждётся flip-released(reason=keystroke) между settlement и mode) → заезд 2 PASS (flip-word-bash 21:45:33 delivery_order=done<settlement<mode + flip-clip-frozen 21:45:36 pty_hex=67686264746e0a — секция flip); term-word-wezterm: заезд 1 ЧЕСТНЫЙ FAIL 21:46:03 (word-a: pty_delta_hex=d187d0bfd180… — лишний префиксный байт 0x78; класс «префиксный мусор» repin-mechanics 10-08, инъекционный мусор арминг-пробы, НЕ маршрутизация и НЕ доставка; caps re-pin 0x9 оба заезда) → заезд 2 PASS (caps re-pin 21:46:23, word-a 21:46:25 + word-b 21:46:27 — два зелёных подряд ×2 Pitfall 1, mid-line 21:46:29, clip-frozen 21:46:32, leg-probe red-замороженный — секция wezterm); term-negative-witnesses PASS (witness-vim 21:46:52 fired=0 veto Δ=1, witness-htop 21:46:55 жив, positive-control 21:46:58 байт-точный; встроенная sub-форма негатива — документированный blocked-артефакт 21:47:03 «2 correction records», прецеденты 18:59:21/09:49:23); term-word-drain PASS со ВСЕЙ матрицей pacing (row-default 21:47:23 gap=дефолты settle=дефолты / row-tight 21:47:30 gap=5 settle=150 / row-loose 21:47:39 gap=50 settle=400 — секция «Фаза 10 round-4 pty-drain»: каждый 0x7f строго прежде байтов слова при каждой комбинации; marks chunks→commit→flip-armed→flip-released упорядочены, cause-honest=true; CLIPBOARD-сентинел байт-нетронут) | Verdict: pass — механизм round-4 валидирован живыми рядами на стенде: четыре вердиктных кейса байт-точные зелёные, негативные свидетели молчат (fired=0), drain-ряд доказывает pty-порядок и порядок delivery-меток при каждой комбинации матрицы; честные abort/FAIL-ряды заездов-1 сохранены; ноль DST-эмиссий, ноль крахов shell; mise run ci на HEAD зелёный, go.mod/go.sum заморожены; установка (Task 3) разблокирована |
