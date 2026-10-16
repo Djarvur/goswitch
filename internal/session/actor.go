@@ -4235,8 +4235,13 @@ func (a *Actor) replayBurst(eng engine.Emitter, backspaces int, gen uint64, slee
 // window can never hold the machine hostage. The caller holds the mutex
 // on both entry and return; sleep is the branch's pacing seam.
 func (a *Actor) drainSettleWindow(gen uint64, sleep func(time.Duration)) {
+	// WR-06 (the 10-REVIEW): the settle value is read UNDER the mutex — the
+	// field's documented discipline («Read under a.mu by the machine»);
+	// reading it after the Unlock was a live data-race against the setter
+	// for any future runtime caller (WR-01's race class).
+	settle := a.terminalDrainSettle
 	a.mu.Unlock()
-	sleep(a.terminalDrainSettle)
+	sleep(settle)
 	a.mu.Lock()
 	if a.ctxEpoch != gen {
 		slog.Info("correction delivery", "stage", "context-changed-midflow")
