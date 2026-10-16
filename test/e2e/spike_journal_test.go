@@ -19,17 +19,18 @@ import (
 // corpus iterates all of them so a future rename cannot dodge the pin.
 func spikeSections() map[string]string {
 	return map[string]string{
-		"secSmoke":    secSmoke,
-		"secHazards":  secHazards,
-		"secLadder":   secLadder,
-		"secRecipe":   secRecipe,
-		"secMatrix":   secMatrix,
-		"secCaps":     secCaps,
-		"secOracle":   secOracle,
-		"secTerm04":   secTerm04,
-		"secTermLive": secTermLive,
-		"secTermWez":  secTermWez,
-		"secCapsDel":  secCapsDel,
+		"secSmoke":     secSmoke,
+		"secHazards":   secHazards,
+		"secLadder":    secLadder,
+		"secRecipe":    secRecipe,
+		"secMatrix":    secMatrix,
+		"secCaps":      secCaps,
+		"secOracle":    secOracle,
+		"secTerm04":    secTerm04,
+		"secTermLive":  secTermLive,
+		"secTermWez":   secTermWez,
+		"secCapsDel":   secCapsDel,
+		"secTermDrain": secTermDrain,
 	}
 }
 

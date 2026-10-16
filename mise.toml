@@ -195,6 +195,10 @@ run = "go run ./test/e2e -case term-word-vte-flip"
 description = "e2e: 10-13 term-cap-delivery — the round-3 delivery-capability probe (G-10-1): three probes × two terminal clients (P1 DeleteSurroundingText honored — the field shrinks exactly nchars; P2 the Require answer reflects a just-committed text; P3 the Require answer reflects applied BackSpace forwards), budgeted DST(0,0)+Require polls (honest never-row on silence, never a hang), the frozen CLIPBOARD sentinel; rows to adr-008-spike-log.md — the routing input of plan 10-14 (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case term-cap-delivery"
 
+[tasks.e2e-term-word-drain]
+description = "e2e: 10-17 term-word-drain — round-4 pty-drain proof (G-10-1): one full correction round per pacing combination (default/tight/loose through the -debug env override) on a RAW pty capture; oracle: every BackSpace byte (0x7f) strictly before the replacement word's bytes, the delivery marks ordered (chunks-sent → commit-sent → flip-armed → flip-released after its honest cause), the frozen CLIPBOARD sentinel; rows to adr-008-spike-log.md — the code rides 10-17, the LIVE rows are 10-18's work (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-word-drain"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"

@@ -130,6 +130,7 @@ func caseListUsage() string {
 		" | term-word-wezterm" +
 		" | term-word-vte-flip" +
 		" | term-cap-delivery" +
+		" | term-word-drain" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -277,7 +278,7 @@ func pickCase(name string) (caseSpec, error) {
 			" autocorrect-blocklist-silent, menu-v2,"+
 			" term-word-vte, term-negative-witnesses,"+
 			" term-word-wezterm, term-word-vte-flip,"+
-			" term-cap-delivery,"+
+			" term-cap-delivery, term-word-drain,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 
@@ -345,6 +346,12 @@ func caseRegistry() map[string]caseSpec {
 		// six spawn+gate cycles plus the daemon/config setup ride inside
 		// the standard recipe budget.
 		"term-cap-delivery": {fn: runTermCapDelivery, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		// term-word-drain (plan 10-17): the round-4 pty-drain matrix — one
+		// full correction round per pacing combination (default/tight/loose
+		// through the -debug override), each with a raw pty capture, so
+		// three daemon restarts plus three fixture+observer rounds ride
+		// inside the budget.
+		"term-word-drain": {fn: runTermWordDrain, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-negative-witnesses": {
 			fn:                 runTermNegativeWitnesses,
 			noSurfacePreflight: true,
