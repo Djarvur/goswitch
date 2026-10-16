@@ -988,3 +988,27 @@ func TestNewCtlDeps_ProbeDeliveryDebugGated(t *testing.T) {
 		t.Fatal("debug Deps missing ProbeCommit")
 	}
 }
+
+// TestNewCtlDeps_ProbeSplitDebugGated pins the debug gate's wiring half for
+// the split-emission probes (the 2026-10-16 crash bisection form): the
+// emission deps exist ONLY under -debug — a production daemon's Deps
+// carries nils, the -debug daemon carries live closures.
+func TestNewCtlDeps_ProbeSplitDebugGated(t *testing.T) {
+	actor := session.NewActor(time.Millisecond)
+
+	prod := newCtlDeps(actor, nil, false)
+	if prod.ProbeDelete != nil {
+		t.Fatal("production Deps carries ProbeDelete — the debug gate is open")
+	}
+	if prod.ProbeRequire != nil {
+		t.Fatal("production Deps carries ProbeRequire — the debug gate is open")
+	}
+
+	dbg := newCtlDeps(actor, nil, true)
+	if dbg.ProbeDelete == nil {
+		t.Fatal("debug Deps missing ProbeDelete")
+	}
+	if dbg.ProbeRequire == nil {
+		t.Fatal("debug Deps missing ProbeRequire")
+	}
+}

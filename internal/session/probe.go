@@ -207,6 +207,36 @@ func ProbeDeleteSurrounding(eng engine.Emitter, offset int32, nchars uint32) err
 	return nil
 }
 
+// ProbeDelete emits the crash-bisection probe's DST-only half (the
+// 2026-10-16 stand finding: gnome-shell dies on the paired emission — the
+// bisection needs the signals separable): exactly
+// DeleteSurroundingText(offset, nchars), NO RequireSurroundingText. The
+// fail-closed and content disciplines are ProbeDeleteSurrounding's
+// verbatim.
+func ProbeDelete(eng engine.Emitter, offset int32, nchars uint32) error {
+	if eng == nil {
+		return ErrProbeNoEngine
+	}
+	eng.DeleteSurroundingText(offset, nchars)
+	slog.Debug("probe delete", "offset", offset, "nchars", nchars)
+
+	return nil
+}
+
+// ProbeRequire emits the crash-bisection probe's Require-only half: exactly
+// RequireSurroundingText — the surrounding-text request alone, no delete
+// riding it. The fail-closed and content disciplines are
+// ProbeDeleteSurrounding's verbatim.
+func ProbeRequire(eng engine.Emitter) error {
+	if eng == nil {
+		return ErrProbeNoEngine
+	}
+	eng.RequireSurroundingText()
+	slog.Debug("probe require")
+
+	return nil
+}
+
 // ProbeCommit emits the delivery probe's commit (plan 10-13): one
 // CommitText carrying the text on the live engine emitter. The DEBUG row
 // carries the rune count, never the text (D-20/D-21 — same content

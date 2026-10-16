@@ -247,6 +247,14 @@ func newCtlDeps(actor *session.Actor, reload ctlsvc.Reloader, debug bool) ctlsvc
 		deps.ProbeCommit = func(text string) error {
 			return session.ProbeCommit(actor.ProbeEmitter(), text)
 		}
+		// The split-emission probes (the 2026-10-16 crash bisection) ride
+		// the same gate: DST-only and Require-only, the signals separable.
+		deps.ProbeDelete = func(offset int32, nchars uint32) error {
+			return session.ProbeDelete(actor.ProbeEmitter(), offset, nchars)
+		}
+		deps.ProbeRequire = func() error {
+			return session.ProbeRequire(actor.ProbeEmitter())
+		}
 	}
 
 	return deps

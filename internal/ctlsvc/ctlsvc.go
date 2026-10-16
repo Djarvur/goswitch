@@ -94,6 +94,12 @@ type Deps struct {
 	// method answers "probe disabled" and emits nothing.
 	ProbeDeleteSurrounding func(offset int32, nchars uint32) error
 	ProbeCommit            func(text string) error
+	// ProbeDelete and ProbeRequire are the split-emission probes' emission
+	// deps (the 2026-10-16 gnome-shell DST/Require crash bisection): the
+	// same fail-closed form as the paired probe — assigned ONLY under
+	// -debug, a nil field answers "probe disabled" and emits nothing.
+	ProbeDelete  func(offset int32, nchars uint32) error
+	ProbeRequire func() error
 }
 
 // Svc is the object exported at ObjectPath on BusName; godbus dispatches
@@ -202,6 +208,40 @@ func (s *Svc) ProbeCommit(text string) (reply string, err *dbus.Error) {
 	}
 
 	return "probe committed", nil
+}
+
+// ProbeDelete implements org.djarvur.goswitch.ProbeDelete (i u) → s: the
+// crash-bisection probe's DST-only verb — the ProbeDeleteSurrounding
+// fail-closed form verbatim (see its gate rationale): the dep exists ONLY
+// under -debug, a nil dep answers "probe disabled"; a live dep's failure
+// surfaces as errFailed carrying the dep's error text.
+func (s *Svc) ProbeDelete(offset int32, nchars uint32) (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeDelete", &err)
+
+	if s.deps.ProbeDelete == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeDelete(offset, nchars); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
+
+	return "probe delete emitted", nil
+}
+
+// ProbeRequire implements org.djarvur.goswitch.ProbeRequire () → s: the
+// crash-bisection probe's Require-only verb — the ProbeDelete fail-closed
+// form verbatim.
+func (s *Svc) ProbeRequire() (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeRequire", &err)
+
+	if s.deps.ProbeRequire == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeRequire(); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
+
+	return "probe require emitted", nil
 }
 
 // renderStatus formats the snapshot as the Status method's single-line

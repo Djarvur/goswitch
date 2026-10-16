@@ -351,3 +351,81 @@ func TestProbeVerbs_Logged(t *testing.T) {
 		t.Errorf("probe log leaks the committed text: %s", out)
 	}
 }
+
+// The split-emission probe corpus (the 2026-10-16 gnome-shell DST/Require
+// crash bisection on the stand): ProbeDelete must emit EXACTLY one
+// DeleteSurroundingText — NO RequireSurroundingText; ProbeRequire exactly
+// one RequireSurroundingText — no delete. Both fail-closed without an
+// engine emitter, both journalled at DEBUG with parameters only.
+
+// TestProbeDelete_NilEngineFailClosed pins the DST-only probe's fail-closed
+// half (the ErrProbeNoEngine form of the paired probe).
+func TestProbeDelete_NilEngineFailClosed(t *testing.T) {
+	if err := session.ProbeDelete(nil, 0, 6); !errors.Is(err, session.ErrProbeNoEngine) {
+		t.Fatalf("ProbeDelete(nil) error = %v, want ErrProbeNoEngine", err)
+	}
+}
+
+// TestProbeDelete_EmitsDeleteOnly pins the emission shape: exactly one
+// DeleteSurroundingText(offset, nchars) and NOTHING else — the Require must
+// stay out (that is the whole point of the split verb).
+func TestProbeDelete_EmitsDeleteOnly(t *testing.T) {
+	sink := &probeOpSink{}
+	if err := session.ProbeDelete(sink, 0, 6); err != nil {
+		t.Fatalf("ProbeDelete(0, 6) error = %v, want nil", err)
+	}
+	ops, _ := sink.opsSnapshot()
+	want := []string{"delete(0,6)"}
+	if !slices.Equal(ops, want) {
+		t.Fatalf("ops = %v, want exactly %v (DST only, no require)", ops, want)
+	}
+}
+
+// TestProbeRequire_NilEngineFailClosed pins the Require-only probe's
+// fail-closed half.
+func TestProbeRequire_NilEngineFailClosed(t *testing.T) {
+	if err := session.ProbeRequire(nil); !errors.Is(err, session.ErrProbeNoEngine) {
+		t.Fatalf("ProbeRequire(nil) error = %v, want ErrProbeNoEngine", err)
+	}
+}
+
+// TestProbeRequire_EmitsRequireOnly pins the emission shape: exactly one
+// RequireSurroundingText — no delete, no commit, nothing else.
+func TestProbeRequire_EmitsRequireOnly(t *testing.T) {
+	sink := &probeOpSink{}
+	if err := session.ProbeRequire(sink); err != nil {
+		t.Fatalf("ProbeRequire error = %v, want nil", err)
+	}
+	ops, _ := sink.opsSnapshot()
+	if !slices.Equal(ops, []string{"require"}) {
+		t.Fatalf("ops = %v, want exactly [require]", ops)
+	}
+}
+
+// TestProbeSplitVerbs_Logged pins the DEBUG journal of the split probes:
+// the parameters ride, the field content never does. The needle for the
+// DST-only record ("probe delete") is quote-terminated, so the paired
+// verb's "probe delete-surrounding" record cannot satisfy it.
+func TestProbeSplitVerbs_Logged(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	sink := &probeOpSink{}
+	if err := session.ProbeDelete(sink, -3, 6); err != nil {
+		t.Fatalf("ProbeDelete error = %v, want nil", err)
+	}
+	if err := session.ProbeRequire(sink); err != nil {
+		t.Fatalf("ProbeRequire error = %v, want nil", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`"msg":"probe delete"`, `"offset":-3`, `"nchars":6`,
+		`"msg":"probe require"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("split probe log missing %s: %s", want, out)
+		}
+	}
+}

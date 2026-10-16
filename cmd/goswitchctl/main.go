@@ -52,6 +52,7 @@ var errDaemonNotRunning = errors.New("daemon not running? (org.djarvur.goswitch 
 var errUsage = errors.New(
 	"usage: goswitchctl status [--json] | reload | correct | probe-forward <keyspec>" +
 		" | probe-delete-surrounding <offset> <nchars> | probe-commit <text>" +
+		" | probe-delete <offset> <nchars> | probe-require" +
 		" | install | uninstall [--purge] | selfcheck")
 
 // configErrorKey terminates the status token grammar: its value is the
@@ -77,9 +78,23 @@ const (
 	probeCommitArgCount   = 2
 )
 
+// The split-emission probe verbs' argv shapes (the 2026-10-16 crash
+// bisection): probe-delete carries the same (offset, nchars) pair,
+// probe-require is bare.
+const (
+	probeDeleteArgCount  = 3
+	probeRequireArgCount = 1
+)
+
 // verbProbeDeleteSurrounding is the delivery probe's subcommand name — one
 // definition (goconst) reused by the refusal wraps.
 const verbProbeDeleteSurrounding = "probe-delete-surrounding"
+
+// The split-emission probe verbs' subcommand names — one definition each.
+const (
+	verbProbeDelete  = "probe-delete"
+	verbProbeRequire = "probe-require"
+)
 
 // runProbeVerb dispatches the three debug-gated probe verbs (plans 09-02
 // and 10-13, the extraction that keeps run under the complexity budget):
@@ -109,6 +124,20 @@ func runProbeVerb(ctx context.Context, args []string) (handled bool, err error) 
 		}
 		positional = func(ctx context.Context, args []string) error {
 			return runProbeCommit(ctx, args[1])
+		}
+	case verbProbeDelete:
+		if len(args) != probeDeleteArgCount { // exactly two positionals
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, args []string) error {
+			return runProbeDelete(ctx, args[1], args[2])
+		}
+	case verbProbeRequire:
+		if len(args) != probeRequireArgCount { // bare verb
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, _ []string) error {
+			return runProbeRequire(ctx)
 		}
 	default:
 		return false, nil
@@ -148,6 +177,39 @@ func runProbeCommit(ctx context.Context, text string) error {
 	reply, err := probeForwardCall(ctx, "ProbeCommit", text)
 	if err != nil {
 		return fmt.Errorf("probe-commit: %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
+
+// runProbeDelete drives the crash-bisection probe's DST-only verb: the
+// (offset, nchars) pair typed for the (i u) wire signature, one control
+// call, one reply line.
+func runProbeDelete(ctx context.Context, offsetArg, ncharsArg string) error {
+	offset, err := strconv.ParseInt(offsetArg, 10, 32)
+	if err != nil {
+		return fmt.Errorf(verbProbeDelete+": parse offset: %w", err)
+	}
+	nchars, err := strconv.ParseUint(ncharsArg, 10, 32)
+	if err != nil {
+		return fmt.Errorf(verbProbeDelete+": parse nchars: %w", err)
+	}
+	reply, err := probeForwardCall(ctx, "ProbeDelete", int32(offset), uint32(nchars))
+	if err != nil {
+		return fmt.Errorf(verbProbeDelete+": %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
+
+// runProbeRequire drives the crash-bisection probe's Require-only verb: a
+// bare control call, one reply line.
+func runProbeRequire(ctx context.Context) error {
+	reply, err := probeForwardCall(ctx, "ProbeRequire")
+	if err != nil {
+		return fmt.Errorf(verbProbeRequire+": %w", err)
 	}
 	printLine(reply)
 

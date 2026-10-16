@@ -244,3 +244,85 @@ func TestRun_ProbeDeliveryCliRefusals(t *testing.T) {
 		}
 	})
 }
+
+// The split-emission probe verb names (the 2026-10-16 crash bisection) —
+// the goconst form of the delivery verbs.
+const (
+	cliProbeDelete  = "probe-delete"
+	cliProbeRequire = "probe-require"
+)
+
+// TestRun_ProbeSplitCliUsage pins the split probes' usage grammar: the
+// exact positional shapes and the usage segments.
+func TestRun_ProbeSplitCliUsage(t *testing.T) {
+	t.Run("missing positionals are the usage refusal", func(t *testing.T) {
+		err := run(context.Background(), []string{cliProbeDelete})
+		if err == nil || err.Error() != errUsage.Error() {
+			t.Fatalf("%s with no argument = %v, want the bare errUsage", cliProbeDelete, err)
+		}
+		if seg := cliProbeDelete + " <offset> <nchars>"; !strings.Contains(errUsage.Error(), seg) {
+			t.Errorf("errUsage %q missing the %q segment", errUsage.Error(), seg)
+		}
+		if seg := cliProbeRequire; !strings.Contains(errUsage.Error(), seg) {
+			t.Errorf("errUsage %q missing the %q segment", errUsage.Error(), seg)
+		}
+	})
+	t.Run("wrong argument counts are the usage refusal", func(t *testing.T) {
+		for _, argv := range [][]string{
+			{cliProbeDelete, "0"},
+			{cliProbeDelete, "0", "6", "7"},
+			{cliProbeRequire, "0", "0"},
+		} {
+			err := run(context.Background(), argv)
+			if err == nil || err.Error() != errUsage.Error() {
+				t.Fatalf("%v = %v, want the bare errUsage", argv, err)
+			}
+		}
+	})
+}
+
+// TestRun_ProbeSplitCliDials pins the dials of the split probes: the
+// DST-only verb carries TYPED (i u) arguments, the Require-only verb dials
+// bare, and every refusal names the subcommand.
+func TestRun_ProbeSplitCliDials(t *testing.T) {
+	var dialedMethod string
+	var dialedArgs []any
+	prev := probeForwardCall
+	probeForwardCall = func(_ context.Context, method string, args ...any) (string, error) {
+		dialedMethod = method
+		dialedArgs = args
+
+		return "probe emitted", nil
+	}
+	t.Cleanup(func() { probeForwardCall = prev })
+
+	if err := run(context.Background(), []string{cliProbeDelete, "-3", "6"}); err != nil {
+		t.Fatalf("probe-delete -3 6 error = %v, want nil", err)
+	}
+	if dialedMethod != "ProbeDelete" {
+		t.Errorf("seam dialed method %q, want ProbeDelete", dialedMethod)
+	}
+	if len(dialedArgs) != 2 || dialedArgs[0] != int32(-3) || dialedArgs[1] != uint32(6) {
+		t.Errorf("seam dialed args %#v, want [int32(-3) uint32(6)]", dialedArgs)
+	}
+
+	if err := run(context.Background(), []string{cliProbeRequire}); err != nil {
+		t.Fatalf("probe-require error = %v, want nil", err)
+	}
+	if dialedMethod != "ProbeRequire" {
+		t.Errorf("seam dialed method %q, want ProbeRequire", dialedMethod)
+	}
+	if len(dialedArgs) != 0 {
+		t.Errorf("seam dialed args %#v, want none", dialedArgs)
+	}
+
+	probeForwardCall = func(context.Context, string, ...any) (string, error) {
+		return "", errStubProbeDisabled
+	}
+	for _, argv := range [][]string{{cliProbeDelete, "0", "6"}, {cliProbeRequire}} {
+		err := run(context.Background(), argv)
+		if err == nil || !strings.Contains(err.Error(), argv[0]) {
+			t.Fatalf("%v dial error = %v, want a wrap naming the subcommand", argv, err)
+		}
+	}
+}
