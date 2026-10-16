@@ -95,20 +95,23 @@ const level1ConfirmBudget = 60 * time.Millisecond
 // internal constant with a journal provenance, never a config key.
 const flipConfirmGrace = 300 * time.Millisecond
 
-// level2ForwardGap is the pacing quantum between the write branch's wire
-// emissions (plan 10-05, the 2026-10-12 VTE live finding): the client
-// drains forwarded keys lazily — they queue as GDK events — while the
-// commit lands synchronously, so a tight burst reorders and corrupts the
-// line («ghbdtn» came back «ghприв»: four erases, the commit, two late
-// erases). A sleep before EVERY forward and before the commit lets the
-// client's queue drain between emissions; the order on the wire and the
-// chunk geometry stay untouched (the op-log pins hold).
-const level2ForwardGap = 20 * time.Millisecond
+// defaultLevel2ForwardGap is the DEFAULT pacing quantum between the write
+// branch's wire emissions (plan 10-05, the 2026-10-12 VTE live finding):
+// the client drains forwarded keys lazily — they queue as GDK events —
+// while the commit lands synchronously, so a tight burst reorders and
+// corrupts the line («ghbdtn» came back «ghприв»: four erases, the
+// commit, two late erases). A sleep before EVERY forward and before the
+// commit lets the client's queue drain between emissions; the order on
+// the wire and the chunk geometry stay untouched (the op-log pins hold).
+// The value lives on the actor (NewActor plants the default) so the
+// -debug stand matrix can override it (plan 10-17 Task 3) — never from
+// config.
+const defaultLevel2ForwardGap = 20 * time.Millisecond
 
-// terminalDrainSettle is the bounded delivery window the terminal branch
-// holds between its last BackSpace forward and the commit (plan 10-17, the
-// round-4 machine). Origin (the journal rows, never a config key — the
-// level1ConfirmBudget precedent): the 19:21:26 host row
+// defaultTerminalDrainSettle is the DEFAULT bounded delivery window the
+// terminal branch holds between its last BackSpace forward and the commit
+// (plan 10-17, the round-4 machine). Origin (the journal rows, never a
+// config key — the level1ConfirmBudget precedent): the 19:21:26 host row
 // (DEBUG-term-host-live-failures.md, round-2 block) reports done +144 ms
 // with the whole 6×20 ms package behind it — the host client was STILL
 // DRAINING its forward queue when the commit landed; the healthy client's
@@ -117,8 +120,10 @@ const level2ForwardGap = 20 * time.Millisecond
 // the replacement is committed; past the window the machine claims NO
 // persistence — every outcome beyond it carries the loud delivery marks
 // instead of a field promise (the honest uncertainty of the round-4
-// mandate).
-const terminalDrainSettle = 150 * time.Millisecond
+// mandate). The value lives on the actor (NewActor plants the default) so
+// the -debug stand matrix can override it (plan 10-17 Task 3) — never
+// from config.
+const defaultTerminalDrainSettle = 150 * time.Millisecond
 
 // switchTimeout bounds the SetGlobalEngine round trip on the flip path —
 // the FAILURE-path wedge guard (Pitfall 4, T-05-03-01), not a slice of the
@@ -429,6 +434,13 @@ type Actor struct {
 	// interface identity (==): both live implementations are pointers
 	// (*engine.Engine, the corpus *fakeSink).
 	flapEng engine.Emitter
+	// level2ForwardGap and terminalDrainSettle are the write branch's
+	// pacing values (plan 10-05 and plan 10-17): NewActor plants the
+	// journal-proven defaults; ONLY the daemon's -debug wiring overrides
+	// them (the stand pacing matrix, plan 10-17 Task 3) — never config,
+	// never a second writer. Read under a.mu by the machine.
+	level2ForwardGap    time.Duration
+	terminalDrainSettle time.Duration
 	// level2Busy is the write branch's re-entrancy guard (plan 10-10,
 	// WR-01): executeLevel2 checks-and-sets it BEFORE the first destructive
 	// emission and clears it on EVERY exit (the backspace-cap refusal, the
@@ -780,6 +792,10 @@ func NewActor(window time.Duration) *Actor {
 		start:      time.Now(),
 		buf:        correct.NewBuffer(),
 		clip:       clipboard.New(),
+		// The write branch's journal-proven pacing defaults (plan 10-17
+		// Task 3): only the daemon's -debug wiring overrides them.
+		level2ForwardGap:    defaultLevel2ForwardGap,
+		terminalDrainSettle: defaultTerminalDrainSettle,
 		// The flap-window timer's production arm (plan 10-07): a real
 		// time.AfterFunc deadline, stoppable — the corpus replaces it via
 		// UseFlapTimer with a deterministic recorder.
@@ -910,6 +926,25 @@ func (a *Actor) UseLevel2Sleeper(s func(time.Duration)) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.level2Sleep = s
+}
+
+// SetLevel2ForwardGap overrides the write branch's pacing quantum — the
+// -debug stand matrix is the only caller (plan 10-17 Task 3, T-10-17-04):
+// the daemon wiring feeds it from the debug-gated env override, never
+// from config, and a production daemon never reaches it. The wiring runs
+// before the engine serves.
+func (a *Actor) SetLevel2ForwardGap(d time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.level2ForwardGap = d
+}
+
+// SetTerminalDrainSettle overrides the terminal branch's bounded delivery
+// window — the SetLevel2ForwardGap form (plan 10-17 Task 3, T-10-17-04).
+func (a *Actor) SetTerminalDrainSettle(d time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.terminalDrainSettle = d
 }
 
 // UseFlapTimer installs the flap-window timer seam (plan 10-07, the
@@ -3994,9 +4029,9 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		// extend, never rename.
 		slog.Info("correction delivery", "stage", "chunks-sent",
 			"forwards", plan.Backspaces,
-			"pacing_ms", (time.Duration(plan.Backspaces) * level2ForwardGap).Milliseconds())
+			"pacing_ms", (time.Duration(plan.Backspaces) * a.level2ForwardGap).Milliseconds())
 	} else {
-		sleep(level2ForwardGap) // the legacy branch, byte as today
+		sleep(a.level2ForwardGap) // the legacy branch, byte as today
 	}
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	if terminal {
@@ -4076,7 +4111,7 @@ func (a *Actor) replayBurst(eng engine.Emitter, backspaces int, gen uint64, slee
 	for sent := 0; sent < backspaces; {
 		chunk := min(terminalChunkKeys, backspaces-sent)
 		for range chunk {
-			sleep(level2ForwardGap)
+			sleep(a.level2ForwardGap)
 			// The free-abort window (plan 10-17): BEFORE the first
 			// destructive key a generation change still stops the round for
 			// free — nothing has been destroyed, so nothing needs replacing.
@@ -4111,7 +4146,7 @@ func (a *Actor) replayBurst(eng engine.Emitter, backspaces int, gen uint64, slee
 // on both entry and return; sleep is the branch's pacing seam.
 func (a *Actor) drainSettleWindow(gen uint64, sleep func(time.Duration)) {
 	a.mu.Unlock()
-	sleep(terminalDrainSettle)
+	sleep(a.terminalDrainSettle)
 	a.mu.Lock()
 	if a.ctxEpoch != gen {
 		slog.Info("correction delivery", "stage", "context-changed-midflow")
