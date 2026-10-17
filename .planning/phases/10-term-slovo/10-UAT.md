@@ -3,7 +3,7 @@ status: testing
 phase: 10-term-slovo
 source: [10-VERIFICATION.md]
 started: 2026-10-12T22:20:00Z
-updated: 2026-10-17T19:01:57Z
+updated: 2026-10-17T19:02:42Z
 ---
 
 ## Current Test
@@ -78,15 +78,19 @@ verdict: rejected
 
 ### 5. Повторная приёмка round-4 — гейт «слово в wezterm ОСТАЁТСЯ» на сборке v1.1.1-180-gefac750
 expected: ГЕЙТ ОДИН: в wezterm «ghbdtn» + двойной правый Shift → «привет», слово ОСТАЁТСЯ на экране. Опциональные пункты round-2 формы (GNOME Terminal, флап-бурст, середина фразы, «ytn?», молчание автокоррекции) — по желанию владельца, записываются. Суженная семантика флипа (режим — на следующей клавише) и честный стек доказательств (стенд pty-drain + журнальные delivery-метки + жест) предъявлены явно. Журнальные критерии round-4: (а) нет verify-timeout/verify-mismatch; (б) delivery-метки упорядочены chunks-sent → commit-sent, done changed=true; (в) флип-рубежи строго после release-причины (push/keystroke) — SetGlobalEngine между коммитом и причиной = провал; (г) нет крахов/перезапусков gnome-shell (гвард 10-16; крах = честный провал безопасности); (д) autocorrect_fired не вырос; (е) absent-метки/тишина = честный провал фикса, не пропуск.
-result: [pending]
-awaiting: user response — жесты и вердикт не синтезируются; человек-чек маршрутизирован через UAT end-of-phase (round-4 блок Closure validation в DEBUG-term-host-live-failures.md)
+result: issue
+reported: "double shift does NOT work in wezterm + видео (Screencast 2026-10-17 21-55-52): «привет» заменил «ghbdtn», ~1 с спустя строка ПУСТА — суммарно стёрто 12 символов при 6 отправленных; владелец: «кажется, это повторное удаление»"
+severity: major
+evidence: "журнал 21:56:01: РОВНО ОДИН chunks-sent forwards=6 pacing_ms=120 → commit-sent +281 мс → done changed=true → flip-armed (без релиза); пересоздания движка в окне vanish нет; фокус-пара same-engine на контексте wezterm через ~3 с после коммита (21:56:04.9). Дискриминация: «запоздалый дрейн» не подходит (дал бы ghbdtnпривет или уцелевший ghbdtn); гипотеза владельца «повторное удаление» (клиентский replay пакета при сбросе IM-контекста) — единственная согласующаяся. Машинные критерии (а)-(е) формально зелёные — отказ в самом механизме доставки, невидимом метками. Полные ряды: DEBUG-term-host-live-failures.md, блок 2026-10-17 21:56."
+verdict: rejected
+awaiting: closed — rejected; round-5 (content-free instrumented round для локализации клиента-replay) планируется
 
 ## Summary
 
 total: 5
 passed: 0
-issues: 3
-pending: 2
+issues: 4
+pending: 1
 skipped: 0
 blocked: 0
 
