@@ -471,6 +471,23 @@ type Actor struct {
 	// the wire ahead of the machine's pending commit. Accessed only under
 	// a.mu; busy==true implies machineDone!=nil.
 	machineDone chan struct{}
+	// emissionSeq is the monotonic identity of the terminal delivery bursts
+	// (the round-5 instrument, the 2026-10-17 wezterm double-delete hunt):
+	// executeLevel2's terminal branch assigns the next value at the burst's
+	// burst-window open and every «correction delivery» row of that burst
+	// carries it. The journal juxtaposed against a pty log stays decisive:
+	// one seq in the daemon journal while the pty shows two delete runs ⇒
+	// the client replayed its queued forwards; two seqs on the wire ⇒ the
+	// daemon fired twice. A counter, never a key — content-free by
+	// construction (D-20/D-21). Accessed only under a.mu.
+	emissionSeq uint64
+	// deliveryStart is the wall-clock anchor of the in-flight burst's
+	// timeline: every delivery row's t_rel_ms is relative to it — the
+	// per-emission timing the aggregate rows never carried. It stands after
+	// the burst closes: the deferred flip releases later and stamps its own
+	// captured anchor (deferredFlip.seq/start), never a newer burst's.
+	// Accessed only under a.mu.
+	deliveryStart time.Time
 	// holdQueue is the FIFO of key events parked while the delivery machine
 	// is in flight (CR-02): typed-layout input (printables and BackSpace)
 	// must not hit the wire before the pending commit — the parked events
@@ -787,6 +804,12 @@ type deferredFlip struct {
 	terminal bool
 	gesture  bool
 	armedAt  time.Time
+	// The arming burst's identity (the round-5 instrument): a flip released
+	// seconds later stamps ITS OWN burst's emission-seq and timeline
+	// anchor, never whatever burst (if any) happens to be in flight at the
+	// release instant — the juxtaposition contract of emission-seq.
+	seq   uint64
+	start time.Time
 }
 
 // level1Confirm is the open confirmation window of the two-phase level-1
@@ -1971,9 +1994,11 @@ func (a *Actor) deferCorrectionFlip(converted []rune, terminal bool) {
 		epoch:    a.flipEpoch,
 		terminal: terminal,
 		armedAt:  time.Now(),
+		seq:      a.emissionSeq,
+		start:    a.deliveryStart,
 	}
 	if terminal {
-		slog.Info("correction delivery", "stage", "flip-armed")
+		a.deliveryMark("flip-armed")
 
 		return
 	}
@@ -2008,7 +2033,7 @@ func (a *Actor) releaseDeferredFlip(reason string) {
 	flip := a.flipPending
 	a.flipPending = nil
 	if flip.terminal {
-		slog.Info("correction delivery", "stage", "flip-released",
+		a.deliveryMarkBurst(flip.seq, flip.start, "flip-released",
 			"reason", reason, "latency_ms", time.Since(flip.armedAt).Milliseconds())
 	}
 	a.flipTo(flip.target)
@@ -3023,10 +3048,12 @@ func (a *Actor) parkGestureFlip(target scriptMode) {
 		terminal: true,
 		gesture:  true,
 		armedAt:  time.Now(),
+		seq:      a.emissionSeq,
+		start:    a.deliveryStart,
 	}
 	// The loud boundary (D-20/D-21): outcomes only, never content — the
 	// journal's proof that the gesture was captured, not lost.
-	slog.Info("correction delivery", "stage", "flip-parked")
+	a.deliveryMark("flip-parked")
 }
 
 // oppositeMode is the toggle target of the gesture flips (the Single
@@ -4102,7 +4129,21 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	if sleep == nil {
 		sleep = time.Sleep
 	}
+	if terminal {
+		// The burst identity (the round-5 instrument): the open row births
+		// the burst — its emission-seq rides every following delivery row,
+		// its close pairs on EVERY exit (the free abort closes with
+		// forwards=0, the commit path with the emitted count). The frozen
+		// grep-forms keep matching; the attributes extend, never rename.
+		a.emissionSeq++
+		a.deliveryStart = time.Now()
+		a.deliveryMark("burst-window", "phase", "open", "forwards", plan.Backspaces)
+	}
 	if a.replayBurst(eng, plan.Backspaces, gen, sleep) {
+		if terminal {
+			a.deliveryMark("burst-window", "phase", "close", "forwards", 0, "outcome", "aborted")
+		}
+
 		return // the free stop BEFORE the first forward — the round is settled
 	}
 	if terminal {
@@ -4117,7 +4158,7 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		// content (D-20/D-21). The frozen grep-forms
 		// («msg correction, outcome done») keep matching; the attributes
 		// extend, never rename.
-		slog.Info("correction delivery", "stage", "chunks-sent",
+		a.deliveryMark("chunks-sent",
 			"forwards", plan.Backspaces,
 			"pacing_ms", (time.Duration(plan.Backspaces) * a.level2ForwardGap).Milliseconds())
 	} else {
@@ -4125,8 +4166,8 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 	}
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	if terminal {
-		slog.Info("correction delivery", "stage", "commit-sent",
-			"latency_ms", time.Since(armed).Milliseconds())
+		a.deliveryMark("commit-sent", "latency_ms", time.Since(armed).Milliseconds())
+		a.deliveryMark("burst-window", "phase", "close", "forwards", plan.Backspaces, "outcome", "committed")
 	}
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
@@ -4218,7 +4259,7 @@ func (a *Actor) replayBurst(eng engine.Emitter, backspaces int, gen uint64, slee
 		// The chunk-boundary re-check: a generation change here is LOUD but
 		// no longer fatal — see replayBurst's contract above.
 		if a.chunkBoundaryMoved(gen) {
-			slog.Info("correction delivery", "stage", "context-changed-midflow")
+			a.deliveryMark("context-changed-midflow")
 		}
 	}
 
@@ -4244,7 +4285,7 @@ func (a *Actor) drainSettleWindow(gen uint64, sleep func(time.Duration)) {
 	sleep(settle)
 	a.mu.Lock()
 	if a.ctxEpoch != gen {
-		slog.Info("correction delivery", "stage", "context-changed-midflow")
+		a.deliveryMark("context-changed-midflow")
 	}
 }
 
@@ -4266,6 +4307,38 @@ func (a *Actor) machineSettle() {
 		a.machineDone = nil
 	}
 }
+
+// deliveryMark logs one content-free «correction delivery» row of the
+// in-flight burst (the round-5 instrument): the stage and the row's own
+// attributes go FIRST — the frozen grep-forms keep their adjacency (the
+// e2e corpus pins «stage flip-released, reason keystroke» byte-exact) —
+// and the burst identity closes the row: emission-seq, the burst's
+// monotonic counter, and t_rel_ms, the offset from the burst's timeline
+// anchor. Outcomes and counters only, never field content (D-20/D-21).
+// The caller holds the mutex.
+func (a *Actor) deliveryMark(stage string, extra ...any) {
+	a.deliveryMarkBurst(a.emissionSeq, a.deliveryStart, stage, extra...)
+}
+
+// deliveryMarkBurst is deliveryMark with an explicit burst identity: the
+// deferred-flip release sites stamp the burst the flip armed in — a newer
+// burst may already have replaced the actor fields by the release instant.
+// The caller holds the mutex.
+func (a *Actor) deliveryMarkBurst(seq uint64, start time.Time, stage string, extra ...any) {
+	rel := int64(0)
+	if !start.IsZero() {
+		rel = time.Since(start).Milliseconds()
+	}
+	args := make([]any, 0, len(extra)+deliveryMarkFixedAttrs)
+	args = append(args, "stage", stage)
+	args = append(args, extra...)
+	args = append(args, "emission-seq", seq, "t_rel_ms", rel)
+	slog.Info("correction delivery", args...)
+}
+
+// deliveryMarkFixedAttrs is the capacity headroom of the burst rows for
+// the instrument's own key/value pairs (stage, emission-seq, t_rel_ms).
+const deliveryMarkFixedAttrs = 6
 
 // holdableKey reports whether the event is TYPED-LAYOUT input the hold path
 // must park while the delivery machine is in flight (CR-02): printable
