@@ -109,7 +109,7 @@ var uinjectKeycodes = map[string]uint16{
 	"a": 30, "s": 31, "f": 33, "j": 36, "k": 37, "l": 38,
 	"z": 44, "x": 45, "c": 46, "v": 47, "m": 50,
 	"-": 12, ",": 51, ".": 52,
-	" ": 57,
+	" ":         57,
 	"BackSpace": 14, "ShiftRight": 54, "LeftCtrl": 29, "Enter": 28, "Space": 57,
 }
 
