@@ -206,7 +206,7 @@ func run() (exit int) {
 
 			return 1
 		}
-		defer inj.Close()
+		defer func() { _ = inj.Close() }()
 
 		const paneTypeDelay = 40
 		if err := inj.Type(ctx, cfg.ssPaneType, paneTypeDelay); err != nil {
