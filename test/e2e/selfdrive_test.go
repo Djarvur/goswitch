@@ -4,13 +4,14 @@ package main
 // driver's verdicts ride ONE machine — parsePaneEvents turns a raw
 // `script -q` fragment into merged erase/text runs, analyzeRunWindow
 // classifies the choreography. Every vector here is a synthetic fragment:
-// the marker echo + its erase, the word echo, the correction's erase run,
-// the committed word — and (the defect) the second delete run. Content
-// discipline: the fragments carry the test corpus only.
+// the digit marker echo + the Ctrl-U clear echo, the word echo, the
+// correction's erase run, the committed word — and (the defect) the second
+// delete run. Content discipline: the fragments carry the test corpus only.
 
 import (
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // ssEchoErase is the cooked-mode echo of ONE erased character: the line
@@ -71,9 +72,9 @@ func TestSelfdriveParse_MergesConsecutiveRuns(t *testing.T) {
 	}
 }
 
-// TestSelfdriveClassify_Clean pins the green choreography: marker, marker
-// erase, the word echo, the correction's erase run, the committed word —
-// and NOTHING after it.
+// TestSelfdriveClassify_Clean pins the green choreography: marker, the
+// Ctrl-U clear echo, the word echo, the correction's erase run, the
+// committed word — and NOTHING after it.
 func TestSelfdriveClassify_Clean(t *testing.T) {
 	frag := ssFrag(ssMarker, ssEchoErase(1), corpusLatin, ssEchoErase(6), ssWordRU)
 	rep := analyzeRunWindow(parsePaneEvents(frag), len([]rune(corpusLatin)))
@@ -156,4 +157,61 @@ func ssCountKind(events []ssEvent, kind ssEvKind) int {
 	}
 
 	return n
+}
+
+// TestSelfdriveMarker_IsDigit pins the layout independence of the focus
+// proof: the marker is a DIGIT — identical keystrokes in EN and RU (the
+// ЙЦУКЕН digit row matches QWERTY's), so the liveness probe cannot type
+// Cyrillic garbage when the pane's IBus mode is not the one the battery
+// assumes. The 2026-10-18 first live battery: the "." marker landed as
+// «ю» in the RU-mode pane, the check grepped for a ghost and aborted 80
+// times while «ю»-letters accumulated in the owner's line.
+func TestSelfdriveMarker_IsDigit(t *testing.T) {
+	runes := []rune(ssMarker)
+	if len(runes) != 1 {
+		t.Fatalf("marker %q carries %d runes, want exactly 1", ssMarker, len(runes))
+	}
+	if !unicode.IsDigit(runes[0]) {
+		t.Fatalf("marker %q is not a digit — it would not survive an EN/RU layout mismatch", ssMarker)
+	}
+}
+
+// TestSelfdriveClassify_CtrlUClear pins the line-clear discipline: the run
+// opens with the marker echo followed by the Ctrl-U clear echo — ONE erase
+// run of ANY length, because the clear wipes the marker plus whatever
+// stray junk shared the line (the owner's leftovers, a previous run) — and
+// the classification must see straight through it to the corpus echo. A
+// window holding nothing past the clear is honestly empty.
+func TestSelfdriveClassify_CtrlUClear(t *testing.T) {
+	words := len([]rune(corpusLatin))
+	for _, tc := range []struct {
+		name  string
+		clear int
+		frag  []byte
+		want  ssChoreo
+	}{
+		{
+			"clear-marker-only",
+			1,
+			ssFrag(ssMarker, ssEchoErase(1), corpusLatin, ssEchoErase(words), ssWordRU),
+			ssChoreoClean,
+		},
+		{
+			"clear-marker-plus-junk",
+			5,
+			ssFrag(ssMarker, ssEchoErase(5), corpusLatin, ssEchoErase(words), ssWordRU),
+			ssChoreoClean,
+		},
+		{
+			"clear-only-empty-window",
+			4,
+			ssFrag(ssMarker, ssEchoErase(4)),
+			ssChoreoEmpty,
+		},
+	} {
+		rep := analyzeRunWindow(parsePaneEvents(tc.frag), words)
+		if rep.choreo != tc.want {
+			t.Fatalf("%s: classified %q (events %q), want %q", tc.name, rep.choreo.word(), rep.events, tc.want.word())
+		}
+	}
 }

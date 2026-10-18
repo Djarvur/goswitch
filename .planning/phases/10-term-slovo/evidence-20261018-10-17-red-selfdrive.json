@@ -1,0 +1,11 @@
+{
+  "command": "mise exec -- go test ./test/e2e/ -race -count=1 -run 'TestSelfdrive(Marker_IsDigit|Classify_CtrlUClear)' -json (converted to TAP; go test -v failure detail below)",
+  "exitCode": 1,
+  "output": "not ok 1 - TestSelfdriveMarker_IsDigit\nnot ok 2 - TestSelfdriveClassify_CtrlUClear\n# tests 2\n# pass 0\n# fail 2\n\n--- FAIL: TestSelfdriveMarker_IsDigit (0.00s)\n    selfdrive_test.go:175: marker \".\" is not a digit — it would not survive an EN/RU layout mismatch\n--- FAIL: TestSelfdriveClassify_CtrlUClear (0.00s)\n    selfdrive_test.go:214: clear-marker-plus-junk: classified \"unexpected\" (events \"T1 E5 T6 E6 T6\"), want \"clean\"\nFAIL\nFAIL\tgithub.com/Djarvur/goswitch/test/e2e\t0.010s\nFAIL",
+  "failures": "--- FAIL: TestSelfdriveMarker_IsDigit\n--- FAIL: TestSelfdriveClassify_CtrlUClear",
+  "targetTest": "TestSelfdriveMarker_IsDigit",
+  "targetFile": "test/e2e/selfdrive_test.go",
+  "expected": "The selfdrive driver's marker discipline must survive an EN/RU layout mismatch (the 2026-10-18 first live battery: the \".\" marker typed into the RU-mode pane landed as «ю», the check grepped for \".\" and aborted 80 times, «ю»-letters accumulated in the owner's line): (а) ssMarker is a single DIGIT — identical keystrokes in both layouts; (б) the run window's Ctrl-U clear echo — ONE erase run of ANY length (marker + stray junk) — is skipped leniently, the classification sees the corpus echo behind it, and a window holding nothing past the clear reads empty",
+  "actual": "On the UNCHANGED HEAD both pins fail on real assertions: ssMarker is \".\" (not a digit), and a marker echo followed by an E5 clear echo classifies \"unexpected\" because ssSkipMarker demands an erase run of exactly 1 (the retired single BackSpace)",
+  "pinGreenOnHead": "The existing selfdrive parser/classification corpus (erase forms, rune discipline, neutral noise, run merging, clean/replay/negative forms, leading noise) PASSes on the same HEAD — the new pins add the digit marker and the lenient clear, they break nothing that exists"
+}

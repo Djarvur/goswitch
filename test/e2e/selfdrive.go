@@ -7,15 +7,19 @@ package main
 // (script -q /tmp/gs-pane.log); the driver then:
 //
 //  1. proves the pane's liveness and focus with a MARKER before every
-//     injection burst: one harmless "." via ydotool, a 300 ms wait, and a
-//     check that the script log's new bytes received it — a missing marker
-//     is a loud SKIP row and an aborted battery, the real sequence is
-//     never typed blind (the marker discipline);
+//     injection burst: one harmless DIGIT via ydotool (digits are identical
+//     keystrokes in EN and RU — the 2026-10-18 first battery's "." landed
+//     as «ю» in the RU-mode pane and the check grepped a ghost), a 300 ms
+//     wait, and a check that the script log's new bytes received it — a
+//     missing marker is a loud SKIP row and an aborted battery, the real
+//     sequence is never typed blind (the marker discipline);
 //  2. runs the battery: one probe run, N baseline runs, N timing-axis
-//     runs (a typing→gesture wait before the chord), each run typed
-//     ghbdtn + the double Right Shift correction gesture and parsed from
-//     the NEW log bytes for the choreography (erase→insert, and the
-//     second delete that is the client-replay defect);
+//     runs (a typing→gesture wait before the chord), each run a marker →
+//     Ctrl-U line clear (the marker AND any stray line junk gone — the
+//     corpus always types on a clean line) → ghbdtn + the double Right
+//     Shift correction gesture, parsed from the NEW log bytes for the
+//     choreography (erase→insert, and the second delete that is the
+//     client-replay defect);
 //  3. observes (never induces) focus churn: the daemon journal's
 //     lifecycle rows in the run window ride the verdict row;
 //  4. appends a dated verdict row per run to stdout and the verdicts log.
@@ -41,7 +45,10 @@ import (
 // The driver's vocabulary: markers, paths, budgets. Every value is a
 // behavioral constant of the battery, named once.
 const (
-	ssMarker = "."
+	// ssMarker is the layout-independent focus proof: a DIGIT, identical
+	// keystrokes in EN and RU, so the probe cannot produce Cyrillic garbage
+	// when the pane's IBus mode differs from the battery's assumption.
+	ssMarker = "7"
 	ssWordRU = "привет" // the correction corpus's RU half (the commit needle)
 	ssUnit   = "goswitchd"
 
@@ -68,6 +75,11 @@ const (
 
 	// ssOutFilePerm is the verdicts log's mode (owner-only: /tmp).
 	ssOutFilePerm = 0o600
+
+	// ssSyntheticClear is the dry-run vectors' Ctrl-U clear echo length: a
+	// NON-trivial erase run, so the executable self-check pins the lenient
+	// clear skip (marker + junk), not just the single-erase shape.
+	ssSyntheticClear = 3
 )
 
 // The parser's byte vocabulary of a `script` transcript.
@@ -259,15 +271,18 @@ func analyzeRunWindow(events []ssEvent, wordRunes int) ssRunReport {
 }
 
 // ssSkipMarker leniently skips the window's marker prefix: the marker's
-// echo and its single erase. A prompt redraw before the echo is neutral
-// bytes the parser already dropped; an absent marker skip leaves the
-// classification to the choreography zone (honest, never a crash).
+// echo and the Ctrl-U line clear that follows it — ONE erase run of ANY
+// length, because the clear wipes the marker plus whatever stray junk
+// shared the line (the first battery's single marker BackSpace is gone).
+// A prompt redraw before the echo is neutral bytes the parser already
+// dropped; an absent marker skip leaves the classification to the
+// choreography zone (honest, never a crash).
 func ssSkipMarker(events []ssEvent, markerRunes int) int {
 	i := 0
 	if i < len(events) && events[i].kind == ssEvText && events[i].runes == markerRunes {
 		i++
 	}
-	if i < len(events) && events[i].kind == ssEvErase && events[i].runes == 1 {
+	if i < len(events) && events[i].kind == ssEvErase && events[i].runes >= 1 {
 		i++
 	}
 
@@ -369,15 +384,15 @@ func (d *ssDriver) preconditions(ctx context.Context) error {
 // mismatch (the mise test-selfdrive task runs THIS).
 func (d *ssDriver) selfCheck() int {
 	words := utf8.RuneCountInString(corpusLatin)
-	echo1, echoN := ssEchoFrag(1), ssEchoFrag(words)
+	clearEcho, echoN := ssEchoFrag(ssSyntheticClear), ssEchoFrag(words) // the Ctrl-U echo (marker + junk erased)
 	vectors := []struct {
 		name string
 		frag []byte
 		want ssChoreo
 	}{
-		{"clean", ssFrag(ssMarker, echo1, corpusLatin, echoN, ssWordRU), ssChoreoClean},
-		{"replay", ssFrag(ssMarker, echo1, corpusLatin, echoN, ssWordRU, echoN), ssChoreoReplay},
-		{"no-correction", ssFrag(ssMarker, echo1, corpusLatin), ssChoreoNoGesture},
+		{"clean", ssFrag(ssMarker, clearEcho, corpusLatin, echoN, ssWordRU), ssChoreoClean},
+		{"replay", ssFrag(ssMarker, clearEcho, corpusLatin, echoN, ssWordRU, echoN), ssChoreoReplay},
+		{"no-correction", ssFrag(ssMarker, clearEcho, corpusLatin), ssChoreoNoGesture},
 	}
 	bad := 0
 	for _, v := range vectors {
@@ -435,9 +450,9 @@ func (d *ssDriver) battery(ctx context.Context) int {
 	return 0
 }
 
-// runRow drives one battery run: the marker discipline, the word, the
-// (optional) timing wait, the gesture, the settle, and the verdict row
-// parsed from the log bytes the run itself produced.
+// runRow drives one battery run: the marker discipline, the Ctrl-U line
+// clear, the word, the (optional) timing wait, the gesture, the settle,
+// and the verdict row parsed from the log bytes the run itself produced.
 func (d *ssDriver) runRow(ctx context.Context, axis string, i, of int, preWait time.Duration) error {
 	tag := "axis=" + axis + " run=" + strconv.Itoa(i) + "/" + strconv.Itoa(of)
 	offset := ssFileSize(d.cfg.ssPaneLog)
@@ -445,8 +460,12 @@ func (d *ssDriver) runRow(ctx context.Context, axis string, i, of int, preWait t
 	if err := d.marker(ctx, tag, offset); err != nil {
 		return err
 	}
-	if err := ssKeys(ctx, d.cfg.pacing*tapWindowFactor, "BackSpace"); err != nil {
-		return fmt.Errorf("%s: marker erase: %w", tag, err)
+	// The line clear (readline Ctrl-U): erases the marker AND any stray
+	// owner or previous-run junk — the corpus always types on a clean line,
+	// and the marker's own BackSpace step died with it (the clear already
+	// wiped the marker).
+	if err := ssKeys(ctx, d.cfg.pacing*tapWindowFactor, "ctrl+u"); err != nil {
+		return fmt.Errorf("%s: line clear: %w", tag, err)
 	}
 	if err := ssType(ctx, d.cfg.pacing, corpusLatin); err != nil {
 		return fmt.Errorf("%s: type %s: %w", tag, corpusLatin, err)
@@ -481,7 +500,7 @@ func (d *ssDriver) runRow(ctx context.Context, axis string, i, of int, preWait t
 	return nil
 }
 
-// marker is the safety core: one harmless marker char, a bounded wait, and
+// marker is the safety core: one harmless digit, a bounded wait, and
 // the pane log's new bytes must receive it — else the battery aborts with
 // the loud skip row BEFORE the real sequence (never typed blind).
 func (d *ssDriver) marker(ctx context.Context, tag string, offset int64) error {
