@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/Djarvur/goswitch/internal/uinject"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -64,6 +66,7 @@ type config struct {
 	// pane's marker discipline and the script log it watches.
 	selfdrive    bool
 	ssPaneLog    string
+	ssPaneType   string
 	ssOut        string
 	ssSettle     time.Duration
 	ssBaseline   int
@@ -163,6 +166,8 @@ func parseFlags(cfg *config) {
 	flag.BoolVar(&cfg.selfdrive, "selfdrive", false,
 		"run the host self-drive driver against the pane the owner opened"+
 			" (no stand daemon; NOT in ci — live injections are orchestrator-invoked)")
+	flag.StringVar(&cfg.ssPaneType, "pane-type", "",
+		"selfdrive aux: type this text into the FOCUSED window via uinject and exit")
 	flag.StringVar(&cfg.ssPaneLog, "pane-log", ssDefaultPaneLog,
 		"selfdrive: the pane's `script -q` transcript the owner opened")
 	flag.StringVar(&cfg.ssOut, "selfdrive-out", ssDefaultOut,
@@ -192,6 +197,27 @@ func run() (exit int) {
 	// The selfdrive branch owns its whole lifecycle: it runs against the
 	// owner's production daemon on the live host — no stand daemon, no
 	// desktop snapshot/restore may ever wrap it.
+	if cfg.ssPaneType != "" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		inj, err := uinject.Open()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pane-type: %v\n", err)
+
+			return 1
+		}
+		defer inj.Close()
+
+		const paneTypeDelay = 40
+		if err := inj.Type(ctx, cfg.ssPaneType, paneTypeDelay); err != nil {
+			fmt.Fprintf(os.Stderr, "pane-type: %v\n", err)
+
+			return 1
+		}
+
+		return 0
+	}
+
 	if cfg.selfdrive {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

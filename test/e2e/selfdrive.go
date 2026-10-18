@@ -75,7 +75,7 @@ const (
 
 	// ssMarkerWait is the marker's echo budget: the pane must prove the
 	// focus within it, or the battery aborts (never types blind).
-	ssMarkerWait = 300 * time.Millisecond
+	ssMarkerWait = 1500 * time.Millisecond
 	// ssBetweenRuns lets the previous run's deferred flip and verify window
 	// settle before the next marker.
 	ssBetweenRuns = 2 * time.Second

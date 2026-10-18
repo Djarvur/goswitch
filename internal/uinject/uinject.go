@@ -105,7 +105,12 @@ const (
 var uinjectKeycodes = map[string]uint16{
 	"1": 2, "2": 3, "3": 4, "4": 5, "5": 6, "6": 7, "7": 8, "8": 9, "9": 10, "0": 11,
 	"g": 34, "h": 35, "b": 48, "d": 32, "t": 20, "n": 49, "u": 22,
-	"BackSpace": 14, "ShiftRight": 54, "LeftCtrl": 29, "Enter": 28,
+	"q": 16, "w": 17, "e": 18, "r": 19, "y": 21, "i": 23, "o": 24, "p": 25,
+	"a": 30, "s": 31, "f": 33, "j": 36, "k": 37, "l": 38,
+	"z": 44, "x": 45, "c": 46, "v": 47, "m": 50,
+	"-": 12, ",": 51, ".": 52,
+	" ": 57,
+	"BackSpace": 14, "ShiftRight": 54, "LeftCtrl": 29, "Enter": 28, "Space": 57,
 }
 
 // Keycode resolves one key name to its evdev keycode: the second result is
