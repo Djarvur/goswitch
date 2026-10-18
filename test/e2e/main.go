@@ -73,6 +73,7 @@ type config struct {
 	ssTiming     int
 	ssTimingWait time.Duration
 	ssDry        bool
+	ssSelfType   bool
 }
 
 // caseSpec is one registry entry: the case body plus the stand-shape flag.
@@ -188,6 +189,8 @@ func parseFlags(cfg *config) {
 	flag.StringVar(&cfg.weztermConfig, "wezterm-config", "",
 		"fixture config for wezterm-flip (default: gs-e2e-wezterm-xim.lua;"+
 			" the wayland fixture re-targets the oracle without touching the registry)")
+	flag.BoolVar(&cfg.ssSelfType, "selftype", false,
+		"selfdrive aux: self-type the corpus+gesture into the FOCUSED window (run INSIDE the test pane)")
 	flag.BoolVar(&cfg.selfdrive, "selfdrive", false,
 		"run the host self-drive driver against the pane the owner opened"+
 			" (no stand daemon; NOT in ci — live injections are orchestrator-invoked)")

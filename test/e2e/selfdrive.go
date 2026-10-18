@@ -356,6 +356,9 @@ func runSelfDrive(ctx context.Context, cfg config) int {
 	fmt.Printf("=== selfdrive: host self-drive driver (dry-run=%v) ===\n", cfg.ssDry)
 	fmt.Printf("pane log: %s\nverdicts: %s\nsettle: %v; baseline=%d; timing=%d (typing→gesture wait %v); pacing=%dms\n",
 		cfg.ssPaneLog, cfg.ssOut, cfg.ssSettle, cfg.ssBaseline, cfg.ssTiming, cfg.ssTimingWait, cfg.pacing)
+	if cfg.ssSelfType {
+		return d.runSelfType(ctx)
+	}
 	if err := d.preconditions(ctx); err != nil {
 		if !cfg.ssDry {
 			fmt.Fprintf(os.Stderr, "selfdrive: FAIL precondition: %v\n", err)
@@ -794,6 +797,61 @@ func ssDaemonMode(ctx context.Context) (string, error) {
 	}
 
 	return mode, nil
+}
+
+// runSelfType is the -selftype mode: the driver SELF-TYPES the corpus and
+// the gesture into the FOCUSED window (no pane log, no markers — the
+// owner runs this command in the test pane itself, hands off, and simply
+// watches whether the corrected word stays). The daemon's delivery marks
+// are dumped for the journal; the persistence verdict is the owner's one
+// word (осталось/исчезло).
+func (d *ssDriver) runSelfType(ctx context.Context) int {
+	fmt.Println("selftype: typing the corpus + gesture in 5s — HANDS OFF, watch the word")
+
+	if err := sleepCtx(ctx, 5*time.Second); err != nil {
+		return 1
+	}
+	inj, err := uinject.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "selftype: uinject: %v\n", err)
+
+		return 1
+	}
+	defer func() { _ = inj.Close() }()
+
+	from := time.Now()
+	if err := inj.Type(ctx, corpusLatin, d.cfg.pacing); err != nil {
+		fmt.Fprintf(os.Stderr, "selftype: type: %v\n", err)
+
+		return 1
+	}
+	if err := sleepCtx(ctx, d.cfg.ssTimingWait); err != nil {
+		return 1
+	}
+	if err := inj.Chord(ctx, []string{"ShiftRight", "ShiftRight"}, d.cfg.pacing); err != nil {
+		fmt.Fprintf(os.Stderr, "selftype: gesture: %v\n", err)
+
+		return 1
+	}
+	if err := sleepCtx(ctx, d.cfg.ssSettle); err != nil {
+		return 1
+	}
+
+	out, jerr := runCmd(ctx, "journalctl", "--user", "-u", "goswitchd",
+		"--since", "-"+strconv.Itoa(int(from.UTC().Sub(time.Time{}).Seconds()+60))+"s", "-o", "cat")
+	if jerr != nil {
+		out = "(journalctl unavailable: " + jerr.Error() + ")"
+	}
+	fmt.Println("=== daemon delivery marks for this gesture (content-free) ===")
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, `correction delivery`) || strings.Contains(line, `"msg":"correction"`) ||
+			strings.Contains(line, `"msg":"action"`) || strings.Contains(line, `terminal class`) {
+			fmt.Println(line)
+		}
+	}
+	fmt.Println("=== your one word: the word ОСТАЛОСЬ or ИСЧЕЗЛО? (say it to the orchestrator) ===")
+
+	return 0
 }
 
 // normalizeMode is the battery's layout gate: the daemon's mode rides
