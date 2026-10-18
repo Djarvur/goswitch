@@ -58,6 +58,18 @@ type config struct {
 	helper        string
 	matrixPath    string
 	weztermConfig string
+	// The selfdrive surface (the round-5 instrument): a dedicated branch
+	// BELOW — it must never reach setupStand, the owner's host runs the
+	// production daemon and the driver touches nothing but the focused
+	// pane's marker discipline and the script log it watches.
+	selfdrive    bool
+	ssPaneLog    string
+	ssOut        string
+	ssSettle     time.Duration
+	ssBaseline   int
+	ssTiming     int
+	ssTimingWait time.Duration
+	ssDry        bool
 }
 
 // caseSpec is one registry entry: the case body plus the stand-shape flag.
@@ -148,6 +160,23 @@ func parseFlags(cfg *config) {
 	flag.StringVar(&cfg.weztermConfig, "wezterm-config", "",
 		"fixture config for wezterm-flip (default: gs-e2e-wezterm-xim.lua;"+
 			" the wayland fixture re-targets the oracle without touching the registry)")
+	flag.BoolVar(&cfg.selfdrive, "selfdrive", false,
+		"run the host self-drive driver against the pane the owner opened"+
+			" (no stand daemon; NOT in ci — live injections are orchestrator-invoked)")
+	flag.StringVar(&cfg.ssPaneLog, "pane-log", ssDefaultPaneLog,
+		"selfdrive: the pane's `script -q` transcript the owner opened")
+	flag.StringVar(&cfg.ssOut, "selfdrive-out", ssDefaultOut,
+		"selfdrive: the dated verdict rows' append target")
+	flag.DurationVar(&cfg.ssSettle, "settle", ssDefaultSettle,
+		"selfdrive: the post-gesture settle before the choreography parse")
+	flag.IntVar(&cfg.ssBaseline, "baseline-runs", ssDefaultRuns,
+		"selfdrive: baseline battery runs (no manipulation)")
+	flag.IntVar(&cfg.ssTiming, "timing-runs", ssDefaultRuns,
+		"selfdrive: timing-axis battery runs")
+	flag.DurationVar(&cfg.ssTimingWait, "timing-wait", ssDefaultTimingWait,
+		"selfdrive: the typing→gesture wait of the timing axis")
+	flag.BoolVar(&cfg.ssDry, "dry-run", false,
+		"selfdrive: preconditions + parser self-check only — no injections, no writes")
 	flag.Parse()
 }
 
@@ -159,6 +188,16 @@ func parseFlags(cfg *config) {
 func run() (exit int) {
 	var cfg config
 	parseFlags(&cfg)
+
+	// The selfdrive branch owns its whole lifecycle: it runs against the
+	// owner's production daemon on the live host — no stand daemon, no
+	// desktop snapshot/restore may ever wrap it.
+	if cfg.selfdrive {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		return runSelfDrive(ctx, cfg)
+	}
 
 	// The matrix branch owns its whole stand lifecycle: case isolation needs
 	// a setupStand → case → teardown cycle PER CASE (02-06), so the single

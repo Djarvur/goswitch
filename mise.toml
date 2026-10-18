@@ -199,6 +199,15 @@ run = "go run ./test/e2e -case term-cap-delivery"
 description = "e2e: 10-17 term-word-drain — round-4 pty-drain proof (G-10-1): one full correction round per pacing combination (default/tight/loose through the -debug env override) on a RAW pty capture; oracle: every BackSpace byte (0x7f) strictly before the replacement word's bytes, the delivery marks ordered (chunks-sent → commit-sent → flip-armed → flip-released after its honest cause), the frozen CLIPBOARD sentinel; rows to adr-008-spike-log.md — the code rides 10-17, the LIVE rows are 10-18's work (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case term-word-drain"
 
+# The round-5 host self-drive instrument (the wezterm double-delete hunt):
+# this task is the DRY-RUN only — preconditions + parser self-check, zero
+# injections, zero writes (safe anywhere, including headless). The LIVE
+# battery is orchestrator-invoked later with the owner's dedicated pane:
+#   go run ./test/e2e -selfdrive -pane-log /tmp/gs-pane.log
+[tasks.test-selfdrive]
+description = "instrument: 10-17 selfdrive dry-run — host self-drive driver build + preconditions + pty-log parser self-check, NO injections and NO live desktop contact (safe on any machine; the LIVE battery is orchestrator-invoked: go run ./test/e2e -selfdrive -pane-log /tmp/gs-pane.log; NOT in ci)"
+run = "go run ./test/e2e -selfdrive -dry-run"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"
