@@ -128,6 +128,31 @@ func main() {
 }
 
 // run wires the whole stand: registry, setup, preflight, the case and the
+// runPaneType is the -pane-type aux mode: type the text into the FOCUSED
+// window via the in-repo uinput injector and exit (the selfdrive
+// orchestration's visible-in-pane channel).
+func runPaneType(cfg config) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	inj, err := uinject.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pane-type: %v\n", err)
+
+		return 1
+	}
+	defer func() { _ = inj.Close() }()
+
+	const paneTypeDelay = 40
+	if err := inj.Type(ctx, cfg.ssPaneType, paneTypeDelay); err != nil {
+		fmt.Fprintf(os.Stderr, "pane-type: %v\n", err)
+
+		return 1
+	}
+
+	return 0
+}
+
 // caseListUsage is the -case help text: every registry name, "|" joined.
 func caseListUsage() string {
 	return "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke" +
@@ -198,24 +223,7 @@ func run() (exit int) {
 	// owner's production daemon on the live host — no stand daemon, no
 	// desktop snapshot/restore may ever wrap it.
 	if cfg.ssPaneType != "" {
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		inj, err := uinject.Open()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "pane-type: %v\n", err)
-
-			return 1
-		}
-		defer func() { _ = inj.Close() }()
-
-		const paneTypeDelay = 40
-		if err := inj.Type(ctx, cfg.ssPaneType, paneTypeDelay); err != nil {
-			fmt.Fprintf(os.Stderr, "pane-type: %v\n", err)
-
-			return 1
-		}
-
-		return 0
+		return runPaneType(cfg)
 	}
 
 	if cfg.selfdrive {
