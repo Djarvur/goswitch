@@ -73,6 +73,10 @@ const (
 	ssDefaultRuns       = 3
 	ssDefaultTimingWait = 5 * time.Second
 
+	// ssDeviceSettle lets the compositor attach a freshly created virtual
+	// keyboard before the first injection.
+	ssDeviceSettle = 2 * time.Second
+
 	// ssMarkerWait is the marker's echo budget: the pane must prove the
 	// focus within it, or the battery aborts (never types blind).
 	ssMarkerWait = 1500 * time.Millisecond
@@ -469,6 +473,13 @@ func (d *ssDriver) battery(ctx context.Context) int {
 			fmt.Fprintf(os.Stderr, "selfdrive: uinject close: %v\n", cerr)
 		}
 	}()
+	// The device-attach settle: mutter opens a brand-new evdev device
+	// asynchronously — events written before the compositor attaches are
+	// LOST (pinned live 2026-10-19 00:38-01:13: every first marker after
+	// Open vanished). Two seconds let the hotplug complete.
+	if err := sleepCtx(ctx, ssDeviceSettle); err != nil {
+		return 1
+	}
 	axes := []struct {
 		name    string
 		runs    int
@@ -868,6 +879,17 @@ func (d *ssDriver) runSelfType(ctx context.Context) int {
 // times. A mode that never reads en aborts the battery before any
 // typing, and every step rides a content-free row.
 func (d *ssDriver) normalizeMode(ctx context.Context) error {
+	// The IBus re-assert runs UNCONDITIONALLY (idempotent): a fresh uinput
+	// device or any focus churn can leave the pane's input context attached
+	// to a plain xkb IM — the daemon is then out of the key path entirely
+	// (pinned live 2026-10-19 01:13-01:20: typing reached bash, the daemon
+	// saw nothing). The re-assert re-bridges the context to goswitch-en.
+	if err := ssSwitchGNOMEToEN(ctx); err != nil {
+		return fmt.Errorf("ibus re-assert: %w", err)
+	}
+	if err := sleepCtx(ctx, ssModeSettle); err != nil {
+		return fmt.Errorf("ibus re-assert settle: %w", err)
+	}
 	mode, err := ssDaemonMode(ctx)
 	if err != nil {
 		return fmt.Errorf("mode read: %w", err)
