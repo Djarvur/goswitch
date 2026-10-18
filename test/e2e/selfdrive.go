@@ -739,10 +739,13 @@ func ssDaemonMode(ctx context.Context) (string, error) {
 }
 
 // normalizeMode is the battery's layout gate: the daemon's mode rides
-// goswitchctl status; a non-en mode gets the double Right Shift chord on
-// an EMPTY buffer (a pure flip — nothing to correct), one settle, a
-// re-read, up to ssModeAttempts times. A mode that never reads en aborts
-// the battery before any typing, and every step rides a content-free row.
+// goswitchctl status; a non-en mode gets GNOME's own input-source switch
+// (gsettings current → the xkb 'us' source — the daemon follows GNOME and
+// NEVER flips on the chord inside a terminal: an empty-buffer double
+// Shift_R there is action n:2 «correction skipped: empty-buffer», pinned
+// live 2026-10-18 23:38), one settle, a re-read, up to ssModeAttempts
+// times. A mode that never reads en aborts the battery before any
+// typing, and every step rides a content-free row.
 func (d *ssDriver) normalizeMode(ctx context.Context) error {
 	mode, err := ssDaemonMode(ctx)
 	if err != nil {
@@ -750,12 +753,12 @@ func (d *ssDriver) normalizeMode(ctx context.Context) error {
 	}
 	for attempt := 1; mode != ssModeEN && attempt <= ssModeAttempts; attempt++ {
 		d.emit("mode-normalization mode=" + mode + " attempt=" + strconv.Itoa(attempt) +
-			" action=flip (double Shift_R on an empty buffer, content-free)")
-		if err := ssKeys(ctx, d.cfg.pacing*tapWindowFactor, "Shift_R", "Shift_R"); err != nil {
-			return fmt.Errorf("mode flip: %w", err)
+			" action=gsettings-switch (GNOME input-source → us, content-free)")
+		if err := ssSwitchGNOMEToEN(ctx); err != nil {
+			return fmt.Errorf("mode switch: %w", err)
 		}
 		if err := sleepCtx(ctx, ssModeSettle); err != nil {
-			return fmt.Errorf("mode flip settle: %w", err)
+			return fmt.Errorf("mode switch settle: %w", err)
 		}
 		if mode, err = ssDaemonMode(ctx); err != nil {
 			return fmt.Errorf("mode re-read: %w", err)
@@ -764,10 +767,24 @@ func (d *ssDriver) normalizeMode(ctx context.Context) error {
 	if mode != ssModeEN {
 		d.emit("mode-normalization FAILED mode=" + mode + " verdict=abort (no typing in an unverified layout)")
 
-		return fmt.Errorf("the daemon mode never read %s after %d flip attempt(s) (last read: %s) — "+
+		return fmt.Errorf("the daemon mode never read %s after %d switch attempt(s) (last read: %s) — "+
 			"battery aborted before any typing", ssModeEN, ssModeAttempts, mode)
 	}
 	d.emit("mode-normalization mode=en verdict=proceed")
+
+	return nil
+}
+
+// ssSwitchToEN switches the global IBus engine to the daemon's EN engine
+// directly (`ibus engine goswitch-en`). Pinned live 2026-10-18 23:47: the
+// gsettings `current` route does NOT move IBus on this stack (GNOME's
+// current changed, the engine stayed goswitch-ru, the daemon saw nothing),
+// while the direct IBus switch is instant and daemon-observable (engine
+// created → mode to en → «mode corrected»).
+func ssSwitchGNOMEToEN(ctx context.Context) error {
+	if _, err := runCmd(ctx, "ibus", "engine", "goswitch-en"); err != nil {
+		return fmt.Errorf("ibus engine goswitch-en: %w", err)
+	}
 
 	return nil
 }
