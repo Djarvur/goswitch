@@ -215,6 +215,8 @@ func parseFlags(cfg *config) {
 // place; defers are honored because run returns normally. The deferred
 // finisher also machine-verifies the gsettings restore (plan 01-04, T-04-02)
 // and may downgrade a PASS to FAIL through the named return.
+//
+//nolint:funlen // the stand's dispatch table: one branch per top-level mode
 func run() (exit int) {
 	var cfg config
 	parseFlags(&cfg)
