@@ -799,6 +799,10 @@ func ssDaemonMode(ctx context.Context) (string, error) {
 	return mode, nil
 }
 
+// ssJournalTailSlack pads the journal window: seconds beyond the gesture
+// interval so the delivery marks settle before the cut.
+const ssJournalTailSlack = 60
+
 // runSelfType is the -selftype mode: the driver SELF-TYPES the corpus and
 // the gesture into the FOCUSED window (no pane log, no markers — the
 // owner runs this command in the test pane itself, hands off, and simply
@@ -837,8 +841,9 @@ func (d *ssDriver) runSelfType(ctx context.Context) int {
 		return 1
 	}
 
+	sinceSeconds := int(time.Since(from).Seconds()) + ssJournalTailSlack
 	out, jerr := runCmd(ctx, "journalctl", "--user", "-u", "goswitchd",
-		"--since", "-"+strconv.Itoa(int(from.UTC().Sub(time.Time{}).Seconds()+60))+"s", "-o", "cat")
+		"--since", "-"+strconv.Itoa(sinceSeconds)+"s", "-o", "cat")
 	if jerr != nil {
 		out = "(journalctl unavailable: " + jerr.Error() + ")"
 	}
