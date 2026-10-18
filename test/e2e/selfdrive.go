@@ -7,12 +7,13 @@ package main
 // (script -q /tmp/gs-pane.log); the driver then:
 //
 //  1. proves the pane's liveness and focus with a MARKER before every
-//     injection burst: one harmless DIGIT via ydotool (digits are identical
-//     keystrokes in EN and RU — the 2026-10-18 first battery's "." landed
-//     as «ю» in the RU-mode pane and the check grepped a ghost), a 300 ms
-//     wait, and a check that the script log's new bytes received it — a
-//     missing marker is a loud SKIP row and an aborted battery, the real
-//     sequence is never typed blind (the marker discipline);
+//     injection burst: one harmless DIGIT via the in-repo uinput injector
+//     (digits are identical keystrokes in EN and RU — the 2026-10-18 first
+//     battery's "." landed as «ю» in the RU-mode pane and the check grepped
+//     a ghost), a 300 ms wait, and a check that the script log's new bytes
+//     received it — a missing marker is a loud SKIP row and an aborted
+//     battery, the real sequence is never typed blind (the marker
+//     discipline);
 //  2. normalizes the pane's IBus MODE at battery start: the corpus
 //     (ghbdtn) only corrects from EN — the first live battery typed it
 //     blind into an RU pane and got Cyrillic garbage. The daemon's mode
@@ -48,6 +49,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/Djarvur/goswitch/internal/uinject"
 )
 
 // The driver's vocabulary: markers, paths, budgets. Every value is a
@@ -368,13 +371,15 @@ func runSelfDrive(ctx context.Context, cfg config) int {
 	return d.battery(ctx)
 }
 
-// preconditions fail-closed: the injector exists, the daemon journal is
+// preconditions fail-closed: the uinput control node exists (the stand
+// user must be in the input group; the injector itself opens only at
+// battery start — never in the dry-run), the daemon journal is
 // reachable, the mode reader (goswitchctl) is resolvable, and the pane log
 // the owner's `script` command opened exists — without it the driver has
 // nothing to watch and says so with the exact owner instruction.
 func (d *ssDriver) preconditions(ctx context.Context) error {
-	if _, err := exec.LookPath("ydotool"); err != nil {
-		return fmt.Errorf("ydotool not on PATH: %w", err)
+	if _, err := os.Stat(uinject.DevicePath); err != nil {
+		return fmt.Errorf("%s is unavailable: %w (the stand user must be in the input group)", uinject.DevicePath, err)
 	}
 	if _, err := runCmd(ctx, "journalctl", "--user", "-u", ssUnit, "-n", "1", "--no-pager"); err != nil {
 		return fmt.Errorf("the %s user unit is unreachable via journalctl: %w", ssUnit, err)
@@ -434,7 +439,7 @@ func (d *ssDriver) selfCheck() int {
 // axis. A marker failure aborts the whole battery — the one unforgivable
 // outcome is typing the real sequence at a window that is not the pane.
 func (d *ssDriver) battery(ctx context.Context) int {
-	fmt.Printf("selfdrive: LIVE — ydotool injects into the FOCUSED window; the dedicated pane (%s) "+
+	fmt.Printf("selfdrive: LIVE — the uinput injector types into the FOCUSED window; the dedicated pane (%s) "+
 		"must hold focus. Ctrl-C aborts. Starting in %v...\n", d.cfg.ssPaneLog, ssLiveCountdown)
 	if err := sleepCtx(ctx, ssLiveCountdown); err != nil {
 		return 1
@@ -447,6 +452,20 @@ func (d *ssDriver) battery(ctx context.Context) int {
 
 		return 1
 	}
+	// The injector opens AFTER the layout gate: an unavailable or unwritable
+	// uinput node is a loud abort row BEFORE any typing (fail-closed, never
+	// a partial battery).
+	inj, err := uinject.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "selfdrive: BATTERY ABORTED (no further injections): uinject: %v\n", err)
+
+		return 1
+	}
+	defer func() {
+		if cerr := inj.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "selfdrive: uinject close: %v\n", cerr)
+		}
+	}()
 	axes := []struct {
 		name    string
 		runs    int
@@ -458,7 +477,7 @@ func (d *ssDriver) battery(ctx context.Context) int {
 	}
 	for _, ax := range axes {
 		for i := 1; i <= ax.runs; i++ {
-			if err := d.runRow(ctx, ax.name, i, ax.runs, ax.preWait); err != nil {
+			if err := d.runRow(ctx, inj, ax.name, i, ax.runs, ax.preWait); err != nil {
 				fmt.Fprintf(os.Stderr, "selfdrive: BATTERY ABORTED (no further injections): %v\n", err)
 
 				return 1
@@ -476,29 +495,31 @@ func (d *ssDriver) battery(ctx context.Context) int {
 // runRow drives one battery run: the marker discipline, the Ctrl-U line
 // clear, the word, the (optional) timing wait, the gesture, the settle,
 // and the verdict row parsed from the log bytes the run itself produced.
-func (d *ssDriver) runRow(ctx context.Context, axis string, i, of int, preWait time.Duration) error {
+func (d *ssDriver) runRow(ctx context.Context, inj *uinject.Injector,
+	axis string, i, of int, preWait time.Duration,
+) error {
 	tag := "axis=" + axis + " run=" + strconv.Itoa(i) + "/" + strconv.Itoa(of)
 	offset := ssFileSize(d.cfg.ssPaneLog)
 	from := time.Now()
-	if err := d.marker(ctx, tag, offset); err != nil {
+	if err := d.marker(ctx, inj, tag, offset); err != nil {
 		return err
 	}
 	// The line clear (readline Ctrl-U): erases the marker AND any stray
 	// owner or previous-run junk — the corpus always types on a clean line,
 	// and the marker's own BackSpace step died with it (the clear already
 	// wiped the marker).
-	if err := ssKeys(ctx, d.cfg.pacing*tapWindowFactor, "ctrl+u"); err != nil {
+	if err := ssCtrlU(ctx, inj, d.cfg.pacing); err != nil {
 		return fmt.Errorf("%s: line clear: %w", tag, err)
 	}
-	if err := ssType(ctx, d.cfg.pacing, corpusLatin); err != nil {
+	if err := ssType(ctx, inj, d.cfg.pacing, corpusLatin); err != nil {
 		return fmt.Errorf("%s: type %s: %w", tag, corpusLatin, err)
 	}
 	if err := sleepCtx(ctx, preWait); err != nil {
 		return fmt.Errorf("%s: timing wait: %w", tag, err)
 	}
 	// The correction gesture: the double Right Shift chord, the same
-	// window-paced keyvals the e2e corpus drives (injectKeys Shift_R ×2).
-	if err := ssKeys(ctx, d.cfg.pacing*tapWindowFactor, "Shift_R", "Shift_R"); err != nil {
+	// window-paced keycodes the e2e corpus drives (injectKeys Shift_R ×2).
+	if err := ssKeys(ctx, inj, d.cfg.pacing*tapWindowFactor, "ShiftRight", "ShiftRight"); err != nil {
 		return fmt.Errorf("%s: double gesture: %w", tag, err)
 	}
 	if err := sleepCtx(ctx, d.cfg.ssSettle); err != nil {
@@ -526,8 +547,8 @@ func (d *ssDriver) runRow(ctx context.Context, axis string, i, of int, preWait t
 // marker is the safety core: one harmless digit, a bounded wait, and
 // the pane log's new bytes must receive it — else the battery aborts with
 // the loud skip row BEFORE the real sequence (never typed blind).
-func (d *ssDriver) marker(ctx context.Context, tag string, offset int64) error {
-	if err := ssType(ctx, d.cfg.pacing, ssMarker); err != nil {
+func (d *ssDriver) marker(ctx context.Context, inj *uinject.Injector, tag string, offset int64) error {
+	if err := ssType(ctx, inj, d.cfg.pacing, ssMarker); err != nil {
 		return fmt.Errorf("%s: marker type: %w", tag, err)
 	}
 	if err := sleepCtx(ctx, ssMarkerWait); err != nil {
@@ -577,27 +598,64 @@ func ssFocusPairs(ctx context.Context, from, to time.Time) (pairs int, note stri
 	return strings.Count(out, `"kind":"focus_in"`), ""
 }
 
-// ssType types text through ydotool with the run's pacing (the stand's
-// injectText form, aimed at the FOCUSED window).
-func ssType(ctx context.Context, pacingMs int, text string) error {
-	if _, err := runCmd(ctx, "ydotool", "type", "--key-delay", strconv.Itoa(pacingMs), text); err != nil {
+// ssType types text through the in-repo uinput injector with the run's
+// pacing (the stand's injectText form, aimed at the FOCUSED window).
+func ssType(ctx context.Context, inj *uinject.Injector, pacingMs int, text string) error {
+	if err := inj.Type(ctx, text, pacingMs); err != nil {
 		return fmt.Errorf("inject %q: %w", text, err)
 	}
 
 	return nil
 }
 
-// ssKeyFixedArgs is the fixed ydotool key invocation's argument count
-// (the command name plus the --key-delay pair).
-const ssKeyFixedArgs = 3
+// ssCtrlUSteps is the explicit Ctrl-U chord: the modifier down first, the
+// letter in, the letter out, the modifier out last — a true simultaneous
+// chord (the ydotool "ctrl+u" form it replaces), each step its own
+// press/release with the driver's pacing between.
+//
+//nolint:gochecknoglobals // the chord's frozen step order, pinned by the corpus
+var ssCtrlUSteps = []ssChordStep{
+	{name: ssKeyLeftCtrl, down: true},
+	{name: "u", down: true},
+	{name: "u", down: false},
+	{name: ssKeyLeftCtrl, down: false},
+}
 
-// ssKeys taps key names with the tap-window pacing (the stand's injectKeys
-// form: pacing×3 so a multi-tap fits the 300 ms window).
-func ssKeys(ctx context.Context, pacingMs int, keys ...string) error {
-	args := make([]string, 0, len(keys)+ssKeyFixedArgs)
-	args = append(args, "key", "--key-delay", strconv.Itoa(pacingMs))
-	args = append(args, keys...)
-	if _, err := runCmd(ctx, "ydotool", args...); err != nil {
+// ssKeyLeftCtrl is the chord modifier's name in the injector's table
+// (named once — the clear and the corpus both say it).
+const ssKeyLeftCtrl = "LeftCtrl"
+
+// ssChordStep is one explicit chord step: which key, down or up.
+type ssChordStep struct {
+	name string
+	down bool
+}
+
+// ssCtrlU clears the readline line: the explicit LeftCtrl+u chord, each
+// step paced so the terminal sees a clean kill-line.
+func ssCtrlU(ctx context.Context, inj *uinject.Injector, pacingMs int) error {
+	for _, step := range ssCtrlUSteps {
+		var err error
+		if step.down {
+			err = inj.Press(step.name)
+		} else {
+			err = inj.Release(step.name)
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
+		}
+		if err := sleepCtx(ctx, time.Duration(pacingMs)*time.Millisecond); err != nil {
+			return fmt.Errorf("pace %s: %w", step.name, err)
+		}
+	}
+
+	return nil
+}
+
+// ssKeys taps key names sequentially with the tap-window pacing (the
+// stand's injectKeys form: pacing×3 so a multi-tap fits the 300 ms window).
+func ssKeys(ctx context.Context, inj *uinject.Injector, pacingMs int, keys ...string) error {
+	if err := inj.Chord(ctx, keys, pacingMs); err != nil {
 		return fmt.Errorf("inject keys %v: %w", keys, err)
 	}
 

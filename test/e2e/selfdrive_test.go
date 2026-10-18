@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 	"unicode"
+
+	"github.com/Djarvur/goswitch/internal/uinject"
 )
 
 // ssEchoErase is the cooked-mode echo of ONE erased character: the line
@@ -238,6 +240,54 @@ func TestSelfdriveParseMode(t *testing.T) {
 	} {
 		if got := ssParseMode(tc.status); got != tc.want {
 			t.Fatalf("%s: ssParseMode = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestSelfdriveInjectorVocabulary pins the driver's contract with the
+// in-repo uinject table: EVERY rune the battery types (the marker digit,
+// the correction corpus) resolves, and so do the chord keys (the Ctrl-U
+// clear's LeftCtrl and u, the double Right Shift gesture) — a miss here
+// would be a loud abort row at battery start; the corpus pins it before
+// any battery runs at all.
+func TestSelfdriveInjectorVocabulary(t *testing.T) {
+	for _, r := range ssMarker + corpusLatin {
+		if _, ok := uinject.Keycode(string(r)); !ok {
+			t.Fatalf("rune %q of the driver's typing vocabulary (marker %q, corpus %q) has no keycode",
+				r, ssMarker, corpusLatin)
+		}
+	}
+	for _, name := range []string{ssKeyLeftCtrl, "u", "ShiftRight", "ShiftRight"} {
+		if _, ok := uinject.Keycode(name); !ok {
+			t.Fatalf("chord key %q of the driver's gestures has no keycode", name)
+		}
+	}
+}
+
+// TestSelfdriveCtrlUChord pins the explicit Ctrl-U chord the ydotool
+// "ctrl+u" form became: exactly four steps, modifier down FIRST and up
+// LAST (a true simultaneous chord), the letter between — every step a
+// name the injector's table resolves.
+func TestSelfdriveCtrlUChord(t *testing.T) {
+	if len(ssCtrlUSteps) != 4 {
+		t.Fatalf("the Ctrl-U chord carries %d steps, want 4 (ctrl down, u down, u up, ctrl up)", len(ssCtrlUSteps))
+	}
+	want := []struct {
+		name string
+		down bool
+	}{
+		{ssKeyLeftCtrl, true},
+		{"u", true},
+		{"u", false},
+		{ssKeyLeftCtrl, false},
+	}
+	for i, step := range ssCtrlUSteps {
+		if step.name != want[i].name || step.down != want[i].down {
+			t.Fatalf("chord step %d = {%s down=%v}, want {%s down=%v}",
+				i, step.name, step.down, want[i].name, want[i].down)
+		}
+		if _, ok := uinject.Keycode(step.name); !ok {
+			t.Fatalf("chord step %d names %q — outside the injector's keycode table", i, step.name)
 		}
 	}
 }
