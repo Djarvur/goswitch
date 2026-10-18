@@ -21,12 +21,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/Djarvur/goswitch/internal/uinject"
 	"time"
 
 	"github.com/godbus/dbus/v5"
 
 	"github.com/Djarvur/goswitch/internal/engine"
+	"github.com/Djarvur/goswitch/internal/uinject"
 )
 
 // Stand timing knobs: every value is a behavioral constant of the stand,
