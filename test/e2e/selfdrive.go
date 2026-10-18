@@ -808,7 +808,7 @@ func ssDaemonMode(ctx context.Context) (string, error) {
 func (d *ssDriver) runSelfType(ctx context.Context) int {
 	fmt.Println("selftype: typing the corpus + gesture in 5s — HANDS OFF, watch the word")
 
-	if err := sleepCtx(ctx, 5*time.Second); err != nil {
+	if err := sleepCtx(ctx, d.cfg.ssTimingWait); err != nil {
 		return 1
 	}
 	inj, err := uinject.Open()
