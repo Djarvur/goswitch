@@ -13,16 +13,23 @@ package main
 //     wait, and a check that the script log's new bytes received it — a
 //     missing marker is a loud SKIP row and an aborted battery, the real
 //     sequence is never typed blind (the marker discipline);
-//  2. runs the battery: one probe run, N baseline runs, N timing-axis
+//  2. normalizes the pane's IBus MODE at battery start: the corpus
+//     (ghbdtn) only corrects from EN — the first live battery typed it
+//     blind into an RU pane and got Cyrillic garbage. The daemon's mode
+//     rides goswitchctl status; a non-en mode gets the double Right Shift
+//     chord on an EMPTY buffer (pure flip), a re-read, up to twice — a
+//     mode that never reads en aborts the battery (no typing in an
+//     unverified layout), every step a content-free row;
+//  3. runs the battery: one probe run, N baseline runs, N timing-axis
 //     runs (a typing→gesture wait before the chord), each run a marker →
 //     Ctrl-U line clear (the marker AND any stray line junk gone — the
 //     corpus always types on a clean line) → ghbdtn + the double Right
 //     Shift correction gesture, parsed from the NEW log bytes for the
 //     choreography (erase→insert, and the second delete that is the
 //     client-replay defect);
-//  3. observes (never induces) focus churn: the daemon journal's
+//  4. observes (never induces) focus churn: the daemon journal's
 //     lifecycle rows in the run window ride the verdict row;
-//  4. appends a dated verdict row per run to stdout and the verdicts log.
+//  5. appends a dated verdict row per run to stdout and the verdicts log.
 //
 // The rows carry counts and booleans only — the pane holds the test word
 // alone (the marker discipline guarantees focus), and the daemon rows are
@@ -36,6 +43,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -361,15 +369,22 @@ func runSelfDrive(ctx context.Context, cfg config) int {
 }
 
 // preconditions fail-closed: the injector exists, the daemon journal is
-// reachable, and the pane log the owner's `script` command opened exists —
-// without it the driver has nothing to watch and says so with the exact
-// owner instruction.
+// reachable, the mode reader (goswitchctl) is resolvable, and the pane log
+// the owner's `script` command opened exists — without it the driver has
+// nothing to watch and says so with the exact owner instruction.
 func (d *ssDriver) preconditions(ctx context.Context) error {
 	if _, err := exec.LookPath("ydotool"); err != nil {
 		return fmt.Errorf("ydotool not on PATH: %w", err)
 	}
 	if _, err := runCmd(ctx, "journalctl", "--user", "-u", ssUnit, "-n", "1", "--no-pager"); err != nil {
 		return fmt.Errorf("the %s user unit is unreachable via journalctl: %w", ssUnit, err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("home dir: %w", err)
+	}
+	if _, err := ssCtlPath(home); err != nil {
+		return fmt.Errorf("the daemon-mode reader is unresolvable: %w", err)
 	}
 	if _, err := os.Stat(d.cfg.ssPaneLog); err != nil {
 		return fmt.Errorf("the pane log %s does not exist — the owner must FIRST type in the dedicated pane: %s",
@@ -422,6 +437,14 @@ func (d *ssDriver) battery(ctx context.Context) int {
 	fmt.Printf("selfdrive: LIVE — ydotool injects into the FOCUSED window; the dedicated pane (%s) "+
 		"must hold focus. Ctrl-C aborts. Starting in %v...\n", d.cfg.ssPaneLog, ssLiveCountdown)
 	if err := sleepCtx(ctx, ssLiveCountdown); err != nil {
+		return 1
+	}
+	// The layout gate BEFORE any battery keystroke: typing blind in an
+	// unverified layout is the one outcome the marker discipline cannot
+	// catch (the marker itself lands wrong), so the mode normalizes here.
+	if err := d.normalizeMode(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "selfdrive: BATTERY ABORTED (no further injections): %v\n", err)
+
 		return 1
 	}
 	axes := []struct {
@@ -627,4 +650,124 @@ func ssReadFrom(path string, offset int64) (data []byte, size int64, err error) 
 	}
 
 	return data[offset:], int64(len(data)), nil
+}
+
+// The battery's layout gate: the corpus (ghbdtn) only corrects from EN —
+// the 2026-10-18 first live battery typed it blind into an RU-mode pane
+// (Cyrillic garbage, no correction). The daemon's mode rides goswitchctl
+// status, resolved the plans' way.
+const (
+	// ssModeEN is the daemon mode the battery normalizes to before typing.
+	ssModeEN = "en"
+	// ssModeAttempts is the flip budget: a failed flip is retried once,
+	// then the battery aborts (never types blind in an unverified layout).
+	ssModeAttempts = 2
+	// ssModeSettle lets a flip reach the daemon before the re-read.
+	ssModeSettle = 600 * time.Millisecond
+)
+
+// ssCtlPath resolves the goswitchctl binary the plans resolve it: on PATH
+// first, else the newest-by-mtime binary among the installed releases.
+func ssCtlPath(home string) (string, error) {
+	if p, err := exec.LookPath("goswitchctl"); err == nil {
+		return p, nil
+	}
+
+	return ssNewestReleaseCtl(home)
+}
+
+// ssNewestReleaseCtl picks the newest-by-mtime goswitchctl among
+// ~/.local/share/goswitch/releases/*/goswitchctl (the plans'
+// `ls -t .../releases/*/goswitchctl | head -1`); none is a loud error,
+// never a guessed version.
+func ssNewestReleaseCtl(home string) (string, error) {
+	pattern := filepath.Join(home, ".local", "share", "goswitch", "releases", "*", "goswitchctl")
+	paths, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", fmt.Errorf("glob %s: %w", pattern, err)
+	}
+	best, bestMod := "", time.Time{}
+	for _, p := range paths {
+		fi, statErr := os.Stat(p)
+		if statErr != nil {
+			continue
+		}
+		if best == "" || fi.ModTime().After(bestMod) {
+			best, bestMod = p, fi.ModTime()
+		}
+	}
+	if best == "" {
+		return "", fmt.Errorf("goswitchctl is not on PATH and no release ships one under %s", pattern)
+	}
+
+	return best, nil
+}
+
+// ssParseMode extracts the daemon's mode token (mode=en|ru) from a
+// goswitchctl status report; empty when the report carries no mode field
+// (fail-closed: no guessed mode, the gate refuses to proceed).
+func ssParseMode(status string) string {
+	for _, field := range strings.Fields(status) {
+		if token, ok := strings.CutPrefix(field, "mode="); ok {
+			return token
+		}
+	}
+
+	return ""
+}
+
+// ssDaemonMode reads the daemon's current mode through goswitchctl status.
+func ssDaemonMode(ctx context.Context) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	ctl, err := ssCtlPath(home)
+	if err != nil {
+		return "", err
+	}
+	out, err := runCmd(ctx, ctl, "status")
+	if err != nil {
+		return "", fmt.Errorf("goswitchctl status: %w", err)
+	}
+	mode := ssParseMode(out)
+	if mode == "" {
+		return "", fmt.Errorf("goswitchctl status carries no mode field: %s", boundRowText(out))
+	}
+
+	return mode, nil
+}
+
+// normalizeMode is the battery's layout gate: the daemon's mode rides
+// goswitchctl status; a non-en mode gets the double Right Shift chord on
+// an EMPTY buffer (a pure flip — nothing to correct), one settle, a
+// re-read, up to ssModeAttempts times. A mode that never reads en aborts
+// the battery before any typing, and every step rides a content-free row.
+func (d *ssDriver) normalizeMode(ctx context.Context) error {
+	mode, err := ssDaemonMode(ctx)
+	if err != nil {
+		return fmt.Errorf("mode read: %w", err)
+	}
+	for attempt := 1; mode != ssModeEN && attempt <= ssModeAttempts; attempt++ {
+		d.emit("mode-normalization mode=" + mode + " attempt=" + strconv.Itoa(attempt) +
+			" action=flip (double Shift_R on an empty buffer, content-free)")
+		if err := ssKeys(ctx, d.cfg.pacing*tapWindowFactor, "Shift_R", "Shift_R"); err != nil {
+			return fmt.Errorf("mode flip: %w", err)
+		}
+		if err := sleepCtx(ctx, ssModeSettle); err != nil {
+			return fmt.Errorf("mode flip settle: %w", err)
+		}
+		if mode, err = ssDaemonMode(ctx); err != nil {
+			return fmt.Errorf("mode re-read: %w", err)
+		}
+	}
+	if mode != ssModeEN {
+		d.emit("mode-normalization FAILED mode=" + mode + " verdict=abort (no typing in an unverified layout)")
+
+		return fmt.Errorf("the daemon mode never read %s after %d flip attempt(s) (last read: %s) — "+
+			"battery aborted before any typing", ssModeEN, ssModeAttempts, mode)
+	}
+	d.emit("mode-normalization mode=en verdict=proceed")
+
+	return nil
 }

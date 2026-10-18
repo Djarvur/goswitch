@@ -9,8 +9,11 @@ package main
 // delete run. Content discipline: the fragments carry the test corpus only.
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 )
 
@@ -213,5 +216,68 @@ func TestSelfdriveClassify_CtrlUClear(t *testing.T) {
 		if rep.choreo != tc.want {
 			t.Fatalf("%s: classified %q (events %q), want %q", tc.name, rep.choreo.word(), rep.events, tc.want.word())
 		}
+	}
+}
+
+// TestSelfdriveParseMode pins the daemon-mode read behind the battery's
+// layout gate: goswitchctl status reports `mode=en|ru` among its
+// key=value fields, and the parser reads that token and nothing else — a
+// report without a mode field reads empty (fail-closed: no guessed mode,
+// the gate would refuse to proceed).
+func TestSelfdriveParseMode(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status string
+		want   string
+	}{
+		{"en", "version=v1.1.1 mode=en corrections_done=3 corrections_skipped=1 config_valid=true", "en"},
+		{"ru", "version=v1.1.1 mode=ru corrections_done=0 corrections_skipped=0 config_valid=true", "ru"},
+		{"mode-last", "version=dev config=none mode=ru", "ru"},
+		{"no-mode", "version=v1.1.1 config_valid=true", ""},
+		{"empty", "", ""},
+	} {
+		if got := ssParseMode(tc.status); got != tc.want {
+			t.Fatalf("%s: ssParseMode = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestSelfdriveCtlPath_NewestRelease pins the release resolution: with no
+// goswitchctl on PATH the battery reads the daemon through the
+// newest-by-mtime binary among ~/.local/share/goswitch/releases/*/
+// (the plans' `ls -t .../releases/*/goswitchctl | head -1`), never a
+// guessed version; no releases at all is a loud error, not a silent fall
+// through.
+func TestSelfdriveCtlPath_NewestRelease(t *testing.T) {
+	home := t.TempDir()
+	mk := func(rel string, mod time.Time) string {
+		dir := filepath.Join(home, ".local", "share", "goswitch", "releases", rel)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := filepath.Join(dir, "goswitchctl")
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(bin, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+
+		return bin
+	}
+	mk("v1.1.1", time.Now().Add(-time.Hour))
+	newest := mk("v1.1.1-190-g29bbde6", time.Now())
+	mk("v1.1.1-9-gb1dcb05", time.Now().Add(-time.Minute))
+
+	got, err := ssNewestReleaseCtl(home)
+	if err != nil {
+		t.Fatalf("ssNewestReleaseCtl: %v", err)
+	}
+	if got != newest {
+		t.Fatalf("ssNewestReleaseCtl = %q, want the newest release %q", got, newest)
+	}
+
+	if _, err := ssNewestReleaseCtl(t.TempDir()); err == nil {
+		t.Fatal("ssNewestReleaseCtl on a home without releases returned nil error, want a loud failure")
 	}
 }
