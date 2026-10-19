@@ -850,3 +850,66 @@ v1.1.1 нетронут; прежние release-dir не перезаписыв�
 **Round-6 направление (единственная конструкция, неподвержённая очередям): удаление протокольным сообщением DeleteSurroundingText вместо клавиш-форвардов** — тот же text-input канал, что и commit, порядок гарантирован протоколом. Гард mutter-краша (10-16: materialized-surrounding evidence) обязателен — краш только на девственных контекстах, коррекция идёт по тёплым. Неизвестный: поддерживает ли wezterm-nightly zwp delete_surrounding_text — стенд-проба (сплит-вербы 10-13 уже в дереве) отвечает машинно.
 
 Протокол selftype подтверждён рабочим: одна команда владельцем, одно слово ответом — остальное машиной.
+
+### Closure validation round-6 (G-10-1) — парные форварды: установка + selftype-гейт, 2026-10-19
+
+Round-6 pivot (мандат владельца; sourcedig `.planning/debug/2026-10-19-wezterm-repeat-sourcedig.md`,
+0c2fd6e): корень «появилось и исчезло» — КЛИЕНТСКИЙ автоповтор wezterm, взводимый press-only
+форвардами BackSpace (window.rs:1194-1206; снятие только release'ом той же клавиши); через
+GNOME repeat-delay 500 мс планировщик синтезирует вторую волну удалений ~30 Гц. Фикс —
+амендмент (7) ADR-008: каждый BackSpace терминальной записи едет парой press+release
+(fed2a98 RED → 33f32c3 GREEN; ADR-008 + re-pin стенд-ряды 8bd4edc). DST-ветка закрыта
+независимо зондом 10-13 (4f940b0: wezterm игнорирует DST, тёплая VTE DST роняет mutter 46.2) —
+маршрутизация остаётся на форвардах, теперь парных. Инференс round-5 «форварды стоят в очереди
+секунды» ОТЗВАН.
+
+**Машинные предпроверки (read-only; 2026-10-19 21:18–21:20 MSK):**
+
+- Гейты ДО установки: mise run ci зелёный (build+vet+lint+test -race, 21 пакет); пандус реплея
+  зелёный под -race (ReplayHost0939 ×4 / TwoPhaseLevel1 ×4 / FlapWindowContextIdentity ×2 /
+  Level1ConfirmFlush / DstGuard ×3 / новый TestActor_Level2ForwardsComeInPressReleasePairs);
+  go.mod/go.sum заморожены (tidy-diff чист); стенд re-pin — четыре замороженных кейса зелёные
+  (repin-round6-pairs 17:53–18:17 UTC, pty байт-точность сохранена: пара = один 0x7f).
+- Установка (единственная host-мутация): build из рабочего дерева (HEAD 8bd4edc =
+  v1.1.1-226-g8bd4edc) → НОВЫЙ release-dir ~/.local/share/goswitch/releases/v1.1.1-226-g8bd4edc
+  → его goswitchctl install: component content verified, registry visible, unit daemon-reload +
+  enable + restart, sources wrapped, engine activated goswitch-en.
+- unit: active; ExecStart = releases/v1.1.1-226-g8bd4edc/goswitchd (старт 21:18:54 MSK);
+  **/proc/2096528/exe → тот же release-dir** (идентичность по /proc сверена); журнал поднятия:
+  component registered (engines:2) → engine reactivated goswitch-en, ошибок регистрации нет.
+- status по фикс. пути (/home/nil/.local/share/goswitch/releases/v1.1.1-226-g8bd4edc/goswitchctl):
+  парсится, config_valid=true, config_error= (пуст); счётчики на нуле — чистая база приёмки:
+  corrections_done=0, corrections_skipped=0, autocorrect_fired=0, autocorrect_abstained=0,
+  ac_role_errors=0, corr_dst_guarded=0. Замечание: version=dev — деревостроенная сборка без
+  goreleaser-стемпов (прецедент gap-сборок; идентичность несёт release-dir + /proc/exe).
+- Откат по запросу владельца (назван ДО приёмки): ~/.local/share/goswitch/releases/v1.1.1/
+  goswitchctl install (релизный каталог v1.1.1 нетронут; предыдущие gap-сборки не перезаписаны).
+- Host после установки — строго read-only: инъекций нет, окон не создавалось, чужие сервисы
+  не перезапускались. Дальше — протокол selftype (панель + одна команда + одно слово), НИКАКИХ
+  дёрганий владельца сверх его одного слова.
+
+**Критерии журнальных рядов round-6 (сверка ПОСЛЕ жеста/самтайпа):**
+
+- (а) НЕТ skip-рядов verify-timeout / verify-mismatch;
+- (б) delivery-метки присутствуют и упорядочены: burst-window open → chunks-sent → commit-sent
+  → burst-window close; НОВОЕ round-6: chunks-sent несёт forwards=12 keys=6 (пары: эмиссий вдвое
+  против ключей), pacing_ms ≈ 240 (12×20 мс) — рост против 120.round-4 ЭТО ОЖИДАЕМ,
+  не регресс; done-ряд changed=true;
+- (в) флип-рубежи строго ПОСЛЕ release-причины (SetGlobalEngine между коммитом и причиной =
+  провал — форма round-4);
+- (г) нет крахов/перезапусков gnome-shell;
+- (д) autocorrect_fired не вырос; (е) absent-метки/тишина = честный провал, никогда не пропуск.
+
+**Selftype round-6 — инструкция владельца (одна команда, одно слово):**
+
+1. Открыть ПУСТУЮ панель wezterm (та же, что в 19:03), сфокусировать, руки убрать.
+2. Напечатать в ней ОДНУ команду:
+   `cd /home/nil/DiskD/W/Djarvur/goswitch && go run ./test/e2e -selftype`
+3. Драйвер сам: нормализует режим → 2 с settle → печатает «ghbdtn» → двойной Right Shift →
+   печатает delivery-метки демона. Владелец смотрит на слово и отвечает ОДНИМ словом:
+   **ОСТАЛОСЬ** или **ИСЧЕЗЛО**.
+Ожидание по sourcedig (§6.4): release гасит взвод повтора — слово остаётся при ЛЮБОМ gsettings
+repeat-delay; «исчезло» после ≥500 мс покоя = повтор всё ещё жив (новая охота).
+
+Жест-эквивалент без самтайпа (по желанию): мышь в wezterm, «ghbdtn», двойной правый Shift,
+смотреть ≥2 с (взвод стрелял в last_press+500 мс — теперь release пришёл на +20 мс).
