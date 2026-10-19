@@ -1,0 +1,11 @@
+{
+  "command": "mise exec -- go test ./internal/session/ -race -count=1 -run 'TestActor_Level2ForwardsComeInPressReleasePairs' -json (converted to TAP; go test -v failure detail below)",
+  "exitCode": 1,
+  "output": "not ok 1 - TestActor_Level2ForwardsComeInPressReleasePairs\n# tests 1\n# pass 0\n# fail 1\n\n--- FAIL: TestActor_Level2ForwardsComeInPressReleasePairs (0.14s)\n    actor_test.go:964: forward count = 6, want 12 — every BackSpace must ride a press+release PAIR\nFAIL\nFAIL\tgithub.com/Djarvur/goswitch/internal/session\t0.176s",
+  "failures": "--- FAIL: TestActor_Level2ForwardsComeInPressReleasePairs",
+  "targetTest": "TestActor_Level2ForwardsComeInPressReleasePairs",
+  "targetFile": "internal/session/actor_test.go",
+  "expected": "Every BackSpace forward of the level-2 write branch rides a press+release PAIR (the round-6 sourcedig verdict, .planning/debug/2026-10-19-wezterm-repeat-sourcedig.md): wezterm e2a98e1b arms client-side auto-repeat on every repeatable-key press (window.rs:1194-1206), disarmed ONLY by the same key's release / another key's press / a focus Enter/Leave; replayBurst's press-only forwards (actor.go:4252, state=0, MaskRelease never set) therefore arm a ~30 Hz BackSpace repeat after the GNOME 500 ms repeat-delay that deletes the committed word — the host defect «появилось и исчезло». The pair discipline already exists in-repo (probe.go:179-183 ProbeForward, actor.go:2669-2672 forwardCtrlV): press followed immediately by the SAME key's release carrying exactly MaskRelease",
+  "actual": "On the UNCHANGED HEAD the burst emits press-only forwards: sink records 6 ForwardKeyEvent(BackSpace, 14, 0) for a 6-rune token — no release ever lands, count 6 != 12 and the pair-form assertion never even reaches (the count Fatalf fires first)",
+  "pinGreenOnHead": "The existing level-2 corpus PASSes on the same HEAD (go test -race -run 'TestActor_Level2NoCaps|TestActor_Level2WithTailAndRunes|TestTerminalBranch_Level2PacesWire|TestDstGuard_NeverMaterializedContextGetsForwards|TestDstGuard_MaterializedContextByteUnchanged|TestDeliveryBurst' — ok, 3.185s): the new pin adds the pair contract, it breaks nothing that exists"
+}

@@ -934,6 +934,63 @@ func TestActor_Level2WithTailAndRunes(t *testing.T) {
 	}
 }
 
+// TestActor_Level2ForwardsComeInPressReleasePairs pins the pair discipline
+// of the level-2 write branch (the round-6 sourcedig verdict,
+// .planning/debug/2026-10-19-wezterm-repeat-sourcedig.md): replayBurst emits
+// ForwardKeyEvent(BackSpace) press-ONLY (state=0, MaskRelease never set), and
+// wezterm e2a98e1b arms its CLIENT-SIDE auto-repeat on every repeatable-key
+// press (window.rs:1194-1206) — a repeat disarmed ONLY by the same key's
+// release, another key's press, or a keyboard focus Enter/Leave. With no
+// releases the armed repeat fires after the GNOME repeat-delay (default
+// 500 ms, delivered via wl_keyboard.repeat_info) at ~30 Hz and deletes the
+// freshly committed word — the host defect «появилось и исчезло» (the 21:56
+// video, the 19:03 selftype). The wire contract is therefore ProbeForward's
+// discipline (probe.go:179-183, the forwardCtrlV form actor.go:2669-2672):
+// every press forward is followed by a release forward of the SAME key, the
+// release carrying exactly MaskRelease (no other state bits) — no client may
+// leave the burst with an armed repeat. RED truth: on the unchanged HEAD the
+// burst emits press-only forwards — the count and the pair form both fail
+// (evidence-20261019-10-17-red-pairs.json).
+func TestActor_Level2ForwardsComeInPressReleasePairs(t *testing.T) {
+	a, sink := wiredActorCaps(engine.CapPreeditText) // no CapSurroundingText — the write branch
+
+	typeWord(a, wordEN) // six runes — six BackSpace pairs on the wire
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	forwards := sink.forwardCalls()
+	if len(forwards) != 2*len([]rune(wordEN)) {
+		t.Fatalf("forward count = %d, want %d — every BackSpace must ride a press+release PAIR",
+			len(forwards), 2*len([]rune(wordEN)))
+	}
+	for i := 0; i < len(forwards); i += 2 {
+		press, release := forwards[i], forwards[i+1]
+		if press != backSpaceWireCall() {
+			t.Errorf("pair[%d] press = %+v, want %+v", i/2, press, backSpaceWireCall())
+		}
+		wantRelease := forwardCall{keyval: engine.KeyBackSpace, keycode: 14, state: engine.MaskRelease}
+		if release != wantRelease {
+			t.Errorf("pair[%d] release = %+v, want %+v — the release is what disarms the "+
+				"client's key repeat", i/2, release, wantRelease)
+		}
+		if press.keyval != release.keyval || press.keycode != release.keycode {
+			t.Errorf("pair[%d] = press %+v vs release %+v — the release must answer the SAME key",
+				i/2, press, release)
+		}
+	}
+	// The op log keeps the pair ADJACENT: a release that trails a foreign
+	// emission cannot answer the press it must disarm.
+	ops := sink.opLog()
+	for i := 0; i < 2*len([]rune(wordEN)); i += 2 {
+		if ops[i] != backSpaceOp() || !strings.HasPrefix(ops[i+1], fmt.Sprintf(
+			"forward(%d,%d,", engine.KeyBackSpace, 14)) {
+			t.Fatalf("op log pair %d = %q,%q — the release must sit immediately after its press",
+				i/2, ops[i], ops[i+1])
+		}
+	}
+}
+
 // verifyAfterSettled runs one complete level-1 correction and returns the
 // actor at the moment the verify-after round is pending.
 func verifyAfterSettled(t *testing.T) (*session.Actor, *fakeSink, *syncBuffer) {
