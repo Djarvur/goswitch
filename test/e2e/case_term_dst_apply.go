@@ -423,7 +423,40 @@ func dstWaitCaptureGrowth(ctx context.Context, path string, offset int64, timeou
 	}
 }
 
-// dstWarmOrRefuse is the cells' shared preamble: the arming gate, the
+// dstFocusNudge is the machine focus grant (the 10-08 recipe, the
+// bisection's run3.sh form): a center-screen click. Runs 4-5 pinned the
+// need: arming floors went unmet with ZERO key-trace records while the
+// uinput churn's focus pairs kept flowing — the map-focus self-fire left
+// the fixture unfocused, and the click is the proven grant (the manual
+// probe: the same typed key with the nudge = KEY_DELTA 2).
+func dstFocusNudge(ctx context.Context) error {
+	if _, err := runCmd(ctx, "ydotool", "mousemove", "--delay", "100", "640", "400"); err != nil {
+		return fmt.Errorf("focus nudge move: %w", err)
+	}
+	if _, err := runCmd(ctx, "ydotool", "click", "--delay", "100", "1"); err != nil {
+		return fmt.Errorf("focus nudge click: %w", err)
+	}
+
+	return sleepCtx(ctx, chordSettle)
+}
+
+// dstObserverRound is termObserverRound with the machine focus nudge
+// before the arming gate (the run-5 lesson: the observer round is the
+// fresh session's FIRST injection — the exact placement-race victim).
+func (s *stand) dstObserverRound(ctx context.Context, caseName string) error {
+	tf, err := s.openTermFixture(ctx, caseName, "obs", capturePane("bash", "-c"))
+	if err != nil {
+		return err
+	}
+	defer tf.close()
+	if err := dstFocusNudge(ctx); err != nil {
+		return err
+	}
+
+	return s.termArmGate(ctx, caseName)
+}
+
+// dstWarmOrRefuse is the cells' shared preamble: the machine focus nudge,
 // capture OFFSET (taken BEFORE the typing — the run-3 lesson: the warm
 // gate's waits sit seconds past the key-trace floor, so an offset taken
 // after the gate lands PAST the token bytes and the delivery control
@@ -436,6 +469,9 @@ func dstWaitCaptureGrowth(ctx context.Context, path string, offset int64, timeou
 func (s *stand) dstWarmOrRefuse(
 	ctx context.Context, caseName, ctlBin, client, rowTag string, fx dstFixture,
 ) (offset int64, push capPush, answered bool, err error) {
+	if nerr := dstFocusNudge(ctx); nerr != nil {
+		return 0, capPush{}, false, nerr
+	}
 	if aerr := s.termArmGate(ctx, caseName); aerr != nil {
 		return 0, capPush{}, false, aerr
 	}
@@ -590,12 +626,10 @@ func runTermDstCells(ctx context.Context, s *stand) error {
 	if err := startAutocorrectConfigDaemon(ctx, s, autocorrectConfigDoc); err != nil {
 		return err
 	}
-	// The observer warm-up round (the term-word-vte mechanics): a throwaway
-	// window feeds the daemon's observer path and gives the fresh session
-	// its first placed interaction — the run-4 arming failures rode the
-	// round-3 «typed-miss» placement race class (fresh-session remedy:
-	// re-entry + warm-up, never a retry loop inside the cell).
-	if err := s.termObserverRound(ctx, caseName); err != nil {
+	// The observer warm-up round (the term-word-vte mechanics) with the
+	// machine focus nudge (runs 4-5: the fresh session's first injection
+	// loses the placement race — the nudge is the proven grant).
+	if err := s.dstObserverRound(ctx, caseName); err != nil {
 		return err
 	}
 	ctlBin, err := s.buildCtl(ctx)
