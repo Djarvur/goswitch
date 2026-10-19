@@ -821,11 +821,17 @@ const ssJournalTailSlack = 60
 // are dumped for the journal; the persistence verdict is the owner's one
 // word (осталось/исчезло).
 func (d *ssDriver) runSelfType(ctx context.Context) int {
-	fmt.Println("selftype: typing the corpus + gesture in 5s — HANDS OFF, watch the word")
+	fmt.Println("selftype: normalizing mode, then typing the corpus + gesture in 5s — HANDS OFF, watch the word")
 
-	if err := sleepCtx(ctx, d.cfg.ssTimingWait); err != nil {
+	// The mode gate first: the corpus corrects only from EN, and the
+	// gesture classification (n:2 correction vs n:1 flip) rides the
+	// daemon's buffer state that the normalized mode feeds.
+	if err := d.normalizeMode(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "selftype: %v\n", err)
+
 		return 1
 	}
+
 	inj, err := uinject.Open()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "selftype: uinject: %v\n", err)
@@ -833,6 +839,14 @@ func (d *ssDriver) runSelfType(ctx context.Context) int {
 		return 1
 	}
 	defer func() { _ = inj.Close() }()
+
+	// The device-attach settle: mutter attaches a fresh uinput device
+	// asynchronously — the FIRST keystroke typed before the attach is lost
+	// (pinned live 2026-10-19 16:30: the corpus landed as «hbdtn», the
+	// leading g never reached the pane).
+	if err := sleepCtx(ctx, ssDeviceSettle); err != nil {
+		return 1
+	}
 
 	from := time.Now()
 	if err := inj.Type(ctx, corpusLatin, d.cfg.pacing); err != nil {
@@ -861,7 +875,8 @@ func (d *ssDriver) runSelfType(ctx context.Context) int {
 	fmt.Println("=== daemon delivery marks for this gesture (content-free) ===")
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, `correction delivery`) || strings.Contains(line, `"msg":"correction"`) ||
-			strings.Contains(line, `"msg":"action"`) || strings.Contains(line, `terminal class`) {
+			strings.Contains(line, `"msg":"action"`) || strings.Contains(line, `terminal class`) ||
+			strings.Contains(line, `autocorrect`) {
 			fmt.Println(line)
 		}
 	}
