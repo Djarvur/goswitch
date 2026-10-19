@@ -199,6 +199,10 @@ run = "go run ./test/e2e -case term-cap-delivery"
 description = "e2e: 10-17 term-word-drain — round-4 pty-drain proof (G-10-1): one full correction round per pacing combination (default/tight/loose through the -debug env override) on a RAW pty capture; oracle: every BackSpace byte (0x7f) strictly before the replacement word's bytes, the delivery marks ordered (chunks-sent → commit-sent → flip-armed → flip-released after its honest cause), the frozen CLIPBOARD sentinel; rows to adr-008-spike-log.md — the code rides 10-17, the LIVE rows are 10-18's work (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case term-word-drain"
 
+[tasks.e2e-term-dst-apply]
+description = "e2e: 10-13 continuation term-dst-apply — the round-6 DST-apply matrix: warm-gated probe-delete (-6,6) apply cells on wezterm-nightly and gnome-terminal/VTE (the RAW pty delta answers honored/ignored/partial — erase bytes 0x7f/0x08 after the typed token) plus the full choreography ghbdtn → DST(6) → 1 s drain-delay → probe-commit привет twice (the byte-order and final-line oracle); every emission rides a Require-witness materialization gate (DST never emitted into an unproven context — the 10-16 bisection discipline) and carries the gnome-shell survival witness; rows to adr-008-spike-log.md round-6 section — the routing input of the round-6 verdict (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-dst-apply"
+
 # The round-5 host self-drive instrument (the wezterm double-delete hunt):
 # this task is the DRY-RUN only — preconditions + parser self-check, zero
 # injections, zero writes (safe anywhere, including headless). The LIVE

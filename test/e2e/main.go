@@ -172,6 +172,7 @@ func caseListUsage() string {
 		" | term-word-vte-flip" +
 		" | term-cap-delivery" +
 		" | term-word-drain" +
+		" | term-dst-apply" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -356,7 +357,7 @@ func pickCase(name string) (caseSpec, error) {
 			" autocorrect-blocklist-silent, menu-v2,"+
 			" term-word-vte, term-negative-witnesses,"+
 			" term-word-wezterm, term-word-vte-flip,"+
-			" term-cap-delivery, term-word-drain,"+
+			" term-cap-delivery, term-word-drain, term-dst-apply,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 
@@ -430,6 +431,13 @@ func caseRegistry() map[string]caseSpec {
 		// three daemon restarts plus three fixture+observer rounds ride
 		// inside the budget.
 		"term-word-drain": {fn: runTermWordDrain, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		// term-dst-apply (the 10-13 scope continuation, round-6): the DST
+		// apply matrix — two warm-gated apply cells (wezterm, VTE) plus the
+		// twice-repeated DST→drain-delay→commit choreography on wezterm,
+		// each on a RAW pty capture with the shell-survival witness per
+		// row, so four fixture cycles plus the daemon/config setup ride
+		// inside the budget.
+		"term-dst-apply": {fn: runTermDstApply, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-negative-witnesses": {
 			fn:                 runTermNegativeWitnesses,
 			noSurfacePreflight: true,
