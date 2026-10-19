@@ -109,7 +109,9 @@ func dmRunTerminalRound(t *testing.T, a *session.Actor, word string) {
 
 // TestDeliveryBurst_WindowRowsBracketTheWire pins the bracket: one terminal
 // round lands exactly one burst-window open before chunks-sent and one
-// close after commit-sent, with the forward count riding both.
+// close after commit-sent, with the forward count riding both — round-6:
+// every BackSpace is a press+release pair, so the emitted forward count is
+// 2×keys (the rows also carry the rune-true "keys" attribute).
 func TestDeliveryBurst_WindowRowsBracketTheWire(t *testing.T) {
 	buf := captureLogs(t)
 	a, _ := wiredActor()
@@ -123,9 +125,9 @@ func TestDeliveryBurst_WindowRowsBracketTheWire(t *testing.T) {
 		if r.stage != dmBurstStage {
 			continue
 		}
-		if !r.hasForwards || r.forwards != len(wordEN) {
+		if !r.hasForwards || r.forwards != 2*len(wordEN) {
 			t.Fatalf("burst-window %s forwards = %d (present=%v), want %d; line:\n%s",
-				r.phase, r.forwards, r.hasForwards, len(wordEN), r.line)
+				r.phase, r.forwards, r.hasForwards, 2*len(wordEN), r.line)
 		}
 		switch r.phase {
 		case "open":

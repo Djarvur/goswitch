@@ -49,16 +49,26 @@ const defaultVerifyWait = 100 * time.Millisecond
 const comboMask = engine.MaskControl | engine.MaskMod1 | engine.MaskMod4
 
 // backSpaceKeycode is the physical keycode of the Backspace key — the
-// keycode half of the level-2 replay ForwardKeyEvent(KeyBackSpace, 14, 0)
+// keycode half of the level-2 replay's press+release PAIRS
+// ForwardKeyEvent(KeyBackSpace, 14, 0)/(KeyBackSpace, 14, MaskRelease)
 // (RESEARCH Pattern 1; the keyval half is engine.KeyBackSpace).
 const backSpaceKeycode = 14
 
 // terminalChunkKeys is the chunk ceiling of the terminal write branch
 // (plan 10-04, TERM-02, ROADMAP criterion 4): the BackSpace replay is
-// emitted in bursts of at most this many keys with a context re-check
+// emitted in bursts of at most this many PAIRS (round-6: one pair = one
+// press + one release forward of the same key) with a context re-check
 // between chunks — a mid-burst focus loss can never cost more than one
 // chunk, and the IME queue's loss window stays bounded (T-10-04-03).
 const terminalChunkKeys = 8
+
+// forwardEmissionsPerKey is the round-6 pair arity: one BackSpace key rides
+// exactly TWO ForwardKeyEvent emissions — the press and the release that
+// disarms the client's own key repeat. The delivery marks report the wire
+// emission count (keys×arity) alongside the rune-true key count, and every
+// pacing-budget arithmetic (the burst's own quanta, the key-hold bound)
+// multiplies by it.
+const forwardEmissionsPerKey = 2
 
 // focusFlapWindow is the flap-pair window of the DEFERRED verify-dead wipe
 // (plan 10-07, G-10-1 cause A): a real FocusOut whose FocusIn comes back
@@ -127,8 +137,9 @@ const defaultTerminalDrainSettle = 150 * time.Millisecond
 
 // keyHoldSlack is the scheduling slack of the key-hold bound (CR-02): the
 // parked keystroke's wait is terminalDrainSettle + the machine's whole
-// pacing budget (cap×gap — a keystroke may catch the FIRST chunk-boundary
-// Gosched window of a maximum-cap burst) plus this quantum for the commit's
+// pacing budget (cap×2×gap — round-6: press AND release quanta per key; a
+// keystroke may catch the FIRST chunk-boundary Gosched window of a
+// maximum-cap burst) plus this quantum for the commit's
 // own bookkeeping and the goroutine handoffs. A bound, never an eternity:
 // past it the hold degrades loudly to arrival processing (keys are never
 // lost — the owner's typing is sacred), accepting the pre-fix inversion for
@@ -4078,9 +4089,10 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 
 // executeLevel2 runs the ladder's Backspace level: the plan's Backspaces —
 // counted in runes by BuildPlan, the tail included — replayed as
-// ForwardKeyEvent(BackSpace) in chunks of at most terminalChunkKeys with
-// context re-checks, followed by ONE commit of the converted token plus
-// the tail. The burst→commit order is the wire contract (research A4: the
+// press+release PAIRS of ForwardKeyEvent(BackSpace) (round-6: a press-only
+// forward arms the client's own key repeat) in chunks of at most
+// terminalChunkKeys PAIRS with context re-checks, followed by ONE commit of
+// the converted token plus the tail. The burst→commit order is the wire contract (research A4: the
 // daemon preserves it for every client). The write branch serves two
 // callers: the legacy no-caps degradation (ADR-003) and — owner verdict
 // OQ 1 «unified» — the whole terminal class, which may ANNOUNCE the
@@ -4135,9 +4147,13 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		// its close pairs on EVERY exit (the free abort closes with
 		// forwards=0, the commit path with the emitted count). The frozen
 		// grep-forms keep matching; the attributes extend, never rename.
+		// Round-6: every BackSpace rides a press+release pair, so the
+		// emitted FORWARD count is 2×keys — the rows carry both ("keys" is
+		// the rune-true BackSpace count, "forwards" the wire emissions).
 		a.emissionSeq++
 		a.deliveryStart = time.Now()
-		a.deliveryMark("burst-window", "phase", "open", "forwards", plan.Backspaces)
+		a.deliveryMark("burst-window", "phase", "open",
+			"forwards", forwardEmissionsPerKey*plan.Backspaces, "keys", plan.Backspaces)
 	}
 	if a.replayBurst(eng, plan.Backspaces, gen, sleep) {
 		if terminal {
@@ -4159,15 +4175,16 @@ func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.
 		// («msg correction, outcome done») keep matching; the attributes
 		// extend, never rename.
 		a.deliveryMark("chunks-sent",
-			"forwards", plan.Backspaces,
-			"pacing_ms", (time.Duration(plan.Backspaces) * a.level2ForwardGap).Milliseconds())
+			"forwards", forwardEmissionsPerKey*plan.Backspaces, "keys", plan.Backspaces,
+			"pacing_ms", (forwardEmissionsPerKey * time.Duration(plan.Backspaces) * a.level2ForwardGap).Milliseconds())
 	} else {
 		sleep(a.level2ForwardGap) // the legacy branch, byte as today
 	}
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
 	if terminal {
 		a.deliveryMark("commit-sent", "latency_ms", time.Since(armed).Milliseconds())
-		a.deliveryMark("burst-window", "phase", "close", "forwards", plan.Backspaces, "outcome", "committed")
+		a.deliveryMark("burst-window", "phase", "close",
+			"forwards", forwardEmissionsPerKey*plan.Backspaces, "keys", plan.Backspaces, "outcome", "committed")
 	}
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
@@ -4229,14 +4246,27 @@ func (a *Actor) freeAbortBeforeFirstForward(gen uint64) bool {
 }
 
 // replayBurst emits the plan's BackSpace forwards — chunked at
-// terminalChunkKeys with the context re-checks between chunks (plan 10-04)
-// — and reports whether the round took the free stop BEFORE its first
-// forward (plan 10-17). A generation change after the first destructive
-// key is loud but no longer fatal (the chunk-boundary mark): the round can
-// only go forward to its commit on the captured snapshot — the old
-// criterion-4 stop (no commit after forwards) is replaced by the ADR-008
-// amendment (6): a deletion without its replacement is the one outcome the
-// machine may never produce. The caller holds the mutex.
+// terminalChunkKeys (PAIRS per chunk, round-6) with the context re-checks
+// between chunks (plan 10-04) — and reports whether the round took the free
+// stop BEFORE its first forward (plan 10-17). Every BackSpace rides a
+// press+release PAIR on the pacing seam (round-6, the ADR-008 amendment
+// (7)): a press-only forward ARMS the client's own key repeat — wezterm
+// e2a98e1b sets KeyRepeatState on every repeatable-key press
+// (window.rs:1194-1206) and disarms it ONLY on the same key's release,
+// another key's press or a keyboard focus Enter/Leave; with no release the
+// armed repeat fires after the GNOME repeat-delay (default 500 ms) at ~30 Hz
+// and deletes the committed word — the host defect «появилось и исчезло»
+// (.planning/debug/2026-10-19-wezterm-repeat-sourcedig.md). The pair shape
+// is ProbeForward's discipline (probe.go:179-183): press (state 0), one
+// pacing gap, release (state MaskRelease) — the release lands one gap tick
+// (20 ms default) after its press, far inside the 500 ms arming window, and
+// the inter-PAIR pacing keeps the level2ForwardGap rhythm. A generation
+// change after the first destructive key is loud but no longer fatal (the
+// chunk-boundary mark): the round can only go forward to its commit on the
+// captured snapshot — the old criterion-4 stop (no commit after forwards)
+// is replaced by the ADR-008 amendment (6): a deletion without its
+// replacement is the one outcome the machine may never produce. The caller
+// holds the mutex.
 func (a *Actor) replayBurst(eng engine.Emitter, backspaces int, gen uint64, sleep func(time.Duration)) bool {
 	emitted := 0
 	for sent := 0; sent < backspaces; {
@@ -4250,6 +4280,8 @@ func (a *Actor) replayBurst(eng engine.Emitter, backspaces int, gen uint64, slee
 				return true
 			}
 			eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
+			sleep(a.level2ForwardGap)
+			eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, engine.MaskRelease)
 			emitted++
 		}
 		sent += chunk
@@ -4391,13 +4423,15 @@ func (a *Actor) holdDuringDelivery(ev engine.EngineEvent) bool {
 // settle: the mutex is RELEASED for the wait — the machine needs it to
 // finish (its pacing sleeps hold it) — and re-taken on return. The bound
 // covers the machine's whole worst case (the drain window plus a full-cap
-// burst's pacing plus one slack quantum — a keystroke may catch the first
+// burst's pacing — round-6: every key rides TWO pacing quanta, press and
+// release — plus one slack quantum; a keystroke may catch the first
 // chunk-boundary Gosched window of a maximum burst), so an expiry is a
 // pathological overrun, never routine. Returns whether the machine settled.
 // The caller holds the mutex on entry and on return.
 func (a *Actor) awaitDeliverySettle() bool {
 	done := a.machineDone
-	bound := a.terminalDrainSettle + time.Duration(a.backspaceCap())*a.level2ForwardGap + keyHoldSlack
+	bound := a.terminalDrainSettle +
+		forwardEmissionsPerKey*time.Duration(a.backspaceCap())*a.level2ForwardGap + keyHoldSlack
 	a.mu.Unlock()
 	timer := time.NewTimer(bound)
 	select {

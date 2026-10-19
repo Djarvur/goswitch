@@ -838,24 +838,64 @@ func TestActor_PhraseVerifyMismatch(t *testing.T) {
 	}
 }
 
-// backSpaceOp is the unified op-log entry of one level-2 Backspace replay:
-// keyval 0xff08, physical keycode 14, no modifiers (RESEARCH Pattern 1 — the
-// wire contract the actor must emit verbatim).
+// backSpaceOp is the unified op-log entry of one level-2 Backspace replay's
+// PRESS half: keyval 0xff08, physical keycode 14, no modifiers (RESEARCH
+// Pattern 1 — the wire contract the actor must emit verbatim).
 func backSpaceOp() string {
 	return fmt.Sprintf("forward(%d,%d,%d)", engine.KeyBackSpace, 14, 0)
 }
 
-// backSpaceWireCall is the recorded-argument form of the same replay.
+// backSpaceReleaseOp is the RELEASE half of the same replay (round-6): the
+// same key with exactly MaskRelease — the emission that disarms the
+// client's own key repeat (probe.go's ProbeForward discipline).
+func backSpaceReleaseOp() string {
+	return fmt.Sprintf("forward(%d,%d,%d)", engine.KeyBackSpace, 14, engine.MaskRelease)
+}
+
+// backSpaceWireCall is the recorded-argument form of the same replay's
+// press half.
 func backSpaceWireCall() forwardCall {
 	return forwardCall{keyval: engine.KeyBackSpace, keycode: 14, state: 0}
 }
 
+// backSpaceReleaseWireCall is the recorded-argument release half (round-6).
+func backSpaceReleaseWireCall() forwardCall {
+	return forwardCall{keyval: engine.KeyBackSpace, keycode: 14, state: engine.MaskRelease}
+}
+
+// backSpacePairOps is the op-log pair of ONE replayed BackSpace: the press
+// immediately followed by its release (round-6 pair discipline).
+func backSpacePairOps() []string {
+	return []string{backSpaceOp(), backSpaceReleaseOp()}
+}
+
+// assertBackSpacePairs fails unless calls is the exact PAIR sequence: one
+// press (state 0) followed by one release (state MaskRelease) per expected
+// BackSpace key — the round-6 wire contract of the whole write branch.
+func assertBackSpacePairs(t *testing.T, calls []forwardCall, keys int, where string) {
+	t.Helper()
+
+	if len(calls) != 2*keys {
+		t.Fatalf("%s: forward count = %d, want %d (a press+release pair per BackSpace)",
+			where, len(calls), 2*keys)
+	}
+	for i := 0; i < len(calls); i += 2 {
+		if calls[i] != backSpaceWireCall() {
+			t.Fatalf("%s: pair[%d] press = %+v, want %+v", where, i/2, calls[i], backSpaceWireCall())
+		}
+		if calls[i+1] != backSpaceReleaseWireCall() {
+			t.Fatalf("%s: pair[%d] release = %+v, want %+v — the release disarms the client's "+
+				"key repeat", where, i/2, calls[i+1], backSpaceReleaseWireCall())
+		}
+	}
+}
+
 // burstOps builds the unified op-log suffix of a level-2 correction: n
-// Backspace forwards followed by the single replacement commit.
+// Backspace press+release pairs followed by the single replacement commit.
 func burstOps(n int, commit string) []string {
-	ops := make([]string, 0, n+1)
+	ops := make([]string, 0, 2*n+1)
 	for range n {
-		ops = append(ops, backSpaceOp())
+		ops = append(ops, backSpacePairOps()...)
 	}
 
 	return append(ops, "commit("+commit+")")
@@ -865,11 +905,11 @@ func burstOps(n int, commit string) []string {
 // surrounding-text bit (CORR-07, the ADR-004 degradation): verification is
 // impossible, so the correction trusts the buffer plus the explicit CORR-09
 // reset triggers and executes IMMEDIATELY at the Double decision — zero
-// RequireSurroundingText calls, exactly six ForwardKeyEvent(BackSpace)
-// replays (one per RUNE of the token, Pitfall 2) and one CommitText of the
-// converted word, the burst→commit order pinned by the unified op log. This
-// test supersedes the 02-03 "no-surrounding" refusal pin: level 2 IS the
-// replacement for that skip.
+// RequireSurroundingText calls, exactly six BackSpace press+release PAIRS
+// (one pair per RUNE of the token, Pitfall 2; round-6) and one CommitText
+// of the converted word, the burst→commit order pinned by the unified op
+// log. This test supersedes the 02-03 "no-surrounding" refusal pin: level 2
+// IS the replacement for that skip.
 func TestActor_Level2NoCaps(t *testing.T) {
 	buf := captureLogs(t)
 	a, sink := wiredActorCaps(engine.CapPreeditText) // no CapSurroundingText
@@ -915,17 +955,10 @@ func TestActor_Level2WithTailAndRunes(t *testing.T) {
 	if got := sink.requireCount(); got != 0 {
 		t.Fatalf("no-caps client was asked for surrounding text %d times, want 0", got)
 	}
-	forwards := sink.forwardCalls()
-	if len(forwards) != tokenRunes+tailRunes {
-		t.Fatalf("forward count = %d, want %d (token+tail in RUNES, not bytes)", len(forwards), tokenRunes+tailRunes)
-	}
-	for i, call := range forwards {
-		if want := backSpaceWireCall(); call != want {
-			t.Errorf("forward %d = %+v, want %+v", i, call, want)
-		}
-	}
+	assertBackSpacePairs(t, sink.forwardCalls(), tokenRunes+tailRunes,
+		"token+tail in RUNES, not bytes — one press+release pair per rune")
 	ops := sink.opLog()
-	burst := ops[len(ops)-(tokenRunes+tailRunes+1):] // the 7 forwards + the commit
+	burst := ops[len(ops)-(2*(tokenRunes+tailRunes)+1):] // the 7 pairs + the commit
 	if want := burstOps(tokenRunes+tailRunes, wordEN+" "); !slices.Equal(burst, want) {
 		t.Fatalf("op-log tail = %q, want %q — burst→commit order", burst, want)
 	}
@@ -2759,9 +2792,9 @@ func TestActor_HotReloadOptionsAndCombo(t *testing.T) {
 		tapShift(a)
 		tapShift(a)
 		a.ExpiryAt(expiryAfterWindow)
-		if got := len(sink.forwardCalls()); got != len([]rune(wordEN)) {
-			t.Errorf("post-reload burst replayed %d Backspaces, want %d — the new cap governs",
-				got, len([]rune(wordEN)))
+		if got := len(sink.forwardCalls()); got != 2*len([]rune(wordEN)) {
+			t.Errorf("post-reload burst replayed %d forwards, want %d (pairs for %d Backspaces) — "+
+				"the new cap governs", got, 2*len([]rune(wordEN)), len([]rune(wordEN)))
 		}
 	})
 
@@ -7486,7 +7519,9 @@ func TestTerminalBranch_FlapPairBetweenChunksCommits(t *testing.T) {
 	var landed sync.Once
 	sent := atomic.Int32{}
 	sink.forwardHook = func(forwardCall) {
-		if sent.Add(1) == termChunkKeys {
+		// 2×termChunkKeys emissions = the FIRST chunk's pairs complete
+		// (round-6: one key = press + release) — the boundary moment.
+		if sent.Add(1) == 2*termChunkKeys {
 			landed.Do(func() {
 				go func() {
 					a.HandleLifecycle(engine.LifecycleFocusOut)
@@ -7500,9 +7535,9 @@ func TestTerminalBranch_FlapPairBetweenChunksCommits(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	if n := len(sink.forwardCalls()); n != len([]rune(termWord20)) {
+	if n := len(sink.forwardCalls()); n != 2*len([]rune(termWord20)) {
 		t.Fatalf("forwards = %d, want %d — a mid-flow generation change must not stop the burst "+
-			"after the first destructive key", n, len([]rune(termWord20)))
+			"after the first destructive key", n, 2*len([]rune(termWord20)))
 	}
 	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != termWord20Converted {
 		t.Fatalf("commits = %q, want exactly one %q — a deletion without its replacement is the one "+
@@ -7851,11 +7886,11 @@ const termChunkKeys = 8
 // correction: chunks of at most 8 BackSpace forwards, then the single
 // replacement commit.
 func termChunkOps(total int, commit string) []string {
-	ops := make([]string, 0, total+1)
+	ops := make([]string, 0, 2*total+1)
 	for sent := 0; sent < total; {
 		chunk := min(termChunkKeys, total-sent)
 		for range chunk {
-			ops = append(ops, backSpaceOp())
+			ops = append(ops, backSpacePairOps()...)
 		}
 		sent += chunk
 	}
@@ -7953,7 +7988,9 @@ func TestTerminalBranch_FocusLossAfterFirstForwardCommits(t *testing.T) {
 	var landed sync.Once
 	sent := atomic.Int32{}
 	sink.forwardHook = func(forwardCall) {
-		if sent.Add(1) == termChunkKeys {
+		// 2×termChunkKeys emissions = the FIRST chunk's pairs complete
+		// (round-6) — the mid-flow moment after the first destructive key.
+		if sent.Add(1) == 2*termChunkKeys {
 			landed.Do(func() {
 				go func() {
 					a.HandleLifecycle(engine.LifecycleFocusOut) // the generation moves mid-flow
@@ -7967,15 +8004,11 @@ func TestTerminalBranch_FocusLossAfterFirstForwardCommits(t *testing.T) {
 	a.ExpiryAt(expiryAfterWindow)
 
 	forwards := sink.forwardCalls()
-	if len(forwards) != len([]rune(termWord20)) {
+	if len(forwards) != 2*len([]rune(termWord20)) {
 		t.Fatalf("forwards = %d, want %d — a mid-flow generation change must not stop the burst",
-			len(forwards), len([]rune(termWord20)))
+			len(forwards), 2*len([]rune(termWord20)))
 	}
-	for i, c := range forwards {
-		if c != backSpaceWireCall() {
-			t.Fatalf("forward[%d] = %+v, want a bare BackSpace replay", i, c)
-		}
-	}
+	assertBackSpacePairs(t, forwards, len([]rune(termWord20)), "the commit's own replay")
 	if texts := sink.commitTexts(); len(texts) != 1 || texts[0] != termWord20Converted {
 		t.Fatalf("commits = %q, want exactly one %q on the captured snapshot — the deletion already "+
 			"on the wire must always be followed by its replacement", texts, termWord20Converted)
@@ -8168,12 +8201,8 @@ func TestTerminalBranch_VerifyAfterNoRungOnMismatch(t *testing.T) {
 	}
 	a.HandleSurroundingText(mismatch, runeLen(mismatch), runeLen(mismatch))
 
-	for i, c := range sink.forwardCalls() {
-		if c != backSpaceWireCall() {
-			t.Fatalf("forward[%d] = %+v, want a bare BackSpace — a terminal mismatch must never "+
-				"forward a paste chord (ADR-008 D4)", i, c)
-		}
-	}
+	assertBackSpacePairs(t, sink.forwardCalls(), len([]rune(wordEN)),
+		"a terminal mismatch must never forward a paste chord (ADR-008 D4) — BackSpace pairs only")
 	if seq := runner.sequence(); len(seq) != 0 {
 		t.Errorf("clipboard subprocesses = %q, want none — the rung is forbidden by construction", seq)
 	}
@@ -8211,11 +8240,8 @@ func TestTerminalBranch_VerifyDeadQuietTimeout(t *testing.T) {
 	if got := sink.requireCount(); got != 2 {
 		t.Errorf("requires after the timeout = %d, want 2 — no repeats", got)
 	}
-	for i, c := range sink.forwardCalls() {
-		if c != backSpaceWireCall() {
-			t.Fatalf("forward[%d] = %+v, want a bare BackSpace — no paste load on the timeout path", i, c)
-		}
-	}
+	assertBackSpacePairs(t, sink.forwardCalls(), len([]rune(wordEN)),
+		"no paste load on the timeout path — BackSpace pairs only")
 }
 
 // TestTerminalBranch_VerifyAfterQuietConfirm pins the honest-client side: a
@@ -8243,8 +8269,8 @@ func TestTerminalBranch_VerifyAfterQuietConfirm(t *testing.T) {
 	if got := sink.requireCount(); got != 1 {
 		t.Errorf("requires = %d, want 1 — the match settles without a re-require", got)
 	}
-	if got := len(sink.forwardCalls()); got != len(wordEN) {
-		t.Errorf("forwards = %d, want %d — the confirmation emits nothing", got, len(wordEN))
+	if got := len(sink.forwardCalls()); got != 2*len(wordEN) {
+		t.Errorf("forwards = %d, want %d — the confirmation emits nothing", got, 2*len(wordEN))
 	}
 }
 
@@ -8254,9 +8280,12 @@ func TestTerminalBranch_VerifyAfterQuietConfirm(t *testing.T) {
 // IM queue — the client drains forwarded keys lazily (they queue as GDK
 // events) while the commit lands synchronously, so the live row turned
 // "ghbdtn" into "ghприв" (four erases, the commit, two late erases). The
-// branch must sleep its pacing quantum BEFORE EVERY forward and BEFORE the
-// commit: the merged wire timeline is sleep→forward→…→sleep→commit through
-// the actor's sleeper seam (the UseRole form).
+// branch must sleep its pacing quantum BEFORE EVERY emission — round-6:
+// every BackSpace is a press+release PAIR, so the merged wire timeline is
+// sleep→press→sleep→release→…→sleep→commit through the actor's sleeper
+// seam (the UseLevel2Sleeper form); the release's own pacing tick keeps it
+// one gap (20 ms default) behind its press — far inside the 500 ms window
+// in which a client's armed key repeat would fire.
 func TestTerminalBranch_Level2PacesWire(t *testing.T) {
 	a, sink := wiredActorCaps(engine.CapPreeditText) // no CapSurroundingText — the write branch
 
@@ -8268,7 +8297,14 @@ func TestTerminalBranch_Level2PacesWire(t *testing.T) {
 	a.UseLevel2Sleeper(func(d time.Duration) {
 		record(fmt.Sprintf("sleep(%s)", d))
 	})
-	sink.forwardHook = func(forwardCall) { record(backSpaceOp()) }
+	sink.forwardHook = func(c forwardCall) {
+		if c.state&engine.MaskRelease != 0 {
+			record(backSpaceReleaseOp())
+
+			return
+		}
+		record(backSpaceOp())
+	}
 	sink.commitHook = func(text string) { record("commit(" + text + ")") }
 
 	typeWord(a, wordEN)
@@ -8276,9 +8312,10 @@ func TestTerminalBranch_Level2PacesWire(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	want := make([]string, 0, 2*len([]rune(wordEN))+2)
+	want := make([]string, 0, 4*len([]rune(wordEN))+2)
 	for range len([]rune(wordEN)) {
-		want = append(want, fmt.Sprintf("sleep(%s)", gap), backSpaceOp())
+		want = append(want, fmt.Sprintf("sleep(%s)", gap), backSpaceOp(),
+			fmt.Sprintf("sleep(%s)", gap), backSpaceReleaseOp())
 	}
 	want = append(want, fmt.Sprintf("sleep(%s)", gap), "commit("+wordRU+")")
 	if !slices.Equal(wire, want) {
@@ -8441,8 +8478,8 @@ func TestTerminalBranch_FlipDeferredUntilConfirmed(t *testing.T) {
 	if got := sink.requireCount(); got != 1 {
 		t.Errorf("requires = %d, want 1 — the release requires nothing", got)
 	}
-	if got := len(sink.forwardCalls()); got != len([]rune(wordEN)) {
-		t.Errorf("forwards = %d, want %d — the confirmation replayed nothing", got, len([]rune(wordEN)))
+	if got := len(sink.forwardCalls()); got != 2*len([]rune(wordEN)) {
+		t.Errorf("forwards = %d, want %d — the confirmation replayed nothing", got, 2*len([]rune(wordEN)))
 	}
 }
 
@@ -9229,8 +9266,8 @@ func TestCorrectionBusy_SecondEntrySkipsNotSecondBurst(t *testing.T) {
 		t.Errorf("commits = %d, want exactly 1 — a second destructive burst replayed over the same "+
 			"un-replaced buffer (WR-01)", len(texts))
 	}
-	if got := len(sink.forwardCalls()); got != len([]rune(termWord20)) {
-		t.Errorf("forwards = %d, want exactly %d — one burst, never two", got, len([]rune(termWord20)))
+	if got := len(sink.forwardCalls()); got != 2*len([]rune(termWord20)) {
+		t.Errorf("forwards = %d, want exactly %d — one burst, never two", got, 2*len([]rune(termWord20)))
 	}
 	if got := strings.Count(logged, `"msg":"correction","outcome":"done","changed":true`); got != 1 {
 		t.Errorf("done records = %d, want exactly 1; log:\n%s", got, logged)
@@ -9879,9 +9916,15 @@ func (c *replayWezterm) tick(d time.Duration) {
 	c.applyDue()
 }
 
-// forward records one queued BackSpace at the current machine time (the
-// sink's forwardHook callback).
-func (c *replayWezterm) forward() {
+// forward records one queued BackSpace PRESS at the current machine time
+// (the sink's forwardHook callback). Round-6 pair discipline: the release
+// half of a pair is a wire no-op for the terminal's field — a real client
+// erases on the keypress and ignores the release — so only presses join
+// the lag queue (a pair-unaware model would erase twice per key).
+func (c *replayWezterm) forward(call forwardCall) {
+	if call.state&engine.MaskRelease != 0 {
+		return
+	}
 	c.arrivals = append(c.arrivals, c.clock)
 }
 
@@ -9946,7 +9989,7 @@ func replayRow(t *testing.T, lag time.Duration) *replayRowEnv {
 	a.UseFlipTimer(clock.arm)
 	client := &replayWezterm{field: []rune(replayTailWord), lag: lag}
 	a.UseLevel2Sleeper(client.tick)
-	sink.forwardHook = func(forwardCall) { client.forward() }
+	sink.forwardHook = func(call forwardCall) { client.forward(call) }
 	sink.commitHook = client.commit
 
 	typeWord(a, replayTailWord)
@@ -10072,7 +10115,7 @@ func replayReleaseWiring(t *testing.T) *replayRowEnv {
 	a.UseFlipTimer(clock.arm)
 	client := &replayWezterm{field: []rune(replayTailWord), lag: replayDrainedLag}
 	a.UseLevel2Sleeper(client.tick)
-	sink.forwardHook = func(forwardCall) { client.forward() }
+	sink.forwardHook = func(call forwardCall) { client.forward(call) }
 	sink.commitHook = client.commit
 
 	return &replayRowEnv{a: a, sink: sink, probe: probe, clock: clock, client: client, buf: buf}
@@ -10224,7 +10267,7 @@ func TestReplayWezterm1921_FlipFalseByteStable(t *testing.T) {
 	a.UseFlipTimer(clock.arm)
 	client := &replayWezterm{field: []rune(replayTailWord), lag: replayDrainedLag}
 	a.UseLevel2Sleeper(client.tick)
-	sink.forwardHook = func(forwardCall) { client.forward() }
+	sink.forwardHook = func(call forwardCall) { client.forward(call) }
 	sink.commitHook = client.commit
 	opsBefore := len(sink.opLog()) // the teaching round's own records stay out
 
@@ -10258,7 +10301,7 @@ func generationBumpHook(a *session.Actor, fresh *fakeSink, client *replayWezterm
 	var landed sync.Once
 	sent := atomic.Int32{}
 
-	return func(forwardCall) {
+	return func(call forwardCall) {
 		if sent.Add(1) == 1 {
 			landed.Do(func() {
 				go func() {
@@ -10267,7 +10310,7 @@ func generationBumpHook(a *session.Actor, fresh *fakeSink, client *replayWezterm
 				}()
 			})
 		}
-		client.forward()
+		client.forward(call)
 	}
 }
 
@@ -10299,9 +10342,9 @@ func TestReplayWezterm1921_ContextChangeAfterFirstForwardCommits(t *testing.T) {
 	tapShift(a)
 	a.ExpiryAt(expiryAfterWindow)
 
-	if n := len(sink.forwardCalls()); n != len([]rune(termWord20)) {
+	if n := len(sink.forwardCalls()); n != 2*len([]rune(termWord20)) {
 		t.Fatalf("forwards = %d, want %d — a mid-flow generation change must not stop the burst after "+
-			"the first destructive key", n, len([]rune(termWord20)))
+			"the first destructive key", n, 2*len([]rune(termWord20)))
 	}
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != termWord20Converted {
@@ -10352,7 +10395,7 @@ func TestReplayWezterm1921_ContextChangeBeforeFirstForwardStops(t *testing.T) {
 		}
 		client.tick(d)
 	})
-	sink.forwardHook = func(forwardCall) { client.forward() }
+	sink.forwardHook = func(call forwardCall) { client.forward(call) }
 	sink.commitHook = client.commit
 
 	typeWord(a, termWord20)
@@ -10385,13 +10428,16 @@ func TestReplayWezterm1921_BusyGuardCoversDeliveryWindow(t *testing.T) {
 	a, sink := wiredActor()
 	teachTerminalClass(t, a)
 
-	// Park the machine inside the delivery window: the word is 7 forwards
-	// (7 pacing sleeps), the window's own wait is the 8th sleep.
+	// Park the machine inside the delivery window: the word is 7 BackSpace
+	// PAIRS (round-6: 14 pacing sleeps — press and release quanta per key),
+	// the window's own wait is the 15th sleep (the ONLY burst-adjacent sleep
+	// that releases the actor mutex — parking on a mid-burst sleep would
+	// hold the lock and starve the second entry instead of refusing it).
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var sleeps atomic.Int64
 	a.UseLevel2Sleeper(func(time.Duration) {
-		if sleeps.Add(1) == int64(len([]rune(replayTailWord))+1) {
+		if sleeps.Add(1) == int64(2*len([]rune(replayTailWord))+1) {
 			close(started)
 			<-release
 		}
@@ -10434,8 +10480,8 @@ func TestReplayWezterm1921_BusyGuardCoversDeliveryWindow(t *testing.T) {
 		t.Errorf("commits = %q, want exactly one %q — a second destructive burst must never ride the "+
 			"window", texts, replayTailConverted)
 	}
-	if got := len(sink.forwardCalls()); got != len([]rune(replayTailWord)) {
-		t.Errorf("forwards = %d, want exactly %d — one burst, never two", got, len([]rune(replayTailWord)))
+	if got := len(sink.forwardCalls()); got != 2*len([]rune(replayTailWord)) {
+		t.Errorf("forwards = %d, want exactly %d — one burst, never two", got, 2*len([]rune(replayTailWord)))
 	}
 }
 
@@ -10508,7 +10554,11 @@ func parkRoundInDrainWindow(t *testing.T, a *session.Actor, round func()) *drain
 	release := make(chan struct{})
 	var sleeps atomic.Int64
 	a.UseLevel2Sleeper(func(time.Duration) {
-		if sleeps.Add(1) == int64(len([]rune(replayTailWord))+1) {
+		// Round-6 pair arithmetic: the 7-key burst sleeps 2×7 pacing quanta
+		// (press + release per key, mutex HELD); the settle window's own
+		// sleep is the 15th — the only one that releases the mutex, so the
+		// park lets the corpus's lifecycle/combo traffic actually land.
+		if sleeps.Add(1) == int64(2*len([]rune(replayTailWord))+1) {
 			close(started)
 			<-release
 		}
@@ -10581,8 +10631,8 @@ func TestReplayWezterm1921_GestureFlipDuringWindowParksNotSwitches(t *testing.T)
 
 	// The correction itself landed — the deletion-without-replacement is
 	// absent at the unit seam: exactly one burst, the replacement first.
-	if got := len(sink.forwardCalls()); got != len([]rune(replayTailWord)) {
-		t.Errorf("forwards = %d, want exactly %d — one burst", got, len([]rune(replayTailWord)))
+	if got := len(sink.forwardCalls()); got != 2*len([]rune(replayTailWord)) {
+		t.Errorf("forwards = %d, want exactly %d — one burst", got, 2*len([]rune(replayTailWord)))
 	}
 	texts := sink.commitTexts()
 	if len(texts) < 1 || texts[0] != replayTailConverted {
