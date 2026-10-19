@@ -478,20 +478,19 @@ func (s *stand) dstApplyCell(ctx context.Context, caseName, ctlBin, client, rowT
 	if serr := sleepCtx(ctx, dstSettleWait); serr != nil {
 		return serr
 	}
-	data, gerr := dstWaitCaptureGrowth(ctx, fx.pty(), offset, dstCaptureWait)
-	var ins dstInspect
-	if gerr == nil {
-		ins = inspectDstDelta(data)
+	// The apply cell's read is WAIT-FREE by design (the run-2 lesson): no
+	// growth IS a valid outcome — the ignored verdict IS the answer — so
+	// the delta is read as-is after the settle, growth or not. Only the
+	// choreography polls for growth (its commit always lands).
+	data, rerr := os.ReadFile(fx.pty())
+	if rerr != nil {
+		return fmt.Errorf("%s: read capture: %w", caseName, rerr)
 	}
-	observed := dstObserved(ctx, client, ins, push, answered, shellAlive(ctx))
-	if gerr != nil {
-		if rerr := dstRow(rowTag, dstApplyCmd, observed, "Verdict: FAIL (pty-дельта не дождалась)"); rerr != nil {
-			return rerr
-		}
-
-		return gerr
-	}
-	if !shellAlive(ctx) {
+	delta := data[min(int64(len(data)), offset):]
+	ins := inspectDstDelta(delta)
+	alive := shellAlive(ctx)
+	observed := dstObserved(ctx, client, ins, push, answered, alive)
+	if !alive {
 		if rerr := dstRow(rowTag, dstApplyCmd, observed,
 			"Verdict: FAIL (gnome-shell НЕ ПЕРЕЖИЛ эмиссию — крах-дата-пойнт)"); rerr != nil {
 			return rerr
