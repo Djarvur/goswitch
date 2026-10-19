@@ -5,11 +5,11 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
 status: verifying
-stopped_at: Completed 10-18-PLAN.md (owner re-acceptance pending)
-last_updated: "2026-10-16T21:56:52.301Z"
+stopped_at: "Completed round-6 paired-forwards fix (10-17 scope): RED fed2a98 / GREEN 33f32c3 / docs 8bd4edc+a6dacba; stand re-pin green; host v1.1.1-226-g8bd4edc installed; awaiting owner selftype word"
+last_updated: "2026-10-19T18:21:17.499Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: fd555a0d1964896862bc7f36f6b3c64314d2304e
+state_head: a6dacba8c0138c1dd064de3c7f02706b60a585d6
 progress:
   total_phases: 5
   completed_phases: 0
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P16 | 18min | 3 tasks | 7 files |
 | Phase 10 P17 | 54min | 3 tasks | 10 files |
 | Phase 10 P18 | 25min | 3 tasks | 4 files |
+| Phase 10 P17 | 74m | 7 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -136,8 +137,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-16T21:56:24.264Z
-Stopped at: Completed 10-18-PLAN.md (owner re-acceptance pending)
+Last session: 2026-10-19T18:21:17.439Z
+Stopped at: Completed round-6 paired-forwards fix (10-17 scope): RED fed2a98 / GREEN 33f32c3 / docs 8bd4edc+a6dacba; stand re-pin green; host v1.1.1-226-g8bd4edc installed; awaiting owner selftype word
 Resume file: None
 
 ## Operator Next Steps

@@ -163,3 +163,62 @@ status: complete
 ## Self-Check: PASSED
 
 Все заявленные файлы существуют (case_term_word_drain.go, evidence-20261016-10-17-red-task1.json, mise-задача, амендрмент); все пять коммитов (9631b52, cb0d93c, deee512, 3d6ad07, c877711) найдены в git log; commits=5 измерено `git rev-list --count 65975fb..HEAD`; регресс-рампа и mise run ci зелёные на финальном HEAD; go.mod/go.sum нетронуты; пост-коммитная проверка удалений — пусто на всех пяти коммитах.
+
+---
+
+## Round-6 addendum (2026-10-19): парные форварды — press+release на каждый BackSpace
+
+Sourcedig-вердикт (`.planning/debug/2026-10-19-wezterm-repeat-sourcedig.md`, 0c2fd6e) закрыл
+корень «появилось и исчезло»: press-only форварды взводили клиентский автоповтор wezterm
+(window.rs:1194-1206), стреляющий через GNOME repeat-delay 500 мс. Амендмент (7) ADR-008.
+
+### Коммиты (round-6)
+
+- `fed2a98` test(10-17): RED-пин парной дисциплины + evidence-20261019-10-17-red-pairs.json (RED_EVIDENCE_OK)
+- `33f32c3` feat(10-17): replayBurst пары press+release; весь путь записи (терминальная ветка, legacy ADR-003, диверсия DST-гарда 10-16); корпус парный; mise run ci зелёный
+- `8bd4edc` docs(10-17): амендмент (7) ADR-008 + стенд re-pin секция round-6 (4 кейса зелёные, честные aborted-ряды интерференции зонда 10-13 сохранены)
+- `a6dacba` docs(10-17): установка v1.1.1-226-g8bd4edc на хост + selftype-гейт (DEBUG Closure validation round-6 + 10-UAT Current Test №6)
+
+### Что изменилось в коде
+
+- actor.go replayBurst: press → sleep(level2ForwardGap) → release (MaskRelease) на каждый ключ;
+  межпарный пейсинг сохранён; terminalChunkKeys считает ПАРЫ; forwardEmissionsPerKey=2 —
+  delivery-метки (forwards=2×keys + новый атрибут keys), pacing_ms, бюджет awaitDeliverySettle.
+- Корпус: burstOps/termChunkOps парные; replayWezterm-модель игнорирует release (пара = один
+  backspace в pty — оракул drain-кейса не менялся); парки спящего шва на 2N+1-й тик (окно
+  drain-settle, мьютекс освобождён — mid-burst парк держал бы лок, найден DEADLOCK'ом в GREEN);
+  счётчики 2N по всему реплей-корпусу; deliverymarks — forwards=2×keys.
+
+### Аудит форвард-сайтов (итог)
+
+- actor.go:4252 replayBurst — БЫЛ press-only (дефект) → ИСПРАВЛЕН парами (единственный нарушитель).
+- actor.go:2669-2672 forwardCtrlV — уже пары (эталон).
+- actor.go:2862-2865 терминальная ctrl-ветка — уже пары.
+- actor.go:4459 reemitTransit (CR-02) — правомочно одиночный: переизлучает РЕАЛЬНОЕ событие
+  с его собственным release-битом, не синтезирует press.
+- probe.go:179-183 ProbeForward — уже пары (эталон дисциплины).
+
+### Стенд и хост
+
+- Стенд re-pin: term-word-vte PASS, term-word-vte-flip PASS, term-word-wezterm PASS (после
+  честных aborted-заездов интерференции параллельного DST-зонда 10-13 — его панели/чурн, ничего
+  не убивалось; зонд завершился вердиктом 4f940b0, независимо подтвердившим DST-ветку мёртвой),
+  term-negative-witnesses PASS. pty байт-точность: пара = один 0x7f на символ.
+- Хост: v1.1.1-226-g8bd4edc установлен (unit active, /proc/2096528/exe идентичен, счётчики нули,
+  откат назван); selftype-гейт за владельцем: cd /home/nil/DiskD/W/Djarvur/goswitch && go run ./test/e2e -selftype — одно слово: ОСТАЛОСЬ/ИСЧЕЗЛО.
+
+### Deviations from Plan (round-6)
+
+- Corpus-обновление (work item 3) вошло в GREEN-коммит 33f32c3 вместе с реализацией: раздельные
+  коммиты оставили бы дерево с красным корпусом на RED→GREEN границе — противоречие с
+  директивой зелёной итерации; работа едина (ожидания корпуса суть контракт пар).
+- Два честных DEADLOCK-фикса тест-инфраструктуры в GREEN (Rule 1): парки спящего шва
+  (parkRoundInDrainWindow, BusyGuardCoversDeliveryWindow) считали тики по старой арифметике —
+  парк попадал в mid-burst sleep с зажатым мьютексом; порог 2N+1.
+- Стенд-интерференция зонда 10-13 (4 честных aborted/FAIL-заезда) — не дефикс: уровень-2 машина
+  отработала байт-точно в каждом окне (17:58:47 done level=2 ghbdtn→привет 273 мс); после
+  завершения зонда + ibus re-assert оба кейса зелёные с первого повтора.
+
+## Self-Check round-6: PASSED
+
+Файлы существуют (evidence-20261019-10-17-red-pairs.json; release-dir v1.1.1-226-g8bd4edc с goswitchd+goswitchctl); коммиты fed2a98/33f32c3/8bd4edc/a6dacba в git log; mise run ci зелёный на 33f32c3; пандус реплея зелёный -race; go.mod/go.sum нетронуты (tidy-diff чист); пост-коммитных удалений нет.
