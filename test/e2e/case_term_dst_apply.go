@@ -27,12 +27,18 @@ package main
 //	             final-line net (6 erases remove exactly the token) — the
 //	             construction works end to end only on that shape.
 //
-// The warm-discipline (the safety gate, honored by EVERY cell): a DST
-// emission rides ONLY after a materialization witness — one Require-only
-// ask (R5b-safe in ANY window) answered by a fresh surrounding push, the
-// daemon-side proof the bridge's surrounding state is non-virgin (the exact
-// surrSeen semantic of the 10-16 guard). No witness ⇒ the cell lands an
-// honest row and the case fails — DST is NEVER emitted unmaterialized.
+// The warm-discipline (the safety gate, honored by EVERY cell), in the
+// bisection's own terms: the trigger boundary is TIME from the context's
+// fresh focus_in (crash at +0.49 s — R2/R6b/R7; survive at +1.5 s — R3;
+// survive at +23 s with zero pushes — R4), so the gate holds every DST
+// until the journal's last focus_in is ≥ 3 s old, with the TYPED TOKEN
+// (real keys through the context — the mandate's materialization shape)
+// as the precondition. The Require-only ask is attempted too (R5b-safe in
+// ANY window) and its answer RECORDED — but it never gates: the 0x9-class
+// clients (the wezterm 10-06 signature, live in run 1) answer nothing, and
+// a witness they can never produce must not make the matrix unmeasurable.
+// No gate ⇒ the cell lands an honest aborted-warm row and the case fails —
+// DST is NEVER emitted inside an unproven window.
 // gnome-shell survival is recorded per row (the crash, if it ever comes, is
 // a data point — the session dies loudly and the case fails with it).
 // The rows carry outcomes, counters and booleans — never field content
@@ -73,11 +79,15 @@ const (
 	// internal/correct/plan.go — the probe mirrors it verbatim).
 	dstTokenErases = 6
 
-	// dstWarmPushWait bounds the materialization witness: one Require ask,
-	// and the cell waits for a FRESH surrounding push above the newest one.
-	// Expiry ⇒ no DST (the warm-discipline refusal), an honest row, case
-	// failure — safety never degrades into a guess.
-	dstWarmPushWait = 5 * time.Second
+	// dstWarmMinAge is the warm gate's time floor on the context's last
+	// focus_in — the bisection's trigger boundary IS time (crash at
+	// +0.49 s — rows R2/R6b/R7; survive at +1.5 s — row R3, zero pushes;
+	// survive at +23 s — row R4): 3 s is a 2× margin over the pinned
+	// survive point, and the typed token (real keys through the context)
+	// rides before the floor check. dstWarmAgeWait bounds the wait for the
+	// floor (a focus-churn storm delays the mint age; expiry = refusal).
+	dstWarmMinAge  = 3 * time.Second
+	dstWarmAgeWait = 15 * time.Second
 
 	// dstSettleWait is the post-DST settle before the capture read: long
 	// enough for the client to apply (or not), and — honestly — long enough
@@ -304,22 +314,70 @@ func shellAlive(ctx context.Context) bool {
 	return perr == nil && n > 0
 }
 
-// dstWarmGate is the safety gate of EVERY DST emission: one Require-only
-// ask (R5b-safe in any window), then a fresh surrounding push above the
-// newest known one — the daemon-side proof the bridge's surrounding state
-// is materialized (non-virgin). ok=false means the witness never came: the
-// caller MUST NOT emit DST (the honest refusal is the row, not a guess).
-func (s *stand) dstWarmGate(ctx context.Context, caseName, ctlBin string) (push capPush, ok bool, err error) {
-	if _, _, err = runCtl(ctx, ctlBin, "probe-require"); err != nil {
-		return capPush{}, false, fmt.Errorf("%s: warm-gate ask: %w", caseName, err)
+// dstFocusInAge reads the context's freshness off the daemon journal: the
+// age of the LAST parseable focus_in record (the INFO engine records — the
+// bridge's focus deliveries). Unparseable lines are SKIPPED, never counted
+// as fresh: an overestimated age is the unsafe direction. ok=false means
+// no parseable record — the caller refuses.
+func dstFocusInAge(lines []string, now time.Time) (age time.Duration, ok bool) {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if !strings.Contains(lines[i], `"msg":"focus_in"`) {
+			continue
+		}
+		ts, err := parseLogTime(lines[i])
+		if err != nil {
+			continue
+		}
+
+		return now.Sub(ts), true
+	}
+
+	return 0, false
+}
+
+// dstWaitWarmAge waits until the journal's last focus_in is at least
+// dstWarmMinAge old (the typed token already flowed by the caller). The
+// expiry is the honest refusal — the window discipline never guesses.
+func (s *stand) dstWaitWarmAge(ctx context.Context, caseName string) error {
+	deadline := time.Now().Add(dstWarmAgeWait)
+	for {
+		if age, ok := dstFocusInAge(s.logLines(), time.Now()); ok && age >= dstWarmMinAge {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s: warm age floor %v unmet within %v (focus churn?)",
+				caseName, dstWarmMinAge, dstWarmAgeWait)
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return err
+		}
+	}
+}
+
+// dstWarmGate is the safety gate of EVERY DST emission, in the bisection's
+// own terms: the trigger boundary is TIME from the context's fresh
+// focus_in (the floor above), and the materialization precondition is the
+// TYPED TOKEN (real keys through the context — the mandate's warm shape;
+// rows R3/R4 survived DST with ZERO surrounding pushes). The Require-only
+// ask is attempted too (R5b-safe in ANY window) and its answer RECORDED —
+// a stale cache counts (the 10-08 finding) — but it never gates: the
+// 0x9-class clients (the wezterm 10-06 signature) answer nothing, and
+// refusing them would make the matrix unmeasurable while the time+keys
+// discipline is exactly the pinned survive-shape.
+func (s *stand) dstWarmGate(ctx context.Context, caseName, ctlBin string) (push capPush, answered bool, err error) {
+	if werr := s.dstWaitWarmAge(ctx, caseName); werr != nil {
+		return capPush{}, false, werr
+	}
+	if _, _, aerr := runCtl(ctx, ctlBin, "probe-require"); aerr != nil {
+		return capPush{}, false, fmt.Errorf("%s: warm-gate ask: %w", caseName, aerr)
 	}
 	baseIdx := -1
 	if idx, _, baseOK := s.lastCapPush(); baseOK {
 		baseIdx = idx
 	}
-	_, push, ok, err = s.waitCapPush(ctx, baseIdx)
+	_, push, answered, werr := s.waitCapPush(ctx, baseIdx)
 
-	return push, ok, err
+	return push, answered, werr
 }
 
 // dstTypeToken types the synthetic token into the focused fixture, gated by
@@ -363,54 +421,54 @@ func dstWaitCaptureGrowth(ctx context.Context, path string, offset int64, timeou
 }
 
 // dstWarmOrRefuse is the cells' shared preamble: the arming gate, the typed
-// token, the warm gate. On a witness-less context it lands the honest
-// refusal row and returns refused=true — the caller stops WITHOUT emitting
-// (the warm-discipline refusal is a row and a case failure, never a guess).
+// token, the warm gate (the time floor + the recorded Require answer). On a
+// gate failure it lands the honest refusal row and returns the error — the
+// caller stops WITHOUT emitting (the warm-discipline refusal is a row and a
+// case failure, never a guess).
 func (s *stand) dstWarmOrRefuse(
 	ctx context.Context, caseName, ctlBin, client, rowTag string,
-) (push capPush, refused bool, err error) {
+) (push capPush, answered bool, err error) {
 	if aerr := s.termArmGate(ctx, caseName); aerr != nil {
 		return capPush{}, false, aerr
 	}
 	if terr := s.dstTypeToken(ctx, caseName); terr != nil {
 		return capPush{}, false, terr
 	}
-	push, warmOK, werr := s.dstWarmGate(ctx, caseName, ctlBin)
-	if werr != nil {
-		return capPush{}, false, werr
+	push, answered, werr := s.dstWarmGate(ctx, caseName, ctlBin)
+	if werr == nil {
+		return push, answered, nil
 	}
-	if warmOK {
-		return push, false, nil
-	}
-	obs := fmt.Sprintf("venue: %s; client=%s; warm_gate=unmet (ни одного push за %v)"+
+	obs := fmt.Sprintf("venue: %s; client=%s; warm_gate=unmet (%v)"+
 		" — эмиссия УДЕРЖАНА (дисциплина тёплых контекстов), shell_alive=%v",
-		venueMarker(ctx), client, dstWarmPushWait, shellAlive(ctx))
-	if rerr := dstRow(rowTag, "armGate + type ghbdtn → probe-require witness → [эмиссия WITHHELD]",
+		venueMarker(ctx), client, boundRowText(werr.Error()), shellAlive(ctx))
+	if rerr := dstRow(rowTag, "armGate + type ghbdtn → warm gate → [эмиссия WITHHELD]",
 		obs, "Verdict: aborted-warm (тёплость не доказана — DST запрещён)"); rerr != nil {
 		return capPush{}, false, rerr
 	}
 
-	return capPush{}, true, fmt.Errorf("%s: %s warm gate unmet — DST withheld", caseName, rowTag)
+	return capPush{}, false, fmt.Errorf("%s: %s warm gate unmet — DST withheld: %w", caseName, rowTag, werr)
 }
 
 // dstObserved renders the content-free observable cell shared by both cell
-// kinds (counters, booleans, the warm push's cursor arithmetic — never the
-// field content).
-func dstObserved(ctx context.Context, client string, ins dstInspect, push capPush, alive bool) string {
+// kinds (counters, booleans, the warm ask's answer class — never the field
+// content).
+func dstObserved(
+	ctx context.Context, client string, ins dstInspect, push capPush, answered, alive bool,
+) string {
 	return fmt.Sprintf("venue: %s; client=%s; token_seen=%v; erase_del=%d; erase_bs=%d;"+
 		" erases_total=%d (want %d); word_seen=%v; order_ok=%v; shell_alive=%v;"+
-		" push_cursor=%d; token_in_push=%v",
+		" push_answered=%v; push_cursor=%d",
 		venueMarker(ctx), client, ins.tokenSeen, ins.delAfter, ins.bsAfter,
 		dstEraseTotal(ins), dstTokenErases, ins.wordSeen, ins.orderOK, alive,
-		push.Cursor, strings.Contains(push.Text, corpusLatin))
+		answered, rowCursor(int64(push.Cursor), answered))
 }
 
 // dstApplyCell drives one apply cell end to end on a warm fixture and lands
 // its dated row: arm, type, warm gate, DST(-6,6), settle, the raw delta
 // inspection, the survival witness, the verdict.
 func (s *stand) dstApplyCell(ctx context.Context, caseName, ctlBin, client, rowTag string, fx dstFixture) error {
-	push, refused, err := s.dstWarmOrRefuse(ctx, caseName, ctlBin, client, rowTag)
-	if refused || err != nil {
+	push, answered, err := s.dstWarmOrRefuse(ctx, caseName, ctlBin, client, rowTag)
+	if err != nil {
 		return err
 	}
 	offset := captureSize(fx.pty())
@@ -425,7 +483,7 @@ func (s *stand) dstApplyCell(ctx context.Context, caseName, ctlBin, client, rowT
 	if gerr == nil {
 		ins = inspectDstDelta(data)
 	}
-	observed := dstObserved(ctx, client, ins, push, shellAlive(ctx))
+	observed := dstObserved(ctx, client, ins, push, answered, shellAlive(ctx))
 	if gerr != nil {
 		if rerr := dstRow(rowTag, dstApplyCmd, observed, "Verdict: FAIL (pty-дельта не дождалась)"); rerr != nil {
 			return rerr
@@ -449,8 +507,8 @@ func (s *stand) dstApplyCell(ctx context.Context, caseName, ctlBin, client, rowT
 // DST(6) → the artificial drain-delay → commit → the byte-order and
 // final-line oracle on the raw delta.
 func (s *stand) dstChoreoCell(ctx context.Context, caseName, ctlBin, rowTag string, fx dstFixture) error {
-	push, refused, err := s.dstWarmOrRefuse(ctx, caseName, ctlBin, capsClientWez, rowTag)
-	if refused || err != nil {
+	push, answered, err := s.dstWarmOrRefuse(ctx, caseName, ctlBin, capsClientWez, rowTag)
+	if err != nil {
 		return err
 	}
 	offset := captureSize(fx.pty())
@@ -472,7 +530,7 @@ func (s *stand) dstChoreoCell(ctx context.Context, caseName, ctlBin, rowTag stri
 	if gerr == nil {
 		ins = inspectDstDelta(data)
 	}
-	observed := dstObserved(ctx, capsClientWez, ins, push, shellAlive(ctx))
+	observed := dstObserved(ctx, capsClientWez, ins, push, answered, shellAlive(ctx))
 	if gerr != nil {
 		if rerr := dstRow(rowTag, dstChorCmd, observed, "Verdict: FAIL (pty-дельта не выросла)"); rerr != nil {
 			return rerr

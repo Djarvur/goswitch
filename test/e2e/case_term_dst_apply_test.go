@@ -7,7 +7,67 @@ package main
 // stand run. Every fixture here is the synthetic corpus (ghbdtn → привет,
 // Pitfall 6); no daemon, no window, no bus — pure functions.
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// TestDstFocusInAge pins the warm gate's time anchor (the bisection's
+// trigger boundary is TIME from the context's fresh focus_in — crash at
+// +0.5 s, survive at +1.5 s): the helper must read the LAST focus_in
+// record, skip unparseable lines (an overestimated age is the UNSAFE
+// direction) and refuse when no parseable record exists.
+func TestDstFocusInAge(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	stamp := func(sec int, msg string) string {
+		return `{"time":"` + now.Add(-time.Duration(sec)*time.Second).
+			Format(time.RFC3339Nano) + `","level":"INFO","msg":"` + msg + `"}`
+	}
+	for _, tt := range []struct {
+		name    string
+		lines   []string
+		wantAge time.Duration
+		wantOK  bool
+	}{
+		{
+			name:    "age of the last focus_in",
+			lines:   []string{stamp(10, "focus_in"), stamp(9, "key")},
+			wantAge: 10 * time.Second,
+			wantOK:  true,
+		},
+		{
+			name:    "multiple records the last wins",
+			lines:   []string{stamp(30, "focus_in"), stamp(4, "focus_in")},
+			wantAge: 4 * time.Second,
+			wantOK:  true,
+		},
+		{
+			name:    "unparseable last skipped to the parseable one",
+			lines:   []string{stamp(20, "focus_in"), "garbage line", `{"time":"nope","msg":"focus_in"}`},
+			wantAge: 20 * time.Second,
+			wantOK:  true,
+		},
+		{
+			name:   "no focus_in at all refuses",
+			lines:  []string{stamp(5, "key")},
+			wantOK: false,
+		},
+		{
+			name:   "empty journal refuses",
+			lines:  nil,
+			wantOK: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			age, ok := dstFocusInAge(tt.lines, now)
+			if ok != tt.wantOK || (ok && age != tt.wantAge) {
+				t.Fatalf("dstFocusInAge = (%v, %v), want (%v, %v)", age, ok, tt.wantAge, tt.wantOK)
+			}
+		})
+	}
+}
 
 // TestInspectDstDelta pins the token-anchored byte arithmetic of the apply
 // cells: the erase classes, the last-occurrence anchor (the arming
