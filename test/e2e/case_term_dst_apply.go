@@ -82,12 +82,15 @@ const (
 	// dstWarmMinAge is the warm gate's time floor on the context's last
 	// focus_in — the bisection's trigger boundary IS time (crash at
 	// +0.49 s — rows R2/R6b/R7; survive at +1.5 s — row R3, zero pushes;
-	// survive at +23 s — row R4): 3 s is a 2× margin over the pinned
-	// survive point, and the typed token (real keys through the context)
-	// rides before the floor check. dstWarmAgeWait bounds the wait for the
-	// floor (a focus-churn storm delays the mint age; expiry = refusal).
-	dstWarmMinAge  = 3 * time.Second
-	dstWarmAgeWait = 15 * time.Second
+	// survive at +23 s — row R4), and the experiment's OWN run-3 row added
+	// a VTE crash at +3.2 s (the floor's first value) — so the floor is
+	// 10 s: past every pinned survive-or-crash point that is still
+	// plausibly a timing boundary, well short of R4's proven +23 s. The
+	// typed token (real keys through the context) rides before the floor
+	// check. dstWarmAgeWait bounds the wait for the floor (a focus-churn
+	// storm delays the mint age; expiry = refusal).
+	dstWarmMinAge  = 10 * time.Second
+	dstWarmAgeWait = 30 * time.Second
 
 	// dstSettleWait is the post-DST settle before the capture read: long
 	// enough for the client to apply (or not), and — honestly — long enough
@@ -420,33 +423,40 @@ func dstWaitCaptureGrowth(ctx context.Context, path string, offset int64, timeou
 	}
 }
 
-// dstWarmOrRefuse is the cells' shared preamble: the arming gate, the typed
-// token, the warm gate (the time floor + the recorded Require answer). On a
-// gate failure it lands the honest refusal row and returns the error — the
-// caller stops WITHOUT emitting (the warm-discipline refusal is a row and a
-// case failure, never a guess).
+// dstWarmOrRefuse is the cells' shared preamble: the arming gate, the
+// capture OFFSET (taken BEFORE the typing — the run-3 lesson: the warm
+// gate's waits sit seconds past the key-trace floor, so an offset taken
+// after the gate lands PAST the token bytes and the delivery control
+// reads a false no-token; from a pre-typing offset the delta carries the
+// token and the analysis anchors on its last occurrence), the typed
+// token, the warm gate (the time floor + the recorded Require answer).
+// On a gate failure it lands the honest refusal row and returns the
+// error — the caller stops WITHOUT emitting (the warm-discipline refusal
+// is a row and a case failure, never a guess).
 func (s *stand) dstWarmOrRefuse(
-	ctx context.Context, caseName, ctlBin, client, rowTag string,
-) (push capPush, answered bool, err error) {
+	ctx context.Context, caseName, ctlBin, client, rowTag string, fx dstFixture,
+) (offset int64, push capPush, answered bool, err error) {
 	if aerr := s.termArmGate(ctx, caseName); aerr != nil {
-		return capPush{}, false, aerr
+		return 0, capPush{}, false, aerr
 	}
+	offset = captureSize(fx.pty())
 	if terr := s.dstTypeToken(ctx, caseName); terr != nil {
-		return capPush{}, false, terr
+		return offset, capPush{}, false, terr
 	}
 	push, answered, werr := s.dstWarmGate(ctx, caseName, ctlBin)
 	if werr == nil {
-		return push, answered, nil
+		return offset, push, answered, nil
 	}
 	obs := fmt.Sprintf("venue: %s; client=%s; warm_gate=unmet (%v)"+
 		" — эмиссия УДЕРЖАНА (дисциплина тёплых контекстов), shell_alive=%v",
 		venueMarker(ctx), client, boundRowText(werr.Error()), shellAlive(ctx))
 	if rerr := dstRow(rowTag, "armGate + type ghbdtn → warm gate → [эмиссия WITHHELD]",
 		obs, "Verdict: aborted-warm (тёплость не доказана — DST запрещён)"); rerr != nil {
-		return capPush{}, false, rerr
+		return offset, capPush{}, false, rerr
 	}
 
-	return capPush{}, false, fmt.Errorf("%s: %s warm gate unmet — DST withheld: %w", caseName, rowTag, werr)
+	return offset, capPush{}, false,
+		fmt.Errorf("%s: %s warm gate unmet — DST withheld: %w", caseName, rowTag, werr)
 }
 
 // dstObserved renders the content-free observable cell shared by both cell
@@ -467,11 +477,10 @@ func dstObserved(
 // its dated row: arm, type, warm gate, DST(-6,6), settle, the raw delta
 // inspection, the survival witness, the verdict.
 func (s *stand) dstApplyCell(ctx context.Context, caseName, ctlBin, client, rowTag string, fx dstFixture) error {
-	push, answered, err := s.dstWarmOrRefuse(ctx, caseName, ctlBin, client, rowTag)
+	offset, push, answered, err := s.dstWarmOrRefuse(ctx, caseName, ctlBin, client, rowTag, fx)
 	if err != nil {
 		return err
 	}
-	offset := captureSize(fx.pty())
 	if derr := s.dstEmitDelete(ctx, caseName, ctlBin); derr != nil {
 		return derr
 	}
@@ -506,11 +515,10 @@ func (s *stand) dstApplyCell(ctx context.Context, caseName, ctlBin, client, rowT
 // DST(6) → the artificial drain-delay → commit → the byte-order and
 // final-line oracle on the raw delta.
 func (s *stand) dstChoreoCell(ctx context.Context, caseName, ctlBin, rowTag string, fx dstFixture) error {
-	push, answered, err := s.dstWarmOrRefuse(ctx, caseName, ctlBin, capsClientWez, rowTag)
+	offset, push, answered, err := s.dstWarmOrRefuse(ctx, caseName, ctlBin, capsClientWez, rowTag, fx)
 	if err != nil {
 		return err
 	}
-	offset := captureSize(fx.pty())
 	if derr := s.dstEmitDelete(ctx, caseName, ctlBin); derr != nil {
 		return derr
 	}
@@ -583,6 +591,11 @@ func runTermDstCells(ctx context.Context, s *stand) error {
 		return err
 	}
 
+	// Cell order (the run-3 lesson): the VTE apply cell goes LAST — the
+	// warm VTE DST is now a KNOWN session-killer candidate (run-3's dated
+	// crash row), so the sacrificial cell must not be able to starve the
+	// wezterm rows of their measurement.
+
 	// Cell 1: wezterm apply.
 	wf, err := s.openWezRawFixture(ctx, caseName, "wez-apply")
 	if err != nil {
@@ -595,19 +608,7 @@ func runTermDstCells(ctx context.Context, s *stand) error {
 	}
 	wf.close()
 
-	// Cell 2: VTE apply (the differential comparator).
-	vf, err := s.openTermFixture(ctx, caseName, "vte-apply", drainPane)
-	if err != nil {
-		return err
-	}
-	if err := s.dstApplyCell(ctx, caseName, ctlBin, capsClientVTE, "vte-apply", vf); err != nil {
-		vf.close()
-
-		return err
-	}
-	vf.close()
-
-	// Cells 3-4: the full choreography twice on fresh warm wezterm panes
+	// Cells 2-3: the full choreography twice on fresh warm wezterm panes
 	// (the two-greens discipline, Pitfall 1).
 	for _, tag := range []string{"wez-choreo-a", "wez-choreo-b"} {
 		cf, err := s.openWezRawFixture(ctx, caseName, tag)
@@ -621,6 +622,18 @@ func runTermDstCells(ctx context.Context, s *stand) error {
 		}
 		cf.close()
 	}
+
+	// Cell 4 (sacrificial, LAST): VTE apply — the differential comparator.
+	vf, err := s.openTermFixture(ctx, caseName, "vte-apply", drainPane)
+	if err != nil {
+		return err
+	}
+	if err := s.dstApplyCell(ctx, caseName, ctlBin, capsClientVTE, "vte-apply", vf); err != nil {
+		vf.close()
+
+		return err
+	}
+	vf.close()
 
 	return nil
 }
