@@ -423,6 +423,23 @@ func dstWaitCaptureGrowth(ctx context.Context, path string, offset int64, timeou
 	}
 }
 
+// dstReassertEngine re-pokes the global engine through the ibus CLI (the
+// 10-12 venue form, `ibus engine goswitch-en`). The runs 4-7 finding: the
+// case's own post-restart activation (activateGoswitchRetry) fires while
+// the bus is still cold (rc=0, «global engine unreadable» — the
+// activation lands in a void) and key dispatch never wires up; the same
+// poke done SECONDS later (the isolated A/B probe: standing daemon
+// KEY_DELTA=2 → plain restart → KEY_DELTA=0 → poke → KEY_DELTA=2) is the
+// effective grant. Idempotent under the sources-takeover (the single
+// ibus source is goswitch-en — nothing to flip).
+func dstReassertEngine(ctx context.Context) error {
+	if _, err := runCmd(ctx, "ibus", "engine", "goswitch-en"); err != nil {
+		return fmt.Errorf("reassert goswitch-en: %w", err)
+	}
+
+	return nil
+}
+
 // dstFocusNudge is the machine focus grant (the 10-08 recipe, the
 // bisection's run3.sh form): a center-screen click. Runs 4-5 pinned the
 // need: arming floors went unmet with ZERO key-trace records while the
@@ -449,6 +466,9 @@ func (s *stand) dstObserverRound(ctx context.Context, caseName string) error {
 		return err
 	}
 	defer tf.close()
+	if err := dstReassertEngine(ctx); err != nil {
+		return err
+	}
 	if err := dstFocusNudge(ctx); err != nil {
 		return err
 	}
@@ -469,6 +489,9 @@ func (s *stand) dstObserverRound(ctx context.Context, caseName string) error {
 func (s *stand) dstWarmOrRefuse(
 	ctx context.Context, caseName, ctlBin, client, rowTag string, fx dstFixture,
 ) (offset int64, push capPush, answered bool, err error) {
+	if rerr := dstReassertEngine(ctx); rerr != nil {
+		return 0, capPush{}, false, rerr
+	}
 	if nerr := dstFocusNudge(ctx); nerr != nil {
 		return 0, capPush{}, false, nerr
 	}
