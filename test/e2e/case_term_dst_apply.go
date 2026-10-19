@@ -498,7 +498,8 @@ func (s *stand) dstApplyCell(ctx context.Context, caseName, ctlBin, client, rowT
 	delta := data[min(int64(len(data)), offset):]
 	ins := inspectDstDelta(delta)
 	alive := shellAlive(ctx)
-	observed := dstObserved(ctx, client, ins, push, answered, alive)
+	observed := dstObserved(ctx, client, ins, push, answered, alive) +
+		fmt.Sprintf("; delta_len=%d", len(delta))
 	if !alive {
 		if rerr := dstRow(rowTag, dstApplyCmd, observed,
 			"Verdict: FAIL (gnome-shell НЕ ПЕРЕЖИЛ эмиссию — крах-дата-пойнт)"); rerr != nil {
@@ -538,6 +539,9 @@ func (s *stand) dstChoreoCell(ctx context.Context, caseName, ctlBin, rowTag stri
 		ins = inspectDstDelta(data)
 	}
 	observed := dstObserved(ctx, capsClientWez, ins, push, answered, shellAlive(ctx))
+	if gerr == nil {
+		observed += fmt.Sprintf("; delta_len=%d", len(data))
+	}
 	if gerr != nil {
 		if rerr := dstRow(rowTag, dstChorCmd, observed, "Verdict: FAIL (pty-дельта не выросла)"); rerr != nil {
 			return rerr
@@ -584,6 +588,14 @@ func runTermDstApply(ctx context.Context, s *stand) error {
 func runTermDstCells(ctx context.Context, s *stand) error {
 	const caseName = "term-dst-apply"
 	if err := startAutocorrectConfigDaemon(ctx, s, autocorrectConfigDoc); err != nil {
+		return err
+	}
+	// The observer warm-up round (the term-word-vte mechanics): a throwaway
+	// window feeds the daemon's observer path and gives the fresh session
+	// its first placed interaction — the run-4 arming failures rode the
+	// round-3 «typed-miss» placement race class (fresh-session remedy:
+	// re-entry + warm-up, never a retry loop inside the cell).
+	if err := s.termObserverRound(ctx, caseName); err != nil {
 		return err
 	}
 	ctlBin, err := s.buildCtl(ctx)
