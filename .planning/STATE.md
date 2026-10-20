@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 10
-current_phase_name: TERM-слово
-status: verifying
-stopped_at: G-10-1 CLOSED — owner verdict «осталось» (Test 6, round-6 paired forwards)
-last_updated: "2026-10-20T08:46:12.089Z"
-last_activity: 2026-10-13
-last_activity_desc: Phase 10 execution started
-state_head: a5d1120b1778cc94b748301c42912448c61068f0
+current_phase: 9
+current_phase_name: Спайк и дефект wezterm
+status: planning
+stopped_at: Phase 10 complete, ready to plan Phase 9
+last_updated: "2026-10-20T09:08:53.983Z"
+last_activity: 2026-10-20
+last_activity_desc: Phase 10 complete, transitioned to Phase 9
+state_head: 2642fbeff168ff769f492d306b7b6929c88ee831
 progress:
   total_phases: 5
-  completed_phases: 0
-  total_plans: 22
+  completed_phases: 1
+  total_plans: 20
   completed_plans: 16
-  percent: 0
+  percent: 20
 ---
 
 # Project State
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 
 ## Current Position
 
-Phase: 10 (TERM-слово) — EXECUTING
-Plan: 9 of 9
-Status: Phase complete — ready for verification
-Last activity: 2026-10-13 — Phase 10 execution started
+Phase: 9 — Спайк и дефект wezterm
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-20 — Phase 10 complete, transitioned to Phase 9
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -139,7 +139,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-20T08:46:12.028Z
-Stopped at: G-10-1 CLOSED — owner verdict «осталось» (Test 6, round-6 paired forwards)
+Stopped at: Phase 10 complete, ready to plan Phase 9
 Resume file: None
 
 ## Operator Next Steps

@@ -26,7 +26,7 @@
 **Milestone Goal:** коррекция текста и видимость приложений там, где их сегодня нет: терминалы, трей-меню, Electron/Qt-приложения.
 
 - [ ] **Phase 9: Спайк и дефект wezterm** - spec-delta (D-55) + ADR-008 + живая capability-таблица терминалов; починка переключения раскладки в wezterm; ранний A11Y-зонд
-- [ ] **Phase 10: TERM-слово** - ручная коррекция слова жестом в wezterm и GNOME Terminal через канал IBus (BackSpace-реплей + commit_text)
+- [x] **Phase 10: TERM-слово** - ручная коррекция слова жестом в wezterm и GNOME Terminal через канал IBus (BackSpace-реплей + commit_text) (completed 2026-10-20)
 - [ ] **Phase 11: MENU — пункт «в чёрный список»** - динамический пункт трей-меню с атомарной записью конфига и деградацией при неизвестной личности приложения
 - [ ] **Phase 12: TERM-строка** - исправление всей набранной строки/фразы в терминале — feasibility-gated capability-таблицей Фазы 9
 - [ ] **Phase 13: A11Y — рецепты Telegram/ZCode** - доступность в самих приложениях (desktop-override, unconfined-сборка или демон-fallback) + документация; демон не меняется
@@ -142,7 +142,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 9. Спайк и дефект wezterm | v1.2 | 1/4 | In Progress|  |
-| 10. TERM-слово | v1.2 | 16/18 | In Progress|  |
+| 10. TERM-слово | v1.2 | 16/16 | Complete    | 2026-10-20 |
 | 11. MENU — пункт «в чёрный список» | v1.2 | 0/? | Not started | - |
 | 12. TERM-строка | v1.2 | 0/? | Not started | - |
 | 13. A11Y — рецепты Telegram/ZCode | v1.2 | 0/? | Not started | - |
