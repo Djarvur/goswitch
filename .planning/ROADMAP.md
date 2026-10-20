@@ -46,14 +46,14 @@
   4. Существует вердикт-таблица возможностей терминалов (caps, доставка ProcessKeyEvent, посадка commit_text, select-чорд → PRIMARY read-back, a11y-идентичность) — она фиксирует kill-критерий строковой растяжки и чорды слова для Фаз 10/12
   5. A11Y-зонд-матрица (минимальный a11y-триггер per-app, env сверен в /proc; AppArmor-стена Telegram snap) выполнена рано/параллельно — вердикты записаны для деградации MENU-идентичности (Фаза 11) и планирования Фазы 13
 
-**Plans**: 1/4 plans executed
+**Plans**: 2/4 plans executed (09-01 complete; 09-02 halted по решению владельца — ядро-результат и рецепт стоят; 09-03/09-04 superseded: TERM-01 доставлен Фазой 10, A11Y-вердикты существуют рассеянно)
 
 Plans:
 
 - [x] 09-01-PLAN.md — spec-delta rev D-55 (SPEC §4.3/§4.4/§5/§7.2/§11) + ADR-008 Proposed (docs-only, D-55)
-- [ ] 09-02-PLAN.md — живой спайк: зондовый probe-forward канал, лестница P0–P5, capability-таблица, оракул wezterm-flip в RED
-- [ ] 09-03-PLAN.md — починка флипа wezterm (ветка по чекпойнту владельца) + оракул two-greens GREEN + ADR-008 Accepted
-- [ ] 09-04-PLAN.md — A11Y-зонд-матрица: ZCode-триггер, стена Telegram snap, flatpak-ряд (по согласию), журнал d09
+- [x] 09-02-PLAN.md — живой спайк — HALTED (2026-10-12, владелец завершил участие в живых тестах): зондовый probe-forward канал и харнесс headless-green стоят; десинк engine→stale-context (XIM) воспроизведён дважды; рецепт нативного Wayland доказан и ДОСТАВЛЕН (wezterm-nightly 20261010 + enable_wayland=true, 7365a93 — daily-driver владельца); раунды R2–R6, two-round RED-оракул и таблица 5×2 не исполнены (capability-ряды фактически заполнены стенд-рядами Фазы 10 в adr-008-spike-log.md)
+- [ ] 09-03-PLAN.md — ~~починка флипа wezterm (ветка по чекпойнту владельца) + оракул two-greens GREEN + ADR-008 Accepted~~ — SUPERSEDED: доставлено Фазой 10 (ADR-008 Accepted 2026-10-12 планом 10-06 на живых строках журнала; фикс = nightly-рецепт 09-02; зачёт — вердикт владельца G-10-1 «осталось» 2026-10-20); не исполнялся
+- [ ] 09-04-PLAN.md — ~~A11Y-зонд-матрица: ZCode-триггер, стена Telegram snap, flatpak-ряд (по согласию), журнал d09~~ — SUPERSEDED: вердикты рассеяны (стена Telegram AppArmor — живая проба 2026-10-08, STATE.md, гейт планирования Фазы 13 за владельцем; ZCode/Electron — фаза-7 UAT a11y-вердикты; wezterm-идентичность — ac_role_errors Фазы 10); журнал d09 не создавался; не исполнялся
 
 ### Phase 10: TERM-слово
 
@@ -141,7 +141,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 9. Спайк и дефект wezterm | v1.2 | 1/4 | In Progress|  |
+| 9. Спайк и дефект wezterm | v1.2 | 2/4 | In Progress|  |
 | 10. TERM-слово | v1.2 | 16/16 | Complete    | 2026-10-20 |
 | 11. MENU — пункт «в чёрный список» | v1.2 | 0/? | Not started | - |
 | 12. TERM-строка | v1.2 | 0/? | Not started | - |
