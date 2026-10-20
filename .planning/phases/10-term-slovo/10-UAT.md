@@ -1,9 +1,9 @@
 ---
-status: testing
+status: approved
 phase: 10-term-slovo
 source: [10-VERIFICATION.md]
 started: 2026-10-12T22:20:00Z
-updated: 2026-10-19T18:25:00Z
+updated: 2026-10-20T08:45:50Z
 ---
 
 ## Current Test
@@ -39,7 +39,10 @@ expected: |
   Ответ «ОСТАЛОСЬ» (+approved) → ряд закрытия G-10-1; «ИСЧЕЗЛО» → честные
   журнальные ряды, СТОП без правок кода вне нового цикла планирования.
   Откат по запросу: ~/.local/share/goswitch/releases/v1.1.1/goswitchctl install
-awaiting: user response
+result: pass
+reported: "владелец: «осталось» (2026-10-20, selftype-прогон на v1.1.1-226-g8bd4edc после почины строки команды -selftype standalone, commit 870c20b+dispatch-fix); утренние живые исправления того же дня (10:15, слова 7 и 11 букв) — тоже устоялись по журналу"
+verdict: approved
+awaiting: closed
 
 ## Tests
 
@@ -81,10 +84,18 @@ evidence: "журнал 21:56:01: РОВНО ОДИН chunks-sent forwards=6 pac
 verdict: rejected
 awaiting: closed — rejected; round-5 (content-free instrumented round для локализации клиента-replay) планируется
 
+### 6. Повторная приёмка round-6 (парные форварды) — гейт «слово в wezterm ОСТАЁТСЯ» на сборке v1.1.1-226-g8bd4edc, протокол selftype
+expected: ГЕЙТ: selftype (драйвер сам печатает «ghbdtn» + двойной Right Shift) → слово ОСТАЛОСЬ на экране; журнальные критерии (а)-(е): метки упорядочены, forwards=12 keys=6 (пары), done changed=true, флип после release-причины, нет крахов shell, autocorrect_fired не вырос.
+result: pass
+reported: "владелец: «осталось»"
+severity: major
+evidence: "selftype-прогон 2026-10-20 на v1.1.1-226-g8bd4edc (парные press+release форварды, амендмент (7) ADR-008); корень по исходникам: press-only форварды взводили клиентский автоповтор wezterm (sourcedig 2026-10-19, window.rs:1194-1206), release гасит взвод — предсказание §6.4 сбылось. Утром того же дня три живых исправления (10:15:29/10:15:57, слова 7 и 11 букв) прошли полный цикл машины и устоялись (журнал: burst→commit→done→flip-released push)."
+verdict: approved
+
 ## Summary
 
-total: 5
-passed: 0
+total: 6
+passed: 1
 issues: 4
 pending: 1
 skipped: 0
@@ -116,4 +127,4 @@ blocked: 0
     - "host-валидированная стратегия доставки commit: флип режима не должен осиротять in-flight commit (отложить флип до подтверждающего push/нажатия, commit после флипа, либо переиспользование объекта движка); темп 20 мс сам по себе разрыв не закрывает"
     - "ревалидация на хосте (venue host) до закрытия разрыва"
   debug_session: .planning/debug/DEBUG-term-host-live-failures.md
-  remediation: "Обе причины закрыты в коде: 10-07 (флап-стойкое стирание verifyDead focusFlapWindow 10 мс, дефолтный якорь correction.terminals [gnome-terminal, wezterm], громкая role-диагностика ac_role_errors) и 10-08 (defer-until-confirmed: флип не осиротяет commit — освобождение по подтверждающему push/клавише/grace 300 мс; stale-cache-маршрут по дословному одобрению владельца 2026-10-13). Реверификация 2026-10-14: 16/17 машинных истин зелёные, обе причины VERIFIED. Сборка v1.1.1-124-g7ace3fd установлена на хост (ряд host-install-gap в spike-log). **Re-acceptance 2026-10-14 09:39 REJECTED:** на хосте классификация терминала не включается (a11y-identity недоступна, verifyDead не выучен к жесту) — жесты уходят на уровень-1, где фиксов физически нет; «появляется и удаляется» = инверсия delete-surrounding/commit на уровне-1. Ряды: DEBUG-term-host-live-failures.md Closure validation 2026-10-14 09:39. Следующий цикл обязан реплеем этих рядов доказать фикс до запуска владельцем."
+  remediation: "Обе причины закрыты в коде: 10-07 (флап-стойкое стирание verifyDead focusFlapWindow 10 мс, дефолтный якорь correction.terminals [gnome-terminal, wezterm], громкая role-диагностика ac_role_errors) и 10-08 (defer-until-confirmed: флип не осиротяет commit — освобождение по подтверждающему push/клавише/grace 300 мс; stale-cache-маршрут по дословному одобрению владельца 2026-10-13). Реверификация 2026-10-14: 16/17 машинных истин зелёные, обе причины VERIFIED. Сборка v1.1.1-124-g7ace3fd установлена на хост (ряд host-install-gap в spike-log). **Re-acceptance 2026-10-14 09:39 REJECTED:** на хосте классификация терминала не включается (a11y-identity недоступна, verifyDead не выучен к жесту) — жесты уходят на уровень-1, где фиксов физически нет; «появляется и удаляется» = инверсия delete-surrounding/commit на уровне-1. Ряды: DEBUG-term-host-live-failures.md Closure validation 2026-10-14 09:39. Следующий цикл обязан реплеем этих рядов доказать фикс до запуска владельцем. **ЗАКРЫТО 2026-10-20: вердикт владельца «осталось» (Тест 6) на сборке v1.1.1-226-g8bd4edc; корень — press-only форварды, взводившие автоповтор wezterm (sourcedig); фикс — пары press+release (амендмент (7) ADR-008)."

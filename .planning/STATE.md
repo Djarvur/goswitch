@@ -5,11 +5,11 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 10
 current_phase_name: TERM-слово
 status: verifying
-stopped_at: "Completed round-6 paired-forwards fix (10-17 scope): RED fed2a98 / GREEN 33f32c3 / docs 8bd4edc+a6dacba; stand re-pin green; host v1.1.1-226-g8bd4edc installed; awaiting owner selftype word"
-last_updated: "2026-10-19T18:21:17.499Z"
+stopped_at: G-10-1 CLOSED — owner verdict «осталось» (Test 6, round-6 paired forwards)
+last_updated: "2026-10-20T08:46:12.089Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 10 execution started
-state_head: a6dacba8c0138c1dd064de3c7f02706b60a585d6
+state_head: a5d1120b1778cc94b748301c42912448c61068f0
 progress:
   total_phases: 5
   completed_phases: 0
@@ -99,6 +99,7 @@ Recent decisions affecting current work:
 - [Phase 10]: Гвард DST-эмиссии: DeleteSurroundingText только при перегенерационном свидетельстве материализованности (surrSeen+surrEng — bind к эмиттеру поколения, форма flapEng; clear в FocusOut/Reset-ветке), иначе диверсия в executeLevel2-форму + INFO dst-guarded + corr_dst_guarded в status — план 10-16, T-10-16-01/02 закрыты на уровне машины — Бисекция 2026-10-16 (R2/R6b/R7): DST с любыми параметрами к непроэнерженному контексту в девственном окне валит gnome-shell (mutter 46.2, strlen по NULL, meta-wayland-text-input.c:254); гарантии «окно тёплое» корректор дать не может — свидетельство стало машинным. Bind к эмиттеру (Rule 2 сверх плана) закрывает churn-реминт без жизненной пары (AttachEngine — чистый store); апстрим-фикс проверен GitLab REST API и НЕ СУЩЕСТВУЕТ (strlen по NULL жив до 51.1 + main; частичное харденение 48.0 — 2c42a284/fb86d5d5) — ретест-гейт закрыт на всех существующих версиях, DST-для-терминалов депрекирован, probe-вербы exempt под тем же гейтом
 - [Phase 10]: Машина round-4 (план 10-17): drain-settle 150 мс перед коммитом терминальной ветки (мьютекс освобождён на окно — WR-01 накрывает, константа с журнальным происхождением 19:21:26/E3, НЕ конфиг; -debug env-оверрайд fail-closed), флип вне окна (терминальный слот без grace и verify-релизов — только следующая клавиша/подтверждающий пуш; правило 2026-09-28 отложено-не-отменено, валидация владельцем 10-18), delivery-метки INFO без содержимого, abort/commit-дисциплина: свободный стоп только до первого форварда, после — коммит на захваченном снапшоте за меткой context-changed-midflow
 - [Phase 10]: Round-4 re-acceptance: установка v1.1.1-180-gefac750 по дословному ритуалу (реплей-ряд 21:32 UTC → стенд re-pin ×4 + drain-ряд 21:39-21:48 → установка 00:51 MSK в новый release-dir); оракул term-word-vte-flip переведён на round-4 release-семантику (keystroke-причина, Rule 3) — Урок 2026-10-12/09:39 обязывает доказывать фикс реплеем ДО всякого запуска; машина round-4 (10-17) не имеет grace/verify-релизов терминального флипа — замороженный оракул кейса 10-08 ждал старый релиз и не мог пройти зелёным на правильной машине; суженная семантика флипа и честный стек доказательств (машинного чтения поля хоста нет) предъявлены владельцу явно; вердикт не синтезируется — UAT end-of-phase
+- [Phase 10]: G-10-1 закрыт 2026-10-20 вердиктом владельца «осталось» (UAT Тест 6, selftype): корень — press-only форварды взводили клиентский автоповтор wezterm (исходники e2a98e1b), фикс — пары press+release (амендмент (7) ADR-008, сборка v1.1.1-226-g8bd4edc). Шесть раундов: флап-стойкость → маршрутизация → доставка → гвард mutter → парные форварды. — G-10-1 закрыт 2026-10-20 вердиктом владельца «осталось» (UAT Тест 6, selftype): корень — press-only форварды взводили клиентский автоповтор wezterm (исходники e2a98e1b), фикс — пары press+release (амендмент (7) ADR-008, сборка v1.1.1-226-g8bd4edc). Шесть раундов: флап-стойкость → маршрутизация → доставка → гвард mutter → парные форварды.
 
 ### Pending Todos
 
@@ -137,8 +138,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-19T18:21:17.439Z
-Stopped at: Completed round-6 paired-forwards fix (10-17 scope): RED fed2a98 / GREEN 33f32c3 / docs 8bd4edc+a6dacba; stand re-pin green; host v1.1.1-226-g8bd4edc installed; awaiting owner selftype word
+Last session: 2026-10-20T08:46:12.028Z
+Stopped at: G-10-1 CLOSED — owner verdict «осталось» (Test 6, round-6 paired forwards)
 Resume file: None
 
 ## Operator Next Steps
