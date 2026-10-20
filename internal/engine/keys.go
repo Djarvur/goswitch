@@ -51,6 +51,17 @@ const (
 	KeyV = 0x076
 )
 
+// Navigation keyvals of the probe verb's select-chord bursts (plan 09-02;
+// ibuskeysyms.h "#define IBUS_KEY_Home 0xff50" / "…_Left 0xff51" /
+// "…_Right 0xff53" / "…_End 0xff57", verified verbatim — never from memory,
+// the 02-05 class trap).
+const (
+	KeyHome  = 0xff50
+	KeyEnd   = 0xff57
+	KeyLeft  = 0xff51
+	KeyRight = 0xff53
+)
+
 // modsMask isolates the low modifier byte of the IBus state word; the
 // release bit lives in bit 30 and the rest is reserved.
 const modsMask = 0xff

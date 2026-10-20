@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -19,7 +20,13 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
 	"time"
+
+	"github.com/godbus/dbus/v5"
+
+	"github.com/Djarvur/goswitch/internal/engine"
+	"github.com/Djarvur/goswitch/internal/uinject"
 )
 
 // Stand timing knobs: every value is a behavioral constant of the stand,
@@ -47,24 +54,43 @@ const (
 
 // config is the stand's CLI surface.
 type config struct {
-	caseName   string
-	pacing     int
-	logPath    string
-	helper     string
-	matrixPath string
+	caseName      string
+	pacing        int
+	logPath       string
+	helper        string
+	matrixPath    string
+	weztermConfig string
+	// The selfdrive surface (the round-5 instrument): a dedicated branch
+	// BELOW — it must never reach setupStand, the owner's host runs the
+	// production daemon and the driver touches nothing but the focused
+	// pane's marker discipline and the script log it watches.
+	selfdrive    bool
+	ssPaneLog    string
+	ssPaneType   string
+	ssOut        string
+	ssSettle     time.Duration
+	ssBaseline   int
+	ssTiming     int
+	ssTimingWait time.Duration
+	ssDry        bool
+	ssSelfType   bool
 }
 
 // caseSpec is one registry entry: the case body plus the stand-shape flag.
 // standalone cases (install-cycle) run WITHOUT the stand daemon — the
 // single-instance ctlsvc name and the IBus registration belong to the
-// daemon the case itself installs as a systemd unit. A non-zero watchdog
-// overrides the default case deadline (perf: N × its repeat budget —
-// raised, never removed: a live-session stand must never strand the
-// owner's desktop).
+// daemon the case itself installs as a systemd unit. noSurfacePreflight
+// skips the chromium/gte/gedit launch checks (the matrixPreflight
+// philosophy: the surface drivers prove their binaries inside the cases
+// that use them — a terminal-only case on a stand without those binaries
+// must not fail their preflight). A non-zero watchdog overrides the default
+// case deadline (perf: N × its repeat budget — raised, never removed: a
+// live-session stand must never strand the owner's desktop).
 type caseSpec struct {
-	fn         func(context.Context, *stand) error
-	standalone bool
-	watchdog   time.Duration
+	fn                 func(context.Context, *stand) error
+	standalone         bool
+	noSurfacePreflight bool
+	watchdog           time.Duration
 }
 
 // desktopSnapshot is the live-desktop state the teardown restores.
@@ -77,24 +103,25 @@ type desktopSnapshot struct {
 // stand owns the per-run environment: the daemon subprocess, its log file,
 // the stand's input surface and the captured desktop state.
 type stand struct {
-	cfg          config
-	daemonBin    string
-	tmpDir       string
-	logPath      string
-	logFile      *os.File
-	daemon       *exec.Cmd
-	standalone   bool // no stand daemon: the case owns the bus (install-cycle)
-	zenity       *exec.Cmd
-	zenityOut    *bytes.Buffer
-	chromium     *exec.Cmd
-	chromiumX11  *exec.Cmd // the x11/XWayland window-mode instance (04-05)
-	gte          *exec.Cmd
-	gedit        *exec.Cmd // the GTK3-generation editor instance (04-05)
-	pwFixture    *exec.Cmd // the GTK4 password-entry fixture (06-07)
-	pwFixtureOut *bytes.Buffer
-	wezterm      *exec.Cmd // the spawned terminal of the terminal-silent negative (06-07)
-	snap         desktopSnapshot
-	caseCfgPath  string // the matrix case's -config doc ("" until a reload step establishes it)
+	cfg           config
+	daemonBin     string
+	tmpDir        string
+	logPath       string
+	logFile       *os.File
+	daemon        *exec.Cmd
+	standalone    bool // no stand daemon: the case owns the bus (install-cycle)
+	unitWasActive bool // the setup lifecycle stopped an active user unit — teardown restores it
+	zenity        *exec.Cmd
+	zenityOut     *bytes.Buffer
+	chromium      *exec.Cmd
+	chromiumX11   *exec.Cmd // the x11/XWayland window-mode instance (04-05)
+	gte           *exec.Cmd
+	gedit         *exec.Cmd // the GTK3-generation editor instance (04-05)
+	pwFixture     *exec.Cmd // the GTK4 password-entry fixture (06-07)
+	pwFixtureOut  *bytes.Buffer
+	wezterm       *exec.Cmd // the spawned terminal of the terminal-silent negative (06-07)
+	snap          desktopSnapshot
+	caseCfgPath   string // the matrix case's -config doc ("" until a reload step establishes it)
 }
 
 func main() {
@@ -102,6 +129,31 @@ func main() {
 }
 
 // run wires the whole stand: registry, setup, preflight, the case and the
+// runPaneType is the -pane-type aux mode: type the text into the FOCUSED
+// window via the in-repo uinput injector and exit (the selfdrive
+// orchestration's visible-in-pane channel).
+func runPaneType(cfg config) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	inj, err := uinject.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pane-type: %v\n", err)
+
+		return 1
+	}
+	defer func() { _ = inj.Close() }()
+
+	const paneTypeDelay = 40
+	if err := inj.Type(ctx, cfg.ssPaneType, paneTypeDelay); err != nil {
+		fmt.Fprintf(os.Stderr, "pane-type: %v\n", err)
+
+		return 1
+	}
+
+	return 0
+}
+
 // caseListUsage is the -case help text: every registry name, "|" joined.
 func caseListUsage() string {
 	return "case to run: m1-gate | ibus-restart | kill9-survive | d01-probe | chromium-smoke | gte-smoke" +
@@ -111,8 +163,16 @@ func caseListUsage() string {
 		" | combo-word-layout | layout-single | super-space-alive | macr-probe | macr-super-letter" +
 		" | macr-per-app | ctl-smoke | switch-spike | two-source-flip | external-flip-sync" +
 		" | flip-keystroke" +
+		" | spike-smoke" +
+		" | spike-wezterm | spike-caps | wezterm-flip | term04-negative" +
 		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
 		" | autocorrect-blocklist-silent | menu-v2" +
+		" | term-word-vte" +
+		" | term-word-wezterm" +
+		" | term-word-vte-flip" +
+		" | term-cap-delivery" +
+		" | term-word-drain" +
+		" | term-dst-apply" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -122,9 +182,35 @@ func parseFlags(cfg *config) {
 	flag.IntVar(&cfg.pacing, "pacing", defaultPacingMs,
 		"milliseconds between injected keystrokes (raise on a loaded machine)")
 	flag.StringVar(&cfg.logPath, "log", "", "daemon log path (default: a temp file removed in teardown)")
-	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py", "path to the AT-SPI helper script")
+	flag.StringVar(&cfg.helper, "helper", "test/e2e/focus_helper.py",
+		"path to the AT-SPI helper script (legacy pre-09-02 cases only;"+
+			" the spike family never calls it)")
 	flag.StringVar(&cfg.matrixPath, "matrix", "",
 		"YAML case matrix to run (multi-doc cases; every case gets a fresh daemon)")
+	flag.StringVar(&cfg.weztermConfig, "wezterm-config", "",
+		"fixture config for wezterm-flip (default: gs-e2e-wezterm-xim.lua;"+
+			" the wayland fixture re-targets the oracle without touching the registry)")
+	flag.BoolVar(&cfg.ssSelfType, "selftype", false,
+		"selfdrive aux: self-type the corpus+gesture into the FOCUSED window (run INSIDE the test pane)")
+	flag.BoolVar(&cfg.selfdrive, "selfdrive", false,
+		"run the host self-drive driver against the pane the owner opened"+
+			" (no stand daemon; NOT in ci — live injections are orchestrator-invoked)")
+	flag.StringVar(&cfg.ssPaneType, "pane-type", "",
+		"selfdrive aux: type this text into the FOCUSED window via uinject and exit")
+	flag.StringVar(&cfg.ssPaneLog, "pane-log", ssDefaultPaneLog,
+		"selfdrive: the pane's `script -q` transcript the owner opened")
+	flag.StringVar(&cfg.ssOut, "selfdrive-out", ssDefaultOut,
+		"selfdrive: the dated verdict rows' append target")
+	flag.DurationVar(&cfg.ssSettle, "settle", ssDefaultSettle,
+		"selfdrive: the post-gesture settle before the choreography parse")
+	flag.IntVar(&cfg.ssBaseline, "baseline-runs", ssDefaultRuns,
+		"selfdrive: baseline battery runs (no manipulation)")
+	flag.IntVar(&cfg.ssTiming, "timing-runs", ssDefaultRuns,
+		"selfdrive: timing-axis battery runs")
+	flag.DurationVar(&cfg.ssTimingWait, "timing-wait", ssDefaultTimingWait,
+		"selfdrive: the typing→gesture wait of the timing axis")
+	flag.BoolVar(&cfg.ssDry, "dry-run", false,
+		"selfdrive: preconditions + parser self-check only — no injections, no writes")
 	flag.Parse()
 }
 
@@ -133,9 +219,25 @@ func parseFlags(cfg *config) {
 // place; defers are honored because run returns normally. The deferred
 // finisher also machine-verifies the gsettings restore (plan 01-04, T-04-02)
 // and may downgrade a PASS to FAIL through the named return.
+//
+//nolint:funlen // the stand's dispatch table: one branch per top-level mode
 func run() (exit int) {
 	var cfg config
 	parseFlags(&cfg)
+
+	// The selfdrive branch owns its whole lifecycle: it runs against the
+	// owner's production daemon on the live host — no stand daemon, no
+	// desktop snapshot/restore may ever wrap it.
+	if cfg.ssPaneType != "" {
+		return runPaneType(cfg)
+	}
+
+	if cfg.selfdrive || cfg.ssSelfType {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		return runSelfDrive(ctx, cfg)
+	}
 
 	// The matrix branch owns its whole stand lifecycle: case isolation needs
 	// a setupStand → case → teardown cycle PER CASE (02-06), so the single
@@ -171,11 +273,13 @@ func run() (exit int) {
 		}
 	}()
 
-	if err := preflight(ctx, s); err != nil {
+	if err := preflight(ctx, s, spec.noSurfacePreflight); err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", cfg.caseName, err)
 
 		return 1
 	}
+
+	fmt.Printf("=== e2e case %s (daemon journal %s) ===\n", cfg.caseName, s.logPath)
 
 	// Zero watchdog means the default: runCaseWatchdog resolves it
 	// (watchdogLimit) — the same convention the matrix path relies on.
@@ -237,49 +341,10 @@ func runCaseWatchdog(
 }
 
 // pickCase resolves the case name through the registry; the registry is
-// built per call (no mutable globals).
+// built per call (no mutable globals) and lives in caseRegistry (the funlen
+// budget keeps the two apart).
 func pickCase(name string) (caseSpec, error) {
-	registry := map[string]caseSpec{
-		"m1-gate":                      {fn: runM1Gate},
-		"ibus-restart":                 {fn: runIbusRestart},
-		"kill9-survive":                {fn: runKill9Survive},
-		"d01-probe":                    {fn: runD01Probe},
-		"chromium-smoke":               {fn: runChromiumSmoke},
-		"gte-smoke":                    {fn: runGTESmoke},
-		"gedit-smoke":                  {fn: runGeditSmoke},
-		"x11-smoke":                    {fn: runChromiumX11Smoke},
-		"word-en-ru":                   {fn: runWordENRU},
-		"word-after-space":             {fn: runWordAfterSpace},
-		"word-ru-en":                   {fn: runWordRUEN},
-		"word-mixed":                   {fn: runWordMixed},
-		"phrase-en-ru":                 {fn: runPhraseENRU},
-		"phrase-mixed":                 {fn: runPhraseMixed},
-		"ladder-chromium":              {fn: runLadderChromium},
-		"reset-escape":                 {fn: runResetEscape},
-		"select-smoke":                 {fn: runSelectSmoke},
-		"select-correct":               {fn: runSelectCorrect},
-		"select-clipboard":             {fn: runSelectClipboard},
-		"combo-word-layout":            {fn: runComboWordLayout},
-		"layout-single":                {fn: runLayoutSingle},
-		"super-space-alive":            {fn: runSuperSpaceAlive},
-		"macr-probe":                   {fn: runMacrProbe},
-		"macr-super-letter":            {fn: runMacrSuperLetter},
-		"macr-per-app":                 {fn: runMacrPerApp},
-		"ctl-smoke":                    {fn: runCtlSmoke},
-		"switch-spike":                 {fn: runSwitchSpike, standalone: true},
-		"two-source-flip":              {fn: runTwoSourceFlip, standalone: true},
-		"external-flip-sync":           {fn: runExternalFlipSync, standalone: true},
-		"flip-keystroke":               {fn: runFlipKeystroke, standalone: true},
-		"autocorrect-fires":            {fn: runAutocorrectFires},
-		"autocorrect-password-silent":  {fn: runAutocorrectPasswordSilent},
-		"autocorrect-terminal-silent":  {fn: runAutocorrectTerminalSilent},
-		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
-		"menu-v2":                      {fn: runMenuV2},
-		"install-cycle":                {fn: runInstallCycle, standalone: true},
-		"perf":                         {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
-		"perf-autocorrect":             {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
-	}
-	spec, ok := registry[name]
+	spec, ok := caseRegistry()[name]
 	if !ok {
 		return caseSpec{}, fmt.Errorf("unknown or missing -case %q (registry: m1-gate, ibus-restart, kill9-survive,"+
 			" d01-probe, chromium-smoke, gte-smoke, gedit-smoke, x11-smoke, word-en-ru,"+
@@ -287,12 +352,101 @@ func pickCase(name string) (caseSpec, error) {
 			" reset-escape, select-smoke, select-correct, select-clipboard, combo-word-layout,"+
 			" layout-single, super-space-alive, macr-probe, macr-super-letter, macr-per-app,"+
 			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, flip-keystroke,"+
+			" spike-smoke, spike-wezterm, spike-caps, wezterm-flip, term04-negative,"+
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
 			" autocorrect-blocklist-silent, menu-v2,"+
+			" term-word-vte, term-negative-witnesses,"+
+			" term-word-wezterm, term-word-vte-flip,"+
+			" term-cap-delivery, term-word-drain, term-dst-apply,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 
 	return spec, nil
+}
+
+// caseRegistry is the case table of the stand (built per call — no mutable
+// globals).
+func caseRegistry() map[string]caseSpec {
+	return map[string]caseSpec{
+		"m1-gate":                     {fn: runM1Gate},
+		"ibus-restart":                {fn: runIbusRestart},
+		"kill9-survive":               {fn: runKill9Survive},
+		"d01-probe":                   {fn: runD01Probe},
+		"chromium-smoke":              {fn: runChromiumSmoke},
+		"gte-smoke":                   {fn: runGTESmoke},
+		"gedit-smoke":                 {fn: runGeditSmoke},
+		"x11-smoke":                   {fn: runChromiumX11Smoke},
+		"word-en-ru":                  {fn: runWordENRU},
+		"word-after-space":            {fn: runWordAfterSpace},
+		"word-ru-en":                  {fn: runWordRUEN},
+		"word-mixed":                  {fn: runWordMixed},
+		"phrase-en-ru":                {fn: runPhraseENRU},
+		"phrase-mixed":                {fn: runPhraseMixed},
+		"ladder-chromium":             {fn: runLadderChromium},
+		"reset-escape":                {fn: runResetEscape},
+		"select-smoke":                {fn: runSelectSmoke},
+		"select-correct":              {fn: runSelectCorrect},
+		"select-clipboard":            {fn: runSelectClipboard},
+		"combo-word-layout":           {fn: runComboWordLayout},
+		"layout-single":               {fn: runLayoutSingle},
+		"super-space-alive":           {fn: runSuperSpaceAlive},
+		"macr-probe":                  {fn: runMacrProbe},
+		"macr-super-letter":           {fn: runMacrSuperLetter},
+		"macr-per-app":                {fn: runMacrPerApp},
+		"ctl-smoke":                   {fn: runCtlSmoke},
+		"switch-spike":                {fn: runSwitchSpike, standalone: true},
+		"two-source-flip":             {fn: runTwoSourceFlip, standalone: true},
+		"external-flip-sync":          {fn: runExternalFlipSync, standalone: true},
+		"flip-keystroke":              {fn: runFlipKeystroke, standalone: true},
+		"spike-smoke":                 {fn: runSpikeSmoke, standalone: true, watchdog: spikeSmokeWatchdog},
+		"spike-wezterm":               {fn: runSpikeWezterm, standalone: true, watchdog: recipeWatchdog},
+		"term04-negative":             {fn: runTerm04Negative, watchdog: recipeWatchdog},
+		"spike-caps":                  {fn: runSpikeCaps, standalone: true, watchdog: capsWatchdog},
+		"wezterm-flip":                {fn: runWeztermFlip, standalone: true, watchdog: flipWatchdog},
+		"autocorrect-fires":           {fn: runAutocorrectFires},
+		"autocorrect-password-silent": {fn: runAutocorrectPasswordSilent},
+		// autocorrect-terminal-silent drives zenity + wezterm only — the
+		// chromium/gte/gedit preflight checks are surfaces it never uses
+		// (the noSurfacePreflight philosophy of 10-05; the VM stand live
+		// finding of plan 10-06: the negative is machine-reproducible
+		// there now).
+		"autocorrect-terminal-silent": {
+			fn:                 runAutocorrectTerminalSilent,
+			noSurfacePreflight: true,
+			watchdog:           autocorrectWatchdog,
+		},
+		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
+		"menu-v2":                      {fn: runMenuV2},
+		"term-word-vte":                {fn: runTermWordVTE, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		"term-word-wezterm":            {fn: runTermWordWezterm, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		"term-word-vte-flip":           {fn: runTermWordVTEFlip, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		// term-cap-delivery (plan 10-13): six probe rows (3 probes × 2
+		// clients), each probe on a fresh fixture with its own focus gate —
+		// six spawn+gate cycles plus the daemon/config setup ride inside
+		// the standard recipe budget.
+		"term-cap-delivery": {fn: runTermCapDelivery, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		// term-word-drain (plan 10-17): the round-4 pty-drain matrix — one
+		// full correction round per pacing combination (default/tight/loose
+		// through the -debug override), each with a raw pty capture, so
+		// three daemon restarts plus three fixture+observer rounds ride
+		// inside the budget.
+		"term-word-drain": {fn: runTermWordDrain, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		// term-dst-apply (the 10-13 scope continuation, round-6): the DST
+		// apply matrix — two warm-gated apply cells (wezterm, VTE) plus the
+		// twice-repeated DST→drain-delay→commit choreography on wezterm,
+		// each on a RAW pty capture with the shell-survival witness per
+		// row, so four fixture cycles plus the daemon/config setup ride
+		// inside the budget.
+		"term-dst-apply": {fn: runTermDstApply, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		"term-negative-witnesses": {
+			fn:                 runTermNegativeWitnesses,
+			noSurfacePreflight: true,
+			watchdog:           autocorrectWatchdog,
+		},
+		"install-cycle":    {fn: runInstallCycle, standalone: true},
+		"perf":             {fn: runPerf, watchdog: perfSamples * perfRepeatBudget},
+		"perf-autocorrect": {fn: runPerfAutocorrect, watchdog: perfSamples * perfRepeatBudget},
+	}
 }
 
 // setupStand builds the daemon, snapshots the desktop and starts the
@@ -315,7 +469,9 @@ func setupStand(ctx context.Context, cfg config, standalone bool) (*stand, error
 	}
 	s.logFile = logFile
 	s.logPath = logFile.Name()
+	fmt.Printf("stand setup: daemon journal %s\n", s.logPath)
 
+	fmt.Printf("stand setup: building goswitchd...\n")
 	if err := buildDaemon(ctx, s.daemonBin); err != nil {
 		s.discardLog(logFile)
 
@@ -329,9 +485,11 @@ func setupStand(ctx context.Context, cfg config, standalone bool) (*stand, error
 		return nil, err
 	}
 	s.snap = snap
+	fmt.Printf("stand setup: desktop state snapshotted\n")
 
 	if !standalone {
-		if err := s.startDaemon(); err != nil {
+		fmt.Printf("stand setup: spawning the -debug daemon...\n")
+		if err := s.startSetupDaemon(ctx); err != nil {
 			s.discardLog(logFile)
 
 			return nil, err
@@ -468,6 +626,44 @@ func (s *stand) waitDaemonExit() {
 	s.daemon = nil
 }
 
+// startSetupDaemon is the setup daemon's full lifecycle (the pre-preflight
+// spawn every non-standalone case depends on): stop any stale stand daemon
+// from a previous run, stop the user unit when it is active (its daemon
+// holds the component name and never allows replacement — the stand daemon
+// could never register over it; the teardown restores it), await the name
+// release with the generous budget, and only then spawn — with the
+// registered-mark retry ladder, because registration is retry-until-ready,
+// never a single attempt (the 2026-10-13 preflight finding: an unguarded
+// spawn died with "another goswitchd instance already registered" and the
+// preflight burned its whole budget on a dead daemon).
+func (s *stand) startSetupDaemon(ctx context.Context) error {
+	// The unit snapshot rides BEFORE the stale-reap: on the VM stand the
+	// unit daemon itself runs -debug (the 10-01 oracle drop-in), so the
+	// pgrep below matches it — a snapshot taken after the reap would read
+	// "inactive" and the teardown would silently skip the restore (the
+	// first term-word-vte run left the stand unit down, live finding
+	// 2026-10-12). On a host whose unit is not -debug the order is
+	// byte-equivalent.
+	unit := unitState(ctx)
+	s.unitWasActive = unit == unitActiveState
+	if err := stopStaleStandDaemon(ctx); err != nil {
+		return err
+	}
+	if s.unitWasActive {
+		fmt.Printf("stand setup: the user unit goswitchd is active — stopping it (restored at teardown)\n")
+		if _, err := runCmd(ctx, "systemctl", "--user", "stop", "goswitchd"); err != nil {
+			return fmt.Errorf("stop unit daemon: %w", err)
+		}
+	}
+	fmt.Printf("stand setup: awaiting the component name release (budget %v) before the spawn\n",
+		daemonReleaseWait)
+	if err := awaitNameFree(ctx, "before the setup daemon spawn"); err != nil {
+		return err
+	}
+
+	return s.startDaemonRegistered(ctx)
+}
+
 // teardown is the ALWAYS-run cleanup (T-03-01/T-03-03): gsettings are
 // restored (only the keys the stand actually changed), the daemon is
 // stopped, and the global engine is re-asserted AFTER the daemon dies —
@@ -480,7 +676,19 @@ func (s *stand) teardown() {
 	defer cancel()
 
 	s.restoreGsettings(ctx)
+	hadDaemon := s.daemon != nil
 	s.stopDaemon()
+	if hadDaemon {
+		// The shutdown half of the daemon lifecycle: reap any lingering
+		// stand daemon (always -debug; the user's unit daemon never is) so
+		// the next case never inherits a holder — the release lag beyond
+		// the process death is covered by the next start's patient
+		// awaitNameFree.
+		reapStaleStandDaemons(ctx)
+	}
+	if s.unitWasActive {
+		restoreUnit(ctx, unitActiveState)
+	}
 	s.restoreEngine(ctx)
 	s.reapZenity()
 	s.closeChromium()
@@ -497,6 +705,299 @@ func (s *stand) teardown() {
 // cleanupFiles removes the stand's temp directory (daemon binary).
 func (s *stand) cleanupFiles() {
 	_ = os.RemoveAll(s.tmpDir)
+}
+
+// holdAction is the await's routing for one poll where the name did not
+// probe free: which remediation the state calls for.
+type holdAction int
+
+const (
+	holdProbeAgain holdAction = iota // the name is absent from the bus — free, re-probe
+	holdWait                         // a live owner is releasing (or the restart already fired) — wait
+	holdRestart                      // the poisoned entry: listed, ownerless, unclaimable — restart ibus once
+)
+
+// nameHoldDecision routes one held poll from the bus facts. A listed name
+// with NO owner is the poisoned-entry signature (the 2026-10-13 finding:
+// every flag set returned queued/exists while GetNameOwner reported no
+// owner — no spawn could ever register on that ibus generation), and one
+// bounded ibus restart is the cure; a live owner is the ordinary slow
+// release. The caller's budget stays in charge either way — this is a
+// pure routing decision, never a deadline change.
+func nameHoldDecision(listed bool, ownerPID string, restarted bool) (holdAction, bool) {
+	switch {
+	case !listed:
+		return holdProbeAgain, false
+	case ownerPID != "":
+		return holdWait, false
+	case !restarted:
+		return holdRestart, true
+	default:
+		return holdWait, false
+	}
+}
+
+// daemonAlive reports whether the stand daemon process still exists
+// (signal 0 probes existence without disturbing it). No daemon = not alive.
+func (s *stand) daemonAlive() bool {
+	return s.daemon != nil && s.daemon.Process != nil &&
+		s.daemon.Process.Signal(syscall.Signal(0)) == nil
+}
+
+// lastErrorLineBound caps one journal error record's length in the
+// fail-fast diagnostic (a full record with a long field would flood the
+// console).
+const lastErrorLineBound = 300
+
+// lastErrorLine returns the journal's last ERROR-level record (bounded),
+// or "" when the journal holds none — the diagnostic the fail-fast wait
+// carries so a daemon death names its own cause.
+func lastErrorLine(journal string) string {
+	var found string
+	for _, ln := range strings.Split(journal, "\n") {
+		if strings.Contains(ln, `"level":"ERROR"`) {
+			found = ln
+		}
+	}
+	if len(found) > lastErrorLineBound {
+		found = found[:lastErrorLineBound]
+	}
+
+	return found
+}
+
+// waitForLogWhileAlive blocks until the daemon journal contains mark — and
+// fails FAST when the daemon process exits first, carrying the journal's
+// last error record (the name-conflict death) instead of a generic timeout
+// after the full budget (the 2026-10-13 preflight finding).
+func (s *stand) waitForLogWhileAlive(ctx context.Context, mark string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if s.countSub(mark) >= 1 {
+			return nil
+		}
+		if !s.daemonAlive() {
+			journal, rerr := os.ReadFile(s.logPath)
+			lastErr := ""
+			if rerr == nil {
+				lastErr = lastErrorLine(string(journal))
+			}
+			if lastErr == "" {
+				return fmt.Errorf("the daemon process exited before %q landed (journal %s)", mark, s.logPath)
+			}
+
+			return fmt.Errorf("the daemon process exited before %q landed — last journal error: %s",
+				mark, lastErr)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout after %v: daemon log has %d occurrences of %q, want >= 1",
+				timeout, s.countSub(mark), mark)
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return fmt.Errorf("wait for %q aborted: %w", mark, err)
+		}
+	}
+}
+
+// ibusRestartSettle is the pause after an ibus restart before the next
+// probe: the fresh generation needs a beat to write its address files and
+// export its bus.
+const ibusRestartSettle = 2 * time.Second
+
+// staleStopGrace is how long a SIGTERM'd stale daemon gets to exit on its
+// own before the SIGKILL escalation (the socket close is what releases the
+// component name — a stalled shutdown holds it indefinitely).
+const staleStopGrace = 10 * time.Second
+
+// stopStaleStandDaemon stops a LIVE previous stand daemon, if any — a
+// previous run left it holding the component name (stand daemons always
+// run -debug; the user's unit daemon never does). The stop half of the
+// setup lifecycle: the await lives in awaitNameFree.
+func stopStaleStandDaemon(ctx context.Context) error {
+	return stopStaleStandDaemonWith(ctx, staleStopGrace)
+}
+
+// stopStaleStandDaemonWith is the escalated core: every matching holder is
+// SIGTERM'd, and after the grace the survivors are SIGKILLed — a daemon
+// stalled in its own shutdown keeps the name held until its socket closes,
+// so waiting forever behind it is the bug this escalation exists to kill.
+func stopStaleStandDaemonWith(ctx context.Context, grace time.Duration) error {
+	out, err := runCmd(ctx, "pgrep", "-f", "goswitchd -debug")
+	if err != nil {
+		fmt.Printf("no live stand daemon found — nothing to stop\n")
+
+		return nil //nolint:nilerr // pgrep exit 1 = no live stand daemon — the good outcome
+	}
+	for _, pid := range strings.Fields(out) {
+		fmt.Printf("stale stand daemon pid %s — SIGTERM\n", pid)
+		_, _ = runCmd(ctx, "kill", pid)
+	}
+	deadline := time.Now().Add(grace)
+	for {
+		out, err := runCmd(ctx, "pgrep", "-f", "goswitchd -debug")
+		if err != nil {
+			return nil //nolint:nilerr // no match = every holder exited
+		}
+		if time.Now().After(deadline) {
+			for _, pid := range strings.Fields(out) {
+				fmt.Printf("stale stand daemon pid %s — SIGKILL (stuck past the grace)\n", pid)
+				_, _ = runCmd(ctx, "kill", "-9", pid)
+			}
+
+			return nil
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return err
+		}
+	}
+}
+
+// awaitNameFree blocks until the component's well-known name is claimable —
+// the non-destructive DoNotQueue probe of waitNameFree under the generous
+// daemonReleaseWait budget (the spike cases' patient replacement for the
+// fixed 15 s budget the slow-releasing previous daemon outlived). The
+// start half of the lifecycle: after this returns nil, the spawn cannot
+// lose a name race.
+func awaitNameFree(ctx context.Context, why string) error {
+	deadline := time.Now().Add(daemonReleaseWait)
+	restarted := false
+	for {
+		// Re-discover on every iteration: an ibus restart (below) mints a
+		// fresh generation and address — a cached one would probe a dead
+		// bus forever.
+		free, perr := probeNameFreeAt()
+		if perr != nil {
+			return fmt.Errorf("name probe (%s): %w", why, perr)
+		}
+		if free {
+			return nil
+		}
+		listed, ownerPID, qerr := ibusNameState(ctx)
+		if qerr != nil {
+			return fmt.Errorf("name state probe (%s): %w", why, qerr)
+		}
+		action, doRestart := nameHoldDecision(listed, ownerPID, restarted)
+		if doRestart {
+			fmt.Printf("the component name is POISONED on this ibus generation (listed, ownerless, "+
+				"unclaimable under every flag set) — restarting ibus once (%s)\n", why)
+			if _, rerr := runCmd(ctx, "ibus", "restart"); rerr != nil {
+				return fmt.Errorf("ibus restart (%s): %w", why, rerr)
+			}
+			restarted = true
+			if err := sleepCtx(ctx, ibusRestartSettle); err != nil {
+				return err
+			}
+
+			continue
+		}
+		if action == holdProbeAgain {
+			if err := sleepCtx(ctx, logPollInterval); err != nil {
+				return err
+			}
+
+			continue
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s still held after %v (%s) — the previous holder has not released the component name",
+				goswitchComponentName, daemonReleaseWait, why)
+		}
+		if err := sleepCtx(ctx, logPollInterval); err != nil {
+			return err
+		}
+	}
+}
+
+// probeNameFreeAt probes the component name claimable on the CURRENT ibus
+// generation (the address is re-discovered per call — never cached).
+func probeNameFreeAt() (bool, error) {
+	addr, err := engine.Discover()
+	if err != nil {
+		return false, fmt.Errorf("discover ibus bus: %w", err)
+	}
+
+	return probeNameFree(addr)
+}
+
+// ibusNameState reports whether the component's well-known name is listed
+// on the live ibus bus and, when owned, the owner's pid ("" when ownerless
+// — the poisoned-entry signature). ListNames is the presence oracle: the
+// poisoned entry appears there with NO owner while every claim attempt is
+// refused.
+func ibusNameState(ctx context.Context) (listed bool, ownerPID string, err error) {
+	addr, err := engine.Discover()
+	if err != nil {
+		return false, "", fmt.Errorf("discover ibus bus: %w", err)
+	}
+	conn, err := dbus.Dial(addr)
+	if err != nil {
+		return false, "", fmt.Errorf("dial ibus bus: %w", err)
+	}
+	defer func() {
+		if cerr := conn.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "e2e: close ibus name-state connection: %v\n", cerr)
+		}
+	}()
+	if err := conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Getuid()))}); err != nil {
+		return false, "", fmt.Errorf("dbus auth: %w", err)
+	}
+	if err := conn.Hello(); err != nil {
+		return false, "", fmt.Errorf("dbus hello: %w", err)
+	}
+	obj := conn.Object("org.freedesktop.DBus", "/org/freedesktop/DBus")
+	namesCall := obj.CallWithContext(ctx, "org.freedesktop.DBus.ListNames", 0)
+	if namesCall.Err != nil {
+		return false, "", fmt.Errorf("ListNames: %w", namesCall.Err)
+	}
+	listed = bodyMentions(namesCall.Body, goswitchComponentName)
+	ownerCall := obj.CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, goswitchComponentName)
+	if ownerCall.Err != nil {
+		var dbusErr dbus.Error
+		if errors.As(ownerCall.Err, &dbusErr) && dbusErr.Name == "org.freedesktop.DBus.Error.NameHasNoOwner" {
+			return listed, "", nil
+		}
+
+		return listed, "", fmt.Errorf("GetNameOwner: %w", ownerCall.Err)
+	}
+	ownerPID = ownerPIDFromCall(ctx, obj, ownerCall)
+
+	return listed, ownerPID, nil
+}
+
+// ownerPIDFromCall resolves the unix pid of the unique name carried in a
+// successful GetNameOwner reply ("" when the reply shape surprises).
+func ownerPIDFromCall(ctx context.Context, obj dbus.BusObject, ownerCall *dbus.Call) string {
+	if len(ownerCall.Body) != 1 {
+		return ""
+	}
+	unique, ok := ownerCall.Body[0].(string)
+	if !ok {
+		return ""
+	}
+	pidCall := obj.CallWithContext(ctx,
+		"org.freedesktop.DBus.GetConnectionUnixProcessID", 0, unique)
+	if pidCall.Err != nil || len(pidCall.Body) != 1 {
+		return ""
+	}
+	pid, ok := pidCall.Body[0].(uint32)
+	if !ok {
+		return ""
+	}
+
+	return strconv.FormatUint(uint64(pid), 10)
+}
+
+// reapStaleStandDaemons SIGTERMs any lingering stand daemon — the
+// shutdown-path half of the daemon lifecycle (the pid-точечный discipline:
+// stand daemons always run -debug and live under a temp dir, so the
+// pattern never matches the user's unit daemon).
+func reapStaleStandDaemons(ctx context.Context) {
+	out, err := runCmd(ctx, "pgrep", "-f", "goswitchd -debug")
+	if err != nil {
+		return
+	}
+	for _, pid := range strings.Fields(out) {
+		_, _ = runCmd(ctx, "kill", pid)
+	}
 }
 
 // snapshotDesktop captures the live-desktop state: both gsettings

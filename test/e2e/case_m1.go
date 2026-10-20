@@ -222,11 +222,15 @@ const (
 // its 5 s wait twice in a row while idle-desktop probes took focus within a
 // second). Past the grace the loop pokes the entry with the pid-keyed
 // grabFocus; the refused call still re-issues the activation, so the wait
-// survives an active desktop.
+// survives an active desktop. The deadline rides the manual-activation
+// budget (2026-10-09/10 protocol: the owner's click is the only working
+// focus grant on the drifted session — the automation-era budget cannot
+// contain a human click).
 func (s *stand) waitZenityEntry(ctx context.Context) error {
 	pid := strconv.Itoa(s.zenity.Process.Pid)
-	deadline := time.Now().Add(surfaceFocusWait)
+	deadline := time.Now().Add(spikeClickWait)
 	nextGrab := time.Now().Add(zenityGrabGrace)
+	notes := newNoteGate()
 	for {
 		now, err := s.focusWitness(ctx)
 		if err != nil {
@@ -238,6 +242,7 @@ func (s *stand) waitZenityEntry(ctx context.Context) error {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("zenity entry did not take focus (witness %q)", now)
 		}
+		_ = notes.due()
 		if time.Now().After(nextGrab) {
 			// Best-effort poke: a no-op while the window tree is not up.
 			_, _ = runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "grab-input-pid", pid)

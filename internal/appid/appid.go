@@ -39,6 +39,14 @@ const (
 	stateChanged  = "StateChanged"
 	getRoleMethod = "org.a11y.atspi.Accessible.GetRole"
 	signalBufSize = 16
+
+	// The at-spi registry — the object the event interest registers with
+	// (the 2026-10-12 stand fix): the application bridges consult the
+	// registry's registered-event list and emit signals ONLY while some
+	// listener holds a matching registration.
+	a11yRegistryName   = "org.a11y.atspi.Registry"
+	a11yRegistryPath   = "/org/a11y/atspi/registry"
+	eventStateInterest = "Object:state-changed"
 )
 
 // ErrBusClosed reports that the observer's a11y bus connection went away —
@@ -205,6 +213,17 @@ func Start(ctx context.Context) (*Observer, error) {
 
 		return nil, fmt.Errorf("subscribe to a11y focus events: %w", err)
 	}
+	// The registry interest rides the match (the 2026-10-12 stand finding:
+	// a raw match alone stays blind on a bare desktop — the bridges emit
+	// only while SOME consumer holds a registry registration). The refusal
+	// fails Start: a blind observer is worse than the caller's honest
+	// degradation WARN.
+	registry := conn.Object(a11yRegistryName, a11yRegistryPath)
+	if rerr := registerEventInterest(ctx, registry, eventStateInterest); rerr != nil {
+		_ = conn.Close()
+
+		return nil, rerr
+	}
 
 	feed := make(chan *dbus.Signal, signalBufSize)
 	conn.Signal(feed)
@@ -292,4 +311,21 @@ func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
 			}
 		}
 	}
+}
+
+// registerEventInterest announces the observer's interest in one event to
+// the at-spi registry — the registration every real a11y consumer performs
+// and a raw bus match alone never does: the application bridges consult the
+// registry's registered-event list (the GetRegisteredEvents call the live
+// capture shows a fresh bridge making) and emit signals ONLY while some
+// listener holds a matching registration (the 2026-10-12 stand finding: a
+// bare session emitted zero StateChanged signals until a listener
+// registered, then they flowed). A refusal returns the registry error
+// wrapped, named — Start's caller owns the degradation.
+func registerEventInterest(ctx context.Context, registry dbus.BusObject, event string) error {
+	if err := registry.CallWithContext(ctx, a11yRegistryName+".RegisterEvent", 0, event).Err; err != nil {
+		return fmt.Errorf("register a11y event %q: %w", event, err)
+	}
+
+	return nil
 }

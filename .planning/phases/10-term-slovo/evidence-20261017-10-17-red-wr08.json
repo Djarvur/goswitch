@@ -1,0 +1,11 @@
+{
+  "command": "go test ./test/e2e/ -count=1 -run 'TestDrainMarkOrder' -v",
+  "exitCode": 1,
+  "output": "ok 1 - TestDrainMarkOrder_HonestCausePasses\nnot ok 2 - TestDrainMarkOrder_DishonestCauseInCurrentRoundFails\nok 3 - TestDrainMarkOrder_NoReleaseInCurrentRoundFails\n# tests 3\n# pass 2\n# fail 1\n--- FAIL: TestDrainMarkOrder_DishonestCauseInCurrentRoundFails (0.00s)\n    case_term_word_drain_test.go:57: a dishonest grace release closed the row on a previous row's push cause (marks: chunks@273 commit@338 flip-armed@435 flip-released@486 cause-honest=true)\nFAIL\nFAIL\tgithub.com/Djarvur/goswitch/test/e2e 0.005s\nFAIL",
+  "failures": "--- FAIL: TestDrainMarkOrder_DishonestCauseInCurrentRoundFails",
+  "targetTest": "TestDrainMarkOrder_DishonestCauseInCurrentRoundFails",
+  "targetFile": "test/e2e/case_term_word_drain_test.go",
+  "expected": "WR-08 of the 10-REVIEW: the cause-honest half of drainMarkOrder must judge the CURRENT round's segment only (the journal accumulates all three combo rows without rotation) — a release with a dishonest reason (grace, the round-2 geometry) in the current round must fail the row even when an earlier row's honest push release sits in the accumulated journal",
+  "actual": "On the UNCHANGED HEAD the cause search greps the WHOLE accumulated journal (strings.Contains): the dishonest grace round closes cause-honest=true on the previous row's push cause — exactly the blind spot the review names",
+  "pinGreenOnHead": "The honest-cause and never-released companion pins PASS on the same HEAD (the positional half of the oracle is clean — LastIndex takes the current marks)"
+}

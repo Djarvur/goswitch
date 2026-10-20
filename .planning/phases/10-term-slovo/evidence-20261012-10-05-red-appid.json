@@ -1,0 +1,7 @@
+{
+  "command": "mise exec -- go test ./internal/appid/ -race -count=1 -v",
+  "exitCode": 1,
+  "output": "not ok 1 - TestRegisterEventInterest_PinsRegistryCall\nok 2 -   TestAppid_FocusedAppByFakeBus\nok 3 -   TestAppid_FocusedAppByFakeBus/focused_gain_caches_the_bridge_identity\nok 4 -   TestAppid_FocusedAppByFakeBus/loss_and_non-bridge_paths_keep_the_cache\nok 5 -   TestAppid_FocusedAppByFakeBus/closed_feed_is_ErrBusClosed,_not_a_panic\nok 6 -   TestObserver_StoresFocusPair\nok 7 -   TestObserver_LossKeepsPair\nok 8 -   TestObserver_FreshObserverUnknown\nok 9 -   TestRole_EnumConstants\nok 10 -   TestRole_EmptyPathUnknown\nok 11 -   TestRole_LiveCallShape\nok 12 -   TestRole_NilSeamUnknown\nok 13 -   TestRole_ConcurrentWithGain\nok 14 -   TestAppid_StartBusUnavailable\n# tests 14\n# pass 13\n# fail 1",
+  "targetTest": "TestRegisterEventInterest_PinsRegistryCall",
+  "targetFile": "internal/appid/appid_registry_test.go"
+}

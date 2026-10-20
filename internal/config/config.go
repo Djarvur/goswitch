@@ -28,6 +28,11 @@ const (
 	maxAutocorrectBlocklist = 64
 	minAutocorrectWordLen   = 2
 	maxAutocorrectWordLen   = 16
+
+	// maxCorrectionTerminals caps the terminal-class identity list
+	// (plan 10-02) — the same DoS guard as every identity list
+	// (the maxAutocorrectBlocklist / maxMACRApps precedent).
+	maxCorrectionTerminals = 64
 )
 
 // The documented default values (config_schema): the tap window is
@@ -63,6 +68,10 @@ var (
 	errAutocorrectBlocklistEmpty    = errors.New("must not be empty or blank — an empty pattern matches everything")
 	errAutocorrectMinWordLenRange   = errors.New("must be in [2, 16]")
 	errAutocorrectThresholdRange    = errors.New("must be positive, with trigram_margin >= trigram_floor")
+
+	errCorrectionTerminalsOverCeil = errors.New("entries, at most 64 allowed")
+	errCorrectionTerminalsRegex    = errors.New("must be a valid regular expression")
+	errCorrectionTerminalsEmpty    = errors.New("must not be empty or blank — an empty pattern matches everything")
 )
 
 // altModifierCandidates is the closed set of alternative MACR modifiers
@@ -71,6 +80,29 @@ var (
 // idiom).
 func altModifierCandidates() []string {
 	return []string{"", "ctrl_l", "ctrl_r"}
+}
+
+// The default terminal identity anchor (plan 10-07, gap G-10-1): the
+// identity source of the terminal class was dead by construction — the
+// correction.terminals key is absent on the host AND in every stand-case
+// document (10-UAT missing #2) — so classification leaned only on the
+// churn-fragile behavioral and role sources. The two names are the UAT
+// verdict's verbatim terminals (G-10-1, 2026-10-13); substring RE2
+// semantics — `gnome-terminal` finds gnome-terminal-server — and explicit
+// ^…$ anchoring stays the author's choice, the blocklist precedent.
+// Functions, not package vars: the strict lint forbids mutable globals
+// (the altModifierCandidates idiom), and a returned slice must never alias
+// package state a caller could mutate.
+const (
+	defaultTerminalGnomeTerminal = "gnome-terminal"
+	defaultTerminalWezterm       = "wezterm"
+)
+
+// DefaultTerminals returns a fresh copy of the default identity anchor —
+// the value an absent correction.terminals key normalizes to and the
+// built-in defaults carry.
+func DefaultTerminals() []string {
+	return []string{defaultTerminalGnomeTerminal, defaultTerminalWezterm}
 }
 
 // Hotkeys are the daemon's key bindings, expressed as closed-table name
@@ -89,12 +121,22 @@ type Timeouts struct {
 }
 
 // Correction carries the replacement-ladder parameters: the D-27 Backspace
-// series cap, the D-28 opt-in clipboard rung and the post-correction script
-// flip switch (owner decision 2, quick plan 260927-vu8).
+// series cap, the D-28 opt-in clipboard rung, the post-correction script
+// flip switch (owner decision 2, quick plan 260927-vu8) and the terminal
+// class of Phase 10 (TERM-02/D-55): anchored RE2 identity patterns naming
+// the terminal applications. An ABSENT key normalizes to the default
+// identity anchor (DefaultTerminals, plan 10-07 gap G-10-1 — the anchor
+// named verbatim in the UAT verdict); an EXPLICIT empty list is the
+// conscious opt-out — classification not configured, the pre-10-07
+// behavior kept as a deliberate choice (the D-54 precedent survives as the
+// opt-out form). The consumer is the classification seam of plan 10-03
+// (the «configured identity» source of the terminal veto), and the list is
+// capped like every identity list (the maxAutocorrectBlocklist precedent).
 type Correction struct {
-	BackspaceCap        int  `yaml:"backspace_cap"`
-	ClipboardRung       bool `yaml:"clipboard_rung"`
-	FlipAfterCorrection bool `yaml:"flip_after_correction"`
+	BackspaceCap        int      `yaml:"backspace_cap"`
+	ClipboardRung       bool     `yaml:"clipboard_rung"`
+	FlipAfterCorrection bool     `yaml:"flip_after_correction"`
+	Terminals           []string `yaml:"terminals"`
 }
 
 // MACR is the Super→Ctrl remapping layer (ADR-005): a global switch, the
@@ -236,6 +278,11 @@ func Defaults() Config {
 			BackspaceCap:        defaultBackspaceCap,
 			ClipboardRung:       false,
 			FlipAfterCorrection: true,
+			// The default identity anchor rides the built-in defaults too
+			// (plan 10-07, G-10-1): the no-file daemon serves Defaults()
+			// verbatim (the adopted path), so an absent document and no
+			// document classify identically.
+			Terminals: DefaultTerminals(),
 		},
 		MACR: MACR{
 			Enabled:     false,
@@ -352,13 +399,33 @@ func (t Timeouts) validate() error {
 }
 
 // validate enforces the Backspace series cap range (D-27: the ladder's
-// destructive series is bounded).
+// destructive series is bounded) and the terminal-class grammar
+// (plan 10-02, the D-53 precedents): the identity list is capped
+// unconditionally — a giant list is a DoS vector even while no consumer
+// reads it (T-10-02-01) — and every pattern is compiled here, the only
+// place a broken regex is visible before runtime; an empty or blank
+// pattern is refused before the compile attempt (an empty string is a
+// VALID RE2 that matches everything — the silent match-everything trap).
 func (c Correction) validate() error {
 	if c.BackspaceCap < minBackspaceCap || c.BackspaceCap > maxBackspaceCap {
 		return fmt.Errorf(
 			"correction.backspace_cap = %d: %w",
 			c.BackspaceCap, errBackspaceCapRange,
 		)
+	}
+	if len(c.Terminals) > maxCorrectionTerminals {
+		return fmt.Errorf(
+			"correction.terminals has %d %w",
+			len(c.Terminals), errCorrectionTerminalsOverCeil,
+		)
+	}
+	for i, pattern := range c.Terminals {
+		if strings.TrimSpace(pattern) == "" {
+			return fmt.Errorf("correction.terminals[%d] %q: %w", i, pattern, errCorrectionTerminalsEmpty)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("correction.terminals[%d] = %q: %w", i, pattern, errCorrectionTerminalsRegex)
+		}
 	}
 
 	return nil

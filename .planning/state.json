@@ -1,33 +1,38 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.0.0",
+  "milestone": "v1.2 — Терминалы и видимость приложений",
   "phases": [
     {
-      "number": "1",
-      "name": "ADR-пакет и каркас IBus-движка",
+      "number": "9",
+      "name": "Спайк и дефект wezterm",
       "status": "complete"
     },
     {
-      "number": "2",
-      "name": "Коррекция слова EN↔RU",
+      "number": "10",
+      "name": "TERM-слово",
       "status": "complete"
     },
     {
-      "number": "3",
-      "name": "Фразы, выделение, переключение и конфигурация",
-      "status": "complete"
+      "number": "11",
+      "name": "MENU — пункт «в чёрный список»",
+      "status": "pending"
     },
     {
-      "number": "4",
-      "name": "Поставка и приёмка",
-      "status": "complete"
+      "number": "12",
+      "name": "TERM-строка",
+      "status": "pending"
+    },
+    {
+      "number": "13",
+      "name": "A11Y — рецепты Telegram/ZCode",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (plan phase 10)",
+    "reason": "Phase 10 of 5 — needs a plan"
   },
-  "updated_at": "2026-10-08T06:25:49.878Z"
+  "updated_at": "2026-10-20T14:13:49.019Z"
 }

@@ -50,12 +50,171 @@ var errDaemonNotRunning = errors.New("daemon not running? (org.djarvur.goswitch 
 
 // errUsage is the subcommand grammar (err113: static).
 var errUsage = errors.New(
-	"usage: goswitchctl status [--json] | reload | correct | install | uninstall [--purge] | selfcheck")
+	"usage: goswitchctl status [--json] | reload | correct | probe-forward <keyspec>" +
+		" | probe-delete-surrounding <offset> <nchars> | probe-commit <text>" +
+		" | probe-delete <offset> <nchars> | probe-require" +
+		" | install | uninstall [--purge] | selfcheck")
 
 // configErrorKey terminates the status token grammar: its value is the
 // LAST field and may contain spaces (a flattened parse error), so the
 // parser must treat everything after it as the value.
 const configErrorKey = "config_error="
+
+// probeForwardCall is the probe branch's dial seam (the newEditorProc
+// precedent): the corpus swaps it so the CLI test never touches a live bus.
+//
+//nolint:gochecknoglobals // the CLI corpus's dial seam (the launcher-precedent test seam)
+var probeForwardCall = callMethod
+
+// probeForwardArgCount is the probe branch's argv shape: the subcommand plus
+// exactly one positional keyspec.
+const probeForwardArgCount = 2
+
+// The delivery-probe verbs' argv shapes (plan 10-13): the subcommand plus
+// its positionals — offset and nchars for probe-delete-surrounding, the
+// text for probe-commit.
+const (
+	probeDeliveryArgCount = 3
+	probeCommitArgCount   = 2
+)
+
+// The split-emission probe verbs' argv shapes (the 2026-10-16 crash
+// bisection): probe-delete carries the same (offset, nchars) pair,
+// probe-require is bare.
+const (
+	probeDeleteArgCount  = 3
+	probeRequireArgCount = 1
+)
+
+// verbProbeDeleteSurrounding is the delivery probe's subcommand name — one
+// definition (goconst) reused by the refusal wraps.
+const verbProbeDeleteSurrounding = "probe-delete-surrounding"
+
+// The split-emission probe verbs' subcommand names — one definition each.
+const (
+	verbProbeDelete  = "probe-delete"
+	verbProbeRequire = "probe-require"
+)
+
+// runProbeVerb dispatches the three debug-gated probe verbs (plans 09-02
+// and 10-13, the extraction that keeps run under the complexity budget):
+// each carries the ctl timeout, its exact positional shape (anything else
+// is the bare errUsage) and the dial through the probe seam. handled
+// reports whether args[0] named a probe verb at all.
+func runProbeVerb(ctx context.Context, args []string) (handled bool, err error) {
+	var positional func(ctx context.Context, args []string) error
+	switch args[0] {
+	case "probe-forward":
+		if len(args) != probeForwardArgCount { // exactly one positional keyspec
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, args []string) error {
+			return runProbeForward(ctx, args[1])
+		}
+	case verbProbeDeleteSurrounding:
+		if len(args) != probeDeliveryArgCount { // exactly two positionals
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, args []string) error {
+			return runProbeDeleteSurrounding(ctx, args[1], args[2])
+		}
+	case "probe-commit":
+		if len(args) != probeCommitArgCount { // exactly one positional text
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, args []string) error {
+			return runProbeCommit(ctx, args[1])
+		}
+	case verbProbeDelete:
+		if len(args) != probeDeleteArgCount { // exactly two positionals
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, args []string) error {
+			return runProbeDelete(ctx, args[1], args[2])
+		}
+	case verbProbeRequire:
+		if len(args) != probeRequireArgCount { // bare verb
+			return true, errUsage
+		}
+		positional = func(ctx context.Context, _ []string) error {
+			return runProbeRequire(ctx)
+		}
+	default:
+		return false, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, ctlCallTimeout)
+	defer cancel()
+
+	return true, positional(ctx, args)
+}
+
+// runProbeDeleteSurrounding drives the delivery probe's erase-then-ask verb
+// (plan 10-13): two integer positionals (offset may be negative — the
+// after-cursor form; nchars is unsigned), one control call with TYPED wire
+// arguments (the D-Bus (i u) signature), one reply line.
+func runProbeDeleteSurrounding(ctx context.Context, offsetArg, ncharsArg string) error {
+	offset, err := strconv.ParseInt(offsetArg, 10, 32)
+	if err != nil {
+		return fmt.Errorf(verbProbeDeleteSurrounding+": parse offset: %w", err)
+	}
+	nchars, err := strconv.ParseUint(ncharsArg, 10, 32)
+	if err != nil {
+		return fmt.Errorf(verbProbeDeleteSurrounding+": parse nchars: %w", err)
+	}
+	reply, err := probeForwardCall(ctx, "ProbeDeleteSurrounding", int32(offset), uint32(nchars))
+	if err != nil {
+		return fmt.Errorf(verbProbeDeleteSurrounding+": %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
+
+// runProbeCommit drives the delivery probe's commit verb (plan 10-13): the
+// text rides verbatim (the wire type is already string), one control call,
+// one reply line.
+func runProbeCommit(ctx context.Context, text string) error {
+	reply, err := probeForwardCall(ctx, "ProbeCommit", text)
+	if err != nil {
+		return fmt.Errorf("probe-commit: %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
+
+// runProbeDelete drives the crash-bisection probe's DST-only verb: the
+// (offset, nchars) pair typed for the (i u) wire signature, one control
+// call, one reply line.
+func runProbeDelete(ctx context.Context, offsetArg, ncharsArg string) error {
+	offset, err := strconv.ParseInt(offsetArg, 10, 32)
+	if err != nil {
+		return fmt.Errorf(verbProbeDelete+": parse offset: %w", err)
+	}
+	nchars, err := strconv.ParseUint(ncharsArg, 10, 32)
+	if err != nil {
+		return fmt.Errorf(verbProbeDelete+": parse nchars: %w", err)
+	}
+	reply, err := probeForwardCall(ctx, "ProbeDelete", int32(offset), uint32(nchars))
+	if err != nil {
+		return fmt.Errorf(verbProbeDelete+": %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
+
+// runProbeRequire drives the crash-bisection probe's Require-only verb: a
+// bare control call, one reply line.
+func runProbeRequire(ctx context.Context) error {
+	reply, err := probeForwardCall(ctx, "ProbeRequire")
+	if err != nil {
+		return fmt.Errorf(verbProbeRequire+": %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
 
 func main() {
 	// No defer here: os.Exit skips defers, so error reporting lives in main
@@ -73,6 +232,10 @@ func main() {
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errUsage
+	}
+
+	if handled, perr := runProbeVerb(ctx, args); handled {
+		return perr
 	}
 
 	switch args[0] {
@@ -161,6 +324,19 @@ func runUninstallCmd(ctx context.Context, args []string) error {
 	return nil
 }
 
+// runProbeForward drives the debug-gated probe verb (plan 09-02): the CLI
+// stays a thin client — one positional keyspec, one control call, one reply
+// line; every parse/emission refusal is the daemon's error reply.
+func runProbeForward(ctx context.Context, spec string) error {
+	reply, err := probeForwardCall(ctx, "ProbeForward", spec)
+	if err != nil {
+		return fmt.Errorf("probe-forward: %w", err)
+	}
+	printLine(reply)
+
+	return nil
+}
+
 // printReport writes the lifecycle report line by line — the CLI's
 // contract IS terminal output, so the write error is explicitly discarded
 // (one place, not per-line).
@@ -203,7 +379,7 @@ func runStatus(ctx context.Context, args []string) error {
 // callMethod performs one control call and returns the string reply. A
 // name without an owner is the friendly daemon-not-running verdict; every
 // other failure wraps the D-Bus error as-is.
-func callMethod(ctx context.Context, method string) (string, error) {
+func callMethod(ctx context.Context, method string, args ...any) (string, error) {
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
 		return "", fmt.Errorf("connect session bus: %w", err)
@@ -212,7 +388,7 @@ func callMethod(ctx context.Context, method string) (string, error) {
 
 	var reply string
 	call := conn.Object(ctlBusName, dbus.ObjectPath(ctlPath)).
-		CallWithContext(ctx, ctlBusName+"."+method, 0)
+		CallWithContext(ctx, ctlBusName+"."+method, 0, args...)
 	if call.Err != nil {
 		if isNoOwner(call.Err) {
 			return "", errDaemonNotRunning

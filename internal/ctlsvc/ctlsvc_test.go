@@ -30,10 +30,12 @@ const ctlTestWindow = time.Hour
 const configFilePerm = 0o600
 
 // ctlWordEN/ctlWordRU are the corpus pair of the forced correction (the
-// 02-01 pair, named once for goconst).
+// 02-01 pair, named once for goconst). ctlMismatchLine is the honest push's
+// non-matching field state (the session corpus's mismatchLine form).
 const (
-	ctlWordEN = "ghbdtn"
-	ctlWordRU = "привет"
+	ctlWordEN       = "ghbdtn"
+	ctlWordRU       = "привет"
+	ctlMismatchLine = "abc другойтекст"
 )
 
 // fakeStatus is the snapshot-provider double of the service corpus: one
@@ -284,6 +286,10 @@ func TestSvc_CorrectNow(t *testing.T) {
 		a.HandleKey(engine.EngineEvent{Keyval: uint32(r)})
 		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Release: true})
 	}
+	// The honest-GTK world (plan 10-10 migration): one spontaneous client
+	// push — cache evidence at arm; the nil-cache form of a matched round is
+	// the answer-only terminal signature now (the session corpus pins it).
+	a.HandleSurroundingText(ctlMismatchLine, runeLen(ctlMismatchLine), runeLen(ctlMismatchLine))
 
 	svc := ctlsvc.NewSvc(ctlsvc.Deps{Correct: a})
 	reply, err := svc.CorrectNow()
@@ -309,9 +315,138 @@ func TestSvc_CorrectNow(t *testing.T) {
 	if got := sink.deleteCount(); got != 1 {
 		t.Fatalf("deletions after the matching push = %d, want 1", got)
 	}
+	// The two-phase completion (plan 10-11): the client's confirming push
+	// (the deletion applied) completes the ladder.
+	a.HandleSurroundingText("", 0, 0)
 	texts := sink.commitTexts()
 	if len(texts) != 1 || texts[0] != ctlWordRU {
 		t.Fatalf("commits after the matching push = %q, want exactly one %q", texts, ctlWordRU)
+	}
+}
+
+// TestCtlsvc_ProbeForwardNilDepFailClosed pins the debug gate's server half
+// (T-09-02-01): a nil ProbeForward dep answers the errFailed error naming
+// the disabled state — never a panic, never a silent no-op.
+func TestCtlsvc_ProbeForwardNilDepFailClosed(t *testing.T) {
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{})
+
+	reply, err := svc.ProbeForward("x")
+	if err == nil {
+		t.Fatalf("ProbeForward with a nil dep = (%q, nil), want the fail-closed error", reply)
+	}
+	var derr *dbus.Error
+	if !errors.As(err, &derr) {
+		t.Fatalf("ProbeForward nil-dep error = %T, want *dbus.Error", err)
+	}
+	if !strings.Contains(err.Error(), "probe disabled") {
+		t.Errorf("ProbeForward nil-dep error %q missing the disabled verdict", err.Error())
+	}
+}
+
+// TestCtlsvc_ProbeForwardDelegates pins the delegation: a live dep receives
+// the spec verbatim and the method answers an ok line; a dep failure
+// surfaces as errFailed carrying the dep's error text.
+func TestCtlsvc_ProbeForwardDelegates(t *testing.T) {
+	var got []string
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{ProbeForward: func(spec string) error {
+		got = append(got, spec)
+
+		return nil
+	}})
+	reply, err := svc.ProbeForward("shift+Home")
+	if err != nil {
+		t.Fatalf("ProbeForward with a live dep error = %v, want nil", err)
+	}
+	if reply == "" {
+		t.Fatal("ProbeForward ok reply is empty, want the acknowledgment line")
+	}
+	if len(got) != 1 || got[0] != "shift+Home" {
+		t.Errorf("dep received %q, want exactly [shift+Home]", got)
+	}
+
+	errBoom := errStubEmitterDetached
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeForward: func(string) error { return errBoom }})
+	if reply, err = svc.ProbeForward("Home"); err == nil {
+		t.Fatalf("ProbeForward over a failing dep = (%q, nil), want errFailed", reply)
+	}
+	if !strings.Contains(err.Error(), "emitter detached") {
+		t.Errorf("ProbeForward dep-failure error %q missing the dep's text", err.Error())
+	}
+}
+
+// TestCtlsvc_ProbeDeliveryNilDepsFailClosed pins the debug gate's server
+// half for the delivery probes (plan 10-13, the ProbeForward form): nil
+// deps answer the errFailed error naming the disabled state — never a
+// panic, never a silent no-op.
+func TestCtlsvc_ProbeDeliveryNilDepsFailClosed(t *testing.T) {
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{})
+
+	reply, err := svc.ProbeDeleteSurrounding(0, 6)
+	if err == nil {
+		t.Fatalf("ProbeDeleteSurrounding with a nil dep = (%q, nil), want the fail-closed error", reply)
+	}
+	var derr *dbus.Error
+	if !errors.As(err, &derr) {
+		t.Fatalf("ProbeDeleteSurrounding nil-dep error = %T, want *dbus.Error", err)
+	}
+	if !strings.Contains(err.Error(), "probe disabled") {
+		t.Errorf("ProbeDeleteSurrounding nil-dep error %q missing the disabled verdict", err.Error())
+	}
+
+	reply, err = svc.ProbeCommit("привет")
+	if err == nil {
+		t.Fatalf("ProbeCommit with a nil dep = (%q, nil), want the fail-closed error", reply)
+	}
+	if !errors.As(err, &derr) || !strings.Contains(err.Error(), "probe disabled") {
+		t.Errorf("ProbeCommit nil-dep error %v missing the disabled verdict", err)
+	}
+}
+
+// TestCtlsvc_ProbeDeliveryDelegates pins the delegation of both delivery
+// probes (plan 10-13): the live deps receive the arguments verbatim and the
+// methods answer ok lines; a dep failure surfaces as errFailed carrying the
+// dep's error text.
+func TestCtlsvc_ProbeDeliveryDelegates(t *testing.T) {
+	var gotOffset int32
+	var gotNchars uint32
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{ProbeDeleteSurrounding: func(offset int32, nchars uint32) error {
+		gotOffset, gotNchars = offset, nchars
+
+		return nil
+	}})
+	reply, err := svc.ProbeDeleteSurrounding(-3, 6)
+	if err != nil {
+		t.Fatalf("ProbeDeleteSurrounding with a live dep error = %v, want nil", err)
+	}
+	if reply == "" {
+		t.Fatal("ProbeDeleteSurrounding ok reply is empty, want the acknowledgment line")
+	}
+	if gotOffset != -3 || gotNchars != 6 {
+		t.Errorf("dep received (%d, %d), want (-3, 6)", gotOffset, gotNchars)
+	}
+
+	var gotText string
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeCommit: func(text string) error {
+		gotText = text
+
+		return nil
+	}})
+	if reply, err = svc.ProbeCommit("привет"); err != nil || reply == "" {
+		t.Fatalf("ProbeCommit with a live dep = (%q, %v), want an ok line", reply, err)
+	}
+	if gotText != "привет" {
+		t.Errorf("dep received %q, want привет", gotText)
+	}
+
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{
+		ProbeDeleteSurrounding: func(int32, uint32) error { return errStubEmitterDetached },
+	})
+	if _, err = svc.ProbeDeleteSurrounding(0, 6); err == nil || !strings.Contains(err.Error(), "emitter detached") {
+		t.Errorf("ProbeDeleteSurrounding dep-failure error %v missing the dep's text", err)
+	}
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeCommit: func(string) error { return errStubEmitterDetached }})
+	if _, err = svc.ProbeCommit("x"); err == nil || !strings.Contains(err.Error(), "emitter detached") {
+		t.Errorf("ProbeCommit dep-failure error %v missing the dep's text", err)
 	}
 }
 
@@ -405,6 +540,9 @@ func startTestBus(t *testing.T) {
 
 // errCtlOwnerTimeout is the guard corpus's static timeout (err113).
 var errCtlOwnerTimeout = errors.New("control name never gained an owner")
+
+// errStubEmitterDetached is the probe-delegation corpus's static refusal (err113).
+var errStubEmitterDetached = errors.New("emitter detached")
 
 // waitCtlOwner polls the private bus until the control name has an owner —
 // the first Run's export completed. A wait-for-condition poll, never a
@@ -745,6 +883,7 @@ func TestRenderStatus_AutocorrectTokens(t *testing.T) {
 		AutoCorrectFired:       2,
 		AutoCorrectAbstained:   3,
 		AutoCorrectSkipReasons: map[string]int{"no-caps": 1, "abstain-short": 2},
+		AutoCorrectRoleErrors:  7,
 		ConfigPath:             "/tmp/goswitch-ac.yaml",
 		ConfigValid:            false,
 		ConfigError:            "decode config: boom",
@@ -757,6 +896,9 @@ func TestRenderStatus_AutocorrectTokens(t *testing.T) {
 	for _, want := range []string{
 		"autocorrect_enabled=true", "autocorrect_fired=2", "autocorrect_abstained=3",
 		"sound_enabled=false",
+		// The role-error counter (plan 10-07, G-10-1 missing #3): the new
+		// token rides the ac_ family; every OLD token keeps its exact form.
+		"ac_role_errors=7",
 		"ac_skip_abstain_short=2", "ac_skip_no_caps=1",
 	} {
 		if !strings.Contains(reply, want) {
@@ -771,5 +913,80 @@ func TestRenderStatus_AutocorrectTokens(t *testing.T) {
 	}
 	if !strings.HasSuffix(reply, "config_error=decode config: boom") {
 		t.Errorf("config_error must stay the LAST token: %q", reply)
+	}
+}
+
+// TestCtlsvc_ProbeSplitNilDepsFailClosed pins the debug gate's server half
+// for the split-emission probes (the 2026-10-16 crash bisection form, the
+// ProbeDeliveryNilDepsFailClosed shape verbatim): nil deps answer errFailed
+// naming the disabled state.
+func TestCtlsvc_ProbeSplitNilDepsFailClosed(t *testing.T) {
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{})
+
+	reply, err := svc.ProbeDelete(0, 6)
+	if err == nil {
+		t.Fatalf("ProbeDelete with a nil dep = (%q, nil), want the fail-closed error", reply)
+	}
+	var derr *dbus.Error
+	if !errors.As(err, &derr) {
+		t.Fatalf("ProbeDelete nil-dep error = %T, want *dbus.Error", err)
+	}
+	if !strings.Contains(err.Error(), "probe disabled") {
+		t.Errorf("ProbeDelete nil-dep error %q missing the disabled verdict", err.Error())
+	}
+
+	reply, err = svc.ProbeRequire()
+	if err == nil {
+		t.Fatalf("ProbeRequire with a nil dep = (%q, nil), want the fail-closed error", reply)
+	}
+	if !errors.As(err, &derr) || !strings.Contains(err.Error(), "probe disabled") {
+		t.Errorf("ProbeRequire nil-dep error %v missing the disabled verdict", err)
+	}
+}
+
+// TestCtlsvc_ProbeSplitDelegates pins the delegation of the split probes:
+// live deps receive the arguments verbatim, ok lines ride back, dep
+// failures surface as errFailed carrying the dep's text.
+func TestCtlsvc_ProbeSplitDelegates(t *testing.T) {
+	var gotOffset int32
+	var gotNchars uint32
+	svc := ctlsvc.NewSvc(ctlsvc.Deps{ProbeDelete: func(offset int32, nchars uint32) error {
+		gotOffset, gotNchars = offset, nchars
+
+		return nil
+	}})
+	reply, err := svc.ProbeDelete(-3, 6)
+	if err != nil {
+		t.Fatalf("ProbeDelete with a live dep error = %v, want nil", err)
+	}
+	if reply == "" {
+		t.Fatal("ProbeDelete ok reply is empty, want the acknowledgment line")
+	}
+	if gotOffset != -3 || gotNchars != 6 {
+		t.Errorf("dep received (%d, %d), want (-3, 6)", gotOffset, gotNchars)
+	}
+
+	var required bool
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeRequire: func() error {
+		required = true
+
+		return nil
+	}})
+	if reply, err = svc.ProbeRequire(); err != nil || reply == "" {
+		t.Fatalf("ProbeRequire with a live dep = (%q, %v), want an ok line", reply, err)
+	}
+	if !required {
+		t.Fatal("ProbeRequire dep was never called")
+	}
+
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{
+		ProbeDelete: func(int32, uint32) error { return errStubEmitterDetached },
+	})
+	if _, err = svc.ProbeDelete(0, 6); err == nil || !strings.Contains(err.Error(), "emitter detached") {
+		t.Errorf("ProbeDelete dep-failure error %v missing the dep's text", err)
+	}
+	svc = ctlsvc.NewSvc(ctlsvc.Deps{ProbeRequire: func() error { return errStubEmitterDetached }})
+	if _, err = svc.ProbeRequire(); err == nil || !strings.Contains(err.Error(), "emitter detached") {
+		t.Errorf("ProbeRequire dep-failure error %v missing the dep's text", err)
 	}
 }

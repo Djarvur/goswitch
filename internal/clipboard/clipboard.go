@@ -26,11 +26,14 @@ const cmdTimeout = 1500 * time.Millisecond // the owner prototype's subprocess t
 
 // The pinned wl-clipboard flags (man wl-clipboard 2.2.1, RESEARCH §4):
 // --no-newline reads the clipboard byte-exactly, --trim-newline keeps the
-// pipe's trailing newline out of the copy, --clear empties it.
+// pipe's trailing newline out of the copy, --clear empties it, --primary
+// aims wl-paste at the PRIMARY selection (the read half of the wezterm
+// CopyMode leg, ADR-008 D5 — CLIPBOARD stays byte-untouched).
 const (
 	flagNoNewline   = "--no-newline"
 	flagTrimNewline = "--trim-newline"
 	flagClear       = "--clear"
+	flagPrimary     = "--primary"
 )
 
 // The pinned binary names (T-03-03-04: fixed names from PATH, arguments
@@ -88,6 +91,29 @@ func (c *Clipboard) Save(ctx context.Context) (saved []byte, had bool, err error
 		}
 
 		return nil, false, fmt.Errorf("clipboard save: %w", err)
+	}
+
+	return out, true, nil
+}
+
+// Primary reads the PRIMARY selection byte-exactly (wl-paste --primary
+// --no-newline) — the read half of the wezterm CopyMode leg (ADR-008 D5:
+// PRIMARY-only, CLIPBOARD never touched by the terminal path). The empty
+// state mirrors Save: a genuine non-zero wl-paste exit is the EMPTY
+// selection — had=false, no error; everything else (above all a subprocess
+// KILLED by a signal — the rung's own deadline included, CR-03) is a
+// wrapped error. The call is OFF-mutex by contract — the caller reads it
+// outside the actor's mutex, never under it (the runClipboardRung
+// precedent, actor.go) — and bounded by the same cmdTimeout.
+func (c *Clipboard) Primary(ctx context.Context) (saved []byte, had bool, err error) {
+	out, err := c.call(ctx, binPaste, []string{flagPrimary, flagNoNewline}, nil)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 && ctx.Err() == nil {
+			return nil, false, nil // wl-paste's genuine empty-selection exit
+		}
+
+		return nil, false, fmt.Errorf("clipboard primary: %w", err)
 	}
 
 	return out, true, nil

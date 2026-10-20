@@ -1,0 +1,1 @@
+No external API integration: gap-closure round-4 scope (plans 10-16…10-18, gap G-10-1, TERM-02) — in-repo orchestration over the existing IBus engine channel (internal/session actor machine, unit replay corpus, stand e2e fixtures) and planning docs; the only external touchpoint is a web research row pinning the upstream mutter fix (research evidence, not an API integration).

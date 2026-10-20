@@ -1,0 +1,11 @@
+{
+  "command": "mise exec -- go test ./internal/session/ -race -count=1 -run 'TestReplayWezterm1921_KeysDuringWindowRideAfterCommit' -v",
+  "exitCode": 1,
+  "output": "not ok 1 - TestReplayWezterm1921_KeysDuringWindowRideAfterCommit\n# tests 1\n# pass 0\n# fail 1\n--- FAIL: TestReplayWezterm1921_KeysDuringWindowRideAfterCommit (0.04s)\n    actor_test.go:10588: held keystroke #1 arrival verdict = false, want true (consumed — the daemon owes the wire emission)\n    actor_test.go:10588: held keystroke #2 arrival verdict = false, want true (consumed — the daemon owes the wire emission)\n    actor_test.go:10603: op log tail = [\"require\" 7×\"forward(65288,14,0)\" \"commit(привет )\" \"require\"], want the held-key order [7×\"forward(65288,14,0)\" \"commit(привет )\" \"require\" \"forward(120,45,0)\" \"forward(121,21,0)\"] (deletes → commit → held keys)\nFAIL\nFAIL\tgithub.com/Djarvur/goswitch/internal/session 0.164s\nFAIL",
+  "failures": "--- FAIL: TestReplayWezterm1921_KeysDuringWindowRideAfterCommit",
+  "targetTest": "TestReplayWezterm1921_KeysDuringWindowRideAfterCommit",
+  "targetFile": "internal/session/actor_test.go",
+  "expected": "Corpus cell (β) of the round-4 review (CR-02): keystrokes arriving inside the unlocked drain-settle window must be HELD (arrival verdict true — consumed, the daemon owes the wire emission) and re-emitted strictly AFTER the pending commit: wire order = deletes → commit → held keys, FIFO. The typed-layout input the buffer tracks processes post-settle, keeping the buffer accounting consistent with the wire",
+  "actual": "On the UNCHANGED HEAD both keystrokes process at arrival (verdict false — ibus forwards them immediately, the «xпривет » inversion), no daemon re-emission of the held keys exists in the op log",
+  "pinGreenOnHead": "The 09:39/TwoPhaseLevel1/FlapWindowContextIdentity/Level1ConfirmFlush/TestDstGuard regression ramps and the round-4 replay matrix PASS on the same HEAD — the corpus adds observability, it breaks nothing that exists"
+}

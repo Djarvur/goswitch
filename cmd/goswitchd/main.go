@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -63,6 +64,15 @@ func run(ctx context.Context, debug bool, configPath string) error {
 
 	logging.Setup(os.Stderr, debug)
 
+	// The -debug pacing override resolves BEFORE anything else dials a bus
+	// (plan 10-17 Task 3, T-10-17-04): garbage under -debug is a loud start
+	// refusal, and without -debug the environment is ignored entirely —
+	// even garbage (the fail-closed pin).
+	gap, settle, err := debugPacing(debug, os.LookupEnv)
+	if err != nil {
+		return err
+	}
+
 	lc, err := loadConfig(configPath)
 	if err != nil {
 		return err
@@ -84,13 +94,86 @@ func run(ctx context.Context, debug bool, configPath string) error {
 	}
 
 	actor := newActor(lc.cfg, watcher)
-	startCtl(ctx, actor, watcher, lc.cfg, lc.path)
+	if gap > 0 {
+		actor.SetLevel2ForwardGap(gap)
+	}
+	if settle > 0 {
+		actor.SetTerminalDrainSettle(settle)
+	}
+	if gap > 0 || settle > 0 {
+		slog.Info("pacing override",
+			"forward_gap_ms", gap.Milliseconds(), "drain_settle_ms", settle.Milliseconds())
+	}
+	startCtl(ctx, actor, watcher, lc.cfg, lc.path, debug)
 	if err := engine.Run(ctx, engineConfig(actor)); err != nil {
 		return fmt.Errorf("engine run: %w", err)
 	}
 
 	return nil
 }
+
+// The -debug pacing override's environment names (plan 10-17 Task 3): the
+// stand's explicit latency matrix — three documented combinations (default,
+// tight, loose) — is the ONLY machine lever over the write branch's pacing,
+// and it exists ONLY under -debug (the debug-verb gate, T-10-17-04): a
+// production daemon never reads them, so a foreign environment cannot
+// change the input tempo.
+const (
+	envLevel2ForwardGap    = "GOSWITCH_DEBUG_LEVEL2_FORWARD_GAP_MS"
+	envTerminalDrainSettle = "GOSWITCH_DEBUG_TERMINAL_DRAIN_SETTLE_MS"
+
+	// pacingMaxMs caps an override value: the matrix needs tight and loose,
+	// never unbounded waits — a value past the cap is a refused start, not
+	// a silently clamped one.
+	pacingMaxMs = 5000
+)
+
+// debugPacing resolves the -debug-only pacing override from the
+// environment. Fail-closed by construction: without -debug the lookup is
+// never even performed (the environment is ignored — garbage included);
+// under -debug a present variable must parse as a whole number of
+// milliseconds inside (0, pacingMaxMs] or the daemon REFUSES to start —
+// a silent default would corrupt the very matrix the override exists to
+// make explicit. Zero values mean "not overridden" (the actor keeps its
+// journal-proven defaults).
+func debugPacing(debug bool, lookup func(string) (string, bool)) (gap, settle time.Duration, err error) {
+	if !debug {
+		return 0, 0, nil // fail-closed: no -debug, no environment, no exceptions
+	}
+	gap, perr := parsePacingMs(envLevel2ForwardGap, lookup)
+	if perr != nil {
+		return 0, 0, perr
+	}
+	settle, serr := parsePacingMs(envTerminalDrainSettle, lookup)
+	if serr != nil {
+		return 0, 0, serr
+	}
+
+	return gap, settle, nil
+}
+
+// parsePacingMs reads one override variable strictly: absent means
+// default; present means a valid millisecond count or a loud error.
+func parsePacingMs(name string, lookup func(string) (string, bool)) (time.Duration, error) {
+	v, ok := lookup(name)
+	if !ok {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("pacing override %s=%q: not a number: %w", name, v, err)
+	}
+	if n <= 0 || n > pacingMaxMs {
+		return 0, fmt.Errorf("pacing override %s=%d: out of range (1..%d ms): %w",
+			name, n, pacingMaxMs, errPacingOutOfRange)
+	}
+
+	return time.Duration(n) * time.Millisecond, nil
+}
+
+// errPacingOutOfRange is the static wrapped error of an out-of-range
+// pacing override (the err113 discipline).
+var errPacingOutOfRange = errors.New("value out of range")
 
 // startCtl runs the control service on the session bus — the daemon's
 // SECOND godbus connection (the engine rides the private IBus socket,
@@ -100,14 +183,23 @@ func run(ctx context.Context, debug bool, configPath string) error {
 // «Настройки…» read and write THAT document. A ctl failure NEVER kills the
 // daemon: the desktop's input rides this process, so the error is logged
 // and the daemon keeps serving without the control surface (the appid
-// degradation precedent).
-func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher, cfg config.Config, cfgPath string) {
+// degradation precedent). The debug flag gates the probe verb's dep
+// (plan 09-02, T-09-02-01): only a -debug daemon emits synthetic keys —
+// without it the method fails closed ("probe disabled").
+func startCtl(
+	ctx context.Context,
+	actor *session.Actor,
+	watcher *config.Watcher,
+	cfg config.Config,
+	cfgPath string,
+	debug bool,
+) {
 	var reload ctlsvc.Reloader
 	if watcher != nil {
 		reload = watcher // nil without a resolvable path: ReloadConfig answers "no config file"
 	}
 	go func() {
-		deps := ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}
+		deps := newCtlDeps(actor, reload, debug)
 		// The tray indicator rides the ctl connection (quick plan
 		// 260930-pf6): one bus name more visible at org.djarvur.goswitch,
 		// attached after the name and the ctl object go live. Attach errors
@@ -217,6 +309,38 @@ func startCtl(ctx context.Context, actor *session.Actor, watcher *config.Watcher
 			slog.Error("ctl service stopped", "error", err)
 		}
 	}()
+}
+
+// newCtlDeps assembles the control-service dependencies over the actor. The
+// probe verb's emission dep exists ONLY under -debug (plan 09-02,
+// T-09-02-01): a nil field is the fail-closed state — ProbeForward answers
+// "probe disabled" and emits nothing on a production daemon.
+func newCtlDeps(actor *session.Actor, reload ctlsvc.Reloader, debug bool) ctlsvc.Deps {
+	deps := ctlsvc.Deps{Status: actor, Reload: reload, Correct: actor}
+	if debug {
+		deps.ProbeForward = func(spec string) error {
+			return session.ProbeForward(actor.ProbeEmitter(), spec)
+		}
+		// The delivery probes (plan 10-13) ride the same gate: their deps
+		// exist ONLY under -debug — a production daemon answers "probe
+		// disabled" at the ctl surface and emits nothing (T-10-13-01).
+		deps.ProbeDeleteSurrounding = func(offset int32, nchars uint32) error {
+			return session.ProbeDeleteSurrounding(actor.ProbeEmitter(), offset, nchars)
+		}
+		deps.ProbeCommit = func(text string) error {
+			return session.ProbeCommit(actor.ProbeEmitter(), text)
+		}
+		// The split-emission probes (the 2026-10-16 crash bisection) ride
+		// the same gate: DST-only and Require-only, the signals separable.
+		deps.ProbeDelete = func(offset int32, nchars uint32) error {
+			return session.ProbeDelete(actor.ProbeEmitter(), offset, nchars)
+		}
+		deps.ProbeRequire = func() error {
+			return session.ProbeRequire(actor.ProbeEmitter())
+		}
+	}
+
+	return deps
 }
 
 // menuToggles carries the two persisted-toggle compositions of the menu

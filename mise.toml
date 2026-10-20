@@ -146,6 +146,72 @@ run = "go run ./test/e2e -case external-flip-sync"
 description = "e2e: 06-10 G-6-1 live proof — after a daemon flip the FIRST letter injected with no pause lands in the field (en→ru 'в', ru→en 'd'), both directions ×3, paired journal order D-36 + zero deadline-abort WARNs in the rounds (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case flip-keystroke"
 
+# Live spike cases (09-02, TERM-01): the phase's evidence program drives the
+# owner's desktop (dedicated stand surfaces only) and appends verdict rows to
+# docs/adr/adr-008-spike-log.md — deliberately NOT part of `mise run ci`.
+# ONE mode (2026-10-12 unified layer): every case spawns its fixtures itself
+# and runs from the owner's interactive terminal — zero pastes, zero clicks
+# required (daemon focus_in gates the surfaces), zero sounds.
+[tasks.e2e-spike-smoke]
+description = "e2e: 09-02 spike-smoke — the debug-gated probe-forward channel end to end (ctl→ctlsvc→actor→engine) into a dedicated wezterm pty capture, emission + delivery verdict row to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case spike-smoke"
+
+[tasks.e2e-spike-wezterm]
+description = "e2e: 09-02 spike-wezterm — the native-Wayland recipe trial on the wayland stand fixture (P0' WAYLAND_DISPLAY re-probe, flip→type→pty hex, CopyMode select-chord), rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case spike-wezterm"
+
+[tasks.e2e-spike-caps]
+description = "e2e: 09-02 spike-caps — the gnome-terminal/VTE capability round (delivery, commit-landing shortcut check, select-chord kill criterion), rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case spike-caps"
+
+[tasks.e2e-term04-negative]
+description = "e2e: 09-02 term04-negative — the TERM-04 frozen negative under the unified layer (autocorrect ENABLED, stand-spawned zenity control + plain wezterm surface, fired=0 oracle), rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term04-negative"
+
+[tasks.e2e-wezterm-flip]
+description = "e2e: 09-02 wezterm-flip — the two-round flip oracle in the honest RED state (defect-reproduced expected), carrying the P0-P4 ladder instruments and the wezterm select-chord probes; rows to adr-008-spike-log.md (fresh spawn per round; live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case wezterm-flip"
+
+# Phase-10 live VTE rows (10-05, TERM-02): they drive the goswitch-stand VM
+# desktop (vm-primary venue) and append dated verdict rows to
+# docs/adr/adr-008-spike-log.md — deliberately NOT part of `mise run ci`.
+[tasks.e2e-term-word-vte]
+description = "e2e: 10-05 term-word-vte — live VTE word rows on the VM stand: double Right Shift corrects ghbdtn→привет per the pty-hex oracle in bash and zsh panes, the mid-line contract row (OQ 2), the frozen CLIPBOARD sentinel row; done+level-2 marks gate the terminal branch; rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-word-vte"
+
+[tasks.e2e-term-negative-witnesses]
+description = "e2e: 10-05 term-negative-witnesses — the frozen negative witnesses (criterion 5): vim-insert and htop INSIDE gnome-terminal stay silent under the enabled layer (fired=0, terminal-veto abstentions grow, buffer verbatim) while the positive control corrects in the same class; autocorrect-terminal-silent re-pin row; rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-negative-witnesses"
+
+[tasks.e2e-term-word-wezterm]
+description = "e2e: 10-06 term-word-wezterm — live wezterm-nightly word rows on the VM stand (criterion 1): the ×2 two-greens discipline (Pitfall 1), the caps re-pin row before any decision (Pitfall 4), the mid-line contract row (OQ 2), the frozen CLIPBOARD sentinel and the OQ 3 primary-leg probe through probe-forward; rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-word-wezterm"
+
+[tasks.e2e-term-word-vte-flip]
+description = "e2e: 10-08 term-word-vte-flip — the mechanism row of the deferred flip (G-10-1 cause B): the VTE word round under flip_after_correction: true with the JOURNAL DELIVERY ORDER oracle (done < settlement < mode/switch — SetGlobalEngine never between the commit and its confirmation, the E3 contract) plus the frozen CLIPBOARD sentinel under the flip config; rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-word-vte-flip"
+
+[tasks.e2e-term-cap-delivery]
+description = "e2e: 10-13 term-cap-delivery — the round-3 delivery-capability probe (G-10-1): three probes × two terminal clients (P1 DeleteSurroundingText honored — the field shrinks exactly nchars; P2 the Require answer reflects a just-committed text; P3 the Require answer reflects applied BackSpace forwards), budgeted DST(0,0)+Require polls (honest never-row on silence, never a hang), the frozen CLIPBOARD sentinel; rows to adr-008-spike-log.md — the routing input of plan 10-14 (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-cap-delivery"
+
+[tasks.e2e-term-word-drain]
+description = "e2e: 10-17 term-word-drain — round-4 pty-drain proof (G-10-1): one full correction round per pacing combination (default/tight/loose through the -debug env override) on a RAW pty capture; oracle: every BackSpace byte (0x7f) strictly before the replacement word's bytes, the delivery marks ordered (chunks-sent → commit-sent → flip-armed → flip-released after its honest cause), the frozen CLIPBOARD sentinel; rows to adr-008-spike-log.md — the code rides 10-17, the LIVE rows are 10-18's work (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-word-drain"
+
+[tasks.e2e-term-dst-apply]
+description = "e2e: 10-13 continuation term-dst-apply — the round-6 DST-apply matrix: warm-gated probe-delete (-6,6) apply cells on wezterm-nightly and gnome-terminal/VTE (the RAW pty delta answers honored/ignored/partial — erase bytes 0x7f/0x08 after the typed token) plus the full choreography ghbdtn → DST(6) → 1 s drain-delay → probe-commit привет twice (the byte-order and final-line oracle); every emission rides a Require-witness materialization gate (DST never emitted into an unproven context — the 10-16 bisection discipline) and carries the gnome-shell survival witness; rows to adr-008-spike-log.md round-6 section — the routing input of the round-6 verdict (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-dst-apply"
+
+# The round-5 host self-drive instrument (the wezterm double-delete hunt):
+# this task is the DRY-RUN only — preconditions + parser self-check, zero
+# injections, zero writes (safe anywhere, including headless). The LIVE
+# battery is orchestrator-invoked later with the owner's dedicated pane:
+#   go run ./test/e2e -selfdrive -pane-log /tmp/gs-pane.log
+[tasks.test-selfdrive]
+description = "instrument: 10-17 selfdrive dry-run — host self-drive driver build + preconditions + pty-log parser self-check, NO injections and NO live desktop contact (safe on any machine; the LIVE battery is orchestrator-invoked: go run ./test/e2e -selfdrive -pane-log /tmp/gs-pane.log; NOT in ci)"
+run = "go run ./test/e2e -selfdrive -dry-run"
+
 [tasks.e2e-macr-probe]
 description = "e2e: 03-05 MACR spike (A7) — Super+letter delivery to ProcessKeyEvent pinned from -debug trace, consumed-upstream path observed (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case macr-probe"

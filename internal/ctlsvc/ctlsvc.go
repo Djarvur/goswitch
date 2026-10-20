@@ -44,6 +44,11 @@ var ErrNotPrimaryOwner = errors.New("another instance owns the goswitch control 
 // (unlike the IBus side, where a reply must stay zero-valued).
 const errFailed = "org.freedesktop.DBus.Error.Failed"
 
+// errProbeDisabled is the fail-closed reply of every debug-gated probe
+// method (T-09-02-01, T-10-13-01): the emission dep is absent on a
+// production daemon, and the method must not emit.
+const errProbeDisabled = "probe disabled (daemon not under -debug)"
+
 // StatusSnapshotProvider reports the daemon state — the session actor's
 // snapshot under its mutex (never a second FSM).
 type StatusSnapshotProvider interface {
@@ -72,12 +77,29 @@ type Deps struct {
 	// OnConn is the optional post-export hook on the live session-bus
 	// connection (quick plan 260930-pf6): the tray indicator attaches here —
 	// one connection, one bus name, one object path more. The FIRST argument
-	// is the serve context Run itself holds (quick plan 261001-fg3): the
-	// tray supervisor's goroutine dies with it. Run calls the hook exactly
+	// is the serve context Run itself holds (quick plan 261001-fg3): the tray
+	// supervisor's goroutine dies with it. Run calls the hook exactly
 	// once after the name and the ctl object are live; an error is a WARN
 	// and serving CONTINUES — a broken indicator never takes the control
 	// surface down.
 	OnConn func(ctx context.Context, conn *dbus.Conn) error
+	// ProbeForward is the debug-gated spike verb's emission dep (plan
+	// 09-02, T-09-02-01): the daemon assigns it ONLY under -debug. A nil
+	// field is the fail-closed state — ProbeForward answers "probe
+	// disabled" and emits nothing.
+	ProbeForward func(spec string) error
+	// ProbeDeleteSurrounding and ProbeCommit are the delivery probes'
+	// emission deps (plan 10-13, the ProbeForward form): the daemon assigns
+	// them ONLY under -debug. A nil field is the fail-closed state — the
+	// method answers "probe disabled" and emits nothing.
+	ProbeDeleteSurrounding func(offset int32, nchars uint32) error
+	ProbeCommit            func(text string) error
+	// ProbeDelete and ProbeRequire are the split-emission probes' emission
+	// deps (the 2026-10-16 gnome-shell DST/Require crash bisection): the
+	// same fail-closed form as the paired probe — assigned ONLY under
+	// -debug, a nil field answers "probe disabled" and emits nothing.
+	ProbeDelete  func(offset int32, nchars uint32) error
+	ProbeRequire func() error
 }
 
 // Svc is the object exported at ObjectPath on BusName; godbus dispatches
@@ -131,6 +153,97 @@ func (s *Svc) CorrectNow() (reply string, err *dbus.Error) {
 	return s.deps.Correct.CorrectNow(), nil
 }
 
+// ProbeForward implements org.djarvur.goswitch.ProbeForward (s) → s: the
+// debug-gated spike verb of plan 09-02 (T-09-02-01). The dep exists ONLY
+// when the daemon runs under -debug (the Deps assembly gates it), so a nil
+// dep is the fail-closed answer ("probe disabled") — the method is a
+// surface any session-bus caller can reach, and without the debug gate it
+// must not emit synthetic keys. A live dep's parse/emission failure
+// surfaces as errFailed carrying the dep's error text.
+func (s *Svc) ProbeForward(spec string) (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeForward", &err)
+
+	if s.deps.ProbeForward == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeForward(spec); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
+
+	return "probe forwarded", nil
+}
+
+// ProbeDeleteSurrounding implements org.djarvur.goswitch.
+// ProbeDeleteSurrounding (i u) → s: the delivery probe's erase-then-ask
+// verb of plan 10-13 — the ProbeForward fail-closed form verbatim. The dep
+// exists ONLY when the daemon runs under -debug, so a nil dep is the
+// fail-closed answer ("probe disabled"); these are destructive primitives
+// in the live input field, and a surface any session-bus caller can reach
+// must not emit them without the debug gate. A live dep's failure surfaces
+// as errFailed carrying the dep's error text.
+func (s *Svc) ProbeDeleteSurrounding(offset int32, nchars uint32) (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeDeleteSurrounding", &err)
+
+	if s.deps.ProbeDeleteSurrounding == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeDeleteSurrounding(offset, nchars); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
+
+	return "probe delete-surrounding emitted", nil
+}
+
+// ProbeCommit implements org.djarvur.goswitch.ProbeCommit (s) → s: the
+// delivery probe's commit verb of plan 10-13 — the ProbeForward fail-closed
+// form verbatim (see ProbeDeleteSurrounding for the gate rationale).
+func (s *Svc) ProbeCommit(text string) (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeCommit", &err)
+
+	if s.deps.ProbeCommit == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeCommit(text); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
+
+	return "probe committed", nil
+}
+
+// ProbeDelete implements org.djarvur.goswitch.ProbeDelete (i u) → s: the
+// crash-bisection probe's DST-only verb — the ProbeDeleteSurrounding
+// fail-closed form verbatim (see its gate rationale): the dep exists ONLY
+// under -debug, a nil dep answers "probe disabled"; a live dep's failure
+// surfaces as errFailed carrying the dep's error text.
+func (s *Svc) ProbeDelete(offset int32, nchars uint32) (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeDelete", &err)
+
+	if s.deps.ProbeDelete == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeDelete(offset, nchars); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
+
+	return "probe delete emitted", nil
+}
+
+// ProbeRequire implements org.djarvur.goswitch.ProbeRequire () → s: the
+// crash-bisection probe's Require-only verb — the ProbeDelete fail-closed
+// form verbatim.
+func (s *Svc) ProbeRequire() (reply string, err *dbus.Error) {
+	defer recoverMethod("ProbeRequire", &err)
+
+	if s.deps.ProbeRequire == nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{errProbeDisabled}}
+	}
+	if perr := s.deps.ProbeRequire(); perr != nil {
+		return "", &dbus.Error{Name: errFailed, Body: []any{perr.Error()}}
+	}
+
+	return "probe require emitted", nil
+}
+
 // renderStatus formats the snapshot as the Status method's single-line
 // key=value report — the wire canon: human-readable as printed, machine-
 // parseable by goswitchctl's --json. The build version (D-37) LEADS the
@@ -162,6 +275,19 @@ func renderStatus(st session.Status) string {
 		"autocorrect_enabled="+strconv.FormatBool(st.AutoCorrectEnabled),
 		"autocorrect_fired="+strconv.Itoa(st.AutoCorrectFired),
 		"autocorrect_abstained="+strconv.Itoa(st.AutoCorrectAbstained),
+		// The role-source error counter (plan 10-07, G-10-1 missing #3):
+		// every role-request error of the live episode is machine-visible —
+		// the 11:00:16 episode stayed silent-broken behind its single WARN
+		// for the rest of the day; a healthy answer zeroes it. Counts only
+		// (D-20/D-21); the token rides the ac_ family before the config
+		// block, and no old key moves or renames.
+		"ac_role_errors="+strconv.Itoa(st.AutoCorrectRoleErrors),
+		// The DST guard's diversion counter (plan 10-16, the 2026-10-16
+		// bisection): level-1 corrections rerouted to the forward branch for
+		// the missing materialization evidence — the owner's machine-visible
+		// WHY of a forwards-delivered replacement (T-10-16-04). Same
+		// counts-only discipline, same fixed-token form, no old key moves.
+		"corr_dst_guarded="+strconv.Itoa(st.CorrDstGuarded),
 		"sound_enabled="+strconv.FormatBool(st.SoundEnabled),
 	)
 	for _, reason := range slices.Sorted(maps.Keys(st.AutoCorrectSkipReasons)) {

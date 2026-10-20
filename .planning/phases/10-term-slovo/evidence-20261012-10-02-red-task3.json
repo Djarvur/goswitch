@@ -1,0 +1,7 @@
+{
+  "command": "mise exec -- go test ./internal/clipboard/ -run TestClipboard_Primary -race -count=1 -v",
+  "exitCode": 1,
+  "output": "not ok 1 - TestClipboard_Primary\nnot ok 2 - TestClipboard_Primary/reads_wl-paste_--primary_--no-newline\nok 3 - TestClipboard_Primary/every_call_carries_a_deadline\nnot ok 4 - TestClipboard_Primary/signal-killed_wl-paste_is_a_wrapped_error\nok 5 - TestClipboard_Primary/empty_selection_is_a_state,_not_an_error\n# tests 5\n# pass 2\n# fail 3",
+  "targetTest": "TestClipboard_Primary",
+  "targetFile": "internal/clipboard/clipboard_test.go"
+}

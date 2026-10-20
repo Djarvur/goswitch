@@ -964,3 +964,172 @@ sound:
 		t.Errorf("sound option at startup = false, want the document truth true")
 	}
 }
+
+// TestNewCtlDeps_ProbeDeliveryDebugGated pins the debug gate's wiring half
+// for the delivery probes (plan 10-13, the T-09-02-01 form): the emission
+// deps exist ONLY under -debug — a production daemon's Deps carries nils
+// (the ctl methods fail closed), the -debug daemon carries live closures.
+func TestNewCtlDeps_ProbeDeliveryDebugGated(t *testing.T) {
+	actor := session.NewActor(time.Millisecond)
+
+	prod := newCtlDeps(actor, nil, false)
+	if prod.ProbeDeleteSurrounding != nil {
+		t.Fatal("production Deps carries ProbeDeleteSurrounding — the debug gate is open")
+	}
+	if prod.ProbeCommit != nil {
+		t.Fatal("production Deps carries ProbeCommit — the debug gate is open")
+	}
+
+	dbg := newCtlDeps(actor, nil, true)
+	if dbg.ProbeDeleteSurrounding == nil {
+		t.Fatal("debug Deps missing ProbeDeleteSurrounding")
+	}
+	if dbg.ProbeCommit == nil {
+		t.Fatal("debug Deps missing ProbeCommit")
+	}
+}
+
+// TestNewCtlDeps_ProbeSplitDebugGated pins the debug gate's wiring half for
+// the split-emission probes (the 2026-10-16 crash bisection form): the
+// emission deps exist ONLY under -debug — a production daemon's Deps
+// carries nils, the -debug daemon carries live closures.
+func TestNewCtlDeps_ProbeSplitDebugGated(t *testing.T) {
+	actor := session.NewActor(time.Millisecond)
+
+	prod := newCtlDeps(actor, nil, false)
+	if prod.ProbeDelete != nil {
+		t.Fatal("production Deps carries ProbeDelete — the debug gate is open")
+	}
+	if prod.ProbeRequire != nil {
+		t.Fatal("production Deps carries ProbeRequire — the debug gate is open")
+	}
+
+	dbg := newCtlDeps(actor, nil, true)
+	if dbg.ProbeDelete == nil {
+		t.Fatal("debug Deps missing ProbeDelete")
+	}
+	if dbg.ProbeRequire == nil {
+		t.Fatal("debug Deps missing ProbeRequire")
+	}
+}
+
+// The -debug pacing override corpus (plan 10-17 Task 3, T-10-17-04): the
+// stand's explicit latency matrix is the ONLY lever over the write
+// branch's pacing, and it exists ONLY under -debug — a production daemon
+// ignores the environment entirely (even garbage), while a -debug daemon
+// refuses to start on an invalid value instead of silently keeping the
+// default (a silent default would corrupt the very matrix the override
+// exists to make explicit).
+
+// TestDebugPacing_FailClosedWithoutDebug pins the gate: without -debug the
+// lookup is never performed — garbage in the environment cannot even
+// reach the parser, and the resolution reports "not overridden".
+func TestDebugPacing_FailClosedWithoutDebug(t *testing.T) {
+	lookup := func(string) (string, bool) { return "garbage", true }
+
+	gap, settle, err := debugPacing(false, lookup)
+
+	if err != nil {
+		t.Fatalf("non-debug daemon refused on the environment: %v — the env must be ignored", err)
+	}
+	if gap != 0 || settle != 0 {
+		t.Fatalf("non-debug daemon overrode pacing to %v/%v, want 0/0 (the journal-proven defaults stay)", gap, settle)
+	}
+}
+
+// TestDebugPacing_OverridesUnderDebug pins the parser: valid values
+// override, an absent variable keeps the default (0 = not overridden), and
+// a partial matrix (one variable set) overrides exactly that one lever.
+func TestDebugPacing_OverridesUnderDebug(t *testing.T) {
+	t.Run("both", func(t *testing.T) {
+		env := map[string]string{
+			envLevel2ForwardGap:    "5",
+			envTerminalDrainSettle: "400",
+		}
+		gap, settle, err := debugPacing(true, envLookup(env))
+		if err != nil {
+			t.Fatalf("valid matrix refused: %v", err)
+		}
+		if gap != 5*time.Millisecond || settle != 400*time.Millisecond {
+			t.Fatalf("override = %v/%v, want 5ms/400ms", gap, settle)
+		}
+	})
+
+	t.Run("partial", func(t *testing.T) {
+		env := map[string]string{envTerminalDrainSettle: "50"}
+		gap, settle, err := debugPacing(true, envLookup(env))
+		if err != nil {
+			t.Fatalf("partial matrix refused: %v", err)
+		}
+		if gap != 0 || settle != 50*time.Millisecond {
+			t.Fatalf("override = %v/%v, want 0/50ms — the unset lever keeps its default", gap, settle)
+		}
+	})
+
+	t.Run("absent", func(t *testing.T) {
+		gap, settle, err := debugPacing(true, envLookup(nil))
+		if err != nil {
+			t.Fatalf("empty environment refused: %v", err)
+		}
+		if gap != 0 || settle != 0 {
+			t.Fatalf("override = %v/%v, want 0/0", gap, settle)
+		}
+	})
+}
+
+// TestDebugPacing_GarbageRefuses pins the loud refusals: a non-number, a
+// zero, a negative and an over-cap value all refuse the START — never a
+// silent default.
+func TestDebugPacing_GarbageRefuses(t *testing.T) {
+	for name, env := range map[string]map[string]string{
+		"not-a-number": {envLevel2ForwardGap: "abc"},
+		"zero":         {envLevel2ForwardGap: "0"},
+		"negative":     {envTerminalDrainSettle: "-5"},
+		"over-cap":     {envLevel2ForwardGap: "5001"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := debugPacing(true, envLookup(env))
+			if err == nil {
+				t.Fatalf("invalid override %v accepted — the start must refuse loudly", env)
+			}
+			if !strings.Contains(err.Error(), "pacing override") {
+				t.Errorf("refusal %v does not name the override", err)
+			}
+		})
+	}
+}
+
+// envLookup adapts a map to the LookupEnv signature (nil map = absent).
+func envLookup(env map[string]string) func(string) (string, bool) {
+	return func(k string) (string, bool) {
+		v, ok := env[k]
+
+		return v, ok
+	}
+}
+
+// TestRun_PacingOverrideGate pins the wiring end to end: under -debug a
+// garbage override refuses the start BEFORE anything else fails, and
+// without -debug the same environment is ignored — the daemon fails on
+// its (also absent) config instead, proving the env never reached the
+// parser (the run-level half of the fail-closed contract).
+func TestRun_PacingOverrideGate(t *testing.T) {
+	t.Setenv(envLevel2ForwardGap, "garbage")
+	t.Setenv(envTerminalDrainSettle, "garbage")
+
+	err := run(context.Background(), true, "/nonexistent-goswitch-config.yaml")
+	if err == nil {
+		t.Fatal("the -debug daemon started with a garbage pacing override — the start must refuse")
+	}
+	if !strings.Contains(err.Error(), "pacing override") {
+		t.Fatalf("the refusal %v is not the pacing gate — the override must resolve first", err)
+	}
+
+	err = run(context.Background(), false, "/nonexistent-goswitch-config.yaml")
+	if err == nil {
+		t.Fatal("the run unexpectedly succeeded on a nonexistent config")
+	}
+	if strings.Contains(err.Error(), "pacing") {
+		t.Fatalf("the non-debug daemon failed on %v — the environment must be ignored entirely", err)
+	}
+}

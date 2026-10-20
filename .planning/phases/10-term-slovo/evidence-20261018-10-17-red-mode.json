@@ -1,0 +1,11 @@
+{
+  "command": "mise exec -- go test ./test/e2e/ -race -count=1 -run 'TestSelfdrive(ParseMode|CtlPath_NewestRelease)' -json (converted to TAP; go test -v failure detail below)",
+  "exitCode": 1,
+  "output": "not ok 1 - TestSelfdriveParseMode\nnot ok 2 - TestSelfdriveCtlPath_NewestRelease\n# tests 2\n# pass 0\n# fail 2\n\n=== RUN   TestSelfdriveParseMode\n    selfdrive_test.go:240: en: ssParseMode = \"\", want \"en\"\n--- FAIL: TestSelfdriveParseMode (0.00s)\n=== RUN   TestSelfdriveCtlPath_NewestRelease\n    selfdrive_test.go:274: ssNewestReleaseCtl: not implemented: no release ctl resolved under /tmp/TestSelfdriveCtlPath_NewestRelease17161657/001\n--- FAIL: TestSelfdriveCtlPath_NewestRelease (0.00s)\nFAIL\nFAIL\tgithub.com/Djarvur/goswitch/test/e2e\t0.010s\nFAIL",
+  "failures": "--- FAIL: TestSelfdriveParseMode\n--- FAIL: TestSelfdriveCtlPath_NewestRelease",
+  "targetTest": "TestSelfdriveParseMode",
+  "targetFile": "test/e2e/selfdrive_test.go",
+  "expected": "The battery must never type blind in an unverified layout (the 2026-10-18 first live battery typed ghbdtn into an RU-mode pane — Cyrillic garbage, no correction): (а) ssParseMode reads the daemon's `mode=en|ru` token from a goswitchctl status report and nothing else — a report without a mode field reads empty (fail-closed); (б) ssNewestReleaseCtl resolves the newest-by-mtime goswitchctl among ~/.local/share/goswitch/releases/*/ (the plans' `ls -t ... | head -1`) and errors loudly when no release ships one",
+  "actual": "Against the RED zero-value stubs the target tests fail on real assertions: ssParseMode returns \"\" for a report carrying mode=en, and ssNewestReleaseCtl refuses every home — the newest-release cell dies on the Fatalf before the newest-wins comparison can even run",
+  "pinGreenOnHead": "The full selfdrive parser/classification corpus and the rest of the e2e package PASS on the same HEAD (commit 214db1f) — the new pins add the mode read and the release resolution, they break nothing that exists"
+}

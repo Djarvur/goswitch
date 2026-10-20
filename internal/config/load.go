@@ -34,6 +34,17 @@ func Load(path string) (*Config, error) {
 	case err != nil:
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
+	// The absent-key normalization (plan 10-07, G-10-1): yaml.v3 decodes an
+	// ABSENT key to nil and an EXPLICIT `[]` to a non-nil empty slice —
+	// the two forms are distinguished exactly here. An absent key IS the
+	// default identity anchor (the source was dead by construction — 10-UAT
+	// missing #2); the explicit empty list stays the conscious opt-out
+	// (classification not configured), and an explicit non-empty list
+	// passes as written. The anchor itself is valid by construction (two
+	// non-empty RE2 literals), Validate still runs after.
+	if cfg.Correction.Terminals == nil {
+		cfg.Correction.Terminals = DefaultTerminals()
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}

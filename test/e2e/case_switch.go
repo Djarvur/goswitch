@@ -334,13 +334,19 @@ func (s *stand) restoreSpikeWindow(ctx context.Context, unit string) {
 
 // restoreUnit brings the unit daemon back when the snapshot caught it
 // active; best-effort with a bounded wait — a failing restore is a loud
-// stderr note, never a panic on the teardown path.
+// stderr note, never a panic on the teardown path. The start waits for the
+// component name to free first (bounded by the caller's teardown budget):
+// the 2026-10-13 finding — a spawn against a still-held name dies with
+// "another goswitchd instance already registered" — applies to the unit
+// daemon's single-shot registration exactly as to a stand spawn.
 func restoreUnit(ctx context.Context, want string) {
 	if want != unitActiveState {
 		return
 	}
 	// A unit left in the failed state refuses start; reset is harmless otherwise.
 	_, _ = runCmd(ctx, "systemctl", "--user", "reset-failed", "goswitchd")
+	fmt.Printf("unit restore: awaiting the component name release before the start\n")
+	_ = awaitNameFree(ctx, "before the unit daemon restore")
 	if _, err := runCmd(ctx, "systemctl", "--user", "start", "goswitchd"); err != nil {
 		fmt.Fprintf(os.Stderr, "e2e: switch-spike restore unit start: %v\n", err)
 

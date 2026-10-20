@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -48,9 +49,102 @@ const defaultVerifyWait = 100 * time.Millisecond
 const comboMask = engine.MaskControl | engine.MaskMod1 | engine.MaskMod4
 
 // backSpaceKeycode is the physical keycode of the Backspace key — the
-// keycode half of the level-2 replay ForwardKeyEvent(KeyBackSpace, 14, 0)
+// keycode half of the level-2 replay's press+release PAIRS
+// ForwardKeyEvent(KeyBackSpace, 14, 0)/(KeyBackSpace, 14, MaskRelease)
 // (RESEARCH Pattern 1; the keyval half is engine.KeyBackSpace).
 const backSpaceKeycode = 14
+
+// terminalChunkKeys is the chunk ceiling of the terminal write branch
+// (plan 10-04, TERM-02, ROADMAP criterion 4): the BackSpace replay is
+// emitted in bursts of at most this many PAIRS (round-6: one pair = one
+// press + one release forward of the same key) with a context re-check
+// between chunks — a mid-burst focus loss can never cost more than one
+// chunk, and the IME queue's loss window stays bounded (T-10-04-03).
+const terminalChunkKeys = 8
+
+// forwardEmissionsPerKey is the round-6 pair arity: one BackSpace key rides
+// exactly TWO ForwardKeyEvent emissions — the press and the release that
+// disarms the client's own key repeat. The delivery marks report the wire
+// emission count (keys×arity) alongside the rune-true key count, and every
+// pacing-budget arithmetic (the burst's own quanta, the key-hold bound)
+// multiplies by it.
+const forwardEmissionsPerKey = 2
+
+// focusFlapWindow is the flap-pair window of the DEFERRED verify-dead wipe
+// (plan 10-07, G-10-1 cause A): a real FocusOut whose FocusIn comes back
+// within this window is the host kernel's same-engine focus flap — the
+// journal of 2026-10-13 16:20:05 shows pairs 1–3 ms apart, four within
+// 6 ms — while a real window change costs orders of magnitude more. The
+// wipe the pair used to execute immediately waits the window out; the
+// completing FocusIn cancels it and the learned terminal class survives
+// the burst. An internal constant with a journal provenance, never a
+// config key: the flap geometry is a property of the churn defect, not a
+// user preference.
+const focusFlapWindow = 10 * time.Millisecond
+
+// level1ConfirmBudget is the confirmation budget of the two-phase level-1
+// delivery (plan 10-11, round-2 G-10-1, the 09:39 host rows): the level-1
+// ladder's commit phase waits this long for the client's proof that the
+// deletion applied (a push or a Require answer whose text-before-cursor no
+// longer ends with token+tail), then degrades to today's delete+commit pair
+// with a loud INFO mark — never a «deletion without replacement». Origin of
+// the value: a healthy client's confirming push lands ~16 ms after the
+// emission (the E3 -debug host trace of 2026-10-13), and the x4 headroom
+// rides out the churn-delayed clients the host journals show; an internal
+// constant with a journal provenance, never a config key (the
+// flipConfirmGrace precedent) — the fallback guarantees that an oversized
+// budget degrades to today's semantics, not to a worse one.
+const level1ConfirmBudget = 60 * time.Millisecond
+
+// flipConfirmGrace is the grace deadline of the terminal branch's deferred
+// correction flip (plan 10-08, G-10-1 cause B, the E3 verdict of 2026-10-13):
+// a healthy confirming push lands ~16 ms after the commit (the E3 -debug
+// trace), while the churn-delayed client's next keystroke is unmeasurable
+// from the daemon — the deadline carries a x20 headroom, so the mode rule
+// can never be lost silently yet never fires into a live delivery wait. An
+// internal constant with a journal provenance, never a config key.
+const flipConfirmGrace = 300 * time.Millisecond
+
+// defaultLevel2ForwardGap is the DEFAULT pacing quantum between the write
+// branch's wire emissions (plan 10-05, the 2026-10-12 VTE live finding):
+// the client drains forwarded keys lazily — they queue as GDK events —
+// while the commit lands synchronously, so a tight burst reorders and
+// corrupts the line («ghbdtn» came back «ghприв»: four erases, the
+// commit, two late erases). A sleep before EVERY forward and before the
+// commit lets the client's queue drain between emissions; the order on
+// the wire and the chunk geometry stay untouched (the op-log pins hold).
+// The value lives on the actor (NewActor plants the default) so the
+// -debug stand matrix can override it (plan 10-17 Task 3) — never from
+// config.
+const defaultLevel2ForwardGap = 20 * time.Millisecond
+
+// defaultTerminalDrainSettle is the DEFAULT bounded delivery window the
+// terminal branch holds between its last BackSpace forward and the commit
+// (plan 10-17, the round-4 machine). Origin (the journal rows, never a
+// config key — the level1ConfirmBudget precedent): the 19:21:26 host row
+// (DEBUG-term-host-live-failures.md, round-2 block) reports done +144 ms
+// with the whole 6×20 ms package behind it — the host client was STILL
+// DRAINING its forward queue when the commit landed; the healthy client's
+// confirming push (the E3 -debug trace of 2026-10-13) lands ~16 ms after
+// the emission. The window gives the queue an honest term to drain before
+// the replacement is committed; past the window the machine claims NO
+// persistence — every outcome beyond it carries the loud delivery marks
+// instead of a field promise (the honest uncertainty of the round-4
+// mandate). The value lives on the actor (NewActor plants the default) so
+// the -debug stand matrix can override it (plan 10-17 Task 3) — never
+// from config.
+const defaultTerminalDrainSettle = 150 * time.Millisecond
+
+// keyHoldSlack is the scheduling slack of the key-hold bound (CR-02): the
+// parked keystroke's wait is terminalDrainSettle + the machine's whole
+// pacing budget (cap×2×gap — round-6: press AND release quanta per key; a
+// keystroke may catch the FIRST chunk-boundary Gosched window of a
+// maximum-cap burst) plus this quantum for the commit's
+// own bookkeeping and the goroutine handoffs. A bound, never an eternity:
+// past it the hold degrades loudly to arrival processing (keys are never
+// lost — the owner's typing is sacred), accepting the pre-fix inversion for
+// that pathological overrun only.
+const keyHoldSlack = 250 * time.Millisecond
 
 // switchTimeout bounds the SetGlobalEngine round trip on the flip path —
 // the FAILURE-path wedge guard (Pitfall 4, T-05-03-01), not a slice of the
@@ -74,15 +168,28 @@ const switchTimeout = 150 * time.Millisecond
 // ceiling.
 const autoRoleTimeout = 25 * time.Millisecond
 
+// acRoleWarnRearm is the re-arm window of the sticky role-source WARN
+// (plan 10-07, G-10-1 missing #3): the 2026-10-13 host journal shows the
+// 11:00:16 episode consuming the one WARN and staying silent the WHOLE DAY
+// while the source stayed broken (autocorrect_fired=0 all day) — a lasting
+// outage must not dissolve into a single absorbed line. Errors continuing
+// past half an hour sound the WARN again (one line per window, never one
+// per query — a flap-bursting source keeps its journal clean); every error
+// between the lines still grows the status-visible counter.
+const acRoleWarnRearm = 30 * time.Minute
+
 // The AT-SPI text-input roles the D-53 role gate allows: text box (61),
 // entry (79) and document text (94) — the live-verified enum of
 // internal/appid (gi Atspi 2.52.0, 06-RESEARCH Q4). password-text (40),
 // terminal (60) and every other value refuse. The gate compares NUMBERS
 // only: role-name strings localize ("text box" vs the gi-nick "text").
+// acRoleTerminal is the terminal class of the D-55 veto (Phase 10) — the
+// first source of the classification seam (internal/appid RoleTerminal).
 const (
 	acRoleText         uint32 = 61
 	acRoleEntry        uint32 = 79
 	acRoleDocumentText uint32 = 94
+	acRoleTerminal     uint32 = 60
 )
 
 // The autocorrect abstention vocabulary (plan 06-06, D-53 fail-closed):
@@ -102,6 +209,10 @@ const (
 	acReasonRoleTimeout     = "role-timeout"
 	acReasonRecheckDisabled = "recheck-disabled"
 	acReasonPayloadStale    = "payload-stale"
+	// acReasonTerminalVeto is the arming veto of the terminal class
+	// (Phase 10, TERM-04/D-55): the boundary refuses before the detector
+	// runs — the invariant's literal placement, never the blocklist.
+	acReasonTerminalVeto = "terminal-veto"
 )
 
 // scriptMode is the daemon's output-script state (ADR-001 Option B): the
@@ -168,12 +279,39 @@ type Actor struct {
 	// never wait for a.mu (G-6-1). Reads go through the emitter() snapshot
 	// accessor; nil before the first mint, exactly like the plain field it
 	// replaced.
-	engSlot      atomic.Pointer[emitterSlot]
-	surr         []rune // cached text-before-cursor from the latest client push
-	sel          selectionState
-	pending      *pendingFix
-	after        *pendingAfter
-	verifyEpoch  uint64               // monotonic verify-after round tag (stale-timer guard)
+	engSlot atomic.Pointer[emitterSlot]
+	surr    []rune // cached text-before-cursor from the latest client push
+	// surrSeen is the DST guard's generation-scoped materialization evidence
+	// (plan 10-16, the 2026-10-16 bisection): set together with the
+	// surrounding cache — EVERY push or materializing Require answer of the
+	// current generation proves the composer-side surrounding state exists —
+	// and cleared exactly where the cache dies (the FocusOut/Reset branch,
+	// a.surr=nil + ctxEpoch++). surrEng binds the evidence to the emitter it
+	// was seen on (the flapEng interface-identity form: engine objects are
+	// minted per input context), so a churn-missed re-mint cannot inherit a
+	// dead generation's evidence. On mutter 46.2 a DeleteSurroundingText
+	// toward a never-materialized context segfaults gnome-shell (strlen over
+	// the virgin state, meta-wayland-text-input.c:254 — ANY parameters, the
+	// ~1.5 s virgin window; three cores, one frame), so the correction
+	// machine emits DST only over this evidence (executeCorrection).
+	surrSeen    bool
+	surrEng     engine.Emitter
+	sel         selectionState
+	pending     *pendingFix
+	after       *pendingAfter
+	verifyEpoch uint64 // monotonic verify-after round tag (stale-timer guard)
+	// pendingEpoch is the pre-correction round tag counter (plan 10-10,
+	// WR-02): armed with every pending fix and captured by the deadline's
+	// callback — the VerifyExpiry stale-timer guard. The verifyEpoch
+	// discipline: a monotonic tag, read and written under the mutex.
+	pendingEpoch uint64
+	// ctxEpoch is the input-context generation tag (plan 10-04): the
+	// context-death branch of HandleLifecycle bumps it on every
+	// FocusOut/Reset, and the terminal write branch compares it between
+	// chunks — a focus loss landing in the chunk-boundary window stops the
+	// round without completion. The verifyEpoch discipline: a monotonic
+	// tag, read and written under the mutex.
+	ctxEpoch     uint64               // monotonic input-context generation (chunk re-check)
 	mode         scriptMode           // output-script state, EN at start (ADR-001 Option B)
 	opts         Options              // correction tuning (D-27 cap, D-28 rung switch, D-36 combo)
 	clip         *clipboard.Clipboard // the rung's wl-clipboard client
@@ -211,6 +349,13 @@ type Actor struct {
 	corrDone    int
 	corrSkipped int
 	skipReasons map[string]int
+	// corrDstGuarded counts the DST guard's diversions (plan 10-16, the
+	// 2026-10-16 bisection): level-1 rounds whose DeleteSurroundingText was
+	// WITHHELD for the missing generation-scoped materialization evidence
+	// and served by the forward branch instead (the T-10-16-04 visibility —
+	// the owner must see WHY a replacement went forwards). Counts only,
+	// never content (D-20/D-21).
+	corrDstGuarded int
 	// Autocorrect counters (plan 06-06, D-54): the fired corrections, the
 	// fail-closed abstentions with their reason slugs — counts and closed
 	// slugs only, never the typed or corrected word (D-20/D-21, Pitfall 6).
@@ -232,12 +377,158 @@ type Actor struct {
 	// parse-cache form: rebuilt only when the document's list changed.
 	acBlocklistNames []string
 	acBlocklist      []*regexp.Regexp
+	// acTerminals is the compiled view of the document's terminal-class
+	// identity patterns (correction.terminals, Phase 10/D-55) — the same
+	// one-compile-per-list-change cache discipline as acBlocklist. Names
+	// is the raw list the cache was built from (the parse-cache form).
+	acTerminalNames []string
+	acTerminals     []*regexp.Regexp
+	// verifyDead is the behavioral terminal class of the LIVE input
+	// context (RESEARCH Pattern 1, source 3): set when a verify round of
+	// this context expired by budget while the context was still alive
+	// (the wezterm signature — the surrounding-text bit is announced, the
+	// pushes never come), cleared by the context's death
+	// (HandleLifecycle FocusOut/Reset — the same lifecycle that retires
+	// the pending round). A5 insurance: every transition logs one
+	// source-neutral INFO marker, word-free (D-20/D-21).
+	verifyDead bool
+	// detectCheck is the boundary's detector seam (plan 10-03): the
+	// indirection the veto corpus spies through — UseDetector installs a
+	// counting double, nil keeps the real detect.Check (the production
+	// wiring never touches the seam).
+	detectCheck detectorFunc
+	// The deferred verify-dead wipe of the flap window (plan 10-07,
+	// G-10-1 cause A): a REAL FocusOut arms focusFlapWindow once — the
+	// wipe executes at expiry unless a FocusIn cancelled it first (the
+	// same-engine flap pair). A Reset or a synthetic FocusOut (the own
+	// flip's credit) wipes immediately, byte as before. flapEpoch is the
+	// stale-deadline guard (the afterExpiry form: a monotonic tag compared
+	// under the mutex — a re-armed window or a completed pair turns a
+	// queued callback stale); flapStop is the armed timer's stop; flapAfter
+	// is the timer seam (the level2Sleep precedent: the production arm is
+	// time.AfterFunc, the corpus installs recorders).
+	flapEpoch uint64
+	flapStop  func()
+	flapAfter func(d time.Duration, fn func()) (stop func())
+	// The deferred correction flip of the terminal write branch (plan 10-08,
+	// G-10-1 cause B, the E3 verdict): the post-correction mode flip is
+	// ARMED, not executed — SetGlobalEngine 2–8 ms after the commit orphans
+	// the in-flight commit under host churn (the client processes the commit
+	// late, the re-minted context discards the stale engine's signal, the
+	// committed word is lost). The armed flip fires on the FIRST delivery
+	// confirmation — a confirming push, the next keystroke, or the grace
+	// deadline — and NO release site sits on the FocusOut lifecycle (a flap
+	// pair must not be able to reproduce E3; the mode rule is global, not
+	// context-scoped). flipEpoch is the stale-deadline guard (the afterExpiry
+	// discipline), flipStop cancels the armed deadline at release, and
+	// flipAfter is the timer seam (the flapAfter form: the production arm is
+	// time.AfterFunc, the corpus installs recorders).
+	flipPending *deferredFlip
+	flipEpoch   uint64
+	flipStop    func()
+	flipAfter   func(d time.Duration, fn func()) (stop func())
+	// verifyAfter is the pre-correction verify-deadline seam (plan 10-10,
+	// WR-02, the flipAfter form): arm(d, fn) arms one verify budget and
+	// returns the stop function canceling a still-pending firing. The
+	// production arm is time.AfterFunc (defaultFlapAfter); the corpus
+	// installs a deterministic recorder. The daemon path never calls it.
+	verifyAfter func(d time.Duration, fn func()) (stop func())
+	// l1 is the open confirmation window of the two-phase level-1 delivery
+	// (plan 10-11, round-2 G-10-1, the 09:39 host rows): the level-1 ladder
+	// emitted its DeleteSurroundingText and the commit phase waits for the
+	// client's proof the deletion applied. Nil whenever no ladder is
+	// mid-flight. l1Epoch is the fallback budget's stale-deadline guard
+	// (the afterExpiry discipline) and l1After the timer seam (the
+	// flipAfter form).
+	l1      *level1Confirm
+	l1Epoch uint64
+	l1After func(d time.Duration, fn func()) (stop func())
+	// flapEng is the emitter snapshot of the flap window (plan 10-11,
+	// WR-03 of the 10-REVIEW): captured by the REAL FocusOut that arms the
+	// deferred verify-dead wipe, compared by the completing FocusIn — the
+	// wipe cancels ONLY for the same pair of engine objects (the journal's
+	// 1–3 ms same-engine flap pairs); a different object is a real window
+	// switch completing inside the 10 ms window and the class must die
+	// with the old context (the invariant «класс живого контекста»).
+	// Cleared together with the window slot (cancel/expiry); accessed only
+	// under a.mu (HandleLifecycle serializes on it). The comparison is
+	// interface identity (==): both live implementations are pointers
+	// (*engine.Engine, the corpus *fakeSink).
+	flapEng engine.Emitter
+	// level2ForwardGap and terminalDrainSettle are the write branch's
+	// pacing values (plan 10-05 and plan 10-17): NewActor plants the
+	// journal-proven defaults; ONLY the daemon's -debug wiring overrides
+	// them (the stand pacing matrix, plan 10-17 Task 3) — never config,
+	// never a second writer. Read under a.mu by the machine.
+	level2ForwardGap    time.Duration
+	terminalDrainSettle time.Duration
+	// level2Busy is the write branch's re-entrancy guard (plan 10-10,
+	// WR-01): executeLevel2 checks-and-sets it BEFORE the first destructive
+	// emission and clears it on EVERY exit (the backspace-cap refusal, the
+	// context-changed stop, the success return). A second correction entry
+	// through the chunk-boundary mutex window (a CorrectNow over ctl, a
+	// fired autocorrect confirm, a tap-series expiry) refuses with the
+	// correction-busy slug — never a second BuildPlan replayed over the
+	// same un-replaced buffer, which in a terminal erases text beyond
+	// intent. The flag never crosses rounds: cleared at each exit, the
+	// next executeLevel2 passes.
+	level2Busy bool
+	// machineDone is the close-on-exit channel of the in-flight delivery
+	// machine (CR-02 of the 10-REVIEW, the round-4 fix session): armed
+	// together with level2Busy (machineArm), closed on EVERY machine exit
+	// (machineSettle — the backspace-cap refusal, the free abort, the
+	// success return). The key-hold path waits on it bounded, so a keystroke
+	// that arrived inside the unlocked drain-settle window can never ride
+	// the wire ahead of the machine's pending commit. Accessed only under
+	// a.mu; busy==true implies machineDone!=nil.
+	machineDone chan struct{}
+	// emissionSeq is the monotonic identity of the terminal delivery bursts
+	// (the round-5 instrument, the 2026-10-17 wezterm double-delete hunt):
+	// executeLevel2's terminal branch assigns the next value at the burst's
+	// burst-window open and every «correction delivery» row of that burst
+	// carries it. The journal juxtaposed against a pty log stays decisive:
+	// one seq in the daemon journal while the pty shows two delete runs ⇒
+	// the client replayed its queued forwards; two seqs on the wire ⇒ the
+	// daemon fired twice. A counter, never a key — content-free by
+	// construction (D-20/D-21). Accessed only under a.mu.
+	emissionSeq uint64
+	// deliveryStart is the wall-clock anchor of the in-flight burst's
+	// timeline: every delivery row's t_rel_ms is relative to it — the
+	// per-emission timing the aggregate rows never carried. It stands after
+	// the burst closes: the deferred flip releases later and stamps its own
+	// captured anchor (deferredFlip.seq/start), never a newer burst's.
+	// Accessed only under a.mu.
+	deliveryStart time.Time
+	// holdQueue is the FIFO of key events parked while the delivery machine
+	// is in flight (CR-02): typed-layout input (printables and BackSpace)
+	// must not hit the wire before the pending commit — the parked events
+	// process post-settle in arrival order and their transits re-emit from
+	// the daemon (HandleKey consumed them at arrival, so ibus's own
+	// forwarding never happened). Gestures, bare modifiers and the reset
+	// keys never park — their semantics belong to the arrival instant. The
+	// queue drains on the goroutine of the FIRST parked key (holdDrain is
+	// the single-flight flag); accessed only under a.mu.
+	holdQueue []engine.EngineEvent
+	holdDrain bool
 	// role is the live AT-SPI role seam of the autocorrect policy (plan
 	// 06-06): the SAME observer as appid when the concrete source implements
 	// RoleSource, or a test double installed via UseRole.
+	level2Sleep func(time.Duration) // the write branch's pacing seam (UseLevel2Sleeper)
 	role        RoleSource
-	appidWarned bool // one WARN per degradation episode — a broken source must not spam per keystroke
-	startAppid  func() (AppidSource, error)
+	// acRoleErrors counts EVERY role-request error of the live episode
+	// (plan 10-07, G-10-1 missing #3): the 2026-10-13 host journal shows
+	// the 11:00:16 WARN consumed the episode and the broken source stayed
+	// silent the whole day — the counter makes that machine-visible in
+	// goswitchctl status. A healthy answer closes the episode and zeroes
+	// it (the :2741 semantics extended). acRoleWarnedAt anchors the sticky
+	// WARN's re-arm window; roleClock is the episode's time seam (the
+	// flapAfter form: the production clock is time.Now, the corpus
+	// installs a controllable double).
+	acRoleErrors   int
+	acRoleWarnedAt time.Time
+	roleClock      func() time.Time
+	appidWarned    bool // one WARN per degradation episode — a broken source must not spam per keystroke
+	startAppid     func() (AppidSource, error)
 	// version is the daemon's build identity (D-37) pinned at construction;
 	// the status snapshot lifts it so goswitchctl status identifies the
 	// running build.
@@ -333,6 +624,13 @@ type Options struct {
 	AutoCorrectMinWordLen int
 	AutoCorrectMargin     float64
 	AutoCorrectFloor      float64
+	// Terminals carries the document's terminal-class identity patterns
+	// (correction.terminals, Phase 10/D-55): a substring RE2 match against
+	// the focused app's bridge-namespace identity MARKS the context
+	// terminal — the classification seam's second source. The zero value
+	// (an empty list) marks nothing — the old behavior, the D-54
+	// precedent.
+	Terminals []string
 	// SoundEnabled is the acoustic-feedback switch of the owner's «Звуки
 	// при переключении» decision (plan 07-08): DEFAULT ON — only an
 	// explicit enabled: false silences the tones. Fed from the document's
@@ -451,8 +749,22 @@ type pendingFix struct {
 	converted []rune
 	match     []rune
 	armed     time.Time
-	deadline  *time.Timer
+	stop      func()
 	sel       *selectionSpec
+	// epoch is the round's tag of the WR-02 fix (plan 10-10): the monotonic
+	// counter's value at arm — the armed deadline's callback carries it, and
+	// VerifyExpiry no-ops unless the live pending round owns the same tag
+	// (the afterExpiry form). A stale deadline from a resolved round can
+	// never consume the next round nor teach the behavioral class for a
+	// context that never missed a budget.
+	epoch uint64
+	// cacheNil snapshots the push cache at arm time (plan 10-08, the
+	// owner-approved client-drift amendment of 2026-10-13): the word round
+	// armed over an EMPTY cache — the client has never reported a field
+	// state in this context episode (an honest GTK client pushes on every
+	// change). Paired with an answer that does not hold the typed stretch,
+	// that is the stale-cache terminal signature (pendingStaleCache).
+	cacheNil bool
 }
 
 // pendingAfter is the state of the verify-after round — the post-correction
@@ -474,6 +786,67 @@ type pendingAfter struct {
 	epoch      uint64
 	mismatches int
 	deadline   *time.Timer
+	// noRung marks a terminal-branch round (plan 10-04, ADR-008 D4, owner
+	// verdict OQ 2 «contract»): the mismatch verdict must never arm the
+	// clipboard rung — a Ctrl+V chord into a shell is the SIGINT class.
+	// Forbidden BY CONSTRUCTION, not by config: the round carries no paste
+	// payload at all.
+	noRung bool
+}
+
+// deferredFlip is the armed post-correction mode flip (plan 10-08, G-10-1
+// cause B, the E3 verdict): the SET-semantics target — the corrected
+// text's script, the owner rule «режим следует за скриптом результата» —
+// plus the armed slot's epoch. The epoch makes a stale grace deadline from
+// a released or re-armed slot a no-op (the afterExpiry discipline).
+// terminal marks the branch that armed the slot (plan 10-17): the
+// terminal flip ignores the verify outcomes and arms no grace deadline —
+// only the next keystroke or a confirming push releases it — while the
+// level-1 flip keeps the full 10-08 machine byte-as-today. armedAt feeds
+// the terminal release's delivery-mark latency. gesture marks a PARKED
+// gesture-driven flip (CR-01 of the 10-REVIEW, the round-4 fix session):
+// a flip that arrived while the delivery machine was in flight and must
+// not SetGlobalEngine mid-window — the owner's explicit command, armed
+// regardless of flip_after_correction and superseding the correction's
+// own post-correction arming (never a silent drop).
+type deferredFlip struct {
+	target   scriptMode
+	epoch    uint64
+	terminal bool
+	gesture  bool
+	armedAt  time.Time
+	// The arming burst's identity (the round-5 instrument): a flip released
+	// seconds later stamps ITS OWN burst's emission-seq and timeline
+	// anchor, never whatever burst (if any) happens to be in flight at the
+	// release instant — the juxtaposition contract of emission-seq.
+	seq   uint64
+	start time.Time
+}
+
+// level1Confirm is the open confirmation window of the two-phase level-1
+// delivery (plan 10-11, round-2 G-10-1, the 09:39 host rows): the ladder's
+// DeleteSurroundingText is on the wire while the commit phase waits for the
+// client's proof the deletion applied — a push or Require answer whose
+// text-before-cursor no longer ends with match (token+tail). Everything the
+// completion needs is captured HERE, at arm: the emitter snapshot rides the
+// whole window (the :3444 one-snapshot precedent), so a flush after the
+// context's death or re-mint can never pour the text into a NEW
+// application's engine — the stale object is discarded by the client, the
+// same mechanic that was the E3 vector now working as the fuse. rng carries
+// the replace hook and the tail; level/token feed the frozen done row;
+// armed keeps the latency origin. epoch is the stale-deadline guard of the
+// fallback budget (the afterExpiry discipline); stop cancels the armed
+// budget at flush.
+type level1Confirm struct {
+	eng       engine.Emitter
+	commit    []rune
+	rng       correctionRange
+	converted []rune
+	match     []rune
+	armed     time.Time
+	level     correct.Level
+	epoch     uint64
+	stop      func()
 }
 
 // NewActor returns an actor deciding tap series inside the given
@@ -489,6 +862,21 @@ func NewActor(window time.Duration) *Actor {
 		start:      time.Now(),
 		buf:        correct.NewBuffer(),
 		clip:       clipboard.New(),
+		// The write branch's journal-proven pacing defaults (plan 10-17
+		// Task 3): only the daemon's -debug wiring overrides them.
+		level2ForwardGap:    defaultLevel2ForwardGap,
+		terminalDrainSettle: defaultTerminalDrainSettle,
+		// The flap-window timer's production arm (plan 10-07): a real
+		// time.AfterFunc deadline, stoppable — the corpus replaces it via
+		// UseFlapTimer with a deterministic recorder.
+		flapAfter: defaultFlapAfter,
+		// The level-1 confirm budget's production arm (plan 10-11): the
+		// defaultFlapAfter form — the corpus replaces it via UseLevel1Timer.
+		l1After: defaultFlapAfter,
+		// The role-episode clock's production form (plan 10-07): the real
+		// wall clock; the corpus installs a controllable double via
+		// UseRoleClock.
+		roleClock: time.Now,
 		// The lazy per-app observer's production starter: the a11y dial of
 		// internal/appid on the daemon's lifetime (the clipboard rung's
 		// context.Background precedent — the actor owns no shutdown path).
@@ -496,6 +884,15 @@ func NewActor(window time.Duration) *Actor {
 			return appid.Start(context.Background())
 		},
 	}
+}
+
+// defaultFlapAfter arms one real focusFlapWindow deadline (the production
+// flapAfter): the returned closure stops a still-pending firing; an already
+// fired timer returns false harmlessly — the epoch guard owns the verdict.
+func defaultFlapAfter(d time.Duration, fn func()) func() {
+	t := time.AfterFunc(d, fn)
+
+	return func() { t.Stop() }
 }
 
 // SetOptions stores the correction options (the startup wiring feeds them
@@ -508,6 +905,7 @@ func (a *Actor) SetOptions(o Options) {
 
 	a.opts = o
 	a.refreshACBlocklist(o.AutoCorrectBlocklist) // the no-config surface owns the same cache
+	a.refreshACTerminals(o.Terminals)            // the terminal-class cache rides the same discipline
 	// An enabled autocorrect layer or a non-empty macr list arrives through
 	// this surface too.
 	a.ensureAppid()
@@ -573,6 +971,13 @@ type RoleSource interface {
 	Role(ctx context.Context) (uint32, error)
 }
 
+// detectorFunc is the boundary detector's signature — the named type of
+// the plan 10-03 spy seam (the RoleCall precedent of internal/appid): one
+// Check over the finished token with the baked dictionaries and thresholds.
+type detectorFunc func(
+	tok []rune, mode string, data detect.Data, tri detect.Trigrams, params detect.Params,
+) detect.Verdict
+
 // UseRole installs a prepared role source — the wiring/test seam of the
 // D-53 role contour (the UseAppid mirror). The daemon path never calls it:
 // the observer arrives through ensureAppid's lazy start and the RoleSource
@@ -582,6 +987,103 @@ func (a *Actor) UseRole(rs RoleSource) {
 	defer a.mu.Unlock()
 
 	a.role = rs
+}
+
+// UseLevel2Sleeper installs the write branch's pacing seam — the
+// wiring/test seam of the UseRole form. The production sleeper is
+// time.Sleep; the corpus installs recorders (the 2026-10-12 pacing fix).
+func (a *Actor) UseLevel2Sleeper(s func(time.Duration)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.level2Sleep = s
+}
+
+// SetLevel2ForwardGap overrides the write branch's pacing quantum — the
+// -debug stand matrix is the only caller (plan 10-17 Task 3, T-10-17-04):
+// the daemon wiring feeds it from the debug-gated env override, never
+// from config, and a production daemon never reaches it. The wiring runs
+// before the engine serves.
+func (a *Actor) SetLevel2ForwardGap(d time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.level2ForwardGap = d
+}
+
+// SetTerminalDrainSettle overrides the terminal branch's bounded delivery
+// window — the SetLevel2ForwardGap form (plan 10-17 Task 3, T-10-17-04).
+func (a *Actor) SetTerminalDrainSettle(d time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.terminalDrainSettle = d
+}
+
+// UseFlapTimer installs the flap-window timer seam (plan 10-07, the
+// UseLevel2Sleeper form): arm(d, fn) arms one focusFlapWindow deadline and
+// returns the stop function canceling a still-pending firing. The production
+// arm is time.AfterFunc (defaultFlapAfter); the corpus installs a
+// deterministic recorder. The daemon path never calls it.
+func (a *Actor) UseFlapTimer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.flapAfter = arm
+}
+
+// UseFlipTimer installs the deferred-flip grace seam of the terminal write
+// branch (plan 10-08, the UseFlapTimer form): arm(d, fn) arms one grace
+// deadline and returns the stop function canceling a still-pending firing.
+// The production arm is time.AfterFunc (defaultFlapAfter); the corpus
+// installs a deterministic recorder. The daemon path never calls it.
+func (a *Actor) UseFlipTimer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.flipAfter = arm
+}
+
+// UseLevel1Timer installs the level-1 confirm budget seam (plan 10-11, the
+// UseFlipTimer form): arm(d, fn) arms one confirmation budget and returns
+// the stop function canceling a still-pending firing. The production arm is
+// time.AfterFunc (defaultFlapAfter); the corpus installs a deterministic
+// recorder.
+func (a *Actor) UseLevel1Timer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.l1After = arm
+}
+
+// UseVerifyTimer installs the pre-correction verify-deadline seam (plan
+// 10-10, WR-02, the UseFlipTimer form): arm(d, fn) arms one verify budget
+// and returns the stop function canceling a still-pending firing. The
+// production arm is time.AfterFunc (defaultFlapAfter); the corpus installs
+// a deterministic recorder — the epoch-tagged callback stays captured
+// behind the seam, so the deterministic injection fires the SAME closure
+// the real timer would. The daemon path never calls it.
+func (a *Actor) UseVerifyTimer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.verifyAfter = arm
+}
+
+// UseRoleClock installs the role-episode clock seam (plan 10-07, the
+// UseFlapTimer form): the clock timestamps the sticky role WARN's re-arm
+// window. The production clock is time.Now; the corpus installs a
+// controllable double. The daemon path never calls it.
+func (a *Actor) UseRoleClock(now func() time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.roleClock = now
+}
+
+// UseDetector installs a boundary detector double — the plan 10-03 spy
+// seam (the UseRole precedent): the veto corpus counts the calls through
+// it to prove the detector never runs on a terminal class and runs exactly
+// as before on a GTK class. nil restores the real detect.Check. The daemon
+// path never calls it.
+func (a *Actor) UseDetector(fn detectorFunc) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.detectCheck = fn
 }
 
 // SetVersion pins the daemon's build identity into the status snapshot
@@ -637,6 +1139,17 @@ type Status struct {
 	AutoCorrectFired       int
 	AutoCorrectAbstained   int
 	AutoCorrectSkipReasons map[string]int
+	// AutoCorrectRoleErrors is the live role-request error count (plan
+	// 10-07, G-10-1 missing #3): every error of the current degradation
+	// episode is counted — the 11:00:16 episode stayed silent for the rest
+	// of the day behind its single WARN. A healthy answer zeroes it.
+	AutoCorrectRoleErrors int
+	// CorrDstGuarded is the DST guard's diversion counter (plan 10-16, the
+	// 2026-10-16 bisection): level-1 corrections rerouted to the forward
+	// branch for the missing generation-scoped materialization evidence —
+	// the machine-visible WHY of a forwards-delivered replacement
+	// (T-10-16-04). Counts only (D-20/D-21).
+	CorrDstGuarded int
 	// SoundEnabled is the applied sound switch (plan 07-05) — the
 	// EffectiveEnabled truth of the applied snapshot (an absent section
 	// reads ON, the owner's default), the `sound_enabled` status token the
@@ -680,6 +1193,8 @@ func (a *Actor) StatusSnapshot() Status {
 		SoundEnabled:          a.soundEnabled,
 
 		AutoCorrectSkipReasons: maps.Clone(a.acReasons),
+		AutoCorrectRoleErrors:  a.acRoleErrors,
+		CorrDstGuarded:         a.corrDstGuarded,
 		ConfigValid:            true, // built-in defaults, or a source without a status surface
 	}
 	if a.mode == modeRU {
@@ -731,30 +1246,25 @@ func (a *Actor) CorrectNow() string {
 // A6): the committed Cyrillic rune on a RU commit, the original keyval on
 // every transit the client will insert. A Backspace press pops the buffer
 // honestly, so it keeps mirroring the field (Pitfall 7).
+//
+// CR-02 (the 10-REVIEW, the round-4 fix session): typed-layout input
+// arriving while the delivery machine is in flight must not hit the wire
+// before the machine's pending commit — the round-3 machine held the mutex
+// through burst+commit so the serialization guaranteed the order, and the
+// drain window released it, making the inversion («xпривет » instead of
+// «привет x») routine for typing continued right after the gesture. The
+// hold path parks the event (the arrival verdict is CONSUMED — ibus's own
+// forwarding never happens) and processes it post-settle, re-emitting its
+// transit from the daemon: wire order = deletes → commit → held keys, FIFO.
 func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
-
-	if ev.Release {
-		a.fsm.Feed(hotkey.KeyRelease{Keyval: ev.Keyval}, a.elapsed())
-		if ev.Keyval == a.tapKeyval {
-			// Only a release of the CONFIGURED tap key can move the series
-			// deadline (the FSM counts taps on clean releases); re-arming
-			// on any other event would either extend the deadline from the
-			// wrong instant or arm a timer over a cancelled series. A stale
-			// expiry is a no-op in the FSM, so over-arming is harmless,
-			// under-arming would silently drop the decision.
-			a.armTimer()
-		}
-		a.macrKeyRelease(ev)
-
-		return false
+	if (a.level2Busy && holdableKey(ev)) || len(a.holdQueue) > 0 {
+		return a.holdDuringDelivery(ev)
 	}
-	a.fsm.Feed(hotkey.KeyPress{Keyval: ev.Keyval}, a.elapsed())
 
-	return a.feedKey(ev)
+	return a.handleKeyArrived(ev)
 }
 
 // HandleLifecycle implements engine.EventHandler: FocusOut and Reset disarm
@@ -789,6 +1299,15 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 			a.flipCredit--
 			synthetic = true
 		}
+		// The two-phase level-1 ladder's flush site (plan 10-11): the input
+		// context is leaving — the ladder completes over the window's
+		// CAPTURED emitter snapshot, never the current emitter() (the stale
+		// object is discarded by the client). Byte-parity with today's pair:
+		// delete and commit are already both on the wire by the time a
+		// FocusOut could observe them. The verify-after the flush arms
+		// retires with the context below (clearAfter) — the same retirement
+		// a post-commit lifecycle executes today.
+		a.flushLevel1Confirm()
 		a.fsm.Feed(hotkey.Reset{}, a.elapsed())
 		if !synthetic {
 			a.buf.HardReset()
@@ -796,6 +1315,32 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// the caches belong to the input context that just left
 		a.surr = nil
 		a.sel = selectionState{}
+		// The DST guard's materialization evidence dies WITH the cache
+		// (plan 10-16): the generation that proved the composer-side
+		// surrounding state exists is gone, and a fresh generation starts
+		// unevidenced — the virgin-window rule.
+		a.surrSeen = false
+		a.surrEng = nil
+		// the context generation moves with it (plan 10-04): the terminal
+		// write branch reads this tag between chunks — any death of the
+		// context inside the burst's boundary windows stops the round
+		a.ctxEpoch++
+		// The behavioral terminal class too (Phase 10): a fresh context
+		// starts unclassified — the next expired verify round re-learns it.
+		// Plan 10-07 (G-10-1 cause A): a REAL FocusOut defers the wipe by
+		// focusFlapWindow — the host kernel's same-engine flap pairs (1–3 ms
+		// in the 16:20:05 journal) wiped the learned class before the next
+		// gesture could ride it, and wezterm's only classification source
+		// died with it. A Reset and a SYNTHETIC FocusOut (the own flip's
+		// re-mint — a new context generation, the class died with the old
+		// one) wipe immediately, byte as before.
+		switch {
+		case kind == engine.LifecycleReset || synthetic:
+			a.cancelVerifyDeadWipe()
+			a.setVerifyDead(false)
+		default:
+			a.armVerifyDeadWipe()
+		}
 		a.resolvePending()
 		a.clearAfter()
 		// A combo retired by the context's death never settles its word
@@ -812,6 +1357,22 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		}
 	case engine.LifecycleFocusIn, engine.LifecycleEnable, engine.LifecycleDisable:
 		slog.Debug("lifecycle", "kind", kind.String())
+		if kind == engine.LifecycleFocusIn {
+			// Plan 10-07 (G-10-1 cause A): the flap pair completed within
+			// the window — the context never left; the learned class
+			// survives and the pending wipe dies with the window. Plan
+			// 10-11 (WR-03 of the 10-REVIEW): «completed» now means the
+			// SAME pair of engine objects — the wipe cancels only when the
+			// FocusIn's emitter is the one whose FocusOut armed the window
+			// (the journal's 1–3 ms same-engine pairs). A different object
+			// is a REAL window switch that happened to complete inside the
+			// 10 ms window: the wipe is left to expire and the class dies
+			// with the old context — the freshly focused context classifies
+			// from zero. A nil snapshot (no window armed) cancels nothing.
+			if eng := a.emitter(); a.flapEng != nil && a.flapEng == eng {
+				a.cancelVerifyDeadWipe()
+			}
+		}
 		// The panel indicator self-heals on every focus gain (owner
 		// decision 1, quick plan 260927-way): engine objects are minted
 		// per input context, so a freshly minted context re-asserts the
@@ -1065,16 +1626,27 @@ func (a *Actor) ExpiryAt(now time.Duration) {
 // an answer — the correction is dropped silently (ADR-004, Pitfall 4: the
 // wait lives in a timer, never in a handler). The timeout also retires any
 // pendingAfter: a round that never executed leaves its would-be post-check
-// moot. Tests inject it directly (deterministic deadline).
-func (a *Actor) VerifyExpiry() {
+// moot. The epoch argument is the armed round's tag (WR-02, plan 10-10): a
+// callback whose deadline belonged to a RESOLVED round is a quiet no-op —
+// it must never consume the next pending round nor teach the behavioral
+// class for a context that never missed a budget (the afterExpiry form).
+// Tests inject it directly (deterministic deadline).
+func (a *Actor) VerifyExpiry(epoch uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
 
-	if a.pending == nil {
-		return // already settled — a stale timer is a no-op
+	if a.pending == nil || a.pending.epoch != epoch {
+		return // already settled, or a stale deadline from a resolved round (WR-02) — a no-op
 	}
+	// The behavioral terminal class (Phase 10, RESEARCH Pattern 1 source
+	// 3): the budget expired while the context is still alive — the
+	// pending guard above already retired every context-death case, so
+	// this round's expiry is the wezterm signature learned on the living
+	// context. The class persists for the context's remaining life and is
+	// cleared by HandleLifecycle (FocusOut/Reset).
+	a.setVerifyDead(true)
 	a.resolvePending()
 	a.clearAfter()
 	a.skipCorrection("verify-timeout")
@@ -1132,6 +1704,146 @@ func (a *Actor) FoldAppliedConfig() {
 		return
 	}
 	a.applySnapshot()
+}
+
+// armVerifyDeadline arms the pending round's verify budget through the
+// timer seam (the caller holds the mutex, pending != nil): the callback is
+// wrapped with the round's epoch tag (WR-02, plan 10-10) — the afterExpiry
+// form on both arm points (selection and word). The tag assignment and the
+// closure capture happen under the same critical section as the arm, so no
+// interleaving can pair a callback with a foreign round.
+func (a *Actor) armVerifyDeadline() {
+	a.pendingEpoch++
+	a.pending.epoch = a.pendingEpoch
+	epoch := a.pending.epoch
+	arm := a.verifyAfter
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	a.pending.stop = arm(a.verifyWait, func() { a.VerifyExpiry(epoch) })
+}
+
+// armVerifyDeadWipe re-arms the single deferred wipe deadline of the flap
+// window (the caller holds the mutex): a repeated FocusOut re-arms the SAME
+// window instead of breeding timers (T-10-07-04), and the epoch advance
+// turns a deadline from a superseded window stale (the afterExpiry form).
+func (a *Actor) armVerifyDeadWipe() {
+	a.cancelVerifyDeadWipe() // one window at a time, never a second timer
+	// The window's context identity (plan 10-11, WR-03): one snapshot per
+	// window — a repeated FocusOut re-arms the snapshot together with the
+	// window (the internal cancel cleared it first).
+	a.flapEng = a.emitter()
+	epoch := a.flapEpoch
+	arm := a.flapAfter
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	a.flapStop = arm(focusFlapWindow, func() { a.verifyDeadWipeExpiry(epoch) })
+}
+
+// cancelVerifyDeadWipe stops a pending deferred wipe (the caller holds the
+// mutex): the epoch advance turns an already-queued callback stale, so a
+// racing expiry is a no-op — the completing SAME-ENGINE FocusIn and every
+// immediate wipe (Reset, the own flip's synthetic pair) land here. The
+// window's emitter snapshot clears with the slot (plan 10-11, WR-03).
+func (a *Actor) cancelVerifyDeadWipe() {
+	if a.flapStop != nil {
+		a.flapStop()
+		a.flapStop = nil
+	}
+	a.flapEpoch++
+	a.flapEng = nil
+}
+
+// verifyDeadWipeExpiry is the deferred wipe's deadline callback: the flap
+// window closed without a FocusIn — the focus loss is REAL and the wipe
+// executes (a stale epoch — a newer FocusIn/FocusOut owns the window — is
+// a no-op; the class learns and clears on transitions only, so the host's
+// flap bursts never spam the journal).
+func (a *Actor) verifyDeadWipeExpiry(epoch uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.flapEpoch != epoch {
+		return // stale deadline — a newer FocusIn/FocusOut owns the window
+	}
+	a.flapStop = nil
+	a.flapEng = nil // the window's context identity dies with the window (plan 10-11, WR-03)
+	a.setVerifyDead(false)
+}
+
+// armLevel1Confirm opens the two-phase level-1 confirmation window (the
+// caller holds the mutex, plan 10-11): the ladder's DeleteSurroundingText
+// is already on the wire and the commit phase waits — either for the
+// client's proof the deletion applied (the handleSurroundingLocked confirm
+// check) or for this budget's deadline, whose fallback reproduces today's
+// delete+commit pair with a loud INFO mark. One window at a time: arming
+// cancels a still-pending budget of a superseded window (the
+// armVerifyDeadWipe form) and the epoch advance turns its queued callback
+// stale.
+func (a *Actor) armLevel1Confirm(w *level1Confirm) {
+	if a.l1 != nil && a.l1.stop != nil {
+		a.l1.stop()
+	}
+	a.l1Epoch++
+	w.epoch = a.l1Epoch
+	a.l1 = w
+	epoch := a.l1Epoch
+	arm := a.l1After
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	w.stop = arm(level1ConfirmBudget, func() { a.level1ConfirmExpiry(epoch) })
+}
+
+// level1ConfirmExpiry is the confirmation budget's deadline callback: the
+// client stayed silent the whole budget, so the ladder degrades to today's
+// delete+commit pair (the fallback is the CURRENT semantics, never a
+// «deletion without replacement») with the loud INFO outcome mark —
+// push-spontaneous clients confirm in milliseconds, so a timeout row is
+// rare and worth hearing (T-10-11-04). A stale epoch (the window was
+// flushed or re-armed) is a no-op — the afterExpiry form.
+func (a *Actor) level1ConfirmExpiry(epoch uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.l1 == nil || a.l1.epoch != epoch {
+		return // stale deadline — the window was flushed or re-armed
+	}
+	slog.Info("correction confirm", "outcome", "timeout") // loud and rare — the loud-mark fallback
+	a.flushLevel1Confirm()
+}
+
+// flushLevel1Confirm is the ONE completion point of the two-phase level-1
+// ladder (the caller holds the mutex, plan 10-11): the replacement commits
+// through the window's CAPTURED emitter snapshot — never the current
+// emitter(), so a flush after the context's death or re-mint cannot pour
+// the text into another application's engine (T-10-11-02; the stale object
+// is discarded by the client) — then the post-commit half runs in the
+// today's order: buffer replace, the frozen done row, the DEFERRED flip
+// (the 10-08 machine — the level-1 flip waits for its own delivery
+// confirmation), the combo settle and the verify-after arm. Idempotent by
+// the nil-check: every flush site (the confirm check, the budget fallback,
+// the feedKey entry, FocusOut/Reset, a new gesture's entry) passes through
+// untouched when no ladder is mid-flight.
+func (a *Actor) flushLevel1Confirm() {
+	if a.l1 == nil {
+		return
+	}
+	w := a.l1
+	a.l1 = nil
+	if w.stop != nil {
+		w.stop()
+		w.stop = nil
+	}
+	w.eng.CommitText(engine.NewIBusText(string(w.commit)))
+	w.rng.replace(w.converted) // the buffer keeps mirroring the field — repeat converts back
+	a.logCorrectionDone(w.level, w.rng.token, w.converted, time.Since(w.armed))
+	// The owner rule 2026-09-28, DEFERRED (plan 10-11): the mode follows
+	// the converted script once the delivery confirms (the 10-08 machine).
+	a.deferCorrectionFlip(w.converted, false) // the level-1 flip keeps the full 10-08 machine (plan 10-17)
+	a.settleCombo()                           // D-36: the flip lands strictly after the settled completion record
+	a.armAfterVerify(w.converted, w.rng.tail)
 }
 
 // soundSinkFor returns the installed sink when the sound switch is ON —
@@ -1250,6 +1962,134 @@ func scriptOf(converted []rune) scriptMode {
 	return modeEN // letterless — the caller's transition is false either way
 }
 
+// deferCorrectionFlip arms a post-correction mode flip instead of
+// executing it (plan 10-08, G-10-1 cause B, the E3 verdict): the decision
+// reuses settleCorrectionFlip's EXACT guards — a combo gesture keeps its
+// own settleCombo flip, the off gate arms nothing, and a target equal to
+// the current mode is a no-op flip, so nothing is armed. The terminal
+// flag (plan 10-17) selects the release machine: the TERMINAL flip arms
+// NO grace deadline — SetGlobalEngine must be impossible between the
+// commit and the flip's honest release cause (the next keystroke or a
+// confirming push; the round-2 hypothesis: the +104 ms flip re-mints the
+// engine and drives the client to flush its forward queue) — and it is
+// immune to the verify outcomes. The level-1 flip (flushLevel1Confirm)
+// keeps the full 10-08 machine byte-as-today, the grace deadline its last
+// release site (T-10-08-02). The owner rule 2026-09-28 «режим следует за
+// скриптом результата» is deferred, not cancelled: the flip still follows
+// the result — on the next gesture; the release-site narrowing is
+// owner-validated in 10-18. One slot at a time — arming cancels a
+// still-pending deadline (a second correction can reach this site only
+// off the keystroke path, e.g. CorrectNow, and its own flip supersedes
+// the pending one). The caller holds the mutex.
+func (a *Actor) deferCorrectionFlip(converted []rune, terminal bool) {
+	if a.comboPending || !a.opts.FlipAfterCorrection {
+		return
+	}
+	if flip := a.flipPending; flip != nil && flip.gesture {
+		// CR-01: a gesture-parked flip owns the slot — the owner's explicit
+		// command arrived LATER than the correction's own mode rule and
+		// supersedes it; re-arming here would silently drop the parked
+		// gesture (the slot is one, the gesture wins, the drop is the one
+		// outcome the mandate forbids). The parked flip keeps its own
+		// release causes (the next keystroke or a confirming push).
+		return
+	}
+	target := scriptOf(converted)
+	if target == a.mode {
+		return
+	}
+	a.cancelFlipGrace()
+	a.flipEpoch++
+	a.flipPending = &deferredFlip{
+		target:   target,
+		epoch:    a.flipEpoch,
+		terminal: terminal,
+		armedAt:  time.Now(),
+		seq:      a.emissionSeq,
+		start:    a.deliveryStart,
+	}
+	if terminal {
+		a.deliveryMark("flip-armed")
+
+		return
+	}
+	epoch := a.flipEpoch
+	arm := a.flipAfter
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	a.flipStop = arm(flipConfirmGrace, func() { a.flipGraceExpiry(epoch) })
+}
+
+// releaseDeferredFlip executes an armed deferred flip exactly once (the
+// caller holds the mutex): flipTo's semantics are reused WHOLE — the D-36
+// record order (mode record → switcher → panel symbol) is flipTo's own,
+// never duplicated — and the slot clears before the call, so every release
+// site (the confirming push, the next keystroke, the grace deadline, the
+// verify settlements) is idempotent. A nil slot is a no-op: the release
+// sites on the shared paths (settleAfter, afterExpiry, feedKey) pass
+// through untouched for the GTK corrections and the flip-disabled
+// terminals. A released TERMINAL flip carries its delivery mark — the
+// release reason and the pending latency, outcomes only, never field
+// content (D-20/D-21); the level-1 flip's journal stays byte-as-today.
+// The caller holds the mutex.
+func (a *Actor) releaseDeferredFlip(reason string) {
+	if a.flipStop != nil {
+		a.flipStop()
+		a.flipStop = nil
+	}
+	if a.flipPending == nil {
+		return
+	}
+	flip := a.flipPending
+	a.flipPending = nil
+	if flip.terminal {
+		a.deliveryMarkBurst(flip.seq, flip.start, "flip-released",
+			"reason", reason, "latency_ms", time.Since(flip.armedAt).Milliseconds())
+	}
+	a.flipTo(flip.target)
+}
+
+// releaseDeferredFlipOnVerifyOutcome is the verify-outcome release site,
+// branchy under plan 10-17: a TERMINAL deferred flip IGNORES the verify
+// outcomes — the verify machinery judges the field, the mode rule waits
+// for its own cause (the next keystroke or a confirming push; a
+// SetGlobalEngine riding a verify settlement is exactly the round-2 loss
+// geometry) — while every other flip keeps the byte-as-today release. The
+// caller holds the mutex.
+func (a *Actor) releaseDeferredFlipOnVerifyOutcome() {
+	if flip := a.flipPending; flip != nil && flip.terminal {
+		return
+	}
+	a.releaseDeferredFlip("verify")
+}
+
+// cancelFlipGrace stops a pending grace deadline (the caller holds the
+// mutex): the epoch advance turns an already-queued callback stale — the
+// afterExpiry form.
+func (a *Actor) cancelFlipGrace() {
+	if a.flipStop != nil {
+		a.flipStop()
+		a.flipStop = nil
+	}
+	a.flipEpoch++
+}
+
+// flipGraceExpiry is the armed flip's grace deadline: no confirming push and
+// no keystroke arrived, so the mode rule must not wait forever — the slot
+// cannot stick (T-10-08-02), the flip fires. A stale epoch (the flip was
+// already released, or a newer arm owns the slot) is a no-op — the
+// afterExpiry form.
+func (a *Actor) flipGraceExpiry(epoch uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.flipPending == nil || a.flipPending.epoch != epoch {
+		return // stale deadline — the flip was released or re-armed
+	}
+	a.releaseDeferredFlip("grace")
+}
+
 // skipCorrection records one D-20 refusal: the INFO reason record (one
 // line, the reason slug, nothing touched) and the counters the control
 // surface reports. The caller holds the mutex.
@@ -1313,6 +2153,45 @@ func (a *Actor) applySnapshot() {
 	a.opts.BackspaceCap = snap.Correction.BackspaceCap
 	a.opts.ClipboardRung = snap.Correction.ClipboardRung
 	a.opts.FlipAfterCorrection = snap.Correction.FlipAfterCorrection
+	a.opts.Terminals = snap.Correction.Terminals // the terminal-class list folds live (Phase 10, D-55)
+	a.applySnapshotBindings(snap)
+	a.opts.MACREnabled = snap.MACR.Enabled
+	a.opts.MACRApps = snap.MACR.Apps
+	a.opts.MACRAltModifier = snap.MACR.AltModifier
+	if snap.MACR.Letters != a.macrLettersName {
+		a.macrLettersName = snap.MACR.Letters
+		a.opts.MACRLetters = parseMACRLetters(snap.MACR.Letters)
+	}
+	// The autocorrect section folds live (plan 06-06, the MACR-fold
+	// precedent): the D-54 defaults are off, so a document without the
+	// section keeps the boundary byte-as-today; the thresholds mirror
+	// detect.Params (the config 06-04 pair — change the places together).
+	// The blocklist recompiles only when the document's pattern list
+	// changed (one compile per edit, not per boundary).
+	a.opts.AutoCorrectEnabled = snap.Autocorrect.Enabled
+	a.opts.AutoCorrectBlocklist = snap.Autocorrect.AppsBlocklist
+	a.opts.AutoCorrectMinWordLen = snap.Autocorrect.MinWordLen
+	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
+	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
+	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
+	a.refreshACTerminals(snap.Correction.Terminals)
+	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
+	// The sound switch folds live (plan 07-08, the autocorrect-fold
+	// precedent): the owner's default ON is the EffectiveEnabled truth —
+	// an absent section reads ON, only an explicit enabled: false mutes,
+	// and the next gesture carries the change (the D-32 hot reload).
+	a.foldSound(snap.Sound.EffectiveEnabled())
+	a.pushA11y(snap) // the a11y-magic fold rides the same per-fold push chain (plan 08-05)
+	a.pushMenuSync(snap)
+}
+
+// applySnapshotBindings re-resolves the NAME-keyed hotkey bindings of the
+// snapshot (the word-layout combo, the mode-switch chord) — the fold half
+// of applySnapshot, extracted whole: a binding re-resolves only when the
+// document's binding NAME changed; a name that fails to parse — impossible
+// from a validated document — keeps the last-good binding (the D-32
+// discipline). The caller holds the mutex.
+func (a *Actor) applySnapshotBindings(snap config.Config) {
 	if name := snap.Hotkeys.WordLayoutCombo; name != a.comboName {
 		if binding, err := hotkey.ParseBinding(name); err == nil {
 			a.opts.WordLayoutCombo = binding
@@ -1333,33 +2212,6 @@ func (a *Actor) applySnapshot() {
 			a.chordName = name
 		}
 	}
-	a.opts.MACREnabled = snap.MACR.Enabled
-	a.opts.MACRApps = snap.MACR.Apps
-	a.opts.MACRAltModifier = snap.MACR.AltModifier
-	if snap.MACR.Letters != a.macrLettersName {
-		a.macrLettersName = snap.MACR.Letters
-		a.opts.MACRLetters = parseMACRLetters(snap.MACR.Letters)
-	}
-	// The autocorrect section folds live (plan 06-06, the MACR-fold
-	// precedent): the D-54 defaults are off, so a document without the
-	// section keeps the boundary byte-as-today; the thresholds mirror
-	// detect.Params (the config 06-04 pair — change the places together).
-	// The blocklist recompiles only when the document's pattern list
-	// changed (one compile per edit, not per boundary).
-	a.opts.AutoCorrectEnabled = snap.Autocorrect.Enabled
-	a.opts.AutoCorrectBlocklist = snap.Autocorrect.AppsBlocklist
-	a.opts.AutoCorrectMinWordLen = snap.Autocorrect.MinWordLen
-	a.opts.AutoCorrectMargin = snap.Autocorrect.TrigramMargin
-	a.opts.AutoCorrectFloor = snap.Autocorrect.TrigramFloor
-	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
-	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
-	// The sound switch folds live (plan 07-08, the autocorrect-fold
-	// precedent): the owner's default ON is the EffectiveEnabled truth —
-	// an absent section reads ON, only an explicit enabled: false mutes,
-	// and the next gesture carries the change (the D-32 hot reload).
-	a.foldSound(snap.Sound.EffectiveEnabled())
-	a.pushA11y(snap) // the a11y-magic fold rides the same per-fold push chain (plan 08-05)
-	a.pushMenuSync(snap)
 }
 
 // foldSound applies the snapshot's sound switch (plan 07-08's fold, the
@@ -1446,14 +2298,63 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 
 	a.surr = beforeCursor(text, cursorPos)
 	a.sel = selectionState{full: []rune(text), cursor: cursorPos, anchor: anchorPos}
+	// The DST guard's materialization evidence (plan 10-16, the 2026-10-16
+	// bisection): EVERY push or materializing Require answer of the current
+	// generation proves the composer-side surrounding state exists — the
+	// bisection made materialization, not emission parameters or timing, the
+	// crash discriminator (R1b warm survive vs R2/R6b/R7 virgin crash). The
+	// evidence binds to THIS generation's emitter (the flapEng identity
+	// form), so a churn-missed re-mint cannot inherit a dead generation's
+	// proof; it dies with the cache in the FocusOut/Reset branch.
+	a.surrSeen = true
+	a.surrEng = a.emitter()
 	// -debug only, same sensitivity class as the key trace (diagnosis mode
 	// is opt-in and short-lived); the live hunt needs the pushed field
 	// text to see what a correction actually left behind (2026-09-28).
 	slog.Debug("surrounding push", "text", text,
 		"cursor", cursorPos, "anchor", anchorPos)
+	// The level-1 confirm check (plan 10-11, the two-phase delivery): a
+	// ladder is mid-confirmation — its delete is on the wire and this push
+	// is the client's report. A text-before-cursor that no longer ends
+	// with token+tail PROVES the deletion applied and reported — the commit
+	// phase runs now, through the window's captured snapshot. A
+	// still-matching push is the client's stale pre-delete state — the
+	// window lives to its budget. The window is separate state from the
+	// pending round (resolvePending happened in executeCorrection), so the
+	// check sits ahead of the pending branch and consumes the push: the
+	// verify-after the flush arms settles on the client's NEXT report, not
+	// on this pre-commit one.
+	if a.l1 != nil {
+		if !correct.MatchesSuffix(a.surr, a.l1.match) {
+			slog.Debug("correction confirm", "outcome", "confirmed")
+			a.flushLevel1Confirm()
+		}
+
+		return nil, false
+	}
 	if a.pending != nil {
+		p := a.pending
 		switch {
 		case a.pendingVerdict():
+			if pendingStaleCache(p) {
+				// The answer-only route (plan 10-10, G-10-1 round 2, the
+				// 09:39 host rows): the same stale-cache signature as the
+				// mismatch branch below, now on the MATCH verdict — the
+				// client never pushed a field state (empty cache at arm)
+				// and its single answer holds what the daemon watched being
+				// typed. The 2026-10-13 owner-approved semantics extend
+				// from the answer's CONTENT (10-08) to its CHANNEL: the
+				// host's wezterm/GNOME-Terminal clients answered fresh and
+				// matching, yet level-1 (done in 1.9–2.4 ms) is exactly
+				// where both 10-07/10-08 fixes physically do not stand.
+				// Byte-the-same form as the mismatch branch: the class
+				// learns, the round routes to the terminal write branch.
+				a.resolvePending()
+				a.setVerifyDead(true)
+				a.executeLevel2(p.rng, p.converted, p.armed, true)
+
+				return nil, false
+			}
 			a.executeCorrection()
 		case a.pendingEarlyAnswer():
 			// The pre-boundary early answer of an autocorrect round: the
@@ -1461,6 +2362,20 @@ func (a *Actor) handleSurroundingLocked(text string, cursorPos, anchorPos uint32
 			// open within its budget for the post-boundary push (06-07
 			// live finding; VerifyExpiry keeps the fail-closed bound).
 		default:
+			if pendingStaleCache(p) {
+				// The 2026-10-13 client-drift amendment (plan 10-08, owner
+				// verdict, G-10-1): the client never reported a field state
+				// (empty cache at arm) and its only answer does not hold
+				// what the daemon watched being typed — the stale-cache
+				// terminal signature. The behavioral class learns and the
+				// round routes to the terminal write branch; the word
+				// corrects on this round instead of dying a GTK mismatch.
+				a.resolvePending()
+				a.setVerifyDead(true)
+				a.executeLevel2(p.rng, p.converted, p.armed, true)
+
+				return nil, false
+			}
 			a.resolvePending()
 			a.skipCorrection("verify-mismatch")
 			a.settleCombo() // the word half settled by refusal — the D-36 flip still fires
@@ -1486,6 +2401,25 @@ func (a *Actor) pendingVerdict() bool {
 	}
 
 	return correct.VerifyRangeAt(a.sel.full, a.pending.sel.start, a.pending.match)
+}
+
+// pendingStaleCache reports the stale-cache terminal signature of the
+// 2026-10-13 client-drift amendment (plan 10-08, owner verdict, G-10-1),
+// extended by plan 10-10 to BOTH verdict branches: the round armed over an
+// EMPTY push cache — the client has never reported a field state in this
+// context episode (an honest GTK client pushes on every change), the
+// ANSWER-ONLY push channel — whatever its single answer holds. Content
+// does not distinguish: a fresh matching answer routed level-1 on the host
+// (the 09:39 rows — done in 1.9–2.4 ms, the branch where the 10-07/10-08
+// fixes physically do not stand), a stale non-matching one died a GTK
+// verify-mismatch (the 0x29-drifted wezterm nightly). The channel
+// distinguishes, per the owner's approved semantics («обещает окружение,
+// но отвечает протухшим кэшем = всё равно терминал»). Cache evidence (the
+// pushes tracked the typing) keeps the byte-as-today fail-closed world;
+// selection rounds are range-anchored (Pitfall 6) and autocorrect boundary
+// rounds carry their own CR-02 fail-closed semantics — both excluded.
+func pendingStaleCache(p *pendingFix) bool {
+	return p.sel == nil && !p.rng.acBoundary && p.cacheNil
 }
 
 // pendingEarlyAnswer reports whether the fresh push is an armed
@@ -1531,6 +2465,7 @@ func (a *Actor) settleAfter() ([]rune, bool) {
 	if a.afterVerdict(round.expected, round.start, round.atRange) {
 		a.clearAfter()
 		slog.Debug("correction verify", "outcome", "match")
+		a.releaseDeferredFlip("push") // the confirming push: delivery proven — the deferred flip fires now
 
 		return nil, false
 	}
@@ -1544,6 +2479,15 @@ func (a *Actor) settleAfter() ([]rune, bool) {
 	}
 	a.clearAfter()
 	slog.Info("correction verify", "outcome", "mismatch")
+	a.releaseDeferredFlipOnVerifyOutcome() // branchy (plan 10-17): the terminal flip ignores the verify outcomes
+	if round.noRung {
+		// The terminal branch (plan 10-04, ADR-008 D4, owner verdict OQ 2
+		// «contract»): the mismatch LOGS and STOPS — the round carries no
+		// paste payload, so the rung condition is never even evaluated
+		// (Pitfall 3: the paste chord is forbidden by construction, under
+		// every configuration).
+		return nil, false
+	}
 
 	return round.paste, a.opts.ClipboardRung && a.clip != nil && eng != nil
 }
@@ -1573,6 +2517,7 @@ func (a *Actor) afterExpiry(epoch uint64) {
 	}
 	a.clearAfter()
 	slog.Debug("correction verify", "outcome", "timeout")
+	a.releaseDeferredFlipOnVerifyOutcome() // branchy (plan 10-17): the terminal flip ignores the verify outcomes
 }
 
 // armAfterVerify starts the verify-after round (the caller holds the
@@ -1590,6 +2535,27 @@ func (a *Actor) armAfterVerify(converted, tail []rune) {
 		expected: concatRunes(converted, tail),
 		paste:    converted,
 		epoch:    a.verifyEpoch,
+	}
+	epoch := a.verifyEpoch
+	a.after.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
+	a.emitter().RequireSurroundingText()
+}
+
+// armAfterVerifyTerminal starts the verify-after round of the terminal
+// write branch (plan 10-04 Task 3, owner verdict OQ 2 «contract»): the
+// SAME epoch, verify budget and quiet-timeout machinery as armAfterVerify —
+// the client that does push (VTE) settles honestly, a push-less context
+// dies by budget — but the round carries NO paste payload: a mismatch can
+// only log and stop (settleAfter's noRung branch), the clipboard rung is
+// forbidden by construction, never by config (ADR-008 D4). The caller
+// holds the mutex.
+func (a *Actor) armAfterVerifyTerminal(converted, tail []rune) {
+	a.verifyEpoch++
+	a.clearAfter() // never two open rounds
+	a.after = &pendingAfter{
+		expected: concatRunes(converted, tail),
+		epoch:    a.verifyEpoch,
+		noRung:   true,
 	}
 	epoch := a.verifyEpoch
 	a.after.deadline = time.AfterFunc(a.verifyWait, func() { a.afterExpiry(epoch) })
@@ -1993,8 +2959,26 @@ func (a *Actor) backspaceCap() int {
 // A flipTo to the CURRENT mode is a no-op: the SET-semantics site
 // (settleCorrectionFlip) names its target from the corrected text's script,
 // and a same-script correction flip changes nothing.
+//
+// CR-01 (the 10-REVIEW, the round-4 fix session): while the delivery
+// machine is in flight (level2Busy — the drain-settle window holds the
+// mutex RELEASED, so every gesture entry converges here INSIDE the window),
+// flipTo must not execute: SetGlobalEngine between the forwards and the
+// still-pending commit re-mints the engine objects and orphans the commit
+// riding the captured snapshot — the E3 verdict, «удаление без замены»,
+// the one outcome the ADR-008 amendment (6) forbids. The flip PARKS into
+// the deferred slot with the terminal release discipline (parkGestureFlip):
+// the mode switch happens, just after the correction settles. The gate
+// covers every gesture entry by construction — the combo's busy-refusal
+// settleCombo, the mode-switch chord, the Single-tap expiry, the tray
+// ToggleMode/SwitchMode all reach this one seam.
 func (a *Actor) flipTo(target scriptMode) {
 	if target == a.mode {
+		return
+	}
+	if a.level2Busy {
+		a.parkGestureFlip(target)
+
 		return
 	}
 	a.mode = target
@@ -2047,6 +3031,40 @@ func (a *Actor) flipTo(target scriptMode) {
 	if s := a.soundSinkFor(); s != nil {
 		s.Flip()
 	}
+}
+
+// parkGestureFlip arms a gesture-driven flip that arrived while the delivery
+// machine is in flight (CR-01 of the 10-REVIEW): the flip rides the EXISTING
+// deferred-flip slot with the TERMINAL release discipline — no grace
+// deadline, immune to the verify outcomes, released by the next keystroke or
+// a confirming push — so the SetGlobalEngine fires only after the pending
+// commit landed (the machine's own exit clears level2Busy before the release
+// sites can run). NOT gated on flip_after_correction: the gesture flip is the
+// owner's explicit command — settleCombo's own flip never consulted the gate
+// and neither does the park. The target arrives as a scriptMode (the gesture
+// entries are toggles, not converted text). The slot is one: a second park
+// supersedes the first (the LATEST gesture is the owner's intent), and the
+// machine's post-correction arming skips a gesture-occupied slot
+// (deferCorrectionFlip) — the gesture is never silently dropped. The caller
+// holds the mutex.
+func (a *Actor) parkGestureFlip(target scriptMode) {
+	if target == a.mode {
+		return
+	}
+	a.cancelFlipGrace()
+	a.flipEpoch++
+	a.flipPending = &deferredFlip{
+		target:   target,
+		epoch:    a.flipEpoch,
+		terminal: true,
+		gesture:  true,
+		armedAt:  time.Now(),
+		seq:      a.emissionSeq,
+		start:    a.deliveryStart,
+	}
+	// The loud boundary (D-20/D-21): outcomes only, never content — the
+	// journal's proof that the gesture was captured, not lost.
+	a.deliveryMark("flip-parked")
 }
 
 // oppositeMode is the toggle target of the gesture flips (the Single
@@ -2142,6 +3160,21 @@ func (a *Actor) modeSymbol() string {
 // The CORR-09 reset keyvals (Enter and its keypad variant, Tab, Escape)
 // end the phrase instead of feeding it. The caller holds the mutex.
 func (a *Actor) feedKey(ev engine.EngineEvent) bool {
+	// The two-phase level-1 ladder's flush site (plan 10-11): the
+	// replacement is on the wire before the next input processes — a
+	// keystroke arriving without the client's push is the delivery proof
+	// of last resort. The flip the flush arms releases right below
+	// (strictly before the key's processing — the 10-08 release order).
+	// A nil window is a no-op.
+	a.flushLevel1Confirm()
+
+	// The deferred terminal flip's second confirmation site (plan 10-08, E3;
+	// plan 10-17 made it the FIRST cause): the first keystroke after the
+	// correction proves the commit delivered — release STRICTLY before
+	// processing, so the key already types in the RESULT mode. A nil slot
+	// is a no-op.
+	a.releaseDeferredFlip("keystroke")
+
 	if a.macrIntercept(ev) {
 		return true
 	}
@@ -2297,15 +3330,21 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 			}
 		}
 	}
+	// The D-55 terminal veto (TERM-04, the invariant's literal placement):
+	// the terminal class is checked at the ARMING point, ahead of the
+	// detector — a terminal context never arms the automatic layer. The
+	// class does not depend on identity observability (fail-closed: the
+	// behavioral verify-dead source alone vetoes an invisible context),
+	// and it deliberately does NOT live in the blocklist — a blocklist
+	// cannot exclude the invisible (wezterm is outside the a11y bus). The
+	// confirm's role switch below stays as the second belt, untouched.
+	if a.classifyTerminal() {
+		a.recordACAbstain(acReasonTerminalVeto)
+
+		return acPayload{}, false
+	}
 	tok := a.buf.Token()
-	v := detect.Check(tok, a.modeSymbol(),
-		detect.Data{RU: layouts.DictRU, EN: layouts.DictEN},
-		detect.Trigrams{RU: layouts.TriRU, EN: layouts.TriEN},
-		detect.Params{
-			MinWordLen:    a.opts.AutoCorrectMinWordLen,
-			TrigramMargin: a.opts.AutoCorrectMargin,
-			TrigramFloor:  a.opts.AutoCorrectFloor,
-		})
+	v := a.detectVerdict(tok)
 	if !v.WrongLayout || !v.Confident {
 		// D-53 condition 4 (with the detector's own length gate): an unsure
 		// verdict, a dictionary veto or a short token stays untouched — the
@@ -2328,6 +3367,80 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 	}, true
 }
 
+// classifyTerminal answers the one question both consumers of the
+// terminal class share — the arming veto (autoCorrectBoundary, plan 10-03)
+// and the terminal write pipeline (plan 10-04): is this input context a
+// terminal? One seam, three sources, cheap-to-expensive (RESEARCH
+// Pattern 1):
+//
+//  1. the behavioral verify-dead class — a verify round of this context
+//     expired by budget while the context lived (learned in VerifyExpiry,
+//     cleared by HandleLifecycle); it needs no identity at all;
+//  2. the document's terminal identity patterns (correction.terminals) —
+//     substring RE2 against the observable identity; an invisible identity
+//     answers nothing from this source (the quiet norm, not an error);
+//  3. the live AT-SPI terminal role 60, queried at the decision moment
+//     through the RoleSource under the autoRoleTimeout deadline — the
+//     T-10-03-03 wedge guard: a stuck a11y object costs the same bounded
+//     budget the confirm already pays, never an unbounded stall. A role
+//     ERROR answers "not terminal" here — the confirm's role-unknown
+//     discipline stays the authority on an unusable source.
+//
+// The caller holds the mutex.
+func (a *Actor) classifyTerminal() bool {
+	if a.verifyDead {
+		return true
+	}
+	if app, known := a.acFocusedApp(); known && a.matchACTerminal(app) {
+		return true
+	}
+	if rs := a.role; rs != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), autoRoleTimeout)
+		defer cancel()
+		role, err := rs.Role(ctx)
+		if err == nil && role == acRoleTerminal {
+			return true
+		}
+		if err != nil {
+			a.warnACRole(err)
+		}
+	}
+
+	return false
+}
+
+// matchACTerminal reports whether the identity matches any compiled
+// terminal-class pattern (substring RE2 — the blocklist semantics, the
+// author anchors). The caller holds the mutex.
+func (a *Actor) matchACTerminal(app string) bool {
+	for _, re := range a.acTerminals {
+		if re.MatchString(app) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// detectVerdict runs the boundary's detector over the finished token — the
+// threshold plumbing and the seam indirection in one place (the boundary
+// stays under the complexity ceiling). A nil seam is the real detect.Check.
+func (a *Actor) detectVerdict(tok []rune) detect.Verdict {
+	check := a.detectCheck
+	if check == nil {
+		check = detect.Check
+	}
+
+	return check(tok, a.modeSymbol(),
+		detect.Data{RU: layouts.DictRU, EN: layouts.DictEN},
+		detect.Trigrams{RU: layouts.TriRU, EN: layouts.TriEN},
+		detect.Params{
+			MinWordLen:    a.opts.AutoCorrectMinWordLen,
+			TrigramMargin: a.opts.AutoCorrectMargin,
+			TrigramFloor:  a.opts.AutoCorrectFloor,
+		})
+}
+
 // refreshACBlocklist rebuilds the compiled blocklist cache only when the
 // raw pattern LIST changed (the macrLettersName parse-cache form) — one
 // compile per document edit or SetOptions install, never per boundary.
@@ -2337,21 +3450,33 @@ func (a *Actor) refreshACBlocklist(names []string) {
 		return
 	}
 	a.acBlocklistNames = names
-	a.acBlocklist = compileACBlocklist(names)
+	a.acBlocklist = compileACPatterns(names, "blocklist")
 }
 
-// compileACBlocklist compiles the document's blocklist patterns for the
-// boundary gate. A compile failure is impossible from a validated
-// document (config.Validate refuses it at Load, D-33); the defensive
-// branch WARNs once per rebuild and treats the whole list as EMPTY —
-// nothing matches, nothing is forbidden (the failure falls open toward
+// refreshACTerminals rebuilds the compiled terminal-class cache only when
+// the raw pattern LIST changed (the refreshACBlocklist form) — one compile
+// per document edit or SetOptions install, never per boundary. The caller
+// holds the mutex.
+func (a *Actor) refreshACTerminals(names []string) {
+	if slices.Equal(names, a.acTerminalNames) {
+		return
+	}
+	a.acTerminalNames = names
+	a.acTerminals = compileACPatterns(names, "terminal-class")
+}
+
+// compileACPatterns compiles one document pattern list for the boundary
+// gates (the blocklist, the terminal class). A compile failure is
+// impossible from a validated document (config.Validate refuses it at
+// Load, D-33); the defensive branch WARNs once per rebuild and treats the
+// whole list as EMPTY — nothing matches (the failure falls open toward
 // the role gate, never around it).
-func compileACBlocklist(patterns []string) []*regexp.Regexp {
+func compileACPatterns(patterns []string, source string) []*regexp.Regexp {
 	compiled := make([]*regexp.Regexp, 0, len(patterns))
 	for _, pattern := range patterns {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
-			slog.Warn("autocorrect blocklist pattern rejected at fold", "error", err)
+			slog.Warn("autocorrect pattern rejected at fold", "source", source, "error", err)
 
 			return nil
 		}
@@ -2359,6 +3484,19 @@ func compileACBlocklist(patterns []string) []*regexp.Regexp {
 	}
 
 	return compiled
+}
+
+// setVerifyDead flips the behavioral terminal class of the live input
+// context and records the transition with ONE source-neutral INFO marker —
+// the A5 insurance (a flapping class must leave a trail), word-free
+// (D-20/D-21): the marker names neither the typed word nor the source that
+// produced the verdict. The caller holds the mutex.
+func (a *Actor) setVerifyDead(dead bool) {
+	if a.verifyDead == dead {
+		return
+	}
+	a.verifyDead = dead
+	slog.Info("terminal class", "verify_dead", dead)
 }
 
 // acFocusedApp resolves the focused app identity for the boundary and
@@ -2484,6 +3622,7 @@ func (a *Actor) autoConfirm(payload acPayload) {
 		return
 	}
 	a.acRoleWarned = false // a healthy answer closes the episode
+	a.acRoleErrors = 0     // …and zeroes its error counter (plan 10-07): a recovered source reads as zero errors
 	switch role {
 	case acRoleText, acRoleEntry, acRoleDocumentText:
 		// CR-01 + the 07-04 confirm form: the fired threshold re-checks the
@@ -2572,15 +3711,27 @@ func (a *Actor) acConfirmRefusals(payload acPayload, role uint32) bool {
 	return true
 }
 
-// warnACRole records one live role-source failure: the WARN fires once per
-// degradation episode (the warnAppid form — per boundary would spam the
-// journal of a broken source). The error is transport-class only — it
-// never carries the word (D-20/D-21). The caller holds the mutex.
+// warnACRole records one live role-source failure (plan 10-07, G-10-1
+// missing #3): the ERROR COUNT is loud — every role-request error of the
+// degradation episode grows the status-visible counter (the 11:00:16
+// episode stayed silent-broken behind its single WARN for the rest of the
+// day; counts never hide again) — while the WARN LINE stays sticky: one
+// line per episode, re-armed after acRoleWarnRearm of continued breakage
+// (a lasting outage sounds again, a flap-bursting source never spams).
+// A nil error (the no-source degradation, autoConfirm's rs==nil arm)
+// warns by the same stickiness but counts nothing — no role request was
+// made. The error is transport-class only — it never carries the word
+// (D-20/D-21). The caller holds the mutex.
 func (a *Actor) warnACRole(err error) {
-	if a.acRoleWarned {
-		return
+	if err != nil {
+		a.acRoleErrors++
+	}
+	now := a.roleClock()
+	if a.acRoleWarned && now.Sub(a.acRoleWarnedAt) < acRoleWarnRearm {
+		return // the episode's one line stands; the counter above carries the rest
 	}
 	a.acRoleWarned = true
+	a.acRoleWarnedAt = now
 	if err == nil {
 		slog.Warn("autocorrect role unavailable")
 
@@ -2618,18 +3769,27 @@ func (a *Actor) modeSwitchChord(ev engine.EngineEvent) bool {
 // startCorrection launches the correction of the Double decision: with an
 // active selection in the last surrounding push the range is that selection
 // (CORR-03, D-30 — the selection takes precedence over the buffer, whatever
-// the buffer holds); otherwise the WORD path of Phase 2, exactly as before.
-// The caller holds the mutex.
+// the buffer holds); otherwise the WORD path of Phase 2 over the convertible
+// stretch (SPEC §4.2, plan 10-02): the token plus the adjacent runes that
+// carry a table position — «ytn?» corrects whole to «нет,», never «нет?» —
+// with the replace half covering the whole run. The autocorrect payload
+// keeps consuming the bare Token() (D-13/D-14 unchanged). The caller holds
+// the mutex.
 func (a *Actor) startCorrection() {
+	// The two-phase level-1 ladder's flush site (plan 10-11): the next
+	// gesture starts with a clean ladder — a superseded window must not
+	// pour its stale replacement over the new round's field state. A nil
+	// window is a no-op.
+	a.flushLevel1Confirm()
 	if sel, runes, ok := a.activeSelection(); ok {
 		a.startSelectionCorrection(sel, runes)
 
 		return
 	}
 	a.startRangeCorrection(correctionRange{
-		token:   a.buf.Token(),
-		tail:    a.buf.Tail(),
-		replace: a.buf.ReplaceToken,
+		token:   a.buf.ConvertibleStretch(),
+		tail:    a.buf.StretchTail(),
+		replace: a.buf.ReplaceStretch,
 	})
 }
 
@@ -2679,8 +3839,9 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 	if !changed {
 		// D-24: the success-without-changes outcome — a SUCCESSFUL
 		// operation without changes; nothing to replace, nothing to verify.
+		// The discriminator names it changed=false (plan 10-04).
 		a.countCorrectionDone()
-		slog.Info("correction", "outcome", "done")
+		slog.Info("correction", "outcome", "done", "changed", false)
 		a.settleCombo()
 
 		return
@@ -2708,7 +3869,7 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 
 		return
 	}
-	a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
+	a.armVerifyDeadline()
 	eng.RequireSurroundingText()
 }
 
@@ -2717,6 +3878,11 @@ func (a *Actor) startSelectionCorrection(sel selectionSpec, runes []rune) {
 // hard reset — words and separators alike, no tail, no artificial length
 // cap. The same pipeline runs over it (D-23). The caller holds the mutex.
 func (a *Actor) startPhraseCorrection() {
+	// The ladder flush of plan 10-11 extended to the phrase gesture: the
+	// same «next gesture starts with a clean ladder» invariant — a Triple
+	// decision landing inside a confirm window must not race the stale
+	// replacement. A nil window is a no-op.
+	a.flushLevel1Confirm()
 	a.startRangeCorrection(correctionRange{
 		token:   a.buf.Phrase(),
 		replace: a.buf.ReplacePhrase,
@@ -2761,9 +3927,11 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	if !changed {
 		// D-24: the success-without-changes outcome — a SUCCESSFUL
 		// operation without changes (the owner's choice over a refusal and
-		// over a WARN); nothing to replace, nothing to verify.
+		// over a WARN); nothing to replace, nothing to verify. The
+		// discriminator names it changed=false (plan 10-04) — the same
+		// grep-form, the attribute extends.
 		a.countCorrectionDone()
-		slog.Info("correction", "outcome", "done")
+		slog.Info("correction", "outcome", "done", "changed", false)
 		a.settleCombo()
 
 		return
@@ -2776,12 +3944,23 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	}
 	a.resolvePending() // a second Double/Triple supersedes the stale round
 	a.clearAfter()     // …and the previous round's verify-after with it
-	if a.caps&correct.CapSurroundingText == 0 {
-		// Ladder level 2 (ADR-003): no surrounding text, no verification —
-		// the documented ADR-004 degradation. The buffer plus the explicit
-		// CORR-09 reset triggers are the only synchronization the daemon
-		// has, so the correction executes immediately, never guessed twice.
-		a.executeLevel2(rng, converted, armed)
+	// TERM-02 routing (plan 10-04, owner verdict OQ 1 «unified»): the
+	// terminal class takes its own write branch BEFORE the caps fork — no
+	// pending fix, no RequireSurroundingText, no app verification (ADR-004
+	// never answers in a terminal: the pushes do not come). The
+	// classification is the SAME seam the arming veto consults — the veto
+	// and the write pipeline cannot diverge by construction.
+	terminal := a.classifyTerminal()
+	if a.caps&correct.CapSurroundingText == 0 || terminal {
+		// The write branch: the chunked level-2 replay. It serves the
+		// legacy no-caps degradation (the ADR-003 ladder level, no
+		// verification — the documented ADR-004 degradation, the buffer plus
+		// the explicit CORR-09 reset triggers are the only synchronization)
+		// AND the whole terminal class — against a terminal the buffer is
+		// the only target source (the stretch of plan 10-02), the pending
+		// machine is never armed. Only the terminal class verifies after
+		// the fact (Task 3); the legacy path arms nothing, byte as today.
+		a.executeLevel2(rng, converted, armed, terminal)
 
 		return
 	}
@@ -2790,6 +3969,7 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 		converted: converted,
 		match:     concatRunes(rng.token, rng.tail),
 		armed:     armed,
+		cacheNil:  a.surr == nil, // the stale-cache evidence of the 2026-10-13 amendment
 	}
 	// CR-02: a boundary-armed payload NEVER trusts the cached push — the
 	// arming keystroke (Enter/Tab/Escape) is itself an in-flight
@@ -2802,7 +3982,7 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 	// (ADR-004). For the space boundary the round is one extra
 	// sub-millisecond trip; for the reset boundaries it is the only guard.
 	if rng.acBoundary || !correct.MatchesSuffix(a.surr, a.pending.match) {
-		a.pending.deadline = time.AfterFunc(a.verifyWait, a.VerifyExpiry)
+		a.armVerifyDeadline()
 		eng.RequireSurroundingText()
 
 		return
@@ -2811,19 +3991,25 @@ func (a *Actor) startRangeCorrection(rng correctionRange) {
 }
 
 // executeCorrection runs the level-1 ladder plan of the settled pending fix
-// — one DeleteSurroundingText exactly over the token+tail range, one commit
-// of the converted token plus the tail (CORR-07) — replaces the range in
-// the buffer so a repeated correction converts back, and arms the
-// verify-after round: the deletion is ack-less on 1.5.29, so the correction
-// itself asks for the surrounding text back and checks the suffix
-// (ADR-003/ADR-004). A selection fix runs its own geometry instead
-// (executeSelectionCorrection). The caller holds the mutex and pending !=
-// nil.
+// — one DeleteSurroundingText exactly over the token+tail range (CORR-07),
+// gated by the DST guard (plan 10-16: only over the generation-scoped
+// materialization evidence, else the forward branch) — and arms the
+// two-phase confirmation window (plan 10-11, round-2 G-10-1,
+// the 09:39 host rows): the commit phase does NOT follow the deletion on
+// the wire. The host client's processing reorders the tight pair (the A2
+// class: the insertion lands first and is visible, the late deletion erases
+// the fresh word — «вижу привет, и он удаляется»), so the replacement waits
+// for the client's proof the deletion applied; flushLevel1Confirm is the
+// ONE completion point, reached by the deletion proof, the budget fallback
+// (today's pair, loudly marked) or a flush site. The emitter snapshot is
+// captured here and rides the whole window (:3444 precedent). A selection
+// fix runs its own geometry instead (executeSelectionCorrection). The
+// caller holds the mutex and pending != nil.
 func (a *Actor) executeCorrection() {
 	p := a.pending
 	a.pending = nil
-	if p.deadline != nil {
-		p.deadline.Stop()
+	if p.stop != nil {
+		p.stop()
 	}
 	if p.sel != nil {
 		a.executeSelectionCorrection(p)
@@ -2831,14 +4017,43 @@ func (a *Actor) executeCorrection() {
 		return
 	}
 	eng := a.emitter() // one atomic snapshot for the whole ladder emission
+	if !a.surrSeen || a.surrEng != eng {
+		// The DST guard (plan 10-16, the 2026-10-16 bisection verdict): the
+		// surrounding state of THIS generation was never materialized in the
+		// composer — no spontaneous push, no materializing answer — and on
+		// mutter 46.2 a DeleteSurroundingText toward such a context segfaults
+		// gnome-shell (strlen over the virgin state,
+		// meta-wayland-text-input.c:254; ANY parameters, the ~1.5 s virgin
+		// window — a guarantee a layout corrector cannot honestly make, so
+		// the machine makes it structurally). The emission is withheld and
+		// the replacement rides the PROVEN forward branch — the existing
+		// executeLevel2 form (chunks ≤ terminalChunkKeys, level2ForwardGap
+		// pacing, the ctxEpoch re-check, one commit; the WR-01 busy guard
+		// covers the window) with no new transport code (verdict (c)). This
+		// round was classified NON-terminal to reach the level-1 ladder, so
+		// the branch runs in its non-terminal form. The boundary is loud and
+		// content-free (D-20/D-21) and the diversion is counted for the
+		// status surface (T-10-16-04). RequireSurroundingText is never
+		// suppressed and the two-phase machine of a materialized context is
+		// byte-untouched (TestDstGuard_MaterializedContextByteUnchanged).
+		a.corrDstGuarded++
+		slog.Info("correction", "outcome", "dst-guarded",
+			"latency_ms", time.Since(p.armed).Milliseconds())
+		a.executeLevel2(p.rng, p.converted, p.armed, false)
+
+		return
+	}
 	plan := correct.BuildPlan(p.rng.token, p.rng.tail, p.converted, a.caps, a.backspaceCap())
 	eng.DeleteSurroundingText(plan.Offset, plan.NChars)
-	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
-	p.rng.replace(p.converted) // the buffer keeps mirroring the field — repeat converts back
-	a.logCorrectionDone(plan.Level, p.rng.token, p.converted, time.Since(p.armed))
-	a.settleCorrectionFlip(p.converted) // owner rule 2026-09-28: the mode follows the converted script
-	a.settleCombo()                     // D-36: the flip lands strictly after the settled completion record
-	a.armAfterVerify(p.converted, p.rng.tail)
+	a.armLevel1Confirm(&level1Confirm{
+		eng:       eng,
+		commit:    plan.Commit,
+		rng:       p.rng,
+		converted: p.converted,
+		match:     concatRunes(p.rng.token, p.rng.tail),
+		armed:     p.armed,
+		level:     plan.Level,
+	})
 }
 
 // executeSelectionCorrection runs the ladder over the selection range: one
@@ -2872,41 +4087,423 @@ func (a *Actor) executeSelectionCorrection(p *pendingFix) {
 	a.armAfterVerifyRange(p.converted, sel.start)
 }
 
-// executeLevel2 runs the ladder's Backspace level on a client without the
-// surrounding-text capability (ADR-003): plan.Backspaces replayed
-// ForwardKeyEvent(BackSpace) — counted in runes by BuildPlan, the tail
-// included — followed by ONE commit of the converted token plus the tail.
-// The burst→commit order is the wire contract (research A4: the daemon
-// preserves it for every client). The caller holds the mutex.
-func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time) {
-	eng := a.emitter() // one atomic snapshot for the whole burst
-	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps, a.backspaceCap())
+// executeLevel2 runs the ladder's Backspace level: the plan's Backspaces —
+// counted in runes by BuildPlan, the tail included — replayed as
+// press+release PAIRS of ForwardKeyEvent(BackSpace) (round-6: a press-only
+// forward arms the client's own key repeat) in chunks of at most
+// terminalChunkKeys PAIRS with context re-checks, followed by ONE commit of
+// the converted token plus the tail. The burst→commit order is the wire contract (research A4: the
+// daemon preserves it for every client). The write branch serves two
+// callers: the legacy no-caps degradation (ADR-003) and — owner verdict
+// OQ 1 «unified» — the whole terminal class, which may ANNOUNCE the
+// surrounding-text bit (VTE's 0x29 lie, the wezterm bit-set signature
+// with no pushes ever coming): the level-2 geometry is therefore forced by
+// masking the bit, and BuildPlan itself stays untouched (the D-13 tail
+// semantics ride verbatim). The terminal argument marks the class-routed
+// call: only it gets the round-4 delivery machine (plan 10-17 — the
+// drain-settle bounded window before the commit, the narrowed flip
+// release sites, the INFO delivery marks) and arms the verify-after round
+// (armAfterVerifyTerminal — no paste payload, plan 10-04 Task 3); the
+// legacy degradation keeps today's byte-exact shape, one pacing gap
+// before the commit, no marks, no deferred flip. The context discipline
+// is plan 10-17's: BEFORE the first destructive key a generation change
+// is a free stop (nothing destroyed — nothing to replace); AFTER it the
+// commit is NOT cancellable («удаление без замены» is forbidden — the
+// ADR-008 amendment (6)) — the replacement rides the captured emitter
+// snapshot behind the loud mid-flow mark. The caller holds the mutex.
+func (a *Actor) executeLevel2(rng correctionRange, converted []rune, armed time.Time, terminal bool) {
+	// The WR-01 re-entrancy guard (plan 10-10): checked-and-set BEFORE the
+	// plan build and the first forward — a second entry while a burst is in
+	// flight (the chunk-boundary window and the terminal branch's unlocked
+	// delivery wait release the mutex) refuses here, honestly and
+	// non-destructively. The guard covers the WHOLE machine window
+	// (T-10-17-01): chunks, the drain-settle wait, every exit.
+	if a.level2Busy {
+		a.skipCorrection("correction-busy")
+		a.settleCombo()
+
+		return
+	}
+	a.machineArm()     // the WR-01 guard arms the key-hold's close-on-exit channel with it (CR-02)
+	eng := a.emitter() // one atomic snapshot for the whole burst and its commit
+	plan := correct.BuildPlan(rng.token, rng.tail, converted, a.caps&^correct.CapSurroundingText, a.backspaceCap())
 	if plan.Level == correct.LevelNone {
 		// D-27: the Backspace series would exceed the cap and this client
 		// has no DeleteSurroundingText — refuse silently, not one deletion.
+		a.machineSettle() // the guard clears on EVERY exit (WR-01); the held keys ride free
 		a.skipCorrection("backspace-cap")
 		a.settleCombo()
 
 		return
 	}
-	for range plan.Backspaces {
-		eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
+	gen := a.ctxEpoch
+	sleep := a.level2Sleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	if terminal {
+		// The burst identity (the round-5 instrument): the open row births
+		// the burst — its emission-seq rides every following delivery row,
+		// its close pairs on EVERY exit (the free abort closes with
+		// forwards=0, the commit path with the emitted count). The frozen
+		// grep-forms keep matching; the attributes extend, never rename.
+		// Round-6: every BackSpace rides a press+release pair, so the
+		// emitted FORWARD count is 2×keys — the rows carry both ("keys" is
+		// the rune-true BackSpace count, "forwards" the wire emissions).
+		a.emissionSeq++
+		a.deliveryStart = time.Now()
+		a.deliveryMark("burst-window", "phase", "open",
+			"forwards", forwardEmissionsPerKey*plan.Backspaces, "keys", plan.Backspaces)
+	}
+	if a.replayBurst(eng, plan.Backspaces, gen, sleep) {
+		if terminal {
+			a.deliveryMark("burst-window", "phase", "close", "forwards", 0, "outcome", "aborted")
+		}
+
+		return // the free stop BEFORE the first forward — the round is settled
+	}
+	if terminal {
+		// The drain-settle bounded window (plan 10-17): the replacement
+		// commits only after the window that gives the client's forward
+		// queue an honest term to drain (the constant's journal provenance
+		// above). The WR-01 guard covers the wait (T-10-17-01); a
+		// generation change inside it is loud, never an abort.
+		a.drainSettleWindow(gen, sleep)
+		// The delivery marks (plan 10-17): the host's ONLY observability of
+		// the machine — outcomes, counters and latencies, never field
+		// content (D-20/D-21). The frozen grep-forms
+		// («msg correction, outcome done») keep matching; the attributes
+		// extend, never rename.
+		a.deliveryMark("chunks-sent",
+			"forwards", forwardEmissionsPerKey*plan.Backspaces, "keys", plan.Backspaces,
+			"pacing_ms", (forwardEmissionsPerKey * time.Duration(plan.Backspaces) * a.level2ForwardGap).Milliseconds())
+	} else {
+		sleep(a.level2ForwardGap) // the legacy branch, byte as today
 	}
 	eng.CommitText(engine.NewIBusText(string(plan.Commit)))
+	if terminal {
+		a.deliveryMark("commit-sent", "latency_ms", time.Since(armed).Milliseconds())
+		a.deliveryMark("burst-window", "phase", "close",
+			"forwards", forwardEmissionsPerKey*plan.Backspaces, "keys", plan.Backspaces, "outcome", "committed")
+	}
 	rng.replace(converted)
 	a.logCorrectionDone(plan.Level, rng.token, converted, time.Since(armed))
-	a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
+	a.machineSettle() // the guard clears on the success exit (WR-01); the held keys ride free
+	if terminal {
+		// E3 delivery-order safety (plan 10-08, G-10-1 cause B), narrowed by
+		// plan 10-17: the SetGlobalEngine of the post-correction flip may
+		// not follow the commit — the flip ARMS and fires ONLY on the next
+		// keystroke or a confirming push; the grace deadline and the verify
+		// outcomes release nothing (the release sites inside the delivery
+		// window are exactly the round-2 loss geometry).
+		a.deferCorrectionFlip(converted, true)
+	} else {
+		a.settleCorrectionFlip(converted) // owner rule 2026-09-28: the mode follows the converted script
+	}
 	a.settleCombo()
+	if terminal {
+		// The terminal branch verifies after the fact (plan 10-04 Task 3):
+		// the client that does push settles the round honestly, a push-less
+		// one dies by budget — and a mismatch can only log and stop, the
+		// round carries no paste (armAfterVerifyTerminal).
+		a.armAfterVerifyTerminal(converted, rng.tail)
+	}
+}
+
+// chunkBoundaryMoved yields the actor mutex for one scheduling quanta and
+// reports whether the input context died in the window — the ctxEpoch tag
+// bumped by HandleLifecycle's FocusOut/Reset branch (the verifyEpoch
+// discipline: a monotonic tag compared under the mutex). A second boundary
+// always catches a callback that missed the first window. The caller holds
+// the mutex on both entry and return. (The abort semantics around this
+// window are plan 10-17's: a free stop only BEFORE the first forward;
+// after it the round continues to its commit, loudly marked.)
+func (a *Actor) chunkBoundaryMoved(gen uint64) bool {
+	a.mu.Unlock()
+	runtime.Gosched()
+	a.mu.Lock()
+
+	return a.ctxEpoch != gen
+}
+
+// freeAbortBeforeFirstForward is the round's LAST free stop (plan 10-17):
+// a generation change observed before the first destructive key ends the
+// round without a commit, without a completion and without a repair — the
+// context that must receive the replacement no longer exists and nothing
+// has been destroyed yet. The chunk-boundary window releases the mutex so
+// the lifecycle callback can land. The caller holds the mutex on both
+// entry and return; a true answer means the round is ALREADY settled (the
+// caller just returns).
+func (a *Actor) freeAbortBeforeFirstForward(gen uint64) bool {
+	if !a.chunkBoundaryMoved(gen) {
+		return false
+	}
+	slog.Info("correction", "outcome", "context-changed")
+	a.machineSettle() // the guard clears on EVERY exit (WR-01); the held keys ride free
+	a.settleCombo()
+
+	return true
+}
+
+// replayBurst emits the plan's BackSpace forwards — chunked at
+// terminalChunkKeys (PAIRS per chunk, round-6) with the context re-checks
+// between chunks (plan 10-04) — and reports whether the round took the free
+// stop BEFORE its first forward (plan 10-17). Every BackSpace rides a
+// press+release PAIR on the pacing seam (round-6, the ADR-008 amendment
+// (7)): a press-only forward ARMS the client's own key repeat — wezterm
+// e2a98e1b sets KeyRepeatState on every repeatable-key press
+// (window.rs:1194-1206) and disarms it ONLY on the same key's release,
+// another key's press or a keyboard focus Enter/Leave; with no release the
+// armed repeat fires after the GNOME repeat-delay (default 500 ms) at ~30 Hz
+// and deletes the committed word — the host defect «появилось и исчезло»
+// (.planning/debug/2026-10-19-wezterm-repeat-sourcedig.md). The pair shape
+// is ProbeForward's discipline (probe.go:179-183): press (state 0), one
+// pacing gap, release (state MaskRelease) — the release lands one gap tick
+// (20 ms default) after its press, far inside the 500 ms arming window, and
+// the inter-PAIR pacing keeps the level2ForwardGap rhythm. A generation
+// change after the first destructive key is loud but no longer fatal (the
+// chunk-boundary mark): the round can only go forward to its commit on the
+// captured snapshot — the old criterion-4 stop (no commit after forwards)
+// is replaced by the ADR-008 amendment (6): a deletion without its
+// replacement is the one outcome the machine may never produce. The caller
+// holds the mutex.
+func (a *Actor) replayBurst(eng engine.Emitter, backspaces int, gen uint64, sleep func(time.Duration)) bool {
+	emitted := 0
+	for sent := 0; sent < backspaces; {
+		chunk := min(terminalChunkKeys, backspaces-sent)
+		for range chunk {
+			sleep(a.level2ForwardGap)
+			// The free-abort window (plan 10-17): BEFORE the first
+			// destructive key a generation change still stops the round for
+			// free — nothing has been destroyed, so nothing needs replacing.
+			if emitted == 0 && a.freeAbortBeforeFirstForward(gen) {
+				return true
+			}
+			eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, 0)
+			sleep(a.level2ForwardGap)
+			eng.ForwardKeyEvent(engine.KeyBackSpace, backSpaceKeycode, engine.MaskRelease)
+			emitted++
+		}
+		sent += chunk
+		if sent >= backspaces {
+			break
+		}
+		// The chunk-boundary re-check: a generation change here is LOUD but
+		// no longer fatal — see replayBurst's contract above.
+		if a.chunkBoundaryMoved(gen) {
+			a.deliveryMark("context-changed-midflow")
+		}
+	}
+
+	return false
+}
+
+// drainSettleWindow holds the terminal branch's bounded delivery wait
+// (plan 10-17, T-10-17-05): the actor mutex is RELEASED for the window —
+// a second correction entry lands here and is refused by the WR-01 guard
+// (T-10-17-01, level2Busy covers the whole window), a real lifecycle
+// callback lands freely, and the epoch re-check marks it loud WITHOUT
+// aborting: after the first forward the commit is not cancellable (the
+// ADR-008 amendment (6)). The settle constant bounds the wait — the
+// window can never hold the machine hostage. The caller holds the mutex
+// on both entry and return; sleep is the branch's pacing seam.
+func (a *Actor) drainSettleWindow(gen uint64, sleep func(time.Duration)) {
+	// WR-06 (the 10-REVIEW): the settle value is read UNDER the mutex — the
+	// field's documented discipline («Read under a.mu by the machine»);
+	// reading it after the Unlock was a live data-race against the setter
+	// for any future runtime caller (WR-01's race class).
+	settle := a.terminalDrainSettle
+	a.mu.Unlock()
+	sleep(settle)
+	a.mu.Lock()
+	if a.ctxEpoch != gen {
+		a.deliveryMark("context-changed-midflow")
+	}
+}
+
+// machineArm raises the WR-01 re-entrancy guard and arms the key-hold's
+// close-on-exit channel with it (CR-02): one raise, one channel, both under
+// the mutex the caller holds. machineSettle is its mirror — every machine
+// exit (the backspace-cap refusal, the free abort, the success return)
+// closes the channel so the keystrokes parked inside the unlocked window
+// ride free the moment the machine settles. The caller holds the mutex.
+func (a *Actor) machineArm() {
+	a.level2Busy = true
+	a.machineDone = make(chan struct{})
+}
+
+func (a *Actor) machineSettle() {
+	a.level2Busy = false
+	if a.machineDone != nil {
+		close(a.machineDone)
+		a.machineDone = nil
+	}
+}
+
+// deliveryMark logs one content-free «correction delivery» row of the
+// in-flight burst (the round-5 instrument): the stage and the row's own
+// attributes go FIRST — the frozen grep-forms keep their adjacency (the
+// e2e corpus pins «stage flip-released, reason keystroke» byte-exact) —
+// and the burst identity closes the row: emission-seq, the burst's
+// monotonic counter, and t_rel_ms, the offset from the burst's timeline
+// anchor. Outcomes and counters only, never field content (D-20/D-21).
+// The caller holds the mutex.
+func (a *Actor) deliveryMark(stage string, extra ...any) {
+	a.deliveryMarkBurst(a.emissionSeq, a.deliveryStart, stage, extra...)
+}
+
+// deliveryMarkBurst is deliveryMark with an explicit burst identity: the
+// deferred-flip release sites stamp the burst the flip armed in — a newer
+// burst may already have replaced the actor fields by the release instant.
+// The caller holds the mutex.
+func (a *Actor) deliveryMarkBurst(seq uint64, start time.Time, stage string, extra ...any) {
+	rel := int64(0)
+	if !start.IsZero() {
+		rel = time.Since(start).Milliseconds()
+	}
+	args := make([]any, 0, len(extra)+deliveryMarkFixedAttrs)
+	args = append(args, "stage", stage)
+	args = append(args, extra...)
+	args = append(args, "emission-seq", seq, "t_rel_ms", rel)
+	slog.Info("correction delivery", args...)
+}
+
+// deliveryMarkFixedAttrs is the capacity headroom of the burst rows for
+// the instrument's own key/value pairs (stage, emission-seq, t_rel_ms).
+const deliveryMarkFixedAttrs = 6
+
+// holdableKey reports whether the event is TYPED-LAYOUT input the hold path
+// must park while the delivery machine is in flight (CR-02): printable
+// characters (the runes the buffer tracks and the field receives — the RU
+// branch's own daemon-side commit included) and BackSpace (the buffer's
+// erase — a mid-window pop would also corrupt the pending round's replace
+// geometry). Gestures, bare modifiers and the reset keys never park: their
+// semantics (the busy refusal, the chord, the FSM, the CORR-09 boundary)
+// belong to the arrival instant, and a parked combo would re-enter the
+// correction pipeline post-settle over the already-replaced buffer.
+func holdableKey(ev engine.EngineEvent) bool {
+	if ev.Keyval == engine.KeyBackSpace {
+		return true
+	}
+
+	return printableKeyval(ev.Keyval) && ev.Mods&comboMask == 0
+}
+
+// holdDuringDelivery parks ev while the delivery machine is in flight and
+// drains the parked queue once it settles (CR-02). The arrival verdict is
+// always TRUE — consumed: ibus's own forwarding never happens, the daemon
+// owes the wire the event after the machine's commit (reemitTransit). The
+// first parked event's goroutine drains the whole FIFO (holdDrain is the
+// single-flight flag); later arrivals append and return — the drainer
+// processes them in arrival order. Every wait is bounded
+// (awaitDeliverySettle): past the bound the hold degrades loudly to arrival
+// processing — keys are never lost, the owner's typing is sacred. The
+// caller holds the mutex on entry and on return.
+func (a *Actor) holdDuringDelivery(ev engine.EngineEvent) bool {
+	a.holdQueue = append(a.holdQueue, ev)
+	if a.holdDrain {
+		return true // a drainer already owns the parked queue
+	}
+	a.holdDrain = true
+	defer func() { a.holdDrain = false }()
+	for len(a.holdQueue) > 0 {
+		if a.level2Busy && !a.awaitDeliverySettle() {
+			slog.Warn("key hold bound expired", "parked", len(a.holdQueue))
+		}
+		ev := a.holdQueue[0]
+		a.holdQueue = a.holdQueue[1:]
+		consume := a.handleKeyArrived(ev)
+		a.reemitTransit(ev, consume)
+	}
+
+	return true
+}
+
+// awaitDeliverySettle waits (bounded) for the in-flight delivery machine to
+// settle: the mutex is RELEASED for the wait — the machine needs it to
+// finish (its pacing sleeps hold it) — and re-taken on return. The bound
+// covers the machine's whole worst case (the drain window plus a full-cap
+// burst's pacing — round-6: every key rides TWO pacing quanta, press and
+// release — plus one slack quantum; a keystroke may catch the first
+// chunk-boundary Gosched window of a maximum burst), so an expiry is a
+// pathological overrun, never routine. Returns whether the machine settled.
+// The caller holds the mutex on entry and on return.
+func (a *Actor) awaitDeliverySettle() bool {
+	done := a.machineDone
+	bound := a.terminalDrainSettle +
+		forwardEmissionsPerKey*time.Duration(a.backspaceCap())*a.level2ForwardGap + keyHoldSlack
+	a.mu.Unlock()
+	timer := time.NewTimer(bound)
+	select {
+	case <-done:
+	case <-timer.C:
+	}
+	timer.Stop()
+	a.mu.Lock()
+
+	return !a.level2Busy
+}
+
+// handleKeyArrived is HandleKey's arrival body minus the hold gate — the
+// form the drainer runs for every parked event post-settle (the exact
+// semantics the key would have received at arrival on an idle machine).
+// The caller holds the mutex.
+func (a *Actor) handleKeyArrived(ev engine.EngineEvent) (consume bool) {
+	a.applySnapshot() // one config read per event (CONF-02, Pattern 2)
+
+	if ev.Release {
+		a.fsm.Feed(hotkey.KeyRelease{Keyval: ev.Keyval}, a.elapsed())
+		if ev.Keyval == a.tapKeyval {
+			// Only a release of the CONFIGURED tap key can move the series
+			// deadline (the FSM counts taps on clean releases); re-arming
+			// on any other event would either extend the deadline from the
+			// wrong instant or arm a timer over a cancelled series. A stale
+			// expiry is a no-op in the FSM, so over-arming is harmless,
+			// under-arming would silently drop the decision.
+			a.armTimer()
+		}
+		a.macrKeyRelease(ev)
+
+		return false
+	}
+	a.fsm.Feed(hotkey.KeyPress{Keyval: ev.Keyval}, a.elapsed())
+
+	return a.feedKey(ev)
+}
+
+// reemitTransit puts a held key's transit back on the wire AFTER the
+// machine's commit (CR-02): HandleKey consumed the event at arrival, so
+// ibus's own forwarding never happened — the daemon owes the client the
+// key. A consumed verdict needs nothing (the RU branch already committed
+// the rune post-settle; gestures emit nothing); a nil emitter fails closed
+// (no engine — no wire to owe). The release bit rides the wire state word,
+// the modsMask decoding convention. The caller holds the mutex.
+func (a *Actor) reemitTransit(ev engine.EngineEvent, consume bool) {
+	if consume {
+		return
+	}
+	eng := a.emitter()
+	if eng == nil {
+		return
+	}
+	mods := ev.Mods
+	if ev.Release {
+		mods |= engine.MaskRelease
+	}
+	eng.ForwardKeyEvent(ev.Keyval, ev.Keycode, mods)
 }
 
 // logCorrectionDone counts and writes the completion pair of one ladder
-// execution: the INFO counter (D-20 — outcome only, never the word) and
-// the DEBUG detail record whose FIRST attribute after msg is the ladder
-// level — the exact form the e2e matrix greps to pin the ACTUAL level a
-// client got (D-21). The caller holds the mutex.
+// execution: the INFO counter (D-20 — outcome only, never the word) with
+// the D-24 discriminator (plan 10-04: an executed correction is
+// changed=true — the frozen stand grep-forms «msg correction, outcome done»
+// keep matching, the attribute extends, never renames) and the DEBUG detail
+// record whose FIRST attribute after msg is the ladder level — the exact
+// form the e2e matrix greps to pin the ACTUAL level a client got (D-21).
+// The caller holds the mutex.
 func (a *Actor) logCorrectionDone(level correct.Level, token, converted []rune, latency time.Duration) {
 	a.corrDone++
-	slog.Info("correction", "outcome", "done")
+	slog.Info("correction", "outcome", "done", "changed", true)
 	slog.Debug("correction",
 		"level", int(level),
 		"runes", len(token),
@@ -2921,8 +4518,8 @@ func (a *Actor) resolvePending() {
 	if a.pending == nil {
 		return
 	}
-	if a.pending.deadline != nil {
-		a.pending.deadline.Stop()
+	if a.pending.stop != nil {
+		a.pending.stop()
 	}
 	a.pending = nil
 }

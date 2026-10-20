@@ -375,3 +375,123 @@ func TestClipboard_NewProductionRunner(t *testing.T) {
 		t.Errorf("Save() error = %v, want it to name wl-paste", err)
 	}
 }
+
+// binPasteName is the recorded name of the paste binary (the binCopyName
+// idiom).
+const binPasteName = "wl-paste"
+
+// TestClipboard_Primary pins the PRIMARY read primitive of plan 10-02
+// (ADR-008 D5: the wezterm leg reads PRIMARY, never CLIPBOARD): the read
+// runs wl-paste with EXACTLY [--primary, --no-newline] — pinned literal
+// flags, no payload ever rides argv — an empty selection is the same
+// non-error state as Save's, a genuine failure is a wrapped error, every
+// call carries the rung's deadline, and a signal-killed wl-paste is an
+// ERROR, never an empty read (the CR-03 misclassification would make the
+// caller trust a selection the subprocess merely failed to report).
+func TestClipboard_Primary(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reads wl-paste --primary --no-newline", func(t *testing.T) {
+		t.Parallel()
+		f := &fakeRunner{reply: []byte(ownerClip)}
+		c := newClient(f)
+
+		saved, had, err := c.Primary(context.Background())
+		if err != nil {
+			t.Fatalf("Primary() err = %v, want nil", err)
+		}
+		if !had {
+			t.Fatal("Primary() had = false over a non-empty selection, want true")
+		}
+		if string(saved) != ownerClip {
+			t.Fatalf("Primary() = %q, want the byte-exact %q", saved, ownerClip)
+		}
+		calls := f.snapshot()
+		if len(calls) != 1 {
+			t.Fatalf("subprocess calls = %d, want 1; got %+v", len(calls), calls)
+		}
+		call := calls[0]
+		if call.name != binPasteName || !slices.Equal(call.args, []string{"--primary", "--no-newline"}) {
+			t.Errorf("Primary ran %s %v, want %s [--primary --no-newline] (pinned literal flags)",
+				call.name, call.args, binPasteName)
+		}
+		if len(call.stdin) != 0 {
+			t.Errorf("Primary stdin = %q, want none — a read carries no payload", call.stdin)
+		}
+	})
+
+	t.Run("empty selection is a state, not an error", func(t *testing.T) {
+		t.Parallel()
+		f := &fakeRunner{exitErr: cleanPasteExitErr(t)}
+		c := newClient(f)
+
+		saved, had, err := c.Primary(context.Background())
+		if err != nil {
+			t.Fatalf("Primary() over an empty selection err = %v, want nil (empty is a state, not a failure)", err)
+		}
+		if had {
+			t.Error("Primary() had = true over an empty selection, want false")
+		}
+		if len(saved) != 0 {
+			t.Errorf("Primary() = %q over an empty selection, want no bytes", saved)
+		}
+	})
+
+	t.Run("signal-killed wl-paste is a wrapped error", func(t *testing.T) {
+		t.Parallel()
+		testPrimaryKilledNotEmpty(t)
+	})
+}
+
+// testPrimaryKilledNotEmpty is the killed-wl-paste body: the CR-03 guard —
+// a signal kill is an ERROR carrying the clipboard primary prefix, never
+// the empty selection.
+func testPrimaryKilledNotEmpty(t *testing.T) {
+	t.Helper()
+
+	f := &fakeRunner{exitErr: killedPasteErr(t)}
+	c := newClient(f)
+
+	saved, had, err := c.Primary(context.Background())
+	if err == nil {
+		t.Fatalf("Primary() over a killed wl-paste = (%q, %v, nil), want an error"+
+			" — a signal kill must never read as the empty selection", saved, had)
+	}
+	if !strings.Contains(err.Error(), "clipboard primary") {
+		t.Errorf("error %q does not carry the clipboard primary prefix", err)
+	}
+	if had {
+		t.Error("Primary() had = true over a failed read, want false")
+	}
+}
+
+// TestClipboard_PrimaryKilledNotEmpty pins the CR-03 guard over the PRIMARY
+// read (the Save corpus's KilledNotEmpty mirror): a wl-paste KILLED by a
+// signal — the rung's own deadline included — is an ERROR, never the empty
+// selection; read as empty, the caller would trust a selection the
+// subprocess merely failed to report.
+func TestClipboard_PrimaryKilledNotEmpty(t *testing.T) {
+	t.Parallel()
+
+	testPrimaryKilledNotEmpty(t)
+}
+
+// TestClipboard_PrimaryDeadline pins the DoS guard over the PRIMARY read
+// (T-03-03-05, the Save corpus's deadline discipline): the read is bounded
+// by the same rung deadline — a wedged wl-paste fails inside the budget,
+// never hangs the correction path.
+func TestClipboard_PrimaryDeadline(t *testing.T) {
+	t.Parallel()
+
+	f := &fakeRunner{reply: []byte(ownerClip)}
+	c := newClient(f)
+	if _, _, err := c.Primary(context.Background()); err != nil {
+		t.Fatalf("Primary() err = %v, want nil", err)
+	}
+	for i, call := range f.snapshot() {
+		if !call.ctxHasDeadline {
+			t.Errorf("call %d (%s) has no context deadline — every subprocess must be bounded",
+				i, call.name)
+		}
+	}
+}
