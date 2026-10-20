@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Терминалы и видимость приложений
 current_phase: 9
 current_phase_name: Спайк и дефект wezterm
-status: planning
-stopped_at: Phase 10 complete, ready to plan Phase 9
-last_updated: "2026-10-20T09:08:53.983Z"
+status: executing
+stopped_at: "Phase 9 close-out: 09-02-SUMMARY (halted) written; 09-03/09-04 retired superseded; ready for phase verification"
+last_updated: "2026-10-20T13:58:14.288Z"
 last_activity: 2026-10-20
-last_activity_desc: Phase 10 complete, transitioned to Phase 9
-state_head: 2642fbeff168ff769f492d306b7b6929c88ee831
+last_activity_desc: Phase 9 close-out — all four plans dispositioned (01 done, 02 halted, 03/04 superseded)
+state_head: 87ea430ea7fc8ce77501d9f6fddca3b1e3e38ee7
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 20
-  completed_plans: 16
+  total_plans: 18
+  completed_plans: 17
   percent: 20
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-08)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 10 — TERM-слово
+**Current focus:** Phase 9 — close-out записан, ждёт фазовой верификации
 
 ## Current Position
 
 Phase: 9 — Спайк и дефект wezterm
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-20 — Phase 10 complete, transitioned to Phase 9
+Plan: All dispositioned (09-01 done; 09-02 halted — 09-02-SUMMARY.md; 09-03/09-04 retired superseded)
+Status: Ready to verify
+Last activity: 2026-10-20 — Phase 9 close-out (09-02-SUMMARY + retirement 09-03/09-04)
 
 Progress: [██░░░░░░░░] 20%
 
@@ -65,6 +65,7 @@ Progress: [██░░░░░░░░] 20%
 | Phase 10 P17 | 54min | 3 tasks | 10 files |
 | Phase 10 P18 | 25min | 3 tasks | 4 files |
 | Phase 10 P17 | 74m | 7 tasks | 9 files |
+| Phase 09 P02 | 4d live arc (2026-10-08..12) + close-out | 2 tasks | 28 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,8 @@ Recent decisions affecting current work:
 - [Phase 10]: Машина round-4 (план 10-17): drain-settle 150 мс перед коммитом терминальной ветки (мьютекс освобождён на окно — WR-01 накрывает, константа с журнальным происхождением 19:21:26/E3, НЕ конфиг; -debug env-оверрайд fail-closed), флип вне окна (терминальный слот без grace и verify-релизов — только следующая клавиша/подтверждающий пуш; правило 2026-09-28 отложено-не-отменено, валидация владельцем 10-18), delivery-метки INFO без содержимого, abort/commit-дисциплина: свободный стоп только до первого форварда, после — коммит на захваченном снапшоте за меткой context-changed-midflow
 - [Phase 10]: Round-4 re-acceptance: установка v1.1.1-180-gefac750 по дословному ритуалу (реплей-ряд 21:32 UTC → стенд re-pin ×4 + drain-ряд 21:39-21:48 → установка 00:51 MSK в новый release-dir); оракул term-word-vte-flip переведён на round-4 release-семантику (keystroke-причина, Rule 3) — Урок 2026-10-12/09:39 обязывает доказывать фикс реплеем ДО всякого запуска; машина round-4 (10-17) не имеет grace/verify-релизов терминального флипа — замороженный оракул кейса 10-08 ждал старый релиз и не мог пройти зелёным на правильной машине; суженная семантика флипа и честный стек доказательств (машинного чтения поля хоста нет) предъявлены владельцу явно; вердикт не синтезируется — UAT end-of-phase
 - [Phase 10]: G-10-1 закрыт 2026-10-20 вердиктом владельца «осталось» (UAT Тест 6, selftype): корень — press-only форварды взводили клиентский автоповтор wezterm (исходники e2a98e1b), фикс — пары press+release (амендмент (7) ADR-008, сборка v1.1.1-226-g8bd4edc). Шесть раундов: флап-стойкость → маршрутизация → доставка → гвард mutter → парные форварды. — G-10-1 закрыт 2026-10-20 вердиктом владельца «осталось» (UAT Тест 6, selftype): корень — press-only форварды взводили клиентский автоповтор wezterm (исходники e2a98e1b), фикс — пары press+release (амендмент (7) ADR-008, сборка v1.1.1-226-g8bd4edc). Шесть раундов: флап-стойкость → маршрутизация → доставка → гвард mutter → парные форварды.
+- [Phase 9]: [Phase 09 close-out]: 09-02 HALTED честной записью (status: halted) — ядро стоит (десинк engine→stale-context XIM воспроизведён дважды, журналы сохранены), рецепт нативного Wayland доставлен (wezterm-nightly 20261010 + enable_wayland=true, 7365a93 — daily-driver владельца), харнесс headless-green; R2–R6 и two-round RED не исполнены (владелец вышел из роли тестера 2026-10-12); capability-таблица фактически заполнена стенд-рядами Фазы 10
+- [Phase 9]: [Phase 09 close-out]: 09-03/09-04 retired superseded (#2349-форма, как 10-14/10-15) — 09-03 доставлен Фазой 10 (ADR-008 Accepted 2026-10-12 планом 10-06, фикс = nightly-рецепт 09-02, зачёт G-10-1 «осталось» 2026-10-20); 09-04 вердикты рассеяны (Telegram AppArmor 2026-10-08 живой пробой — гейт Фазы 13 за владельцем; фаза-7 UAT a11y; фаза-10 ac_role_errors), журнал d09 не создавался
 
 ### Pending Todos
 
@@ -138,8 +141,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T08:46:12.028Z
-Stopped at: Phase 10 complete, ready to plan Phase 9
+Last session: 2026-10-20T13:58:14.219Z
+Stopped at: Phase 9 close-out: 09-02-SUMMARY (halted) written; 09-03/09-04 retired superseded; ready for phase verification
 Resume file: None
 
 ## Operator Next Steps

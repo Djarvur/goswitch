@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 10
 waived_count: 4
 fixed_count: 7
-total_count: 20
-last_updated: 2026-10-16T21:57:28.487Z
+total_count: 21
+last_updated: 2026-10-20T14:00:23.408Z
 ---
 
 # Broken Windows Ledger
@@ -35,6 +35,7 @@ last_updated: 2026-10-16T21:57:28.487Z
 | 18 | 10 | unrun-verify | .planning/debug/DEBUG-term-host-live-failures.md | 332 | Task 2 automated verify 'approved\|rejected' matches instruction/pending text only - owner re-acceptance verdict is PENDING (never synthesized); routing: UAT end-of-phase; on approved append gap-closed row, on rejected STOP without code changes | open |  | 2026-10-13T21:53:18.173Z |  |
 | 19 | 10 | unrun-verify | .planning/debug/DEBUG-term-host-live-failures.md |  | 10-12 D4: вердикт re-acceptance round-2 (шесть пунктов, закрывающий оракул G-10-1) — ОЖИДАНИЕ ответа владельца; grep-гейт матчится с текстом инструкции, не с вердиктом | open |  | 2026-10-14T10:03:44.986Z |  |
 | 20 | 10 | unrun-verify | .planning/debug/DEBUG-term-host-live-failures.md | 556 | Вердикт владельца round-4 (гейт: слово в wezterm ОСТАЁТСЯ на v1.1.1-180-gefac750) — human-check честно ОЖИДАЕТ; UAT Current Test №5 pending; не синтезируется | open |  | 2026-10-16T21:57:28.487Z |  |
+| 21 | 9 | unrun-verify | .planning/phases/09-spayk-i-defekt-wezterm/09-02-SUMMARY.md | 72 | 09-02 (D3–D5): живые раунды R2–R6, полная лестница P1–P5 и two-round wezterm-flip RED-контракт не исполнены — владелец прекратил участие в живых тестах 2026-10-12 (T2-ядро: фоновые окна клавиатурно мертвы); ряды не синтезированы; capability-потребитель Фаз 10/12 обслужен стенд-рядами Фазы 10 (adr-008-spike-log.md) | open |  | 2026-10-20T14:00:23.408Z |  |
 
 ````json
 [
@@ -276,6 +277,18 @@ last_updated: 2026-10-16T21:57:28.487Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-16T21:57:28.487Z",
+    "resolved_at": null
+  },
+  {
+    "id": 21,
+    "kind": "unrun-verify",
+    "phase": "9",
+    "file": ".planning/phases/09-spayk-i-defekt-wezterm/09-02-SUMMARY.md",
+    "line": 72,
+    "description": "09-02 (D3–D5): живые раунды R2–R6, полная лестница P1–P5 и two-round wezterm-flip RED-контракт не исполнены — владелец прекратил участие в живых тестах 2026-10-12 (T2-ядро: фоновые окна клавиатурно мертвы); ряды не синтезированы; capability-потребитель Фаз 10/12 обслужен стенд-рядами Фазы 10 (adr-008-spike-log.md)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-20T14:00:23.408Z",
     "resolved_at": null
   }
 ]
