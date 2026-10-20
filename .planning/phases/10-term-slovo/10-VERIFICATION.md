@@ -135,7 +135,7 @@ covered_files:
   - test/e2e/spike_journal_test.go
   - test/e2e/wezterm.go
   - test/e2e/wezterm_test.go
-covered_digest: "v1:sha256:584e250c4faa9bd46ac9a802c9a14dbe79c39a84b58257f7cd0119edaa12d593"
+covered_digest: "v1:sha256:4fb070fdf6d190cf125c66fddea31eebcf1d20252fcca4dd5d4e2a36ed8c7bcd"
 behavior_unverified: 0
 overrides_applied: 0
 unverified_prohibitions: 34
