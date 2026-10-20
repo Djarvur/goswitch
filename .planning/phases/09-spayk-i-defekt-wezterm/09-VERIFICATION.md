@@ -39,7 +39,7 @@ covered_files:
   - test/e2e/main.go
   - test/e2e/wezterm.go
   - test/e2e/wezterm_test.go
-covered_digest: "v1:sha256:64194a6741fe21ceb248c486d2bb8635f01ee0bf30ec21d5297858aef08ce4b3"
+covered_digest: "v1:sha256:a8f1549bcf92aea63542e1fc34f69131e1f7115a136cbc95950d4aef5b8332ef"
 behavior_unverified: 0
 overrides_applied: 0
 deferred: # Items addressed in later phases — not actionable gaps
