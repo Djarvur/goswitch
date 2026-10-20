@@ -232,7 +232,7 @@ func run() (exit int) {
 		return runPaneType(cfg)
 	}
 
-	if cfg.selfdrive {
+	if cfg.selfdrive || cfg.ssSelfType {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
