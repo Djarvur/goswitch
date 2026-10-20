@@ -179,6 +179,16 @@ None — настройка не требуется; жизненный путь
 - **09-04 (A11Y-зонд):** вердикты существуют рассеянно (Telegram AppArmor 2026-10-08 в STATE; фаза-7 UAT a11y-вердикты; ac_role_errors Фазы 10) — retired как superseded.
 - **Фазовая верификация:** недостающие живые ряды честно отсутствуют; синтез исключён — верификатору читать coverage D3–D5 с rationale.
 
+## Self-Check: PASSED
+
+- 09-02-SUMMARY.md на диске; retirement-штампы `status: superseded` + `retired:` + `retire_reason:` найдены в 09-03-PLAN.md и 09-04-PLAN.md (по 1)
+- Все цитируемые коммиты верифицированы в git log: close-out — 5e957d0 (SUMMARY), b77e086 (09-03), fde531f (09-04), 87ea430 (ROADMAP), 747cec3 (STATE/ROADMAP/WINDOWS/state.json); исторические — c21e043, bbd463d, a7ac579, af26204, cf7141b, 181c6eb, 4953d78, 5674b6f, 5a5b9f3, 39b0857, b239a18, dfba255, 8cdb093, 47e0583, e2ce145, fbf9c76, 9608e89, 7365a93
+- Измерение commits: 27 исторических scope-(09-02) в диапазоне c21e043^..7365a93 + 1 close-out = 28 (ledger gsd-plan-head-before-09-02 = a7a33a4 на диске с 2026-10-08); сырой grep по всему диапазону даёт 34 — включая 6 коммитов Фазы 10, лишь упоминающих 09-02
+- Десинк-строки журнала: spike-smoke 21:22:55, wezterm-flip 21:34:26/21:51:11 — найдены в docs/adr/adr-008-spike-log.md; HALT-записи 2026-10-11/12 и вердикт nightly (P3 02:15) — там же
+- ADR-008-terminal-transport.md: Status «Accepted (2026-10-12, план 10-06)» — подтверждён чтением файла
+- evidence-20261011-validate-daemon.log — tracked в git (4953d78); flip2/t04-журналы — на диске, сознательно untracked (живой ввод владельца, Pitfall 6)
+- Рабочее дерево чисто от модификаций; чужие untracked-файлы не тронуты; верификация фазы и phase.complete НЕ запускались — за оркестратором
+
 ---
 *Phase: 09-spayk-i-defekt-wezterm*
 *Completed: 2026-10-20 (status: halted)*
