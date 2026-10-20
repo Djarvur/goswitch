@@ -2,14 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 9
-current_phase_name: Спайк и дефект wezterm
-status: executing
-stopped_at: "Phase 9 close-out: 09-02-SUMMARY (halted) written; 09-03/09-04 retired superseded; ready for phase verification"
-last_updated: "2026-10-20T13:58:14.288Z"
+current_phase: 10
+current_phase_name: TERM-слово
+status: planning
+stopped_at: Phase 9 complete, ready to plan Phase 10
+last_updated: "2026-10-20T14:13:49.005Z"
 last_activity: 2026-10-20
-last_activity_desc: Phase 9 close-out — all four plans dispositioned (01 done, 02 halted, 03/04 superseded)
-state_head: 87ea430ea7fc8ce77501d9f6fddca3b1e3e38ee7
+last_activity_desc: Phase 9 complete, transitioned to Phase 10
+state_head: ced90cf3fde555f45132adf91e8e67f3a625c01a
 progress:
   total_phases: 5
   completed_phases: 1
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-08)
 
 ## Current Position
 
-Phase: 9 — Спайк и дефект wezterm
-Plan: All dispositioned (09-01 done; 09-02 halted — 09-02-SUMMARY.md; 09-03/09-04 retired superseded)
-Status: Ready to verify
-Last activity: 2026-10-20 — Phase 9 close-out (09-02-SUMMARY + retirement 09-03/09-04)
+Phase: 10 — TERM-слово
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-20 — Phase 9 complete, transitioned to Phase 10
 
 Progress: [██░░░░░░░░] 20%
 
@@ -142,7 +142,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-20T13:58:14.219Z
-Stopped at: Phase 9 close-out: 09-02-SUMMARY (halted) written; 09-03/09-04 retired superseded; ready for phase verification
+Stopped at: Phase 9 complete, ready to plan Phase 10
 Resume file: None
 
 ## Operator Next Steps
