@@ -57,3 +57,14 @@ Trigger side (goswitch): `test/e2e/focus_helper.py focused-app` (idle-desktop pr
 3. Verification dispatch run (workflow_dispatch, v4, fresh_session=false) — see run 39990616519.
 
 Reversal/notes: to re-enable host runner — `systemctl --user enable --now goswitch-ci-runner` on green106 (registration retained). VM shell crash during a run = job aborts (runner dies with session), autologin rebuilds the session; systemd-coredump on the VM captures the core.
+
+## Addendum 2026-10-24 (verification outcome — honest halt)
+
+CI pipeline on the VM works end-to-end (checkout → mise → daemon build/spawn → report upload; run 40035875529 proved every step except the case bodies). The matrix cases themselves hang at the drivers' focus gates on this venue:
+
+- fresh-rebooted virgin session, zero probes before the run: `word-en-ru` still fails at the 3-min case watchdog (log /tmp/case1.log on the VM);
+- venue properties measured 2026-10-24: no map-focus to spawned zenity (known since plan 10-08 for terminals); `grab-input-pid` pokes do not move focus (host-proven recovery); frame-level grabFocus returns `atspi_error (1)`; screen-center and frame-geometry clicks do not grant focus; on probed sessions the shell's search entry holds keyboard focus and accumulates injected keystrokes — probing pollutes the desktop, only virgin-boot runs are meaningful;
+- matrix v1–v4 was pinned green ONLY on the host desktop historically; it has never been green on the VM.
+
+Open work (needs its own plan): generalize the phase-10 click-provocation into the drivers' generic focus gates (waitZenityEntry class), or find a working activation primitive for this venue; then re-pin the double run. Mitigations landed meanwhile: job timeout 60→150 min (VM is ~3× slower on GUI fixtures; the 60-min wall killed run #1 mid-matrix).
+
