@@ -1,16 +1,32 @@
-# CI-раннер e2e — self-hosted, живая GNOME-сессия (план 02-07, D-19)
+# CI-раннер e2e — self-hosted на ВМ goswitch-stand (план 02-07, D-19)
 
 Владелец осознанно выбрал CI-контур уже в Фазе 2 (D-19): зелёная матрица
-на раннере — часть phase gate. Раннер — это ЭТА машина: e2e-стенду нужна
-настоящая GNOME Wayland-сессия с фокусом окон, эфемерная ubuntu-latest
-дать её не может. Workflow `.github/workflows/e2e-matrix.yml` запускается
-вручную (`workflow_dispatch`) и — после мержа фазы в `main` — по ночному
-`schedule` (план 04-09, раздел ниже), прогоняет `mise run e2e-matrix` —
-ту же задачу, что и локальный запуск (D-09), — и выгружает `e2e-report.txt`
-артефактом.
+на раннере — часть phase gate. e2e-стенду нужна настоящая GNOME
+Wayland-сессия с фокусом окон, эфемерная ubuntu-latest дать её не может.
+Workflow `.github/workflows/e2e-matrix.yml` запускается вручную
+(`workflow_dispatch`), прогоняет `mise run e2e-matrix` — ту же задачу,
+что и локальный запуск (D-09), — и выгружает `e2e-report.txt` артефактом.
 
-Инструкция воспроизводима без root: всё живёт в `$HOME` (каталог раннера,
-user unit, окружение сессии).
+> **История размещения.** До 2026-10-23 раннер `green106` жил ВНУТРИ
+> графической сессии владельца на его рабочем столе. Ночной schedule
+> (cron) каждым прогоном подвергал живой стол AT-SPI-обходу
+> (idle-desktop префлайт) — и дефект кеша at-spi2-core 2.52.0 на живом
+> столе регулярно ронял gnome-shell целиком (5+ logout-ов сеанса
+> владельца; диагноз и стек — в разделе «Диагностика»). 2026-10-23
+> раннер перенесён на стенд-ВМ `goswitch-stand`, ночной schedule удалён
+> из workflow (PR #22): прогоны — только ручной диспатч, печатают на
+> столе ВМ, крах оболочки ВМ не задевает работу владельца.
+
+Машина стенда — libvirt-ВМ «goswitch-stand» (Ubuntu 24.04, GNOME 46),
+пользователь `stand`, GDM autologin включён (`/etc/gdm3/custom.conf`:
+`AutomaticLoginEnable=true`, `AutomaticLogin=stand`) — сессия
+самовосстанавливается после краха оболочки или ребута ВМ.
+
+Инструкция воспроизводима без root на стороне раннера: всё живёт в
+`$HOME` (каталог раннера, user unit, окружение сессии). Исключение —
+пакеты стенда (sudo на ВМ есть) и gh CLI с admin-правом на репозитории
+для минта токенов — годится любая машина с аутентифицированным gh
+(например, хост владельца).
 
 ## Требования к машине
 
@@ -19,15 +35,17 @@ user unit, окружение сессии).
 | Требование                                    | Проверка                                                       |
 |-----------------------------------------------|----------------------------------------------------------------|
 | Живая GNOME Wayland-сессия (не headless)      | `echo $WAYLAND_DISPLAY` → `wayland-0`                          |
+| GDM autologin (самовосстановление сессии ВМ)  | `grep AutomaticLogin /etc/gdm3/custom.conf`                    |
 | Пользователь в группе `input`                 | `id -nG | grep -w input`                                       |
 | `/dev/uinput` доступен на запись              | `test -w /dev/uinput && echo ok`                               |
 | ydotool                                       | `ydotool --version` (0.1.8 — открывает `/dev/uinput` напрямую) |
 | python3-gi + AT-SPI                           | `/usr/bin/python3 -c "import gi; gi.require_version('Atspi','2.0')"` |
 | gir1.2-atspi-2.0, at-spi2-core                | `dpkg -l gir1.2-atspi-2.0 at-spi2-core`                        |
+| systemd-coredump (стыковка крахов оболочки)   | `coredumpctl --version`                                        |
 | Поверхности матрицы                           | `zenity --version`; `google-chrome --version`; `gnome-text-editor --version` |
 | gedit — поверхность матрицы v3 (план 04-05)   | `gedit --version` (GTK3-поколение IM/AT-SPI; в дефолтный GNOME НЕ входит — `sudo apt install gedit`, репозиторий universe) |
-| gh CLI, аутентифицирован с правом admin на репозитории | `gh api repos/Djarvur/goswitch/actions/runners` → HTTP 200    |
-| curl, tar                                     | `command -v curl tar`                                          |
+| gh CLI с admin на репозитории (не на ВМ)      | `gh api repos/Djarvur/goswitch/actions/runners` → HTTP 200    |
+| curl, tar, git                                | `command -v curl tar git`                                      |
 
 ## Установка раннера
 
@@ -54,7 +72,7 @@ Settings → Actions → Runners → New self-hosted runner. Токен НЕ
 $ cd ~/actions-runner
 $ TOKEN=$(gh api --method POST repos/Djarvur/goswitch/actions/runners/registration-token --jq .token)
 $ ./config.sh --url https://github.com/Djarvur/goswitch --token "$TOKEN" \
-    --labels gnome --unattended
+    --labels gnome --name goswitch-stand --unattended
 $ unset TOKEN
 ```
 
@@ -64,15 +82,15 @@ X64) config.sh ставит сам.
 
 ## systemd user unit (графическая сессия)
 
-Раннер обязан жить ВНУТРИ сессии владельца — иначе у стенда нет ни
-Wayland-композитора, ни session-bus, ни IBus. Прецедент — юнит демона
+Раннер обязан жить ВНУТРИ графической сессии стенда — иначе у стенда нет
+ни Wayland-композитора, ни session-bus, ни IBus. Прецедент — юнит демона
 `dist/systemd/user/goswitchd.service` (тот же паттерн «после
 graphical-session.target»). Файл
 `~/.config/systemd/user/goswitch-ci-runner.service`:
 
 ```ini
 [Unit]
-Description=goswitch CI runner (e2e-matrix, live GNOME session)
+Description=goswitch CI runner (e2e-matrix, live GNOME session on goswitch-stand)
 PartOf=graphical-session.target
 After=graphical-session.target
 
@@ -101,7 +119,7 @@ $ systemctl --user import-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR DBUS_SESSI
 ```
 
 Альтернатива импорту — `EnvironmentFile=` в юните (файл вне git, в
-`$HOME`); выбранный на этой машине способ (импорт через GDM) зафиксирован
+`$HOME`); выбранный на машине способ (импорт через GDM) зафиксирован
 в SUMMARY плана.
 
 ### Включение и проверка
@@ -113,8 +131,8 @@ $ systemctl --user is-active goswitch-ci-runner     # → active
 $ gh api repos/Djarvur/goswitch/actions/runners --jq '.runners[] | {name, status, labels: [.labels[].name]}'
 ```
 
-Ожидание: раннер со статусом `online` и ярлыками `self-hosted, Linux,
-X64, gnome`.
+Ожидание: раннер `goswitch-stand` со статусом `online` и ярлыками
+`self-hosted, Linux, X64, gnome`.
 
 ## Bootstrap-регистрация воркфлоуса
 
@@ -161,11 +179,12 @@ $ gh pr merge --squash --delete-branch
 между ними; суть проверки в том, что первый прогон не портит состояние
 для второго. Любое падение любого прогона краснит job.
 
-Процедура формального гейта (владелец, приёмка фазы):
+Процедура формального гейта (на ВМ goswitch-stand):
 
-1. Завершить сессию и перелогиниться через GDM. Раннер возвращается сам:
-   user-юнит `goswitch-ci-runner` висит на `graphical-session.target`
-   и стартует вместе с новой сессией (см. раздел systemd выше).
+1. Пересоздать сессию стенда: на ВМ `sudo systemctl restart gdm` (или
+   ребут ВМ) — autologin поднимет свежую сессию, user-юнит
+   `goswitch-ci-runner` висит на `graphical-session.target` и стартует
+   сам.
 2. Дождаться, что раннер снова `online`, и запустить гейт с проверкой
    свежести:
 
@@ -183,160 +202,25 @@ $ gh pr merge --squash --delete-branch
 начинается с loginctl-префлайта — возраст графической сессии раннера
 сверяется с порогом 30 минут (константа шага `D48_MAX_SESSION_AGE_SEC`
 в workflow); превышение = job падает с подсказкой «owner relogin
-required (D-48)» → перелогиниться и повторить диспатч. Диспатч механики
-двойного прогона на текущей сессии — та же команда без
+required (D-48)» → пересоздать сессию ВМ и повторить диспатч. Диспатч
+механики двойного прогона на текущей сессии — та же команда без
 `-f fresh_session=true`; формальный свежесессионный прогон — шаг
 приёмки фазы (verify-work/04-07).
 
-## Автономный ночной гейт (D-48 v2) (план 04-09, G-4-2)
+## Ночной автономный гейт — ВЫВЕДЕН из эксплуатации (2026-10-23)
 
-Директива владельца 2026-09-17: «придумай, как тестировать это без
-участия человека». Формальное доказательство D-48 — зелёный двойной
-прогон матрицы на свежей сессии — становится НОЧНЫМ АВТОНОМНЫМ
-ПРОГОНОМ. Цепочка:
+Ночная цепочка (root-таймер 03:50 → GDM autologin → диспетчер сессии
+`goswitch-d48-dispatch.service` → диспатч fresh_session-гейта; ин-репо
+ночной `schedule` в workflow) выведена из эксплуатации решением владельца
+2026-10-23 после серии ночных крахов gnome-shell на живом столе
+(причина — в разделе «Диагностика»; PR #22 удалил cron, раннер перенесён
+на ВМ). Машина владельца больше ничего не исполняет по расписанию:
+root-таймера на хосте нет, диспетчер сессии не включён, schedule в
+workflow отсутствует.
 
-```
-root-таймер 03:50: systemctl restart gdm
-  → GDM autologin входит владельца заново
-  → свежая графическая сессия поднимает graphical-session.target
-  → user-юниты стартуют сами: goswitch-ci-runner (раннер) +
-    goswitch-d48-dispatch (диспетчер сессии)
-  → диспетчер через ~2 мин запускает гейт:
-    scripts/d48-nightly-dispatch.sh
-    (= gh workflow run e2e-matrix fresh_session=true)
-```
-
-Человек не набирает команду и не перелогинивается никогда;
-fresh_session-префлайт (loginctl ≤ 30 мин) остаётся МАШИННЫМ свидетелем
-свежести — семантика доказательства не ослаблена, из цикла убран
-именно человек.
-
-> **Безопасность — осознанный tradeoff владельца.** Autologin на
-> личной машине означает: любой у консоли входит в сессию владельца
-> (T-04-09-01, accepted). Владелец применяет настройку ниже ЗНАЯ это;
-> репозиторий возит только ДОКУМЕНТАЦИЮ — НИЧЕГО в репозитории не
-> исполняет sudo и не применяет root-часть само. Все root-файлы из
-> блоков 1–2 применяются руками владельца, один раз.
-
-### Блок 1 — GDM autologin (root, вручную)
-
-`/etc/gdm3/custom.yaml`, секция `[daemon]` (создать файл/секцию, если
-нет):
-
-```yaml
-[daemon]
-AutomaticLoginEnable=true
-AutomaticLogin=<логин владельца>
-```
-
-Tradeoff — см. security-нотаут выше: включённый autologin входит в
-сессию без пароля у физической консоли.
-
-### Блок 2 — root-таймер пересоздания сессии (root, вручную)
-
-`/etc/systemd/system/d48-nightly-relogin.service`:
-
-```ini
-[Unit]
-Description=goswitch D-48 nightly: restart GDM for a fresh autologin session
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/systemctl restart gdm
-```
-
-`/etc/systemd/system/d48-nightly-relogin.timer`:
-
-```ini
-[Unit]
-Description=goswitch D-48 nightly relogin schedule (03:50)
-
-[Timer]
-OnCalendar=*-*-* 03:50:00
-
-[Install]
-WantedBy=timers.target
-```
-
-Применение и проверка:
-
-```console
-$ sudo systemctl daemon-reload
-$ sudo systemctl enable --now d48-nightly-relogin.timer
-$ systemctl list-timers d48-nightly-relogin.timer
-```
-
-`restart gdm` разбирает текущую сессию; autologin возвращает
-пользователя, user-юниты стартуют сами — в этом и есть механизм
-«свежей сессии без человека».
-
-### Блок 3 — systemd USER units (без root)
-
-**(а) Раннер.** Существующий `goswitch-ci-runner.service` (раздел
-«systemd user unit» выше) уже висит на `graphical-session.target`
-(`After=`, `Restart=on-failure`) и переиспользует вручную
-зарегистрированный каталог `~/actions-runner` — дополнительной
-настройки не нужно, только включение, если ещё не включён:
-
-```console
-$ systemctl --user enable goswitch-ci-runner
-```
-
-**(б) Диспетчер сессии.** Файл
-`~/.config/systemd/user/goswitch-d48-dispatch.service`:
-
-```ini
-[Unit]
-Description=goswitch D-48 nightly dispatch (fresh session gate)
-PartOf=graphical-session.target
-
-[Service]
-Type=oneshot
-# Гвард ~2 мин: дать столу и раннеру устояться после входа.
-ExecStartPre=/usr/bin/sleep 120
-# Подставить ФАКТИЧЕСКИЙ путь рабочей копии репозитория на этой машине.
-ExecStart=%h/goswitch/scripts/d48-nightly-dispatch.sh
-# Опционально, файл вне git: строка D48_REF=<ветка> для до-мерж
-# диспатчей фаза-ветки; без файла диспетчер идёт на main.
-EnvironmentFile=-%h/.config/goswitch/d48-dispatch.env
-
-[Install]
-WantedBy=graphical-session.target
-```
-
-Применение и проверка:
-
-```console
-$ systemctl --user daemon-reload
-$ systemctl --user enable goswitch-d48-dispatch
-$ journalctl --user -u goswitch-d48-dispatch
-```
-
-### Ин-репо пояс (post-merge)
-
-После мержа фазы в `main` workflow сам несёт ночной `schedule`
-(cron `10 1 * * *` в **UTC**) — второй, ИЗБЫТОЧНЫЙ путь: GitHub
-диспатчит определение default branch и без диспетчера сессии.
-Concurrency-группа `e2e-gnome` (без cancel-in-progress) ставит
-cron-прогон в очередь за прогоном диспетчера — два стенда на одном
-столе по-прежнему невозможны. Мягкий режим префлайтов (idle-desktop и
-fresh-session) делает неудачный слот нейтральным: `::warning::` +
-пропуск прогонов + `exit 0` — без машинной настройки (блоки 1–3)
-ночные прогоны НЕ краснеют. Часовой пояс: cron в UTC, root-таймер в
-machine-local времени — при регионе, отличном от UTC+3, сдвинуть
-cron так, чтобы слот оставался ~20 минут после автологина.
-
-### Семантика доказательства
-
-Формальное доказательство D-48 = АВТОМАТНЫЙ зелёный двойной прогон
-(«matrix run #1» + «matrix run #2» в одном job, conclusion
-`success`) на автологин-свежей сессии. fresh_session-префлайт
-(loginctl ≤ 30 мин) остаётся машинным свидетелем свежести — по
-директиве владельца 2026-09-17 из цикла убран человек, а не проверка.
-До применения машинной настройки (блоки 1–3) scheduled-прогоны
-завершаются нейтрально (мягкий режим) — без красного ночного шума;
-реальное падение прогона при пройденных префлайтах краснеет при любом
-триггере — ночной красный остаётся регрессионным сигналом.
+Возврат ночного прогона — только на ВМ goswitch-stand, только по явному
+решению владельца, после зелёной серии ручных прогонов на ВМ (гейт
+свежести и двойной прогон при этом сохраняются как есть).
 
 ## Матрицы: v1 → v4 (06-07)
 
@@ -348,12 +232,12 @@ cron так, чтобы слот оставался ~20 минут после а
 | `matrix-v1.yaml` | 02-06 | frozen | 16 кейсов D-18 (слова/фразы/сбросы) |
 | `matrix-v2.yaml` | 03-07 | frozen | superset v1: фразы, выделение, комбо, reload, MACR (21) |
 | `matrix-v3.yaml` | 04-05 | frozen (гейт `git diff --exit-code`) | superset v2: gedit + chromium-x11 (32) |
-| `matrix-v4.yaml` | 06-07 | ТЕКУЩАЯ, default ночного гейта | superset v3 байт-дословно + блок autocorrect: `autocorrect-fires` (исправление без жеста, `config_base: autocorrect` + keystroke/fresh-старты наблюдателя), `autocorrect-off` (дефолтный демон — ноль поведения), `autocorrect-oov` (двусторонний словарный промах → trigram-unsure, нетронуто) — 35 кейсов |
+| `matrix-v4.yaml` | 06-07 | ТЕКУЩАЯ, default диспатча | superset v3 байт-дословно + блок autocorrect: `autocorrect-fires` (исправление без жеста, `config_base: autocorrect` + keystroke/fresh-старты наблюдателя), `autocorrect-off` (дефолтный демон — ноль поведения), `autocorrect-oov` (двусторонний словарный промах → trigram-unsure, нетронуто) — 35 кейсов |
 
 Правила v4:
 
 - **Superset без ослабления**: строки v3 перенесены байт-дословно; две
-  из них заморожены красными под two-source семантикой сброса контекста
+  из них заморожены красными под two-source семантику сброса контекста
   (`word-mixed`, `phrase-mixed` — WINDOWS #12, вердикт владельца на
   verify-гейте фазы) и несутся как есть — выпадение ослабило бы матрицу.
 - **Парольный негатив в матрицу НЕ включён честно**: у драйвера
@@ -362,7 +246,7 @@ cron так, чтобы слот оставался ~20 минут после а
   `mise run e2e-autocorrect-password-silent` (GTK4-фикстура).
 - **Дефолт диспатча — v4**; явное `-f matrix=…v3.yaml` запускает
   v3-регрессию (та же форма для v1/v2).
-- **Двойной ночной прогон D-48 сохранён** (см. раздел выше): оба шага
+- **Двойной прогон D-48 сохранён** (см. раздел выше): оба шага
   гоняют ОДНУ выбранную матрицу.
 
 ## Обновление раннера
@@ -389,9 +273,15 @@ $ ./config.sh remove --token "$TOKEN"
 $ unset TOKEN
 ```
 
+Старый раннер хоста `green106` (остановлен и выключен 2026-10-23, файлы
+в `~/actions-runner` на хосте сохранены): серверная регистрация остаётся
+в статусе offline и заданий не получает; полное снятие — командой выше
+на хосте, быстрый возврат — `systemctl --user enable --now
+goswitch-ci-runner` на хосте (пока регистрация не снята).
+
 ## Диагностика живого стола
 
-Стенд печатает на живой сессии — окружение стола иногда деградирует.
+Стенд печатает на живой сессии ВМ — окружение стола иногда деградирует.
 Полный разбор в `test/e2e/README.md` (раздел «Матрица v1»); самое
 частое:
 
@@ -401,13 +291,59 @@ $ unset TOKEN
 - **Зависание моста gnome-shell** (обходы AT-SPI виснут до таймаута):
   перезапуск ВСЕЙ шины a11y — `kill <pid at-spi-bus-launcher> <pid её
   dbus-daemon>`; стек dbus-активируется заново, мосты пересобираются.
+- **Крах gnome-shell во время AT-SPI-обхода** (сегфолт в `libgobject`):
+  известный дефект at-spi2-core 2.52.0 (Ubuntu 24.04, GNOME 46) —
+  use-after-free в кеше моста atk-adaptor. Любой клиент, обошедший
+  AT-SPI-дерево целиком (наш idle-desktop префлайт, экранный диктор),
+  вызывает `GetItems` → `impl_GetItems` (cache-adaptor.c:327) →
+  `spi_cache_foreach` (accessible-cache.c:423) → `g_object_ref` на
+  уже освобождённый AtkObject → SIGSEGV всей оболочки. Кеш хранит сырые
+  указатели без слабых ссылок (accessible-cache.c:112,
+  `g_hash_table_new (g_direct_hash, g_direct_equal)`); объект,
+  умерший без сигнала deregister, остаётся висячим указателем. Фикс
+  апстрима — коммит d442ee182e «atk-adaptor: Have the SpiCache keep its
+  own weak ref» (вошёл в 2.55.2/2.56, NEWS: «Attempt to fix a use after
+  free in the atk bridge»); в 24.04 дефект остаётся. На стенде: дамп
+  ловит systemd-coredump (`coredumpctl list`), сессию поднимает GDM
+  autologin; бегущий job при этом закончится аварией (раннер умер
+  вместе с сессией) — перезапустить диспатч. Живой дамп такого краха
+  хоста (2026-10-21) разбран в
+  `.planning/debug/2026-10-23-atspi-cache-uaf.md`.
+- **Матрица v1–v4 на ВМ — три особенности площадки (диагноз полный,
+  2026-10-27)**: конвейер CI на ВМ работает целиком (checkout, mise,
+  сборка демона, префлайты, отчёт), но кейсы не проходят из-за
+  свойств стола ВМ, установленных покадровой бисекцией (оракул —
+  `virsh screenshot`):
+  1. рождение окна на пустом столе **само открывает Обзор GNOME** —
+     окно становится миниатюрой и не может взять фокус (голый zenity
+     без демона и драйвера воспроизводит; префлайты/демон/активация/
+     setxkbmap проверками оправданы);
+  2. **клик в центр экрана** закрывает обзор и даёт окну настоящий
+     фокус (печать приземляется в поле) — примитив клик-провокации
+     фазы 10 (nudgeFocusClick) подходит для фокус-гейтов;
+  3. **AT-SPI-оракул на ВМ мёртв**: даже при реальном фокусе и живом
+     GTK_MODULES=gail:atk-bridge свидетель не видит ни фокус-флагов,
+     ни текста поля (на хосте то же дерево работает; у оболочки ВМ
+     софтверный рендер — glamor не инициализируется).
+  Следствие: для зелёной матрицы на ВМ нужна замена оракула кейсов
+  (stdout-чтение zenity + журнальные focus_in демона, паттерн фазы
+  10) — отдельная плановая задача, не горячий фикс.
+- **Мышь на ВМ (починено 2026-10-25)**: udev-правило
+  `/etc/udev/rules.d/99-ydotool-mouse.rules` (ID_INPUT_MOUSE=1 для
+  устройств ydotool/ydotoold — без тега libinput/mutter игнорируют
+  указатель целиком, клавиши при этом работают) + постоянный юнит
+  `~/.config/systemd/user/ydotoold.service`. Особенности ydotool
+  0.1.8: `mousemove` ОТНОСИТЕЛЬНЫЙ и требует `--` перед отрицательными
+  сдвигами; сброс позиции — через ПРАВЫЙ НИЖНИЙ угол (проход через
+  левый верхний открывает Обзор горячим углом).
 - **Один стенд на столе**: два параллельных стенда печатали бы в чужие
   окна — префлайт против живого `goswitchd`, concurrency-группа
   `e2e-gnome` в workflow.
 
 ## Безопасность
 
-Раннер исполняет код репозитория на живом столе владельца — поэтому:
+Раннер исполняет код репозитория на живом столе — с 2026-10-23 это стол
+ВМ goswitch-stand, а не рабочая машина владельца:
 
 - **Только этот репозиторий**: раннер зарегистрирован в
   Djarvur/goswitch и не может подбираться чужими репозиториями аккаунта.
@@ -415,17 +351,17 @@ $ unset TOKEN
   → Runner groups: группа `e2e-gnome` с доступом ровно одного
   репозитория и ярлыком `gnome` (по умолчанию раннер попадает в группу
   Default; ограничение группы — рекомендация этого раздела).
-- **Триггеры — workflow_dispatch + ночной schedule** (T-02-07-01 в
-  силе): fork/push-триггеры отсутствуют — fork-PR физически не может
-  запустить матрицу; диспатч — право ролей с write; schedule исполняет
-  ТОЛЬКО определение default branch (ветка защищена, изменения через
-  PR). Юнит диспетчера сессии (D-48 v2) исполняет только ин-репо
-  скрипт с gh-гвардом; root-часть машинной настройки — исключительно
-  ручное применение владельцем, репозиторий sudo не исполняет.
+- **Триггер — только workflow_dispatch** (T-02-07-01 в силе): fork/push-
+  и schedule-триггеры отсутствуют — fork-PR физически не может запустить
+  матрицу; диспатч — право ролей с write.
+- **Autologin на ВМ** — осознанный tradeoff: физическая консоль ВМ
+  (окно virt-manager на хосте) входит в сессию стенда без пароля;
+  секретов в сессии стенда нет, рабочие данные владельца на ВМ не
+  хранятся. Рабочая машина владельца autologin не использует.
 - **permissions: contents: read**, секретов workflow не использует.
 - **concurrency e2e-gnome без cancel-in-progress**: один прогон за раз.
 - **Registration-token** одноразовый, живёт минуты, в git не попадает
   (T-02-02-02b у Фазы 2 — та же дисциплина: минт в переменную, без
   логирования).
-- Печать на живом столе — осознанное решение владельца (D-19), реестр
-  угроз ведёт `SECURITY.md`.
+- Печать на живом столе ВМ — решение владельца (D-19; перенос на ВМ —
+  2026-10-23), реестр угроз ведёт `SECURITY.md`.
