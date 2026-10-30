@@ -387,9 +387,10 @@ type Actor struct {
 	// context (RESEARCH Pattern 1, source 3): set when a verify round of
 	// this context expired by budget while the context was still alive
 	// (the wezterm signature — the surrounding-text bit is announced, the
-	// pushes never come), cleared by the context's death
-	// (HandleLifecycle FocusOut/Reset — the same lifecycle that retires
-	// the pending round). A5 insurance: every transition logs one
+	// pushes never come), cleared by the context's death (HandleLifecycle
+	// FocusOut/Reset — the same lifecycle that retires the pending round;
+	// the own flip's synthetic FocusOut is not a death — the class rides
+	// the G-2-3 carve-out). A5 insurance: every transition logs one
 	// source-neutral INFO marker, word-free (D-20/D-21).
 	verifyDead bool
 	// detectCheck is the boundary's detector seam (plan 10-03): the
@@ -400,8 +401,9 @@ type Actor struct {
 	// The deferred verify-dead wipe of the flap window (plan 10-07,
 	// G-10-1 cause A): a REAL FocusOut arms focusFlapWindow once — the
 	// wipe executes at expiry unless a FocusIn cancelled it first (the
-	// same-engine flap pair). A Reset or a synthetic FocusOut (the own
-	// flip's credit) wipes immediately, byte as before. flapEpoch is the
+	// same-engine flap pair). A Reset wipes immediately, byte as before;
+	// a synthetic FocusOut (the own flip's credit) wipes nothing — the
+	// class rides (orca-terminal-second-shift). flapEpoch is the
 	// stale-deadline guard (the afterExpiry form: a monotonic tag compared
 	// under the mutex — a re-armed window or a completed pair turns a
 	// queued callback stale); flapStop is the armed timer's stop; flapAfter
@@ -1274,9 +1276,9 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 // longer exists; everything else is a DEBUG trace. ADR-004 amendment
 // 2026-10-07 (G-2-3): a FocusOut carrying the own flip's synthetic-lifecycle
 // credit (a successful SetGlobalEngine makes ibus re-mint engine objects)
-// skips exactly the buffer hard-reset — the synthetic transition of the
-// daemon's own flip is not a real focus change; a real focus loss still
-// resets.
+// skips the buffer hard-reset AND the behavioral-class wipe — the synthetic
+// transition of the daemon's own flip is not a real focus change; a real
+// focus loss still resets.
 func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1285,15 +1287,17 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 	case engine.LifecycleFocusOut, engine.LifecycleReset:
 		// ADR-004 amendment 2026-10-07 (G-2-3): a FocusOut carrying the own
 		// flip's synthetic-lifecycle credit is not «смена фокуса окна» —
-		// exactly one credit is consumed and ONLY the buffer hard-reset is
-		// skipped, so a word typed across the daemon's own flip corrects as
-		// a whole. Every other side effect below is context-scoped (ibus
-		// re-minted the engine object) and stays correct: the FSM reset, the
-		// surrounding-cache clear, the pending-resolution retirement, the
-		// clearAfter, the combo/MACR cleanup, the timer stop. A Reset kind
-		// never consumes a credit — the observed synthetic pair is
-		// focus_out/focus_in; a spent or absent credit means a REAL focus
-		// loss and takes the full reset.
+		// exactly one credit is consumed and the BUFFER hard-reset plus the
+		// BEHAVIORAL-CLASS wipe are skipped, so a word typed across the
+		// daemon's own flip corrects as a whole and the client's learned
+		// verify behavior survives its own engine's re-mint (debug session
+		// orca-terminal-second-shift). Every other side effect below is
+		// context-scoped (ibus re-minted the engine object) and stays
+		// correct: the FSM reset, the surrounding-cache clear, the
+		// pending-resolution retirement, the clearAfter, the combo/MACR
+		// cleanup, the timer stop. A Reset kind never consumes a credit —
+		// the observed synthetic pair is focus_out/focus_in; a spent or
+		// absent credit means a REAL focus loss and takes the full reset.
 		synthetic := false
 		if kind == engine.LifecycleFocusOut && a.flipCredit > 0 {
 			a.flipCredit--
@@ -1331,13 +1335,26 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// focusFlapWindow — the host kernel's same-engine flap pairs (1–3 ms
 		// in the 16:20:05 journal) wiped the learned class before the next
 		// gesture could ride it, and wezterm's only classification source
-		// died with it. A Reset and a SYNTHETIC FocusOut (the own flip's
-		// re-mint — a new context generation, the class died with the old
-		// one) wipe immediately, byte as before.
+		// died with it. A Reset wipes immediately, byte as before. A
+		// SYNTHETIC FocusOut (the own flip's re-mint) wipes NOTHING (debug
+		// session orca-terminal-second-shift, green106 2026-10-31, 10/10
+		// journal repros): the re-mint serves the SAME client field — the
+		// push-less verify behavior is a property of the app, not of the
+		// engine object — and wiping it made every terminal correction
+		// re-pay a verify round it always loses (the stationary «only the
+		// second double-shift works» cycle). The class rides the G-2-3
+		// carve-out: the daemon's own flip is not a focus change. A real
+		// context change still clears: its own FocusOut arrives credit-less
+		// and takes the deferred wipe below.
 		switch {
-		case kind == engine.LifecycleReset || synthetic:
+		case kind == engine.LifecycleReset:
 			a.cancelVerifyDeadWipe()
 			a.setVerifyDead(false)
+		case synthetic:
+			// The pending window's snapshot is the old engine object — it
+			// can never complete after the re-mint; cancel it, keep the
+			// class.
+			a.cancelVerifyDeadWipe()
 		default:
 			a.armVerifyDeadWipe()
 		}

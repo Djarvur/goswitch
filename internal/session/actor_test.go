@@ -7443,12 +7443,14 @@ func TestTerminalClass_VerifyDeadClearedByFocusOut(t *testing.T) {
 	}
 }
 
-// TestTerminalClass_VerifyDeadClearedBySyntheticFocusOut pins the
-// immediate-wipe arm of plan 10-07: a FocusOut carrying the own flip's
-// synthetic credit is NOT deferred — the engine re-mint is a new context
-// generation, the class died with the old one, and the wipe executes at
-// once (no window armed, no stop pending).
-func TestTerminalClass_VerifyDeadClearedBySyntheticFocusOut(t *testing.T) {
+// TestTerminalClass_VerifyDeadSurvivesSyntheticFocusOut pins the G-2-3
+// carve-out's behavioral-class arm (debug session orca-terminal-second-shift,
+// green106 2026-10-31, re-pinned from the plan 10-07 immediate-wipe form the
+// live journal falsified): a FocusOut carrying the own flip's synthetic
+// credit is NOT a context death — the re-mint serves the same client field,
+// the class rides, and the wipe never defers either (no window armed, no
+// stop pending).
+func TestTerminalClass_VerifyDeadSurvivesSyntheticFocusOut(t *testing.T) {
 	buf := captureLogs(t)
 	a, _ := wiredActor()
 	clock := &flapClock{}
@@ -7459,18 +7461,96 @@ func TestTerminalClass_VerifyDeadClearedBySyntheticFocusOut(t *testing.T) {
 	flipMode(a)                                 // EN → RU: the successful round trip arms exactly one credit
 	a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes it
 
-	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
-		t.Fatalf("terminal-class markers after the synthetic FocusOut = %d, want exactly 2 (learn + clear) — "+
-			"the own flip's re-mint wipes immediately; log:\n%s", got, buf.String())
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 1 {
+		t.Fatalf("terminal-class markers after the synthetic FocusOut = %d, want exactly 1 (learn only) — "+
+			"the own flip's re-mint is not a context death; log:\n%s", got, buf.String())
 	}
 	if armed, stopped := clock.counts(); armed != 0 {
 		t.Errorf("flap windows armed on the synthetic path = %d, want 0 — "+
-			"the immediate wipe never defers", armed)
+			"the synthetic path never defers either", armed)
 	} else if stopped != 0 {
 		t.Errorf("flap windows stopped on the synthetic path = %d, want 0", stopped)
 	}
-	if !strings.Contains(buf.String(), `"verify_dead":false`) {
-		t.Errorf("the cleared-class marker is missing; log:\n%s", buf.String())
+
+	// The class is functionally alive: the next Double rides it through the
+	// terminal branch — the verify machine never arms again (plan 10-04).
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	teachVerifyDead(t, a, wordEN)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 1 {
+		t.Fatalf("verify-timeout records after the synthetic FocusOut = %d, want 1 — the learned class must "+
+			"still route the next gesture through the terminal branch; log:\n%s", got, buf.String())
+	}
+}
+
+// TestTerminalClass_VerifyDeadSurvivesOwnFlip pins the live-journal finding
+// of debug session orca-terminal-second-shift (green106, 2026-10-31
+// 01:02:39..01:34:34, 10/10 repros): the daemon's OWN flip — the deferred
+// terminal flip a successful terminal correction arms, released by the
+// user's next keystroke — re-mints the engine object, and the synthetic
+// focus_out must NOT wipe the learned behavioral class. The SetGlobalEngine
+// re-mint serves the SAME client field (the journal's Orca IDE terminal,
+// push-less): the client's verify behavior is unchanged by the daemon's own
+// flip — the G-2-3 principle the buffer hard-reset already rides. The wipe
+// is the stationary «correction lands only on the second double-shift»
+// cycle: every successful correction erases the class, so the next one
+// re-pays a verify round a push-less terminal always loses.
+func TestTerminalClass_VerifyDeadSurvivesOwnFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	clock := &flapClock{}
+	a.UseFlapTimer(clock.arm)
+	a.SetOptions(session.Options{FlipAfterCorrection: true})
+	a.SetSwitcher(func(_ context.Context, _ string) error { return nil })
+
+	// Gesture 1 — the verify round expires on the living context: the class
+	// is learned, the round skipped (the journal's first press).
+	teachVerifyDead(t, a, wordEN)
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 1 {
+		t.Fatalf("verify-timeout records after the teaching round = %d, want 1; log:\n%s",
+			got, buf.String())
+	}
+
+	// Gesture 2 — rides the learned class: the terminal write branch
+	// delivers, and the terminal flip arms (the release waits for the next
+	// keystroke — the journal's flip-armed).
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	if !strings.Contains(buf.String(), `"msg":"correction delivery","stage":"flip-armed"`) {
+		t.Fatalf("the terminal flip never armed — gesture 2 must deliver through the "+
+			"terminal write branch off the learned class; log:\n%s", buf.String())
+	}
+
+	// The user keeps typing: the keystroke releases the flip (the
+	// SetGlobalEngine round trip succeeds and arms exactly one credit), and
+	// the re-mint's synthetic focus_out/focus_in pair arrives.
+	a.HandleKey(spaceKey())                     // the flip's release keystroke
+	a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes the credit
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+
+	// Gesture 3 — the NEXT correction (the journal's first press of the next
+	// pair): the learned class must still route it through the terminal
+	// branch — no verify round re-arms (the helper's deadline fire is a
+	// no-op then), no second verify-timeout, the delivery commits.
+	teachVerifyDead(t, a, wordEN)
+
+	logged := buf.String()
+	if got := strings.Count(logged, `"reason":"verify-timeout"`); got != 1 {
+		t.Fatalf("verify-timeout records after the own flip = %d, want 1 — the own flip's re-mint "+
+			"must not wipe the learned class (the two-press cycle); log:\n%s", got, logged)
+	}
+	if got := strings.Count(logged, `"msg":"terminal class"`); got != 1 {
+		t.Fatalf("terminal-class markers = %d, want exactly 1 (learn only) — the own flip is not a "+
+			"context change for the behavioral class; log:\n%s", got, logged)
+	}
+	if got := strings.Count(logged, `"msg":"correction","outcome":"done","changed":true`); got != 2 {
+		t.Fatalf("done records = %d, want 2 — gestures 2 and 3 both deliver; log:\n%s", got, logged)
+	}
+	if armed, stopped := clock.counts(); armed != 0 || stopped != 0 {
+		t.Errorf("flap windows armed/stopped = %d/%d, want 0/0 — the synthetic path never defers",
+			armed, stopped)
 	}
 }
 
