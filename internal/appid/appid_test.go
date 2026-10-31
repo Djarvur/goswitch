@@ -468,3 +468,37 @@ func TestObserver_GainHook(t *testing.T) {
 		}
 	})
 }
+
+// TestBridgeApp_RefusesRegistryNamespace pins the identity extraction's
+// namespace guard (plan 11-05, the VM live finding): the at-spi2 relay
+// re-emits apps' events under its OWN accessible-id addressing
+// (/org/a11y/atspi/accessible/<id>) and those events RACE the app's direct
+// legacy emissions on real venues — a naive "/a11y/" scan truncates the
+// relay prefix to the garbage identity "org", and the last gain wins the
+// cache. The registry namespace reports "" (the unmarked-path discipline:
+// cache-keep, never a guessed identity); the app bridge forms keep their
+// documented extraction.
+func TestBridgeApp_RefusesRegistryNamespace(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		path dbus.ObjectPath
+		want string
+	}{
+		// The registry relay's accessible-id addressing (the 11-05 live
+		// capture) — not an application.
+		{"/org/a11y/atspi/accessible/2720", ""},
+		{"/org/a11y/atspi/accessible/root", ""},
+		// The documented app bridge forms.
+		{"/org/gtk/application/gs_e2e_password/a11y/3d4aadb3_de21_4364_b45d_5d9c16ecc29c",
+			"org.gtk.application.gs_e2e_password"},
+		{"/org/gnome/Zenity/a11y/0f40fed1_535a_4a96_8b66_d6f1c161eb08", "org.gnome.Zenity"},
+		// The unmarked shapes stay "".
+		{"/root/node", ""},
+		{"", ""},
+	} {
+		if got := appid.BridgeApp(tc.path); got != tc.want {
+			t.Errorf("bridgeApp(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}

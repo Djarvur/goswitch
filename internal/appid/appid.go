@@ -47,6 +47,15 @@ const (
 	a11yRegistryName   = "org.a11y.atspi.Registry"
 	a11yRegistryPath   = "/org/a11y/atspi/registry"
 	eventStateInterest = "Object:state-changed"
+
+	// registryPathPrefix is the at-spi2 relay's OWN object namespace on the
+	// a11y bus: the registry re-emits apps' events under its accessible-id
+	// addressing (/org/a11y/atspi/accessible/<id>). Those paths are node
+	// addresses, never application identities — bridgeApp refuses them (the
+	// 11-05 VM live finding: the naive "/a11y/" scan truncated the prefix to
+	// the garbage identity "org", and the relayed events race the app's
+	// direct legacy emissions, so the garbage could win the cache).
+	registryPathPrefix = "/org/a11y/"
 )
 
 // ErrBusClosed reports that the observer's a11y bus connection went away —
@@ -171,8 +180,15 @@ func focusGain(sig *dbus.Signal) (string, bool) {
 // without the bridge marker (older atk trees' /root nodes) report "" —
 // the observer only tracks bridge-marked applications (the documented
 // A4 scope; an unmarked app leaves the cache at the last known value).
+// The registry's own namespace (registryPathPrefix — the relay's
+// accessible-id addressing) is refused the same way: its "/a11y/" span is
+// the registry's NAME, not an app's bridge marker, and the naive scan
+// would truncate it to the garbage identity "org".
 func bridgeApp(path dbus.ObjectPath) string {
 	s := string(path)
+	if strings.HasPrefix(s, registryPathPrefix) {
+		return ""
+	}
 	i := strings.Index(s, "/a11y/")
 	if i <= 0 {
 		return ""

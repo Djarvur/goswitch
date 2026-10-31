@@ -9,4 +9,5 @@ var (
 	RegisterEventInterest = registerEventInterest
 	EventStateInterest    = eventStateInterest
 	A11yRegistryName      = a11yRegistryName
+	BridgeApp             = bridgeApp
 )
