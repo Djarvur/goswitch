@@ -6,10 +6,10 @@ current_phase: 10
 current_phase_name: TERM-слово
 status: planning
 stopped_at: Phase 9 complete, ready to plan Phase 10
-last_updated: "2026-10-20T14:13:49.005Z"
-last_activity: 2026-10-20
+last_updated: "2026-10-31T09:34:52.855Z"
+last_activity: 2026-10-31
 last_activity_desc: Phase 9 complete, transitioned to Phase 10
-state_head: ced90cf3fde555f45132adf91e8e67f3a625c01a
+state_head: 9ddaf911323c7c3883dd1bf804a451a735cac6a5
 progress:
   total_phases: 5
   completed_phases: 1
@@ -22,17 +22,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-08)
+See: .planning/PROJECT.md (updated 2026-10-31)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 9 — close-out записан, ждёт фазовой верификации
+**Current focus:** Phase 10 — TERM-слово: исполнена, идёт фазовая верификация (UAT-сессия 10-UAT.md возобновлена 2026-10-31)
 
 ## Current Position
 
 Phase: 10 — TERM-слово
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-20 — Phase 9 complete, transitioned to Phase 10
+Last activity: 2026-10-31 — Phase 9 complete, transitioned to Phase 10
 
 Progress: [██░░░░░░░░] 20%
 
@@ -141,8 +141,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T13:58:14.219Z
-Stopped at: Phase 9 complete, ready to plan Phase 10
+Last session: 2026-10-31T09:40:00Z
+Stopped at: Phase 9 verified complete (UAT 9/9, VERIFICATION passed, SECURITY 0 open); Phase 10 verification resumed
 Resume file: None
 
 ## Operator Next Steps
