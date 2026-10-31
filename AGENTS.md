@@ -154,6 +154,10 @@
 - **4. golangci-lint — максимально строгий конфиг с Фазы 1.** `.golangci.yml` адаптируется с эталона владельца `~/DiskD/W/Djarvur/ass-guard-agent/.golangci.yml` (v2, `linters.default: all`, точечные disable только с обоснованием, depguard deny `unsafe`, потолки сложности, formatters gofmt+goimports, `local-prefixes: github.com/Djarvur/goswitch`). Отклонений нет.
 - **5. GitHub Actions создаются и поддерживаются актуальными:** PR sanity (build + vet + golangci-lint + test -race + tidy-diff + govulncheck) на каждый push/PR; периодическая проверка обновлений зависимостей (dependabot weekly — D-11b); периодические проверки безопасности (scheduled govulncheck — D-11c).
 
+## Engineering directives (owner, 2026-11-01 — bind all phases)
+
+- **6. Проверки — ТОЛЬКО на виртуальной машине. Всегда. Без исключений.** Любая проверка продукта (живые прогоны, e2e, пробы инструментов, инжект, обход a11y, запланированная журнальная верификация фиксов/планов) исполняется только на ВМ goswitch-stand; на рабочем столе хоста (green106) — никогда. Чтение журналов хоста — только разбор уже случившегося инцидента, не запланированная проверка. Если проверку нельзя исполнить на ВМ — эскалация владельцу, а не исключение для хоста. Причина: 2026-10-31 23:20 a11y-проба на хосте запустила UAF atk-bridge (at-spi2-core 2.52.0) — gnome-shell снял весь сеанс владельца.
+
 ## CI gates (go-ultimate skill)
 
 - CI-гейты скилла go-ultimate — build / vet / test -race -cover / go mod tidy + git diff --exit-code / govulncheck — включены с Фазы 1 и дополняются директивами выше (golangci-lint с Фазы 1 через mise, см. `.github/workflows/`).
