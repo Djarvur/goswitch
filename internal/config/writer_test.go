@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -517,6 +518,38 @@ const writerDocScalarDocumentYAML = "just a scalar document\n"
 // sequence — also not a mapping.
 const writerDocSeqDocumentYAML = "- one\n- two\n"
 
+// writerDocScalarBlocklistYAML is a complete document whose apps_blocklist
+// is a scalar — the not-a-sequence corpus: the list cannot grow inside a
+// scalar and the append must refuse with the shape error, bytes untouched.
+const writerDocScalarBlocklistYAML = `# goswitch config — hand-tuned
+hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+autocorrect:
+  enabled: false
+  apps_blocklist: "not-a-list"
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// The metachar corpus (roadmap criterion 4, Pitfall 7's verbatim name):
+// metaEscaped is the QuoteMeta-escaped form the composition hands the
+// writer, metaRaw the unescaped-but-valid RE2 — the writer takes the ready
+// pattern as-is (validation is Validate's RE2 compile, not an escaping
+// policy).
+const (
+	metaEscaped = `org\.example\.App\[1\] \(test\)`
+	metaRaw     = "org.example.App[1] (test)"
+)
+
 // writerDocUnknownKeyYAML parses cleanly as a Node tree, but its EDITED
 // result would fail the strict KnownFields decode — the constructed-broken-
 // result corpus: the append must refuse before any bytes land (D-33 — the
@@ -869,5 +902,88 @@ func TestWriter_AppendEmptyPatternRefused(t *testing.T) {
 		if !bytes.Equal(before, after) {
 			t.Errorf("the append of %q changed the file — the refusal must keep the bytes", pattern)
 		}
+	}
+}
+
+// TestWriter_AppendBlocklistCeil pins the ceiling guard — the single-source
+// ceiling's append mirror (T-06-04-01): the writer refuses BEFORE the append
+// when the list is already at the 64-pattern ceiling, with the package
+// sentinel citing the CURRENT list size, and the file byte-untouched; one
+// slot short, the append succeeds and the full list passes the strict Load.
+func TestWriter_AppendBlocklistCeil(t *testing.T) {
+	path := writeWriterDoc(t, writerDocBlocklistYAML)
+	for i := range 63 { // the corpus starts with one listed pattern
+		if err := config.AppendAutocorrectBlocklist(path, fmt.Sprintf("app-%d", i)); err != nil {
+			t.Fatalf("append #%d: %v", i+1, err)
+		}
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("strict load of the full list: %v", err)
+	}
+	if len(cfg.Autocorrect.AppsBlocklist) != 64 {
+		t.Fatalf("blocklist length = %d, want the 64-pattern ceiling", len(cfg.Autocorrect.AppsBlocklist))
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the full document: %v", err)
+	}
+	ceilErr := config.AppendAutocorrectBlocklist(path, "one-too-many")
+	if ceilErr == nil {
+		t.Fatal("the append to a full list returned nil — the ceiling guard never fired")
+	}
+	if !strings.Contains(ceilErr.Error(), "at most 64 allowed") {
+		t.Errorf("error %q does not cite the ceiling sentinel", ceilErr)
+	}
+	if !strings.Contains(ceilErr.Error(), "has 64 entries") {
+		t.Errorf("error %q does not name the CURRENT list size — the guard must refuse before the append, not at validation (65)", ceilErr)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read untouched source: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("the full-list append changed the file — the ceiling refusal must leave the original byte-equal")
+	}
+}
+
+// TestWriter_AppendMetacharPatterns pins the roadmap criterion 4: the
+// QuoteMeta-escaped literal lands in the list verbatim and the whole
+// document passes the strict Load, and the RAW metachar form (a valid RE2)
+// is not an escaping-policy refusal — the writer takes the ready pattern
+// as-is.
+func TestWriter_AppendMetacharPatterns(t *testing.T) {
+	t.Run("quoted literal survives the strict load", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocYAML)
+		if err := config.AppendAutocorrectBlocklist(path, metaEscaped); err != nil {
+			t.Fatalf("AppendAutocorrectBlocklist: %v", err)
+		}
+		cfg, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("strict load of the metachar document: %v", err)
+		}
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{metaEscaped}) {
+			t.Errorf("blocklist = %v, want the verbatim escaped pattern", cfg.Autocorrect.AppsBlocklist)
+		}
+	})
+
+	t.Run("raw metachar pattern is not an escaping-policy refusal", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocYAML)
+		if err := config.AppendAutocorrectBlocklist(path, metaRaw); err != nil {
+			t.Fatalf("AppendAutocorrectBlocklist: %v", err)
+		}
+		if _, err := config.Load(path); err != nil {
+			t.Fatalf("strict load of the raw-metachar document: %v", err)
+		}
+	})
+}
+
+// TestWriter_AppendNonSequenceRefused pins the shape guard: a document
+// whose apps_blocklist is a scalar cannot hold the list — the append
+// refuses with the shape error and the file stays byte-equal.
+func TestWriter_AppendNonSequenceRefused(t *testing.T) {
+	err := appendRefusedUntouched(t, writerDocScalarBlocklistYAML)
+	if !strings.Contains(err.Error(), "is not a sequence") {
+		t.Errorf("error %q does not name the not-a-sequence refusal", err)
 	}
 }
