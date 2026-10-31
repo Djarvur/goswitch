@@ -185,11 +185,13 @@ func bridgeApp(path dbus.ObjectPath) string {
 // session bus answers org.a11y.Bus.GetAddress, a second connection dials
 // that socket (EXTERNAL auth with the decimal uid — the same SO_PEERCRED
 // idiom as the IBus socket, engine/conn.go), subscribes to the
-// StateChanged signals and feeds the observer. Any failure is returned,
-// never panicked (T-03-05-02: the a11y bus is a secondary source; its
-// absence degrades the per-app lists, it never takes the daemon down).
+// StateChanged signals and feeds the observer. The variadic options ride
+// through to New (the WithGainHook freshness seam — phase 11 — is wired by
+// the actor's default starter, main.go stays untouched). Any failure is
+// returned, never panicked (T-03-05-02: the a11y bus is a secondary source;
+// its absence degrades the per-app lists, it never takes the daemon down).
 // The connection lives until ctx dies (the daemon's lifetime).
-func Start(ctx context.Context) (*Observer, error) {
+func Start(ctx context.Context, opts ...Option) (*Observer, error) {
 	sess, err := dbus.ConnectSessionBus()
 	if err != nil {
 		return nil, fmt.Errorf("connect session bus: %w", err)
@@ -245,7 +247,7 @@ func Start(ctx context.Context) (*Observer, error) {
 	// The wire layer wraps the transport error (the seam's answer IS Role's
 	// error); a dead object behind the path is an error return — the D-53
 	// policy silences, never panics.
-	return New(ctx, feed, func() { _ = conn.Close() }, WithRoleCall(
+	allOpts := append([]Option{WithRoleCall(
 		func(ctx context.Context, sender dbus.Sender, path dbus.ObjectPath) (uint32, error) {
 			var role uint32
 			if err := conn.Object(string(sender), path).
@@ -255,7 +257,9 @@ func Start(ctx context.Context) (*Observer, error) {
 
 			return role, nil
 		},
-	)), nil
+	)}, opts...)
+
+	return New(ctx, feed, func() { _ = conn.Close() }, allOpts...), nil
 }
 
 // FocusedApp returns the cached identity of the focused application (the
@@ -294,7 +298,11 @@ func (o *Observer) Role(ctx context.Context) (uint32, error) {
 // keep both (the cache-keep semantics mirror FocusedApp — an event without a
 // bridge identity carries nothing to refresh with). A closed feed or a
 // cancelled context retires the observer with ErrBusClosed and runs the
-// cleanup exactly once (the conn.go:132-145 loop idiom).
+// cleanup exactly once (the conn.go:132-145 loop idiom). A gain ALSO hands
+// the identity to the freshness hook (phase 11, WithGainHook) — AFTER the
+// mutex is released: the hook (the actor's PushFocusedApp) takes the actor's
+// mutex, and calling it under o.mu would invert the one-way
+// actor.mu → sink.mu ordering into a deadlock (Pitfall 9).
 func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
 	defer func() {
 		if o.cleanup != nil {
@@ -318,7 +326,11 @@ func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
 				o.app = name
 				o.focusSender = dbus.Sender(sig.Sender)
 				o.focusPath = sig.Path
+				hook := o.gainHook
 				o.mu.Unlock()
+				if hook != nil {
+					hook(name)
+				}
 			}
 		}
 	}

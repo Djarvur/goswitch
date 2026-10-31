@@ -148,7 +148,16 @@ type Menu struct {
 	acEnabled    bool   // the autocorrect toggle's applied value
 	soundEnabled bool   // the sound toggle's applied value (default ON)
 	corrections  int    // the completed-corrections counter the Status row renders
-	tapKey       string // the RAW config names — the menu renders (mnemonics doubled)
+	// The blocklist item's identity state (phase 11, MENU-01) — the actor's
+	// freshness machine is the only source; the menu is a dumb renderer of
+	// the snapshot (S1, D-02: props are computed AT REQUEST TIME, the menu
+	// never queries a11y). blFresh=false (or an empty name) is the D-03
+	// unknown state — the static label, disabled.
+	blApp     string
+	blFresh   bool
+	blCovered bool
+	blFull    bool
+	tapKey    string // the RAW config names — the menu renders (mnemonics doubled)
 	wordCombo    string
 	modeChord    string
 	version      string
@@ -282,10 +291,27 @@ func (m *Menu) SetCorrections(n int) {
 }
 
 // SetBlocklistApp installs the blocklist item's identity state (phase 11,
-// MENU-01): the fresh app name and its covered/full flags — the actor's
-// freshness machine is the only source, the menu is a dumb renderer of the
-// snapshot (S1). RED stub: stores nothing, emits nothing.
+// MENU-01): the fresh app name plus its covered (D-01 checkmark) and full
+// (the ceiling's visible fill) flags — the actor's freshness machine is the
+// only source, the menu is a dumb renderer of the snapshot (S1). Identical
+// values are a silent no-op (the dedupe discipline of every setter); a
+// change emits the label delta and the toggle-state delta with an EMPTY
+// removed slice (Pitfall 7) and never bumps the revision (the item is
+// ALWAYS in the layout — property dynamics only, Pitfall 10).
 func (m *Menu) SetBlocklistApp(app string, fresh, covered, full bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if app == m.blApp && fresh == m.blFresh && covered == m.blCovered && full == m.blFull {
+		return
+	}
+	m.blApp, m.blFresh, m.blCovered, m.blFull = app, fresh, covered, full
+	m.emitSignal(signalItemsPropsUpdated,
+		[]menuItemProps{
+			m.labelDelta(menuIDBlocklistApp),
+			m.stateDelta(menuIDBlocklistApp, covered),
+		},
+		[]removedProps{})
 }
 
 // SetKeys installs the raw config key names of the macro rows — the actor
@@ -378,7 +404,7 @@ func (m *Menu) GetGroupProperties(ids []int32, _ []string) ([]menuItemProps, *db
 	defer m.mu.Unlock()
 
 	for _, id := range ids {
-		if id < menuIDEN || id > menuIDReload {
+		if id < menuIDEN || id > menuIDBlocklistApp {
 			continue
 		}
 		out = append(out, menuItemProps{ID: id, Props: m.itemPropsLocked(id)})
@@ -459,8 +485,8 @@ func (m *Menu) layoutRevision() uint32 {
 // holds the mutex.
 func (m *Menu) rootKidsLocked() []int32 {
 	ids := []int32{
-		menuIDEN, menuIDRU, menuIDSep1, menuIDACToggle, menuIDSoundToggle,
-		menuIDMacro1, menuIDMacro2, menuIDMacro3,
+		menuIDEN, menuIDRU, menuIDSep1, menuIDACToggle, menuIDBlocklistApp,
+		menuIDSoundToggle, menuIDMacro1, menuIDMacro2, menuIDMacro3,
 	}
 	if m.wordCombo != "" {
 		ids = append(ids, menuIDMacroCombo)
@@ -481,6 +507,8 @@ func (m *Menu) itemPropsLocked(id int32) map[string]dbus.Variant {
 		return m.radioProps(id)
 	case menuIDACToggle, menuIDSoundToggle:
 		return m.checkProps(id)
+	case menuIDBlocklistApp:
+		return m.blocklistProps()
 	case menuIDSep1, menuIDSep2:
 		return separatorProps()
 	case menuIDMacro1, menuIDMacro2, menuIDMacro3:
@@ -519,6 +547,29 @@ func (m *Menu) checkProps(id int32) map[string]dbus.Variant {
 	}
 
 	return toggleProps(labelACToggle, menuToggleCheckmark, m.acEnabled)
+}
+
+// blocklistProps builds the blocklist item's snapshot render (phase 11,
+// MENU-01): a FRESH identity serves the named label enabled («Добавить
+// <имя> в чёрный список», the name through the mnemonic doubling — Pitfall
+// 4); anything else — an empty state or a stale (fresh=false) cache entry —
+// serves the STATIC label disabled, without the name and without any
+// explanatory text (D-03, the owner's «не пишем ничего»). Props are
+// computed AT REQUEST TIME from the snapshot (S1, D-02 — no live a11y
+// query ever serves the menu).
+func (m *Menu) blocklistProps() map[string]dbus.Variant {
+	if m.blFresh && m.blApp != "" {
+		return standardProps(blocklistLabel(m.blApp), true)
+	}
+
+	return standardProps(labelBlocklistApp, false)
+}
+
+// blocklistLabel renders the item's named label; the app name rides the
+// mnemonic doubling (Pitfall 4 — an underscore in the name would be eaten
+// by the renderer's mnemonic cut).
+func blocklistLabel(app string) string {
+	return "Добавить " + doubleUnderscores(app) + " в чёрный список"
 }
 
 // macroTapProps builds one tap-series info row: «N× <tap> — <что>» with the

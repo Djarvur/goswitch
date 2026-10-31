@@ -400,6 +400,17 @@ type Actor struct {
 	// is the raw list the cache was built from (the parse-cache form).
 	acTerminalNames []string
 	acTerminals     []*regexp.Regexp
+	// blApp/blFresh are the freshness snapshot of the focused-app identity
+	// for the blocklist menu item (phase 11, MENU-01 — D-03 «демон не
+	// угадывает»): the appid observer's CACHE keeps the «last known»
+	// identity through focus losses, so the menu must NOT read it directly —
+	// a stale name would render as the active item of the WRONG window and a
+	// click would record garbage. blApp is the last GAIN identity delivered
+	// by the WithGainHook (PushFocusedApp); blFresh dies on every REAL
+	// FocusOut (no synthetic flip credit, G-2-3) — freshness, not the cache,
+	// decides. Accessed only under a.mu.
+	blApp   string
+	blFresh bool
 	// verifyDead is the behavioral terminal class of the LIVE input
 	// context (RESEARCH Pattern 1, source 3): set when a verify round of
 	// this context expired by budget while the context was still alive
@@ -890,7 +901,7 @@ type level1Confirm struct {
 // The series key starts at the documented default (shift_r); an attached
 // config source re-resolves it from the first event on (CR-01).
 func NewActor(window time.Duration) *Actor {
-	return &Actor{
+	a := &Actor{
 		fsm:        hotkey.NewFSM(window, hotkey.KeyvalShiftR),
 		window:     window,
 		verifyWait: defaultVerifyWait,
@@ -913,13 +924,20 @@ func NewActor(window time.Duration) *Actor {
 		// wall clock; the corpus installs a controllable double via
 		// UseRoleClock.
 		roleClock: time.Now,
-		// The lazy per-app observer's production starter: the a11y dial of
-		// internal/appid on the daemon's lifetime (the clipboard rung's
-		// context.Background precedent — the actor owns no shutdown path).
-		startAppid: func() (AppidSource, error) {
-			return appid.Start(context.Background())
-		},
 	}
+	// The lazy per-app observer's production starter: the a11y dial of
+	// internal/appid on the daemon's lifetime (the clipboard rung's
+	// context.Background precedent — the actor owns no shutdown path).
+	// The WithGainHook wiring (phase 11, MENU-01) delivers every gain
+	// identity to PushFocusedApp — the freshness machine of the blocklist
+	// menu item lives inside the actor; main.go stays untouched. The
+	// assignment sits OUTSIDE the composite literal: a closure referencing
+	// `a` inside its own initializer is out of scope there.
+	a.startAppid = func() (AppidSource, error) {
+		return appid.Start(context.Background(), appid.WithGainHook(a.PushFocusedApp))
+	}
+
+	return a
 }
 
 // defaultFlapAfter arms one real focusFlapWindow deadline (the production
@@ -1361,6 +1379,17 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 			a.flipCredit--
 			synthetic = true
 		}
+		// The blocklist item's freshness (phase 11, MENU-01 — D-03): a REAL
+		// FocusOut is the window switch the cache kept the identity through —
+		// the item must not render the previous window's name as active, so
+		// the freshness dies and the menu learns immediately. The own flip's
+		// synthetic FocusOut is not a window switch (G-2-3) and a Reset is
+		// not a window switch either (the observed synthetic pair is
+		// focus_out/focus_in) — neither touches the freshness.
+		if kind == engine.LifecycleFocusOut && !synthetic {
+			a.blFresh = false
+			a.pushBlocklistAppLocked()
+		}
 		// The two-phase level-1 ladder's flush site (plan 10-11): the input
 		// context is leaving — the ladder completes over the window's
 		// CAPTURED emitter snapshot, never the current emitter() (the stale
@@ -1531,16 +1560,74 @@ func (a *Actor) SetMenuSync(ms MenuSync) {
 	if ms != nil {
 		ms.SetMode(a.modeSymbol())
 		ms.SetCorrections(a.corrDone)
+		// The blocklist item's startup install push (the RESEARCH push
+		// moments, the SetCorrections install form): a late attach — a menu
+		// rebuilt after an IBus restart — receives the CURRENT freshness
+		// state instead of serving the unknown default until the next gain.
+		a.pushBlocklistAppLocked()
 	}
 }
+
+// autocorrectBlocklistCeil is the autocorrect.apps_blocklist schema ceiling
+// (config.MaxAutocorrectBlocklist, plan 11-03) restated as the session
+// package constant the full-state computation reads: the menu's
+// заполненность (full) renders as soon as the list length reaches it. The
+// single-source reconciliation to the exported constant is one point edit
+// in plan 11-04 (Task 2) — not smeared across 11-02.
+const autocorrectBlocklistCeil = 64
 
 // PushFocusedApp receives one focus GAIN identity from the appid observer's
 // freshness hook (phase 11, MENU-01 — wired via appid.WithGainHook in the
 // default startAppid): the snapshot identity and its freshness are stored
 // under the actor's mutex and the blocklist menu item's state is pushed.
+// The hook runs on the observer's goroutine OUTSIDE the observer's mutex
+// (Pitfall 9) — taking a.mu here keeps the one-way actor.mu → sink.mu
+// ordering; the menu dedupes identical pushes, so the menuSync call is the
+// documented quick, non-blocking sink (the MenuSync contract).
 func (a *Actor) PushFocusedApp(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	if name == "" {
+		return // a gain without an identity is nothing to remember (D-03)
+	}
+	a.blApp = name
+	a.blFresh = true
+	a.pushBlocklistAppLocked()
+}
+
+// blocklistStateLocked computes the blocklist menu item's state triple from
+// the actor's snapshot: app+fresh (the freshness machine — empty and false
+// when unknown, the D-03 static state), covered (any compiled blocklist
+// pattern matches the FRESH identity — the same re.MatchString discipline
+// as autoCorrectBoundary's gate, never the raw strings) and full (the
+// document's list length reached the ceiling). The caller holds the mutex.
+func (a *Actor) blocklistStateLocked() (app string, fresh, covered, full bool) {
+	full = len(a.opts.AutoCorrectBlocklist) >= autocorrectBlocklistCeil
+	fresh = a.blFresh && a.blApp != ""
+	if !fresh {
+		return "", false, false, full
+	}
+	for _, re := range a.acBlocklist {
+		if re.MatchString(a.blApp) {
+			return a.blApp, true, true, full
+		}
+	}
+
+	return a.blApp, true, false, full
+}
+
+// pushBlocklistAppLocked hands the blocklist item's computed state to the
+// menu — the pushMenuSync discipline: synchronous under the actor's mutex,
+// quick, never panics or blocks; the menu dedupes identical values. A nil
+// menuSync (no menu attached) is the silent no-op. The caller holds the
+// mutex.
+func (a *Actor) pushBlocklistAppLocked() {
+	if a.menuSync == nil {
+		return
+	}
+	app, fresh, covered, full := a.blocklistStateLocked()
+	a.menuSync.SetBlocklistApp(app, fresh, covered, full)
 }
 
 // SoundSink is the acoustic-feedback seam (plan 07-08, the owner's «Звуки
