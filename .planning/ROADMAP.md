@@ -106,11 +106,20 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 11-01-PLAN.md — спека-ревизия меню v2 (SPEC/CONFIG, D-01..D-04) + установка Orca-фикса (946b4cd) на хост
 - [ ] 11-02-PLAN.md — пункт меню id 16: трассер identity→меню (freshness), машина состояний, D-04
 - [ ] 11-03-PLAN.md — writer AppendAutocorrectBlocklist (атомарно, дедуп, потолок 64, strict pre-validation)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 11-04-PLAN.md — клик-композиция и проводка main.go (гварды D-01/D-03, QuoteMeta, sync reload)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 11-05-PLAN.md — e2e menu-blocklist + живой прогон стенда (menu-v2 re-pin)
+
 **UI hint**: yes
 
 ### Phase 12: TERM-строка
