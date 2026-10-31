@@ -194,11 +194,17 @@ func waitBlocklistArmed(ctx context.Context, app string) error {
 	deadline := time.Now().Add(blocklistWait)
 	var last string
 	for {
+		// The props argument is a NON-empty array literal: gdbus cannot
+		// type an empty `[]` against the `as` parameter (the 11-05 live
+		// finding — InvalidArgs); the daemon ignores the filter and serves
+		// the FULL prop set, which is exactly what the label gate reads.
+		// The app name is pure ASCII and survives the stand's C-locale
+		// gdbus output.
 		out, err := runCmd(ctx, "gdbus", "call", "--session",
 			"--dest", menuBusName,
 			"--object-path", menuObjPath,
 			"--method", "com.canonical.dbusmenu.GetGroupProperties",
-			"["+strconv.FormatInt(int64(menuIDBlocklistApp), 10)+"]", "[]")
+			"["+strconv.FormatInt(int64(menuIDBlocklistApp), 10)+"]", `["label"]`)
 		if err == nil {
 			last = out
 			if strings.Contains(out, app) {
