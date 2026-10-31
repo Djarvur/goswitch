@@ -106,7 +106,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- [ ] [Orca fix closure] Установить на хост сборку с 946b4cd (ветка fix/orca-terminal-verify-class-own-flip: выученный терминальный класс переживает собственный флип — корень бага «коррекция в Orca только со второго double-shift», debug-док .planning/debug/orca-terminal-second-shift.md, status: resolved); приёмка владельца — коррекция с ПЕРВОГО double-shift (журнал: нет verify-timeout перед первой коррекцией; регресс-маркер — `terminal class verify_dead=false` после flip-released); затем PR в защищённый main. Включено в план по решению владельца 2026-10-31; кандидат в Task 0 плана Фазы 11.
 
 ### Blockers/Concerns
 
