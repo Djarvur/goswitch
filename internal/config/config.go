@@ -25,15 +25,21 @@ const (
 	maxBackspaceCap = 500
 	maxMACRApps     = 64
 
-	maxAutocorrectBlocklist = 64
-	minAutocorrectWordLen   = 2
-	maxAutocorrectWordLen   = 16
+	minAutocorrectWordLen = 2
+	maxAutocorrectWordLen = 16
 
 	// maxCorrectionTerminals caps the terminal-class identity list
 	// (plan 10-02) — the same DoS guard as every identity list
-	// (the maxAutocorrectBlocklist / maxMACRApps precedent).
+	// (the MaxAutocorrectBlocklist / maxMACRApps precedent).
 	maxCorrectionTerminals = 64
 )
+
+// MaxAutocorrectBlocklist is the schema ceiling of autocorrect.apps_blocklist
+// — the ONE source of the 64-entry cap: Autocorrect.validate cites it in its
+// DoS refusal (T-06-04-01), the writer's append guard refuses before the
+// append (plan 11-03), and the session actor / tray menu read it for the
+// full state and the fullness label (plans 11-02/11-04).
+const MaxAutocorrectBlocklist = 64
 
 // The documented default values (config_schema): the tap window is
 // ADR-002's DefaultWindow in milliseconds, the verify wait the Phase 2
@@ -131,7 +137,7 @@ type Timeouts struct {
 // behavior kept as a deliberate choice (the D-54 precedent survives as the
 // opt-out form). The consumer is the classification seam of plan 10-03
 // (the «configured identity» source of the terminal veto), and the list is
-// capped like every identity list (the maxAutocorrectBlocklist precedent).
+// capped like every identity list (the MaxAutocorrectBlocklist precedent).
 type Correction struct {
 	BackspaceCap        int      `yaml:"backspace_cap"`
 	ClipboardRung       bool     `yaml:"clipboard_rung"`
@@ -470,7 +476,7 @@ func (m MACR) validate() error {
 // value valid (default off everywhere, D-54). Every error names its field
 // and, where one exists, the element index (D-33).
 func (a Autocorrect) validate() error {
-	if len(a.AppsBlocklist) > maxAutocorrectBlocklist {
+	if len(a.AppsBlocklist) > MaxAutocorrectBlocklist {
 		return fmt.Errorf(
 			"autocorrect.apps_blocklist has %d %w",
 			len(a.AppsBlocklist), errAutocorrectBlocklistOverCeil,

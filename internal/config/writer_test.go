@@ -912,7 +912,7 @@ func TestWriter_AppendEmptyPatternRefused(t *testing.T) {
 // slot short, the append succeeds and the full list passes the strict Load.
 func TestWriter_AppendBlocklistCeil(t *testing.T) {
 	path := writeWriterDoc(t, writerDocBlocklistYAML)
-	for i := range 63 { // the corpus starts with one listed pattern
+	for i := range config.MaxAutocorrectBlocklist - 1 { // the corpus starts with one listed pattern
 		if err := config.AppendAutocorrectBlocklist(path, fmt.Sprintf("app-%d", i)); err != nil {
 			t.Fatalf("append #%d: %v", i+1, err)
 		}
@@ -921,8 +921,11 @@ func TestWriter_AppendBlocklistCeil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("strict load of the full list: %v", err)
 	}
-	if len(cfg.Autocorrect.AppsBlocklist) != 64 {
-		t.Fatalf("blocklist length = %d, want the 64-pattern ceiling", len(cfg.Autocorrect.AppsBlocklist))
+	if len(cfg.Autocorrect.AppsBlocklist) != config.MaxAutocorrectBlocklist {
+		t.Fatalf(
+			"blocklist length = %d, want the %d-pattern ceiling",
+			len(cfg.Autocorrect.AppsBlocklist), config.MaxAutocorrectBlocklist,
+		)
 	}
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -936,7 +939,10 @@ func TestWriter_AppendBlocklistCeil(t *testing.T) {
 		t.Errorf("error %q does not cite the ceiling sentinel", ceilErr)
 	}
 	if !strings.Contains(ceilErr.Error(), "has 64 entries") {
-		t.Errorf("error %q does not name the CURRENT list size — the guard must refuse before the append, not at validation (65)", ceilErr)
+		t.Errorf(
+			"error %q does not name the CURRENT size — the guard must refuse before the append, not at validation (65)",
+			ceilErr,
+		)
 	}
 	after, err := os.ReadFile(path)
 	if err != nil {

@@ -185,6 +185,17 @@ func landBlocklistKey(section *yaml.Node, pattern string) (bool, error) {
 					return false, nil // the dedup: already listed
 				}
 			}
+			// The ceiling guard fires AFTER the dedup, BEFORE the append:
+			// a full list refuses with the package sentinel and the
+			// CURRENT size named — the constructed over-ceiling document
+			// never exists, the file stays byte-untouched (T-06-04-01's
+			// append mirror, T-11-03-02).
+			if len(list.Content) >= MaxAutocorrectBlocklist {
+				return false, fmt.Errorf(
+					"autocorrect.apps_blocklist has %d %w",
+					len(list.Content), errAutocorrectBlocklistOverCeil,
+				)
+			}
 			list.Content = append(list.Content, scalarString(pattern))
 
 			return true, nil

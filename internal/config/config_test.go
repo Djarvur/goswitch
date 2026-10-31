@@ -648,6 +648,19 @@ func TestValidate_BlocklistOrderIrrelevant(t *testing.T) {
 	}
 }
 
+// TestMaxAutocorrectBlocklistExport pins the exported ceiling as the single
+// source (plan 11-03): the schema ceiling of autocorrect.apps_blocklist
+// lives in ONE constant — Autocorrect.validate cites it (T-06-04-01), the
+// writer's append guard refuses before the append, and the session actor /
+// tray menu read it for the full state and the fullness label (11-02/11-04).
+func TestMaxAutocorrectBlocklistExport(t *testing.T) {
+	t.Parallel()
+
+	if config.MaxAutocorrectBlocklist != 64 {
+		t.Errorf("MaxAutocorrectBlocklist = %d, want 64", config.MaxAutocorrectBlocklist)
+	}
+}
+
 // TestDefaults_AutocorrectBlocklistNil pins the D-54 default-off shape
 // under the D-53 schema: the feature ships disabled with a nil blocklist
 // and the start thresholds 4/2.0/1.0 — nothing activates on its own, and
