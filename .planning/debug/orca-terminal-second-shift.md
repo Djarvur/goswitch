@@ -1,13 +1,35 @@
 ---
-status: resolved
+status: investigating
 trigger: "в терминале в orca коррекция срабатывает только после второго double shift"
 created: 2026-10-31T01:50:00+03:00
-updated: 2026-10-31T02:24:00+03:00
+updated: 2026-10-31T13:58:00+03:00
 symptoms_prefilled: true
 goal: find_and_fix
 ---
 
-## Resolution
+## Round 2 — фикс 946b4cd недостаточен (2026-10-31, приёмка владельца: «работает со второго»)
+
+Установка v1.2.0-alpha.2-12-g80f3955 (946b4cd в main через PR #24, fac7c89). Вердикт владельца 13:55: цикл «только со второго нажатия» СОХРАНИЛСЯ. Живой ряд (green106, goswitchd pid 787695):
+
+```
+13:55:36.868 action n=2 → verify_dead=true → skipped verify-timeout     (первое нажатие — как раньше)
+13:55:40.516 action n=2 → burst 12/6 → commit-sent → done → flip-armed
+13:55:40.946 flip-released(push) → mode to ru
+13:55:40.948 engine created /goswitch/3 (ru)                            ← ре-минт
+13:55:40.951 focus_out (en) / 40.952 focus_in (ru)                      ← пара ре-минта, 1 мс
+13:55:40.954 switch_engine                                              ← немедленной стирки НЕТ (синтетика-карве-аут 946b4cd отработал)
+13:55:41.847 autocorrect skipped terminal-veto                          ← нажатие владельца, класс ЕЩЁ ЖИВ
+13:55:41.874 terminal class verify_dead=false                           ← СТИРКА через 923 мс после флипа
+13:55:41.875 focus_out (ru) / 41.878 focus_in (ru)                      ← флап-пара ядра 3 мс, УЖЕ ПОСЛЕ стирки
+```
+
+**Гипотеза Round 2:** стирку в 41.874 делает ветка `LifecycleReset` HandleLifecycle (actor.go:1350-1352 — Reset стирает немедленно по контракту 10-07, лог-ряда у Reset нет). Через ~0.9 с после ре-минта КЛИЕНТ (Electron ibus-IM, медленный) асинхронно переподключает IM-контекст и доставляет Reset на новый engine-объект /goswitch/3 — фикс 946b4cd карве-аутит только synthetic FocusOut (ветка synthetic: actor.go:1301-1305 — кредит только для FocusOut, «A Reset kind never consumes a credit»), а клиентский Reset того же ре-минта стирает класс. Флап-пара 41.875/41.878 — следствие, не причина (идёт после стирки).
+
+**Next:** (1) подтвердить — читать Reset-ветку: приходит ли LifecycleReset от клиента после ре-минта (DEBUG-ряд `lifecycle` kind=reset на -debug, либо лог-зонд); (2) RED-тест полного цикла «коррекция → флип → клиентский Reset → следующая коррекция»; (3) фикс — Reset, следующий за собственным флипом в пределах кредита/TTL (re-mint aftermath), не стирает класс, как synthetic FocusOut; настоящий Reset (реальная смена контекста) не трогать; (4) гейт, установка, пассивная верификация по журналу владельца (владелец освободил от участия: «проверяй сам в виртуалке, не дергай меня»).
+
+Работа остановлена владельцем 2026-10-31 ~13:58 (перезагрузка машины). Сборка v1.2.0-alpha.2-12-g80f3955 установлена и останется активной; откат: `~/.local/share/goswitch/releases/v1.1.1-226-g8bd4edc/goswitchctl install`.
+
+## Round 1 — resolution (архив)
 
 root_cause: HandleLifecycle (internal/session/actor.go, ветка `synthetic` перехода FocusOut) стирал выученный поведенческий класс терминала (`setVerifyDead(false)`) на СОБСТВЕННОМ флипе демона: успешная терминальная коррекция ставит отложенный флип (deferCorrectionFlip terminal=true → flip-armed), следующий нажатый ключ его выпускает (releaseDeferredFlip("keystroke")), flipTo делает успешный SetGlobalEngine → flipCredit++ → ibus пере-минтует engine-объект → синтетическая пара focus_out/focus_in → кредитный FocusOut считался «смертью контекста» и класс умирал. Ошибка плана 10-07 — допущение «ре-минт = новое поколение контекста»: ре-минт обслуживает ТО ЖЕ САМОЕ поле ТОГО ЖЕ клиента (Orca IDE terminal, push-less) — отсутствие пушей SetSurroundingText свойство ПРИЛОЖЕНИЯ, а не engine-объекта. Цикл: нажатие 1 — контекст неклассифицирован → verify-раунд → Orca никогда не отвечает → VerifyExpiry учит verify_dead=true и пропускает (skipCorrection verify-timeout; флипа нет — settleCombo no-op, comboPending=false на пути double-shift) → нажатие 2 — едет выученным классом в терминальную ветку → доставка успешна → флип → класс стёрт → следующая коррекция снова платит verify-раунд. Стационарное «только со второго double-shift».
 fix: ветка `synthetic` в HandleLifecycle больше не стирает класс — отменяет только отложенную очистку (cancelVerifyDeadWipe: снапшот старого engine-объекта после ре-минта никогда не завершится) и оставляет класс живым (карве-аут G-2-3 расширен с buffer hard-reset на behavioral class); Reset и НАСТОЯЩИЙ FocusOut без кредитов не изменены (отложенная очистка по-прежнему стирает класс при реальной смене контекста). Контрактные комментарии обновлены (HandleLifecycle doc, поле verifyDead, flap-окно, G-2-3 инлайн).
