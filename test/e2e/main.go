@@ -166,7 +166,7 @@ func caseListUsage() string {
 		" | spike-smoke" +
 		" | spike-wezterm | spike-caps | wezterm-flip | term04-negative" +
 		" | autocorrect-fires | autocorrect-password-silent | autocorrect-terminal-silent" +
-		" | autocorrect-blocklist-silent | menu-v2" +
+		" | autocorrect-blocklist-silent | menu-v2 | menu-blocklist" +
 		" | term-word-vte" +
 		" | term-word-wezterm" +
 		" | term-word-vte-flip" +
@@ -354,7 +354,7 @@ func pickCase(name string) (caseSpec, error) {
 			" ctl-smoke, switch-spike, two-source-flip, external-flip-sync, flip-keystroke,"+
 			" spike-smoke, spike-wezterm, spike-caps, wezterm-flip, term04-negative,"+
 			" autocorrect-fires, autocorrect-password-silent, autocorrect-terminal-silent,"+
-			" autocorrect-blocklist-silent, menu-v2,"+
+			" autocorrect-blocklist-silent, menu-v2, menu-blocklist,"+
 			" term-word-vte, term-negative-witnesses,"+
 			" term-word-wezterm, term-word-vte-flip,"+
 			" term-cap-delivery, term-word-drain, term-dst-apply,"+
@@ -411,15 +411,15 @@ func caseRegistry() map[string]caseSpec {
 		// finding of plan 10-06: the negative is machine-reproducible
 		// there now).
 		"autocorrect-terminal-silent": {
-			fn:                 runAutocorrectTerminalSilent,
-			noSurfacePreflight: true,
-			watchdog:           autocorrectWatchdog,
+			fn: runAutocorrectTerminalSilent, noSurfacePreflight: true, watchdog: autocorrectWatchdog,
 		},
 		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
 		"menu-v2":                      {fn: runMenuV2},
-		"term-word-vte":                {fn: runTermWordVTE, noSurfacePreflight: true, watchdog: recipeWatchdog},
-		"term-word-wezterm":            {fn: runTermWordWezterm, noSurfacePreflight: true, watchdog: recipeWatchdog},
-		"term-word-vte-flip":           {fn: runTermWordVTEFlip, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		// menu-blocklist (11-05): the blocklist negative's own surfaces — the default preflight fits.
+		"menu-blocklist":     {fn: runMenuBlocklist},
+		"term-word-vte":      {fn: runTermWordVTE, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		"term-word-wezterm":  {fn: runTermWordWezterm, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		"term-word-vte-flip": {fn: runTermWordVTEFlip, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		// term-cap-delivery (plan 10-13): six probe rows (3 probes × 2
 		// clients), each probe on a fresh fixture with its own focus gate —
 		// six spawn+gate cycles plus the daemon/config setup ride inside

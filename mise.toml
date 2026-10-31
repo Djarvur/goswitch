@@ -274,6 +274,12 @@ run = "go run ./test/e2e -case autocorrect-blocklist-silent"
 description = "e2e: 07-06 menu-v2 — the tray menu v2 driven over the DBusMenu Event channel (no ydotool/mouse): EN/RU radio clicks leave journal mode records, the autocorrect and sound toggles persist to config.yaml AND flip goswitchctl status in the same click (synchronous apply), BOTH enabled values survive a daemon restart on the same -config; playback is never asserted (07-08 unit corpus owns the engine invocation) (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case menu-v2"
 
+# The 11-05 blocklist-item live proof (MENU-01): the whole live loop over
+# the same Event channel — click → document → silence → D-01 no-op.
+[tasks.e2e-menu-blocklist]
+description = "e2e: 11-05 menu-blocklist — the «Добавить <app> в чёрный список» item driven over the DBusMenu Event channel (no ydotool/mouse): the observed fixture identity arms the item, ONE click on id 16 lands the regexp.QuoteMeta pattern into autocorrect.apps_blocklist (the byte footprint is exactly one swapped line, strict config.Load green), the enabled layer abstains app-blocked in the fixture (the 07-06 blocklist-silent machine verbatim), the covered second click leaves the document BYTE-identical (D-01); rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case menu-blocklist"
+
 # Dictionary regeneration (06-02): a dev-only task — it reads the system
 # hunspell dictionaries, which exist on the dev machine only. CI never runs
 # it: CI гоняет только golden-тесты по закоммиченным данным (CORR-08).
