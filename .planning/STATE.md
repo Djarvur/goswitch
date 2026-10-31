@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 11
 current_phase_name: MENU — пункт «в чёрный список»
 status: executing
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-10-31T22:14:46.081Z"
+stopped_at: Completed 11-04-PLAN.md
+last_updated: "2026-10-31T22:56:56.478Z"
 last_activity: 2026-10-31
 last_activity_desc: Phase 11 execution started
-state_head: e1278a69d2d2c3877c5a03cbc5384b2e28ee9945
+state_head: 575124f4239b39868d2f999bc8aaecc9811b29a9
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 23
-  completed_plans: 20
+  completed_plans: 21
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 ## Current Position
 
 Phase: 11 (MENU — пункт «в чёрный список») — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-10-31 — Phase 11 execution started
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 11 P01 | 51min | 2 tasks | 6 files |
 | Phase 11 P03 | 34min | 2 tasks | 5 files |
 | Phase 11 P02 | 46min | 3 tasks | 9 files |
+| Phase 11 P04 | 30min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,9 @@ Recent decisions affecting current work:
 - [Phase 11]: Форма-отказ apps_blocklist (не последовательность) реализован на writer-уровне уже в Задаче 1 (errWriterBlocklistNotSequence) — append ребёнка в скаляр портит документ; тест Задачи 2 пинит готовое поведение
 - [Phase 11]: Freshness = actor-snapshot, не меню и не кэш: blApp/blFresh под a.mu; пустая/несвежая identity никогда не доходит до меню и композиции (аксессор отдаёт пустое имя при !known — двойной барьер против D-03-мусора); сброс ТОЛЬКО на реальном FocusOut, synthetic-флип G-2-3 и Reset не трогают
 - [Phase 11]: EnsureAppid — обёртка над startAppidOnce, а НЕ над ensureAppid: буквально-«обёртка» оставила бы ленивое условие в силе (Pitfall 2 — пункт мёртв при D-54-дефолте); обход условия при сохранении once-per-actor пойман GREEN-прогоном и записан отклонением Rule 1
+- [Phase 11]: [Phase 11] Гвард-матрица 11-04 — пин-корпус на готовой композиции: трассер по дизайну плана построил гварды production-качества в GREEN Task 1, матрица закрепляет 8 behavior-строк; план-RED-гейт закрыт трассером (RED_EVIDENCE_OK)
+- [Phase 11]: [Phase 11] Потолок blocklist сведён на единый источник: session-константа autocorrectBlocklistCeil удалена, blocklistStateLocked читает config.MaxAutocorrectBlocklist; поведение full байт-то же, корпус 11-02 без правок
+- [Phase 11]: [Phase 11] OnConn-проводка blocklist-пункта: Callbacks.BlockCurrentApp + installMenuState (одна точка первой покраски меню: install-пуши 07-06 + начальное состояние пункта до SetMenuSync) + EnsureAppid; живая сборка OnConn — за e2e 11-05 на ВМ (директива 6: проверки продукта только на ВМ)
 
 ### Pending Todos
 
@@ -149,8 +153,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-31T22:14:25.203Z
-Stopped at: Completed 11-02-PLAN.md
+Last session: 2026-10-31T22:56:45.118Z
+Stopped at: Completed 11-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

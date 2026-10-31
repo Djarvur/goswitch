@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
+open_count: 14
 waived_count: 4
 fixed_count: 7
-total_count: 24
-last_updated: 2026-10-31T22:11:49.019Z
+total_count: 25
+last_updated: 2026-10-31T22:56:21.036Z
 ---
 
 # Broken Windows Ledger
@@ -39,6 +39,7 @@ last_updated: 2026-10-31T22:11:49.019Z
 | 22 | 11 | unrun-verify | .planning/debug/orca-terminal-second-shift.md |  | Round 2 journal-verify: живой ряд «следующая коррекция с одного нажатия + lifecycle aftermath=true» не снят — владелец вышел из сессии 23:21; демон активен, ряд завершится на следующей сессии; by-ear зачёт — UAT end-of-phase (G-10-1) | open |  | 2026-10-31T20:39:21.173Z |  |
 | 23 | 11 | unrun-verify | mise.toml |  | 11-03: literal 'mise run ci' unrun in the executor session (toolchain seam, 11-01 Rule-3 precedent): GOROOT(mise go1.23.12) vs go binary(system 1.27.3) mismatch in task shells; the SAME gates ran green directly — go build/vet/test -race ./... (22 packages) + golangci-lint 2.15.0 (mise install, GOROOT unset) 0 issues + go mod tidy git-diff clean, STACK.md-sanctioned | open |  | 2026-10-31T21:18:56.408Z |  |
 | 24 | 11 | unrun-verify | mise.toml |  | 11-02: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly — go build/vet/test -race ./... (22 packages) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean + D-53 gate functions byte-identical vs 34059d8 | open |  | 2026-10-31T22:11:49.019Z |  |
+| 25 | 11 | unrun-verify | mise.toml |  | 11-04: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD e8f7f82 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 (mise install, GOROOT unset) 0 issues + go mod tidy git-diff clean | open |  | 2026-10-31T22:56:21.036Z |  |
 
 ````json
 [
@@ -328,6 +329,18 @@ last_updated: 2026-10-31T22:11:49.019Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-31T22:11:49.019Z",
+    "resolved_at": null
+  },
+  {
+    "id": 25,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "mise.toml",
+    "line": null,
+    "description": "11-04: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD e8f7f82 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 (mise install, GOROOT unset) 0 issues + go mod tidy git-diff clean",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-31T22:56:21.036Z",
     "resolved_at": null
   }
 ]
