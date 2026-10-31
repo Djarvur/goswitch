@@ -205,7 +205,8 @@ func TestMenuBlocklistItemGroupProps(t *testing.T) {
 		t.Fatalf("GetGroupProperties(%d) error = %v, want nil", menuIDBlocklistApp, derr)
 	}
 	if len(props) != 1 {
-		t.Fatalf("GetGroupProperties(%d) = %d entries, want exactly 1 — the id must not fall out of the served range (Pitfall 5)",
+		t.Fatalf("GetGroupProperties(%d) = %d entries, want exactly 1 — "+
+			"the id must not fall out of the served range (Pitfall 5)",
 			menuIDBlocklistApp, len(props))
 	}
 	if label, _ := props[0].Props[menuPropLabel].Value().(string); label != labelBlocklistApp {
@@ -231,128 +232,142 @@ func TestMenuBlocklistItemGroupProps(t *testing.T) {
 	}
 }
 
-// TestMenuBlocklistStateMatrix pins the blocklist item's full state machine
-// (phase 11, MENU-01 — D-01/D-03/потолок, 7 rows): the UNKNOWN state (an
-// empty push or a stale fresh=false one) serves the static label disabled
-// WITHOUT the name and WITHOUT explanations (D-03, «не пишем ничего»); a
-// fresh identity serves the named label enabled (toggle-state 0); a
-// COVERED identity adds the checkmark (D-01, toggle-state 1); a FULL list
-// without coverage serves the visible fill state disabled (S9 — the refusal
-// is visible as the item's state, never a desktop notification); COVERED
-// beats FULL (the checkmark with the name wins — the safe click, dedup); a
-// name with underscores renders through the mnemonic doubling (Pitfall 4).
-// The item is ALWAYS a checkmark-carrying standard row, visible.
-func TestMenuBlocklistStateMatrix(t *testing.T) {
-	const name = "org.gnome.gedit"
-	const named = "Добавить " + name + " в чёрный список"
+// blocklistItemState is one matrix row's setter push (the SetBlocklistApp
+// argument bundle).
+type blocklistItemState struct {
+	app     string
+	fresh   bool
+	covered bool
+	full    bool
+}
 
-	t.Run("unknown empty state is static and disabled", func(t *testing.T) {
-		m, _ := menuFixture(t)
+// checkBlocklistRow replays one matrix row's pushes and asserts the props
+// the item must answer — the shared runner of the state-matrix pair (every
+// state: a visible checkmark-carrying standard row).
+func checkBlocklistRow(t *testing.T, pushes []blocklistItemState, wantLabel string, wantOn bool, wantState int32) {
+	t.Helper()
 
-		props := m.blocklistProps()
-		if label, _ := props[menuPropLabel].Value().(string); label != labelBlocklistApp {
-			t.Errorf("empty-state label = %q, want the static %q (D-03)", label, labelBlocklistApp)
-		}
-		if props[menuPropEnabled].Value() != false {
-			t.Error("empty-state item must be disabled (D-03)")
-		}
-		if gotType, _ := props[menuPropToggleType].Value().(string); gotType != menuToggleCheckmark {
-			t.Errorf("empty-state toggle-type = %q, want %q", gotType, menuToggleCheckmark)
-		}
-		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 0 {
-			t.Errorf("empty-state toggle-state = %d, want 0", gotState)
-		}
-	})
+	m, _ := menuFixture(t)
+	for _, p := range pushes {
+		m.SetBlocklistApp(p.app, p.fresh, p.covered, p.full)
+	}
 
-	t.Run("stale identity renders unknown, never the previous name", func(t *testing.T) {
-		m, _ := menuFixture(t)
-		m.SetBlocklistApp(name, true, false, false) // a gain landed
-		m.SetBlocklistApp("", false, false, false)  // the real FocusOut cleared it
+	props := m.blocklistProps()
+	if label, _ := props[menuPropLabel].Value().(string); label != wantLabel {
+		t.Errorf("label = %q, want %q", label, wantLabel)
+	}
+	if props[menuPropEnabled].Value() != wantOn {
+		t.Errorf("enabled = %v, want %t", props[menuPropEnabled].Value(), wantOn)
+	}
+	if props[menuPropVisible].Value() != true {
+		t.Error("the item must stay visible in every state (D-03 «пункт виден»)")
+	}
+	if gotType, _ := props[menuPropToggleType].Value().(string); gotType != menuToggleCheckmark {
+		t.Errorf("toggle-type = %q, want %q", gotType, menuToggleCheckmark)
+	}
+	if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != wantState {
+		t.Errorf("toggle-state = %d, want %d", gotState, wantState)
+	}
+}
 
-		props := m.blocklistProps()
-		if label, _ := props[menuPropLabel].Value().(string); label != labelBlocklistApp {
-			t.Errorf("stale-state label = %q, want the static %q — freshness, not the cache, decides (D-03)", label, labelBlocklistApp)
-		}
-		if props[menuPropEnabled].Value() != false {
-			t.Error("stale-state item must be disabled (D-03)")
-		}
-	})
+// TestMenuBlocklistStateMatrixUnknown pins the D-03 half of the state
+// machine: the UNKNOWN state (no push at all, or a stale fresh=false one —
+// freshness, not the cache, decides) serves the STATIC label disabled,
+// WITHOUT the app name and WITHOUT any explanatory text («не пишем
+// ничего»); a fresh identity serves the named label enabled.
+func TestMenuBlocklistStateMatrixUnknown(t *testing.T) {
+	const (
+		name  = "org.gnome.gedit"
+		named = "Добавить " + name + " в чёрный список"
+	)
 
-	t.Run("fresh identity is active with the name", func(t *testing.T) {
-		m, _ := menuFixture(t)
-		m.SetBlocklistApp(name, true, false, false)
+	for _, tc := range []struct {
+		name      string
+		pushes    []blocklistItemState
+		wantLabel string
+		wantOn    bool
+		wantState int32
+	}{
+		{
+			name:      "unknown empty state is static and disabled",
+			pushes:    nil,
+			wantLabel: labelBlocklistApp,
+			wantOn:    false,
+			wantState: 0,
+		},
+		{
+			name:      "stale identity renders unknown",
+			pushes:    []blocklistItemState{{name, true, false, false}, {"", false, false, false}},
+			wantLabel: labelBlocklistApp,
+			wantOn:    false,
+			wantState: 0,
+		},
+		{
+			name:      "fresh identity is active with the name",
+			pushes:    []blocklistItemState{{name, true, false, false}},
+			wantLabel: named,
+			wantOn:    true,
+			wantState: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checkBlocklistRow(t, tc.pushes, tc.wantLabel, tc.wantOn, tc.wantState)
+		})
+	}
+}
 
-		props := m.blocklistProps()
-		if label, _ := props[menuPropLabel].Value().(string); label != named {
-			t.Errorf("active-state label = %q, want %q", label, named)
-		}
-		if props[menuPropEnabled].Value() != true {
-			t.Error("active-state item must be enabled")
-		}
-		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 0 {
-			t.Errorf("active-state toggle-state = %d, want 0 (not covered)", gotState)
-		}
-	})
+// TestMenuBlocklistStateMatrixMarks pins the ornament half of the state
+// machine: COVERED carries the checkmark enabled (D-01 — the click is the
+// safe dedup no-op); FULL without coverage shows the visible fill state
+// disabled (S9/A5 — the refusal is the item's state, never a desktop
+// notification); COVERED beats FULL; an underscored name renders doubled
+// (Pitfall 4).
+func TestMenuBlocklistStateMatrixMarks(t *testing.T) {
+	const (
+		name  = "org.gnome.gedit"
+		named = "Добавить " + name + " в чёрный список"
+	)
 
-	t.Run("covered identity carries the checkmark", func(t *testing.T) {
-		m, _ := menuFixture(t)
-		m.SetBlocklistApp(name, true, true, false)
-
-		props := m.blocklistProps()
-		if label, _ := props[menuPropLabel].Value().(string); label != named {
-			t.Errorf("covered-state label = %q, want %q (D-01)", label, named)
-		}
-		if props[menuPropEnabled].Value() != true {
-			t.Error("the covered item stays enabled — the click is the safe dedup no-op (D-01)")
-		}
-		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 1 {
-			t.Errorf("covered-state toggle-state = %d, want 1 — the D-01 checkmark", gotState)
-		}
-	})
-
-	t.Run("full list without coverage shows the fill state", func(t *testing.T) {
-		m, _ := menuFixture(t)
-		m.SetBlocklistApp(name, true, false, true)
-
-		props := m.blocklistProps()
-		want := "Чёрный список заполнен — 64/64"
-		if label, _ := props[menuPropLabel].Value().(string); label != want {
-			t.Errorf("full-state label = %q, want %q (S9: the refusal is visible as state)", label, want)
-		}
-		if props[menuPropEnabled].Value() != false {
-			t.Error("the full-state item must be disabled — the ceiling refuses (S9)")
-		}
-		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 0 {
-			t.Errorf("full-state toggle-state = %d, want 0", gotState)
-		}
-	})
-
-	t.Run("covered beats full", func(t *testing.T) {
-		m, _ := menuFixture(t)
-		m.SetBlocklistApp(name, true, true, true)
-
-		props := m.blocklistProps()
-		if label, _ := props[menuPropLabel].Value().(string); label != named {
-			t.Errorf("covered+full label = %q, want the named %q — covered wins", label, named)
-		}
-		if props[menuPropEnabled].Value() != true {
-			t.Error("covered+full must stay enabled with the checkmark")
-		}
-		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 1 {
-			t.Errorf("covered+full toggle-state = %d, want 1", gotState)
-		}
-	})
-
-	t.Run("underscored name renders doubled", func(t *testing.T) {
-		m, _ := menuFixture(t)
-		m.SetBlocklistApp("org.gnome.Log_out", true, false, false)
-
-		props := m.blocklistProps()
-		want := "Добавить org.gnome.Log__out в чёрный список"
-		if label, _ := props[menuPropLabel].Value().(string); label != want {
-			t.Errorf("underscored label = %q, want the doubled %q (Pitfall 4)", label, want)
-		}
-	})
+	for _, tc := range []struct {
+		name      string
+		pushes    []blocklistItemState
+		wantLabel string
+		wantOn    bool
+		wantState int32
+	}{
+		{
+			name:      "covered identity carries the checkmark",
+			pushes:    []blocklistItemState{{name, true, true, false}},
+			wantLabel: named,
+			wantOn:    true,
+			wantState: 1,
+		},
+		{
+			name:      "full list without coverage shows the fill state",
+			pushes:    []blocklistItemState{{name, true, false, true}},
+			wantLabel: labelBlocklistFull,
+			wantOn:    false,
+			wantState: 0,
+		},
+		{
+			name:      "covered beats full",
+			pushes:    []blocklistItemState{{name, true, true, true}},
+			wantLabel: named,
+			wantOn:    true,
+			wantState: 1,
+		},
+		{
+			name:      "underscored name renders doubled",
+			pushes:    []blocklistItemState{{"org.gnome.Log_out", true, false, false}},
+			wantLabel: "Добавить org.gnome.Log__out в чёрный список",
+			wantOn:    true,
+			wantState: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checkBlocklistRow(t, tc.pushes, tc.wantLabel, tc.wantOn, tc.wantState)
+		})
+	}
 }
 
 // TestMenuBlocklistSetterDeltas pins the setter's push discipline: a CHANGE
