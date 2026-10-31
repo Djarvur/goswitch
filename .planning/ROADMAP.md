@@ -108,15 +108,18 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md — спека-ревизия меню v2 (SPEC/CONFIG, D-01..D-04) + установка Orca-фикса (946b4cd) на хост
-- [ ] 11-02-PLAN.md — пункт меню id 16: трассер identity→меню (freshness), машина состояний, D-04
+- [ ] 11-01-PLAN.md — Round 2 фикс Orca (клиентский LifecycleReset, новая ветка/PR) + установка + пассивная верификация; спека-ревизия меню v2 (SPEC/CONFIG, D-01..D-04)
 - [ ] 11-03-PLAN.md — writer AppendAutocorrectBlocklist (атомарно, дедуп, потолок 64, strict pre-validation)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 11-04-PLAN.md — клик-композиция и проводка main.go (гварды D-01/D-03, QuoteMeta, sync reload)
+- [ ] 11-02-PLAN.md — пункт меню id 16: трассер identity→меню (freshness), машина состояний, D-04 *(depends on 11-01: правит ту же область HandleLifecycle actor.go — пины берутся по post-fix файлу)*
 
 **Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 11-04-PLAN.md — клик-композиция и проводка main.go (гварды D-01/D-03, QuoteMeta, sync reload)
+
+**Wave 4** *(blocked on Wave 3 completion)*
 
 - [ ] 11-05-PLAN.md — e2e menu-blocklist + живой прогон стенда (menu-v2 re-pin)
 
