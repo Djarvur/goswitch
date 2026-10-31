@@ -47,10 +47,13 @@
 - ✓ Буфер очищается по Enter/Tab/клику/фокусу/Escape; собственный флип буфер НЕ сбрасывает (ADR-004 amendment 2026-10-07, quick 261008-00m) — Phase 2+3
 - ✓ MACR-01: Super+Буква → Ctrl+Буква в заданных приложениях (GTK4-Wayland forwarded-события — документированное ограничение) — Phase 3
 - ✓ YAML-конфиг с hot reload + `goswitchctl status/reload/correct` — Phase 3
+- ✓ TERM-01: переключение раскладки работает в wezterm — Phase 9 (первопричина — desync engine→stale-context XIM, воспроизведён спайком дважды; фикс — wezterm-nightly 20261010 7365a93; G-10-1 закрыт вердиктом владельца «осталось» 2026-10-20; флип подтверждён владельцем под откатанным enable_wayland=false 2026-10-31)
+- ✓ TERM-04: автокоррекция в терминалах никогда не срабатывает (инвариант) — Phase 9 (SPEC rev D-55: вето в точке армирования по роли AT-SPI 60, не blocklist; замороженные негативы — стенд-свидетели Фазы 10 witness-vim/htop зелёные)
+- ✓ TERM-02: исправление слова одним жестом (двойной правый Shift) в wezterm и GNOME Terminal через собственный канал демона — Phase 10 (G-10-1 закрыт вердиктом владельца «осталось» 2026-10-20 на v1.1.1-226-g8bd4edc: парные press+release форварды, амендмент (7) ADR-008; подтверждено владельцем под откатанным транспортом 2026-10-31)
 
 ### Active
 
-- Веха v1.2 (2026-10-08): терминальная коррекция (TERM), пункт меню «в чёрный список» (MENU), доступность Telegram/ZCode (A11Y) — REQ-IDs будут присвоены при определении требований
+- Веха v1.2 (2026-10-08): осталось MENU-01 (пункт «в чёрный список», Фаза 11), TERM-03 (строка, feasibility-gated kill-критерием, Фаза 12), A11Y-01..03 (рецепты Telegram/ZCode, Фаза 13) — REQ-IDs в REQUIREMENTS.md; TERM-01/02/04 закрыты Фазами 9–10
 - Кандидаты после v1.2 (архив: `milestones/v1.0.0-REQUIREMENTS.md`): CORR-10 эвристики «не трогать», LAYOUT-01 другие пары раскладок, DESK-01 KDE/Sway
 
 ### Out of Scope
@@ -106,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-08 — веха v1.2 «Терминалы и видимость приложений» начата*
+*Last updated: 2026-10-31 — Фаза 9 завершена и верифицирована (веха v1.2)*

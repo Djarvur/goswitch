@@ -2,39 +2,39 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 10
-current_phase_name: TERM-слово
+current_phase: 11
+current_phase_name: MENU — пункт «в чёрный список»
 status: planning
-stopped_at: Phase 9 complete, ready to plan Phase 10
-last_updated: "2026-10-20T14:13:49.005Z"
-last_activity: 2026-10-20
-last_activity_desc: Phase 9 complete, transitioned to Phase 10
-state_head: ced90cf3fde555f45132adf91e8e67f3a625c01a
+stopped_at: Phase 10 complete, ready to plan Phase 11
+last_updated: "2026-10-31T10:10:33.136Z"
+last_activity: 2026-10-31
+last_activity_desc: Phase 10 complete, transitioned to Phase 11
+state_head: a3523874946d608eaac83ceb5e753654b406d34b
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 18
   completed_plans: 17
-  percent: 20
+  percent: 40
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-08)
+See: .planning/PROJECT.md (updated 2026-10-31)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 9 — close-out записан, ждёт фазовой верификации
+**Current focus:** Phase 11 — MENU «в чёрный список»: не спланирована; следующий шаг — обсуждение (/gsd-discuss-phase 11)
 
 ## Current Position
 
-Phase: 10 — TERM-слово
+Phase: 11 — MENU — пункт «в чёрный список»
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-20 — Phase 9 complete, transitioned to Phase 10
+Last activity: 2026-10-31 — Phase 10 complete, transitioned to Phase 11
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -106,7 +106,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- [ ] [Orca fix closure] Установить на хост сборку с 946b4cd (ветка fix/orca-terminal-verify-class-own-flip: выученный терминальный класс переживает собственный флип — корень бага «коррекция в Orca только со второго double-shift», debug-док .planning/debug/orca-terminal-second-shift.md, status: resolved); приёмка владельца — коррекция с ПЕРВОГО double-shift (журнал: нет verify-timeout перед первой коррекцией; регресс-маркер — `terminal class verify_dead=false` после flip-released); затем PR в защищённый main. Включено в план по решению владельца 2026-10-31; кандидат в Task 0 плана Фазы 11.
 
 ### Blockers/Concerns
 
@@ -141,8 +141,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T13:58:14.219Z
-Stopped at: Phase 9 complete, ready to plan Phase 10
+Last session: 2026-10-31T10:12:00Z
+Stopped at: Phases 9-10 verified complete (UAT, VERIFICATION passed, SECURITY 0 open); Phase 11 (MENU) next — discuss then plan
 Resume file: None
 
 ## Operator Next Steps
