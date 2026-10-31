@@ -105,6 +105,23 @@ const level1ConfirmBudget = 60 * time.Millisecond
 // internal constant with a journal provenance, never a config key.
 const flipConfirmGrace = 300 * time.Millisecond
 
+// flipAftermathWindow is the re-mint-aftermath window of the client Reset
+// carve-out (Round 2 of debug session orca-terminal-second-shift): a
+// successful SetGlobalEngine makes ibus re-mint engine objects, and the slow
+// client (Electron ibus-IM, the journal's Orca IDE terminal) reconnects its
+// IM context ASYNCHRONOUSLY, delivering a Reset on the re-minted engine
+// object well after the synthetic focus pair — the green106 acceptance row
+// of 2026-10-31 13:55 shows the echo's wipe 923 ms after the flip (the
+// machine-verified journal elimination: all 22 wipe rows of the day ran the
+// Reset branch). A Reset inside the window is the re-mint's own echo — the
+// same client field re-engaging, not a context change — and keeps the
+// learned class (the synthetic-FocusOut discipline); past the window a
+// Reset is REAL and wipes immediately, byte as before (fail-closed for a
+// genuine context change). The value doubles the observed ~0.9 s reconnect
+// for slower clients and stays an internal constant with a journal
+// provenance, never a config key (the focusFlapWindow precedent).
+const flipAftermathWindow = 2 * time.Second
+
 // defaultLevel2ForwardGap is the DEFAULT pacing quantum between the write
 // branch's wire emissions (plan 10-05, the 2026-10-12 VTE live finding):
 // the client drains forwarded keys lazily — they queue as GDK events —
@@ -429,6 +446,23 @@ type Actor struct {
 	flipEpoch   uint64
 	flipStop    func()
 	flipAfter   func(d time.Duration, fn func()) (stop func())
+	// flipAftermathStop/flipAftermathEpoch hold the re-mint-aftermath window
+	// of the daemon's own flip (Round 2, orca-terminal-second-shift): armed
+	// by every successful flipTo round trip next to the synthetic-lifecycle
+	// credit, spent by the client's late Reset inside the window (the
+	// re-mint echo — the learned class keeps), expired by the deadline (a
+	// Reset from then on is REAL — the immediate wipe stands), cancelled by
+	// a real FocusOut. Single slot, the flap-window discipline (T-10-07-04):
+	// a newer flip re-arms the same slot, never a second timer. Accessed
+	// only under a.mu — flipTo's callers and HandleLifecycle serialize on
+	// it (the flipCredit form).
+	flipAftermathStop  func()
+	flipAftermathEpoch uint64
+	// flipAftermathAfter is the timer seam of the re-mint-aftermath window
+	// (the flipAfter form: the production arm is time.AfterFunc
+	// (defaultFlapAfter); the corpus installs a deterministic recorder via
+	// UseFlipAftermathTimer).
+	flipAftermathAfter func(d time.Duration, fn func()) (stop func())
 	// verifyAfter is the pre-correction verify-deadline seam (plan 10-10,
 	// WR-02, the flipAfter form): arm(d, fn) arms one verify budget and
 	// returns the stop function canceling a still-pending firing. The
@@ -1053,6 +1087,19 @@ func (a *Actor) UseLevel1Timer(arm func(d time.Duration, fn func()) (stop func()
 	a.l1After = arm
 }
 
+// UseFlipAftermathTimer installs the re-mint-aftermath seam of the client
+// Reset carve-out (Round 2, orca-terminal-second-shift, the UseFlipTimer
+// form): arm(d, fn) arms one flipAftermathWindow deadline and returns the
+// stop function canceling a still-pending firing. The production arm is
+// time.AfterFunc (defaultFlapAfter); the corpus installs a deterministic
+// recorder. The daemon path never calls it.
+func (a *Actor) UseFlipAftermathTimer(arm func(d time.Duration, fn func()) (stop func())) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.flipAftermathAfter = arm
+}
+
 // UseVerifyTimer installs the pre-correction verify-deadline seam (plan
 // 10-10, WR-02, the UseFlipTimer form): arm(d, fn) arms one verify budget
 // and returns the stop function canceling a still-pending firing. The
@@ -1278,7 +1325,13 @@ func (a *Actor) HandleKey(ev engine.EngineEvent) (consume bool) {
 // credit (a successful SetGlobalEngine makes ibus re-mint engine objects)
 // skips the buffer hard-reset AND the behavioral-class wipe — the synthetic
 // transition of the daemon's own flip is not a real focus change; a real
-// focus loss still resets.
+// focus loss still resets. Round 2 amendment 2026-10-31
+// (orca-terminal-second-shift): a Reset arriving within the
+// flipAftermathWindow of the daemon's own flip is the slow client's echo of
+// the same re-mint (the IM context reconnecting asynchronously on the new
+// engine object) and is equated to the synthetic pair — the buffer resets,
+// the behavioral class survives; a Reset outside the window wipes
+// immediately, byte as before.
 func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1298,6 +1351,11 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// cleanup, the timer stop. A Reset kind never consumes a credit —
 		// the observed synthetic pair is focus_out/focus_in; a spent or
 		// absent credit means a REAL focus loss and takes the full reset.
+		// Round 2 (orca-terminal-second-shift): the client's echo Reset of
+		// the re-mint is equated to the synthetic pair for the BEHAVIORAL
+		// CLASS only — it spends the flipAftermathWindow slot instead of a
+		// credit (the pair below consumed the credit already); see the
+		// wipe-discipline switch.
 		synthetic := false
 		if kind == engine.LifecycleFocusOut && a.flipCredit > 0 {
 			a.flipCredit--
@@ -1329,35 +1387,11 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 		// write branch reads this tag between chunks — any death of the
 		// context inside the burst's boundary windows stops the round
 		a.ctxEpoch++
-		// The behavioral terminal class too (Phase 10): a fresh context
-		// starts unclassified — the next expired verify round re-learns it.
-		// Plan 10-07 (G-10-1 cause A): a REAL FocusOut defers the wipe by
-		// focusFlapWindow — the host kernel's same-engine flap pairs (1–3 ms
-		// in the 16:20:05 journal) wiped the learned class before the next
-		// gesture could ride it, and wezterm's only classification source
-		// died with it. A Reset wipes immediately, byte as before. A
-		// SYNTHETIC FocusOut (the own flip's re-mint) wipes NOTHING (debug
-		// session orca-terminal-second-shift, green106 2026-10-31, 10/10
-		// journal repros): the re-mint serves the SAME client field — the
-		// push-less verify behavior is a property of the app, not of the
-		// engine object — and wiping it made every terminal correction
-		// re-pay a verify round it always loses (the stationary «only the
-		// second double-shift works» cycle). The class rides the G-2-3
-		// carve-out: the daemon's own flip is not a focus change. A real
-		// context change still clears: its own FocusOut arrives credit-less
-		// and takes the deferred wipe below.
-		switch {
-		case kind == engine.LifecycleReset:
-			a.cancelVerifyDeadWipe()
-			a.setVerifyDead(false)
-		case synthetic:
-			// The pending window's snapshot is the old engine object — it
-			// can never complete after the re-mint; cancel it, keep the
-			// class.
-			a.cancelVerifyDeadWipe()
-		default:
-			a.armVerifyDeadWipe()
-		}
+		// The behavioral terminal class (Phase 10) rides its own wipe
+		// discipline — deferred for a real FocusOut, immediate for a Reset,
+		// nothing for the own flip's synthetic pair and its client echo
+		// (verifyDeadOnContextDeath carries the full contract).
+		a.verifyDeadOnContextDeath(kind, synthetic)
 		a.resolvePending()
 		a.clearAfter()
 		// A combo retired by the context's death never settles its word
@@ -1787,6 +1821,108 @@ func (a *Actor) verifyDeadWipeExpiry(epoch uint64) {
 	a.flapStop = nil
 	a.flapEng = nil // the window's context identity dies with the window (plan 10-11, WR-03)
 	a.setVerifyDead(false)
+}
+
+// verifyDeadOnContextDeath applies the behavioral terminal class's wipe
+// discipline of a context death (the caller holds the mutex; kind is a
+// FocusOut or a Reset, synthetic marks the own flip's credit FocusOut). A
+// fresh context starts unclassified — the next expired verify round
+// re-learns the class. Plan 10-07 (G-10-1 cause A): a REAL FocusOut defers
+// the wipe by focusFlapWindow — the host kernel's same-engine flap pairs
+// (1–3 ms in the 16:20:05 journal) wiped the learned class before the next
+// gesture could ride it, and wezterm's only classification source died with
+// it. A Reset wipes immediately, byte as before — with the Round 2
+// aftermath carve-out below. A SYNTHETIC FocusOut (the own flip's re-mint)
+// wipes NOTHING (debug session orca-terminal-second-shift, green106
+// 2026-10-31, 10/10 journal repros): the re-mint serves the SAME client
+// field — the push-less verify behavior is a property of the app, not of
+// the engine object — and wiping it made every terminal correction re-pay a
+// verify round it always loses (the stationary «only the second
+// double-shift works» cycle). The class rides the G-2-3 carve-out: the
+// daemon's own flip is not a focus change. Round 2 (the owner acceptance of
+// 2026-10-31 13:55, «работает со второго», kept by the client Reset despite
+// the synthetic carve-out): the slow client reconnects its IM context
+// asynchronously after the re-mint and delivers a Reset on the NEW engine
+// object — the acceptance row's echo landed 923 ms after the flip and wiped
+// the class through the Reset arm (the machine-verified journal
+// elimination: all 22 wipe rows of the day ran the Reset branch). A Reset
+// inside the flipAftermathWindow is the re-mint's own echo and rides the
+// same carve-out; a real context change still clears: a real FocusOut
+// cancels the aftermath window and takes the deferred wipe, and a Reset
+// past the window wipes immediately, byte as before.
+func (a *Actor) verifyDeadOnContextDeath(kind engine.LifecycleKind, synthetic bool) {
+	switch {
+	case kind == engine.LifecycleReset && a.flipAftermathStop != nil:
+		// The re-mint's echo Reset: the same discipline as the synthetic
+		// FocusOut — cancel the pending wipe, keep the class, spend the
+		// window. Every other Reset side effect in HandleLifecycle (the
+		// buffer hard-reset, the cache clears, the epoch bump, the pending
+		// retirement) stays a full context reset — only the behavioral
+		// class survives. The INFO row is the passive verification marker:
+		// a `terminal class verify_dead=false` row between flip-released
+		// and the next correction means a wipe OUTSIDE the aftermath — the
+		// regression signature.
+		a.cancelFlipAftermath()
+		a.cancelVerifyDeadWipe()
+		slog.Info("lifecycle", "kind", kind.String(), "aftermath", true)
+	case kind == engine.LifecycleReset:
+		a.cancelVerifyDeadWipe()
+		a.setVerifyDead(false)
+	case synthetic:
+		// The pending window's snapshot is the old engine object — it can
+		// never complete after the re-mint; cancel it, keep the class. The
+		// aftermath window arms on: the echo Reset may still be seconds
+		// away.
+		a.cancelVerifyDeadWipe()
+	default:
+		// A REAL FocusOut ends the re-mint aftermath: a Reset arriving
+		// after it is a genuine context change and wipes as before.
+		a.cancelFlipAftermath()
+		a.armVerifyDeadWipe()
+	}
+}
+
+// armFlipAftermath re-arms the single re-mint-aftermath window of the
+// daemon's own flip (the caller holds the mutex; the armVerifyDeadWipe
+// single-window discipline): every successful flip round trip re-arms the
+// same slot, so the client's echo Reset spends the CURRENT flip's
+// aftermath whenever it lands.
+func (a *Actor) armFlipAftermath() {
+	a.cancelFlipAftermath()
+	a.flipAftermathEpoch++
+	epoch := a.flipAftermathEpoch
+	arm := a.flipAftermathAfter
+	if arm == nil {
+		arm = defaultFlapAfter
+	}
+	a.flipAftermathStop = arm(flipAftermathWindow, func() { a.flipAftermathExpiry(epoch) })
+}
+
+// cancelFlipAftermath stops the pending re-mint-aftermath window (the
+// caller holds the mutex): the client's echo Reset inside the window spent
+// it, a real FocusOut ended it, or a newer flip re-arms the slot. The epoch
+// advance turns an already-queued callback stale (the cancelVerifyDeadWipe
+// form).
+func (a *Actor) cancelFlipAftermath() {
+	if a.flipAftermathStop != nil {
+		a.flipAftermathStop()
+		a.flipAftermathStop = nil
+	}
+	a.flipAftermathEpoch++
+}
+
+// flipAftermathExpiry is the aftermath window's deadline callback: the slow
+// client never echoed — a Reset from now on is REAL and wipes immediately
+// (a stale epoch — a newer window owns the slot — is a no-op, the
+// verifyDeadWipeExpiry form).
+func (a *Actor) flipAftermathExpiry(epoch uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.flipAftermathEpoch != epoch {
+		return // stale deadline — a newer window owns the slot
+	}
+	a.flipAftermathStop = nil
 }
 
 // armLevel1Confirm opens the two-phase level-1 confirmation window (the
@@ -2972,6 +3108,9 @@ func (a *Actor) backspaceCap() int {
 // hard-reset (the daemon's own flip is not a focus change; the word typed
 // across it corrects as a whole). A WARNed failure or the nil-seam
 // degradation arms nothing — the next FocusOut stays a real focus loss.
+// Round 2 (orca-terminal-second-shift): the same round trip also arms the
+// flipAftermathWindow slot — the slow client's echo Reset of the re-mint
+// lands within it and keeps the behavioral class (see HandleLifecycle).
 //
 // A flipTo to the CURRENT mode is a no-op: the SET-semantics site
 // (settleCorrectionFlip) names its target from the corrected text's script,
@@ -3016,6 +3155,11 @@ func (a *Actor) flipTo(target scriptMode) {
 			// failed round trip arms nothing — the buffer then treats the
 			// next FocusOut as a real focus loss.
 			a.flipCredit++
+			// Round 2 (orca-terminal-second-shift): the re-mint aftermath
+			// window arms with the credit — the slow client reconnects its
+			// IM context asynchronously and its echo Reset lands seconds
+			// after the synthetic pair (the green106 row: +923 ms).
+			a.armFlipAftermath()
 		}
 	} else if !a.switcherWarned {
 		a.switcherWarned = true
