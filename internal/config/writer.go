@@ -230,25 +230,37 @@ func buildBlocklistSection(pattern string) *yaml.Node {
 	)
 }
 
-// validateNode runs the Load semantics (the strict KnownFields decode +
-// Validate) over the node tree encoded in memory — the writer's pre-write
-// gate (S5): a broken result is refused BEFORE the rename and the
-// original file stays byte-untouched (D-33). The semantics live in
-// decodeValid — one Load, never a duplicated decoder.
-func validateNode(root *yaml.Node) error {
+// encodeDocument encodes the node tree into bytes with the CONFIG.md
+// 2-space indent — the one encode path, shared by the persist landing
+// (rewriteAtomically) and the append's pre-write gate (validateNode).
+func encodeDocument(root *yaml.Node) ([]byte, error) {
 	var out bytes.Buffer
 	enc := yaml.NewEncoder(&out)
 	enc.SetIndent(2) //nolint:mnd // the CONFIG.md 2-space indent is the plan-pinned literal (research Q3a)
 	if err := enc.Encode(root); err != nil {
 		_ = enc.Close() // teardown after an encode failure: the close error carries no signal
 
-		return fmt.Errorf("encode config: %w", err)
+		return nil, fmt.Errorf("encode document: %w", err)
 	}
 	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("encode document: %w", err)
+	}
+
+	return out.Bytes(), nil
+}
+
+// validateNode runs the Load semantics (the strict KnownFields decode +
+// Validate) over the node tree encoded in memory — the writer's pre-write
+// gate (S5): a broken result is refused BEFORE the rename and the
+// original file stays byte-untouched (D-33). The semantics live in
+// decodeValid — one Load, never a duplicated decoder.
+func validateNode(root *yaml.Node) error {
+	data, err := encodeDocument(root)
+	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
 
-	_, err := decodeValid(bytes.NewReader(out.Bytes()))
+	_, err = decodeValid(bytes.NewReader(data))
 
 	return err
 }
@@ -484,19 +496,12 @@ func setScalar(sectionNode *yaml.Node, key string, on bool) bool {
 // rewriteAtomically encodes the node tree (2-space indent) and lands the
 // bytes through the temp+rename write.
 func rewriteAtomically(path string, root *yaml.Node) error {
-	var out bytes.Buffer
-	enc := yaml.NewEncoder(&out)
-	enc.SetIndent(2) //nolint:mnd // the CONFIG.md 2-space indent is the plan-pinned literal (research Q3a)
-	if err := enc.Encode(root); err != nil {
-		_ = enc.Close() // teardown after an encode failure: the close error carries no signal
-
-		return fmt.Errorf("encode config %s: %w", path, err)
-	}
-	if err := enc.Close(); err != nil {
+	data, err := encodeDocument(root)
+	if err != nil {
 		return fmt.Errorf("encode config %s: %w", path, err)
 	}
 
-	return writeAtomically(path, out.Bytes())
+	return writeAtomically(path, data)
 }
 
 // writeAtomically lands data at path through a temp file in the SAME
