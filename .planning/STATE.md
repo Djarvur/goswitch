@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 11
 current_phase_name: MENU — пункт «в чёрный список»
 status: executing
-stopped_at: Completed 11-01-PLAN.md (journal-verify row awaits next owner session)
-last_updated: "2026-10-31T20:38:50.115Z"
+stopped_at: Completed 11-03-PLAN.md
+last_updated: "2026-10-31T21:22:04.967Z"
 last_activity: 2026-10-31
 last_activity_desc: Phase 11 execution started
-state_head: 0870f5098152d8ce056a1256ff1e213fbe1259a1
+state_head: 3f7b5b5d1917485d8888215cac1a65831bfcb06c
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 23
-  completed_plans: 17
+  completed_plans: 19
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 ## Current Position
 
 Phase: 11 (MENU — пункт «в чёрный список») — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-10-31 — Phase 11 execution started
 
@@ -67,6 +67,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 10 P17 | 74m | 7 tasks | 9 files |
 | Phase 09 P02 | 4d live arc (2026-10-08..12) + close-out | 2 tasks | 28 files |
 | Phase 11 P01 | 51min | 2 tasks | 6 files |
+| Phase 11 P03 | 34min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,9 @@ Recent decisions affecting current work:
 - [Phase 10]: G-10-1 закрыт 2026-10-20 вердиктом владельца «осталось» (UAT Тест 6, selftype): корень — press-only форварды взводили клиентский автоповтор wezterm (исходники e2a98e1b), фикс — пары press+release (амендмент (7) ADR-008, сборка v1.1.1-226-g8bd4edc). Шесть раундов: флап-стойкость → маршрутизация → доставка → гвард mutter → парные форварды. — G-10-1 закрыт 2026-10-20 вердиктом владельца «осталось» (UAT Тест 6, selftype): корень — press-only форварды взводили клиентский автоповтор wezterm (исходники e2a98e1b), фикс — пары press+release (амендмент (7) ADR-008, сборка v1.1.1-226-g8bd4edc). Шесть раундов: флап-стойкость → маршрутизация → доставка → гвард mutter → парные форварды.
 - [Phase 9]: [Phase 09 close-out]: 09-02 HALTED честной записью (status: halted) — ядро стоит (десинк engine→stale-context XIM воспроизведён дважды, журналы сохранены), рецепт нативного Wayland доставлен (wezterm-nightly 20261010 + enable_wayland=true, 7365a93 — daily-driver владельца), харнесс headless-green; R2–R6 и two-round RED не исполнены (владелец вышел из роли тестера 2026-10-12); capability-таблица фактически заполнена стенд-рядами Фазы 10
 - [Phase 9]: [Phase 09 close-out]: 09-03/09-04 retired superseded (#2349-форма, как 10-14/10-15) — 09-03 доставлен Фазой 10 (ADR-008 Accepted 2026-10-12 планом 10-06, фикс = nightly-рецепт 09-02, зачёт G-10-1 «осталось» 2026-10-20); 09-04 вердикты рассеяны (Telegram AppArmor 2026-10-08 живой пробой — гейт Фазы 13 за владельцем; фаза-7 UAT a11y; фаза-10 ac_role_errors), журнал d09 не создавался
+- [Phase 11]: Pre-write валидация writer-метода одноисточна: decodeValid извлечён в load.go — Load и append-гейт (11-03) делят одну строгую семантику KnownFields+Validate, дублированного декодера нет
+- [Phase 11]: Потолок 64 appends-пути стоит ПОСЛЕ дедупа и ДО append: sentinel errAutocorrectBlocklistOverCeil называет ТЕКУЩИЙ размер списка; MaxAutocorrectBlocklist экспортирован — единый источник для validate/writer/actor(11-02)/menu(11-04)
+- [Phase 11]: Форма-отказ apps_blocklist (не последовательность) реализован на writer-уровне уже в Задаче 1 (errWriterBlocklistNotSequence) — append ребёнка в скаляр портит документ; тест Задачи 2 пинит готовое поведение
 
 ### Pending Todos
 
@@ -142,8 +146,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-31T20:38:50.050Z
-Stopped at: Completed 11-01-PLAN.md (journal-verify row awaits next owner session)
+Last session: 2026-10-31T21:21:10.815Z
+Stopped at: Completed 11-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
