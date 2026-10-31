@@ -272,19 +272,7 @@ func startCtl(
 			item := indicator.Attach(conn, ctlsvc.BusName, cb)
 			menuSlot.Store(item.Menu())
 			menu := menuSlot.Load()
-			// The initial menu state: version, both toggles, the raw key
-			// names — the menu dedupes later identical pushes from the fold.
-			menu.SetVersion(version)
-			menu.SetAutocorrectEnabled(cfg.Autocorrect.Enabled)
-			menu.SetSoundEnabled(cfg.Sound.EffectiveEnabled())
-			menu.SetKeys(cfg.Hotkeys.TapKey, cfg.Hotkeys.WordLayoutCombo, cfg.Hotkeys.ModeSwitchChord)
-			// The blocklist item's initial state (phase 11, MENU-01): the state
-			// the actor already computed (the startup fold ran in newActor) —
-			// pushed here, before SetMenuSync, so a rebuilt menu shows the
-			// factual fill state from the first paint; the menu dedupes the
-			// identical install push SetMenuSync makes next.
-			app, known, covered, full := actor.BlocklistAppState()
-			menu.SetBlocklistApp(app, known, covered, full)
+			installMenuState(menu, cfg, actor)
 			actor.SetMenuSync(menu) // the install push covers ordering skew, as SetModeDisplay
 			// The identity observer's UNCONDITIONAL start (the Pitfall-2 cure,
 			// RESEARCH Open Q1): the lazy condition — macr list or enabled
@@ -329,6 +317,22 @@ func startCtl(
 			slog.Error("ctl service stopped", "error", err)
 		}
 	}()
+}
+
+// installMenuState paints the attached menu's INITIAL state: the startup
+// version, both toggles and the raw key names — the menu dedupes later
+// identical pushes from the fold — plus the blocklist item's initial state
+// (phase 11, MENU-01): the state the actor already computed (the startup
+// fold ran in newActor), pushed BEFORE SetMenuSync so a rebuilt menu shows
+// the factual fill state from the first paint; the menu dedupes the
+// identical install push SetMenuSync makes next.
+func installMenuState(menu *indicator.Menu, cfg config.Config, actor *session.Actor) {
+	menu.SetVersion(version)
+	menu.SetAutocorrectEnabled(cfg.Autocorrect.Enabled)
+	menu.SetSoundEnabled(cfg.Sound.EffectiveEnabled())
+	menu.SetKeys(cfg.Hotkeys.TapKey, cfg.Hotkeys.WordLayoutCombo, cfg.Hotkeys.ModeSwitchChord)
+	app, known, covered, full := actor.BlocklistAppState()
+	menu.SetBlocklistApp(app, known, covered, full)
 }
 
 // newCtlDeps assembles the control-service dependencies over the actor. The

@@ -825,113 +825,132 @@ func clickBlocklistApp(t *testing.T, actor *session.Actor, src *foldSource, path
 // lands as a QuoteMeta literal a strict load accepts (SC4); with the
 // clicked document the autocorrect gate abstains with app-blocked.
 func TestBlocklistClickTracer(t *testing.T) {
-	t.Run("click lands the fresh identity and applies in the same click", func(t *testing.T) {
-		actor, src, ms, path := blocklistFixture(t)
-		actor.PushFocusedApp(blocklistTestApp) // the gain — the fresh identity
+	t.Run("click lands the fresh identity and applies in the same click", testBlocklistClickLandsFresh)
+	t.Run("metacharacter identity lands as a literal", testBlocklistClickMetacharLiteral)
+	t.Run("the gate goes silent with the clicked document", testBlocklistClickGateSilent)
+}
 
-		var reloads int
-		toggles := newMenuToggles(actor, &atomic.Pointer[indicator.Menu]{}, path, func() {
-			raw, err := os.ReadFile(path)
-			if err != nil {
-				t.Errorf("read the document at reload: %v", err)
-			} else if !bytes.Contains(raw, []byte(blocklistTestApp)) {
-				t.Errorf("the reload ran before the write landed — the apply would fold a stale document")
-			}
-			reloads++
-			fresh, err := config.Load(path)
-			if err != nil {
-				t.Errorf("strict reload of the clicked document: %v", err)
+// testBlocklistClickLandsFresh is the tracer's main chain: one click on the
+// fresh «gedit» identity — exactly ONE apply-reload (the write strictly
+// before it), the document grown by the listed pattern a strict Load
+// accepts (SC1), and the fold's covered push arriving without a second
+// click (the checkmark delta, the fold's push moment).
+func testBlocklistClickLandsFresh(t *testing.T) {
+	t.Helper()
 
-				return
-			}
-			src.set(*fresh)
-			actor.FoldAppliedConfig()
-		})
-		cb := indicator.Callbacks{BlockCurrentApp: toggles.block.add}
-		cb.BlockCurrentApp()
+	actor, src, ms, path := blocklistFixture(t)
+	actor.PushFocusedApp(blocklistTestApp) // the gain — the fresh identity
 
-		if reloads != 1 {
-			t.Fatalf("reload calls = %d, want exactly 1 — the apply rides the same click", reloads)
-		}
+	var reloads int
+	toggles := newMenuToggles(actor, &atomic.Pointer[indicator.Menu]{}, path, func() {
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			t.Fatalf("read the clicked document: %v", err)
+			t.Errorf("read the document at reload: %v", err)
+		} else if !bytes.Contains(raw, []byte(blocklistTestApp)) {
+			t.Errorf("the reload ran before the write landed — the apply would fold a stale document")
 		}
-		if !bytes.Contains(raw, []byte(blocklistTestApp)) {
-			t.Errorf("the clicked document does not carry the landed pattern; doc:\n%s", raw)
-		}
-		cfg, err := config.Load(path) // the strict re-read is green, the pattern is listed — SC1
+		reloads++
+		fresh, err := config.Load(path)
 		if err != nil {
-			t.Errorf("the clicked document refuses a strict load: %v", err)
-		} else if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{blocklistTestApp}) {
-			t.Errorf("the reloaded blocklist = %v, want exactly [%s]", cfg.Autocorrect.AppsBlocklist, blocklistTestApp)
+			t.Errorf("strict reload of the clicked document: %v", err)
+
+			return
 		}
-		pushes := ms.menuBlocklist()
-		if len(pushes) != 3 {
-			t.Fatalf("menu pushes = %d (%+v), want install + gain + covered", len(pushes), pushes)
-		}
-		want := menuBlocklistPush{app: blocklistTestApp, fresh: true, covered: true}
-		if pushes[2] != want {
-			t.Errorf("the fold's push = %+v, want %+v — the checkmark arrives without a second click", pushes[2], want)
-		}
+		src.set(*fresh)
+		actor.FoldAppliedConfig()
 	})
+	cb := indicator.Callbacks{BlockCurrentApp: toggles.block.add}
+	cb.BlockCurrentApp()
 
-	t.Run("metacharacter identity lands as a literal", func(t *testing.T) {
-		const meta = "org.example.App[1]"
-		actor, src, ms, path := blocklistFixture(t)
-		actor.PushFocusedApp(meta)
+	if reloads != 1 {
+		t.Fatalf("reload calls = %d, want exactly 1 — the apply rides the same click", reloads)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the clicked document: %v", err)
+	}
+	if !bytes.Contains(raw, []byte(blocklistTestApp)) {
+		t.Errorf("the clicked document does not carry the landed pattern; doc:\n%s", raw)
+	}
+	cfg, err := config.Load(path) // the strict re-read is green, the pattern is listed — SC1
+	if err != nil {
+		t.Errorf("the clicked document refuses a strict load: %v", err)
+	} else if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{blocklistTestApp}) {
+		t.Errorf("the reloaded blocklist = %v, want exactly [%s]", cfg.Autocorrect.AppsBlocklist, blocklistTestApp)
+	}
+	pushes := ms.menuBlocklist()
+	if len(pushes) != 3 {
+		t.Fatalf("menu pushes = %d (%+v), want install + gain + covered", len(pushes), pushes)
+	}
+	want := menuBlocklistPush{app: blocklistTestApp, fresh: true, covered: true}
+	if pushes[2] != want {
+		t.Errorf("the fold's push = %+v, want %+v — the checkmark arrives without a second click", pushes[2], want)
+	}
+}
 
-		clickBlocklistApp(t, actor, src, path)
+// testBlocklistClickMetacharLiteral pins SC4 on the tracer's stand: the
+// metacharacter identity lands as the ESCAPED literal — exactly one listed
+// element, a strict Load accepts it, and the raw metacharacter name never
+// reached the document (it would compile as a regex class).
+func testBlocklistClickMetacharLiteral(t *testing.T) {
+	t.Helper()
 
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read the clicked document: %v", err)
-		}
-		const quoted = `org\.example\.App\[1\]`
-		if !bytes.Contains(raw, []byte(quoted)) {
-			t.Errorf("the document does not carry the QuoteMeta literal; doc:\n%s", raw)
-		}
-		cfg, err := config.Load(path)
-		if err != nil {
-			t.Errorf("the quoted document refuses a strict load: %v", err)
-		} else if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{quoted}) {
-			// Exactly ONE listed element and it is the ESCAPED literal — the
-			// raw metacharacter name never landed (it would compile as a
-			// regex class).
-			t.Errorf("the reloaded blocklist = %v, want exactly the escaped literal [%s]",
-				cfg.Autocorrect.AppsBlocklist, quoted)
-		}
-		pushes := ms.menuBlocklist()
-		want := menuBlocklistPush{app: meta, fresh: true, covered: true}
-		if len(pushes) == 0 || pushes[len(pushes)-1] != want {
-			t.Errorf("the fold's last push = %+v, want the covered literal match %+v", pushes, want)
-		}
-	})
+	const meta = "org.example.App[1]"
+	actor, src, ms, path := blocklistFixture(t)
+	actor.PushFocusedApp(meta)
 
-	t.Run("the gate goes silent with the clicked document", func(t *testing.T) {
-		actor, src, _, path := blocklistFixture(t)
-		actor.PushFocusedApp(blocklistTestApp)
+	clickBlocklistApp(t, actor, src, path)
 
-		clickBlocklistApp(t, actor, src, path)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the clicked document: %v", err)
+	}
+	const quoted = `org\.example\.App\[1\]`
+	if !bytes.Contains(raw, []byte(quoted)) {
+		t.Errorf("the document does not carry the QuoteMeta literal; doc:\n%s", raw)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Errorf("the quoted document refuses a strict load: %v", err)
+	} else if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{quoted}) {
+		// Exactly ONE listed element and it is the ESCAPED literal — the
+		// raw metacharacter name never landed (it would compile as a
+		// regex class).
+		t.Errorf("the reloaded blocklist = %v, want exactly the escaped literal [%s]",
+			cfg.Autocorrect.AppsBlocklist, quoted)
+	}
+	pushes := ms.menuBlocklist()
+	want := menuBlocklistPush{app: meta, fresh: true, covered: true}
+	if len(pushes) == 0 || pushes[len(pushes)-1] != want {
+		t.Errorf("the fold's last push = %+v, want the covered literal match %+v", pushes, want)
+	}
+}
 
-		// The existing block-gate machine, fed with the clicked document:
-		// the identity source answers the blocked app, the word lands its
-		// boundary — the layer abstains with app-blocked before any
-		// emission, and the separator transits.
-		actor.UseAppid(fakeAppID{app: blocklistTestApp})
-		actor.AttachEngine(fakeEngineEmitter{})
-		actor.HandleCapabilities(engine.CapSurroundingText)
-		typeWord(actor, blocklistTestWord)
-		if actor.HandleKey(engine.EngineEvent{Keyval: uint32(' ')}) {
-			t.Fatal("the boundary separator was consumed — a block refusal never changes consumption")
-		}
+// testBlocklistClickGateSilent is the tracer's last rung: the EXISTING
+// block-gate machine, fed with the clicked document — the identity source
+// answers the blocked app, the word lands its boundary — abstains with
+// app-blocked before any emission, and the separator transits.
+func testBlocklistClickGateSilent(t *testing.T) {
+	t.Helper()
 
-		st := actor.StatusSnapshot()
-		if st.AutoCorrectAbstained != 1 || st.AutoCorrectSkipReasons["app-blocked"] != 1 {
-			t.Errorf("the gate did not abstain with app-blocked: abstained=%d reasons=%v",
-				st.AutoCorrectAbstained, st.AutoCorrectSkipReasons)
-		}
-	})
+	actor, src, _, path := blocklistFixture(t)
+	actor.PushFocusedApp(blocklistTestApp)
+
+	clickBlocklistApp(t, actor, src, path)
+
+	actor.UseAppid(fakeAppID{app: blocklistTestApp})
+	actor.AttachEngine(fakeEngineEmitter{})
+	actor.HandleCapabilities(engine.CapSurroundingText)
+	typeWord(actor, blocklistTestWord)
+	if actor.HandleKey(engine.EngineEvent{Keyval: uint32(' ')}) {
+		t.Fatal("the boundary separator was consumed — a block refusal never changes consumption")
+	}
+
+	st := actor.StatusSnapshot()
+	if st.AutoCorrectAbstained != 1 || st.AutoCorrectSkipReasons["app-blocked"] != 1 {
+		t.Errorf("the gate did not abstain with app-blocked: abstained=%d reasons=%v",
+			st.AutoCorrectAbstained, st.AutoCorrectSkipReasons)
+	}
 }
 
 // The guard-matrix corpus of plan 11-04 Task 2: every early guard of the
