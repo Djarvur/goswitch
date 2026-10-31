@@ -89,8 +89,8 @@ const (
 	// refusal — S9: уведомления на этом столе невидимы, отказ виден
 	// состоянием пункта; формулировка — дискреция владельца A5). The 64
 	// figure mirrors config.MaxAutocorrectBlocklist (plan 11-03, the single
-	// source); the reconciliation rides plan 11-04's point edit, as the
-	// session-side autocorrectBlocklistCeil does.
+	// source the actor's full state reads too — the session-side restated
+	// constant was reconciled away in plan 11-04, Task 2).
 	labelBlocklistFull = "Чёрный список заполнен — 64/64"
 
 	// The macro-row wrappers (canonical layout, research A4): RU text around

@@ -1554,14 +1554,6 @@ func (a *Actor) SetMenuSync(ms MenuSync) {
 	}
 }
 
-// autocorrectBlocklistCeil is the autocorrect.apps_blocklist schema ceiling
-// (config.MaxAutocorrectBlocklist, plan 11-03) restated as the session
-// package constant the full-state computation reads: the menu's
-// заполненность (full) renders as soon as the list length reaches it. The
-// single-source reconciliation to the exported constant is one point edit
-// in plan 11-04 (Task 2) — not smeared across 11-02.
-const autocorrectBlocklistCeil = 64
-
 // PushFocusedApp receives one focus GAIN identity from the appid observer's
 // freshness hook (phase 11, MENU-01 — wired via appid.WithGainHook in the
 // default startAppid): the snapshot identity and its freshness are stored
@@ -3064,9 +3056,12 @@ func (a *Actor) ensureAppid() {
 // when unknown, the D-03 static state), covered (any compiled blocklist
 // pattern matches the FRESH identity — the same re.MatchString discipline
 // as autoCorrectBoundary's gate, never the raw strings) and full (the
-// document's list length reached the ceiling). The caller holds the mutex.
+// document's list length reached the ceiling — the schema's single source,
+// config.MaxAutocorrectBlocklist, plan 11-03: the session's restated local
+// constant reconciled away in plan 11-04, Task 2). The caller holds the
+// mutex.
 func (a *Actor) blocklistStateLocked() (app string, fresh, covered, full bool) {
-	full = len(a.opts.AutoCorrectBlocklist) >= autocorrectBlocklistCeil
+	full = len(a.opts.AutoCorrectBlocklist) >= config.MaxAutocorrectBlocklist
 	fresh = a.blFresh && a.blApp != ""
 	if !fresh {
 		return "", false, false, full
