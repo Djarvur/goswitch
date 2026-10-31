@@ -103,7 +103,14 @@ Plans:
   3. Когда личность приложения неизвестна (snap, wezterm/winit) — пункт неактивен с объяснением; демон не угадывает и не пишет мусорные паттерны вида :1.NN
   4. Имя приложения с метасимволами regex не ломает конфиг: после записи через меню строгий декодер (KnownFields) принимает файл целиком; при отказе (потолок 64) пользователь получает уведомление из трея
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 11-01-PLAN.md — спека-ревизия меню v2 (SPEC/CONFIG, D-01..D-04) + установка Orca-фикса (946b4cd) на хост
+- [ ] 11-02-PLAN.md — пункт меню id 16: трассер identity→меню (freshness), машина состояний, D-04
+- [ ] 11-03-PLAN.md — writer AppendAutocorrectBlocklist (атомарно, дедуп, потолок 64, strict pre-validation)
+- [ ] 11-04-PLAN.md — клик-композиция и проводка main.go (гварды D-01/D-03, QuoteMeta, sync reload)
+- [ ] 11-05-PLAN.md — e2e menu-blocklist + живой прогон стенда (menu-v2 re-pin)
 **UI hint**: yes
 
 ### Phase 12: TERM-строка
