@@ -70,6 +70,13 @@ func SetSoundEnabled(path string, on bool) error {
 	return setDocumentToggle(path, sectionSound, keyEnabled, on)
 }
 
+// AppendAutocorrectBlocklist is the RED-phase compile stub of plan 11-03
+// Task 1: the append corpus names the API before the behavior exists —
+// GREEN replaces this body with the real Node round-trip.
+func AppendAutocorrectBlocklist(string, string) error {
+	return nil
+}
+
 // EnsureDocument creates the full defaults document when the path has no
 // file — the «Настройки…» prerequisite (the editor must never open an
 // empty buffer, Q7) — and is a byte-level no-op when the file exists.

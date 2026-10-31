@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -436,5 +437,439 @@ func TestWriter_FullDocumentStrictLoad(t *testing.T) {
 	}
 	if !cfg.Autocorrect.Enabled {
 		t.Error("created autocorrect.enabled = false, want the toggle argument true")
+	}
+}
+
+// writerDocBlocklistYAML is the append corpus: the autocorrect section with
+// ONE listed pattern (a block sequence, not the empty flow `[]`) and inline
+// comments on the toggle AND on the listed pattern — the golden-diff corpus
+// proves the write adds exactly one list line and regenerates nothing.
+const writerDocBlocklistYAML = `# goswitch config — hand-tuned
+hotkeys:
+  tap_key: shift_r # single tap flips the layout
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
+autocorrect:
+  enabled: false # the toggle target — comments must survive
+  apps_blocklist:
+    - org.gnome.Gedit # the listed pattern — the append joins below it
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// writerDocNoBlocklistKeyYAML carries the autocorrect section WITHOUT the
+// apps_blocklist key — the absent-key corpus: the append creates the key.
+const writerDocNoBlocklistKeyYAML = `# goswitch config — hand-tuned
+hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+autocorrect:
+  enabled: false # the section exists, the blocklist key does not
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// writerDocNullBlocklistYAML carries an explicit null blocklist key — the
+// null corpus: the append replaces the null with a real sequence.
+const writerDocNullBlocklistYAML = `# goswitch config — hand-tuned
+autocorrect:
+  enabled: false
+  apps_blocklist:
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// writerDocScalarDocumentYAML is a valid YAML document whose root is a
+// scalar — there is no mapping to find a section in.
+const writerDocScalarDocumentYAML = "just a scalar document\n"
+
+// writerDocSeqDocumentYAML is a valid YAML document whose root is a
+// sequence — also not a mapping.
+const writerDocSeqDocumentYAML = "- one\n- two\n"
+
+// writerDocUnknownKeyYAML parses cleanly as a Node tree, but its EDITED
+// result would fail the strict KnownFields decode — the constructed-broken-
+// result corpus: the append must refuse before any bytes land (D-33 — the
+// writer never persists a document the strict decoder rejects).
+const writerDocUnknownKeyYAML = `# goswitch config — hand-tuned
+bogus_section:
+  future_key: 1
+autocorrect:
+  enabled: false
+  apps_blocklist: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+`
+
+// goldenAddedLines walks the after-lines against the before-lines assuming
+// an ordered insert (the writer's minimal-write contract) and returns the
+// inserted lines — the golden-diff helper of the append corpus. A removed,
+// reordered or edited existing line fails the test.
+func goldenAddedLines(t *testing.T, before, after []byte) []string {
+	t.Helper()
+
+	beforeLines := strings.Split(string(before), "\n")
+	afterLines := strings.Split(string(after), "\n")
+	var added []string
+	consumed := 0
+	for _, line := range afterLines {
+		if consumed < len(beforeLines) && line == beforeLines[consumed] {
+			consumed++
+
+			continue
+		}
+		added = append(added, line)
+	}
+	if consumed != len(beforeLines) {
+		t.Fatalf("the write removed, reordered or edited %d existing lines — the golden diff is broken", len(beforeLines)-consumed)
+	}
+
+	return added
+}
+
+// assertAppendCommentsSurvive fails unless the append result still carries
+// the corpus comment markers — the shared tail of the comment corpus.
+func assertAppendCommentsSurvive(t *testing.T, raw []byte) {
+	t.Helper()
+
+	out := string(raw)
+	for _, marker := range []string{
+		"# goswitch config — hand-tuned",
+		"# single tap flips the layout",
+		"# the listed pattern — the append joins below it",
+	} {
+		if !strings.Contains(out, marker) {
+			t.Errorf("result lost the comment %q — the writer regenerated the document", marker)
+		}
+	}
+}
+
+// TestWriter_AppendRoundTrip pins the append's one path — disk → Node →
+// disk → Load: the pattern lands in the file and the whole document reads
+// BACK through the strict Load (the FlipRoundTrip form; a test without the
+// reverse read stays green on a writer that changes nothing).
+func TestWriter_AppendRoundTrip(t *testing.T) {
+	t.Run("joins the listed pattern", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocBlocklistYAML)
+		if err := config.AppendAutocorrectBlocklist(path, "wezterm"); err != nil {
+			t.Fatalf("AppendAutocorrectBlocklist: %v", err)
+		}
+		cfg, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("reload appended config: %v", err)
+		}
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"org.gnome.Gedit", "wezterm"}) {
+			t.Errorf("reloaded blocklist = %v, want the original entry followed by the append", cfg.Autocorrect.AppsBlocklist)
+		}
+		if cfg.Autocorrect.Enabled {
+			t.Error("the append switched autocorrect.enabled on — blocking an app never enables the layer (D-54)")
+		}
+	})
+
+	t.Run("fills the empty list", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocYAML)
+		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+			t.Fatalf("AppendAutocorrectBlocklist: %v", err)
+		}
+		cfg, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("reload appended config: %v", err)
+		}
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+			t.Errorf("reloaded blocklist = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
+		}
+	})
+}
+
+// TestWriter_AppendGoldenDiff pins the minimal-write contract (roadmap
+// criterion 2): the ONLY change the append makes to the document is the one
+// new sequence element — every existing line survives in place, comments
+// included.
+func TestWriter_AppendGoldenDiff(t *testing.T) {
+	path := writeWriterDoc(t, writerDocBlocklistYAML)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read before: %v", err)
+	}
+	if err := config.AppendAutocorrectBlocklist(path, "wezterm"); err != nil {
+		t.Fatalf("AppendAutocorrectBlocklist: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	added := goldenAddedLines(t, before, after)
+	if len(added) != 1 {
+		t.Fatalf("the append changed %d lines (%v), want exactly one new list line", len(added), added)
+	}
+	if strings.TrimSpace(added[0]) != "- wezterm" {
+		t.Errorf("the new line = %q, want the plain block-sequence item - wezterm", added[0])
+	}
+	assertAppendCommentsSurvive(t, after)
+}
+
+// TestWriter_AppendAbsentFile pins the ensure branch (A4): on a machine
+// without a config file the append CREATES the complete Defaults()-equivalent
+// document with the pattern in place, the layer still at its default OFF —
+// and the created document passes the strict Load.
+func TestWriter_AppendAbsentFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml") // absent — the test never creates it
+	if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+		t.Fatalf("AppendAutocorrectBlocklist on an absent file: %v", err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("load created document: %v", err)
+	}
+	if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+		t.Errorf("created blocklist = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
+	}
+	if cfg.Autocorrect.Enabled {
+		t.Error("created autocorrect.enabled = true, want the D-54 default false — the append never enables the layer")
+	}
+	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
+		t.Errorf(
+			"created thresholds = %d/%v/%v, want the Defaults 4/2.0/1.0",
+			cfg.Autocorrect.MinWordLen, cfg.Autocorrect.TrigramMargin, cfg.Autocorrect.TrigramFloor,
+		)
+	}
+	if cfg.Hotkeys.TapKey != "shift_r" || cfg.Timeouts.TapWindowMs != 300 {
+		t.Errorf("the rest of the created document changed: hotkeys/timeouts = %v/%v", cfg.Hotkeys, cfg.Timeouts)
+	}
+}
+
+// TestWriter_AppendAbsentKeyAndNull pins the two partial-shape branches: a
+// section WITHOUT the apps_blocklist key gains the key with the pattern, and
+// an explicit null key becomes a real sequence — both strict-Load green.
+func TestWriter_AppendAbsentKeyAndNull(t *testing.T) {
+	t.Run("absent key", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocNoBlocklistKeyYAML)
+		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+			t.Fatalf("AppendAutocorrectBlocklist without the key: %v", err)
+		}
+		cfg, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("reload after key insert: %v", err)
+		}
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+			t.Errorf("blocklist after key insert = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
+		}
+	})
+
+	t.Run("explicit null", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocNullBlocklistYAML)
+		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+			t.Fatalf("AppendAutocorrectBlocklist on a null key: %v", err)
+		}
+		cfg, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("reload after null replace: %v", err)
+		}
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+			t.Errorf("blocklist after null replace = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
+		}
+	})
+}
+
+// TestWriter_AppendInsertsMissingSection pins the insertion branch: a valid
+// document WITHOUT the autocorrect section gains a WHOLE five-key mapping
+// (enabled at the D-54 default + thresholds from the Defaults) with the
+// pattern in place, and the rest of the document — another section's marker
+// comment included — survives.
+func TestWriter_AppendInsertsMissingSection(t *testing.T) {
+	path := writeWriterDoc(t, writerDocNoAutocorrectYAML)
+	if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+		t.Fatalf("AppendAutocorrectBlocklist without the section: %v", err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("load after insert: %v", err)
+	}
+	if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+		t.Errorf("inserted blocklist = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
+	}
+	if cfg.Autocorrect.Enabled {
+		t.Error("inserted autocorrect.enabled = true, want the D-54 default false — the append never enables the layer")
+	}
+	if cfg.Autocorrect.MinWordLen != 4 || cfg.Autocorrect.TrigramMargin != 2.0 || cfg.Autocorrect.TrigramFloor != 1.0 {
+		t.Errorf(
+			"inserted thresholds = %d/%v/%v, want the Defaults 4/2.0/1.0 — the section must be complete",
+			cfg.Autocorrect.MinWordLen, cfg.Autocorrect.TrigramMargin, cfg.Autocorrect.TrigramFloor,
+		)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after insert: %v", err)
+	}
+	if !strings.Contains(string(raw), "# marker — another section's comment must survive") {
+		t.Error("the hotkeys marker comment was lost — the insert regenerated the document")
+	}
+}
+
+// TestWriter_AppendDedupNoOp pins the dedup guard (D-01's mechanical
+// protection): appending a pattern already in the list is an idempotent
+// success and the file bytes are unchanged — no write happens at all.
+func TestWriter_AppendDedupNoOp(t *testing.T) {
+	path := writeWriterDoc(t, writerDocBlocklistYAML)
+	if err := config.AppendAutocorrectBlocklist(path, "org.gnome.Gedit"); err != nil {
+		t.Fatalf("AppendAutocorrectBlocklist (already listed): %v", err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read first result: %v", err)
+	}
+	if err := config.AppendAutocorrectBlocklist(path, "org.gnome.Gedit"); err != nil {
+		t.Fatalf("idempotent AppendAutocorrectBlocklist: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read second result: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("the repeated append changed the bytes — the dedup must be a byte-level no-op")
+	}
+}
+
+// TestWriter_AppendAtomicWrite pins the append's write discipline: no .tmp
+// artifacts stay in the directory after the rename, and the file mode is
+// owner-only 0600 (the TestWriter_AtomicWrite form, T-07-03-02).
+func TestWriter_AppendAtomicWrite(t *testing.T) {
+	path := writeWriterDoc(t, writerDocYAML)
+	if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+		t.Fatalf("AppendAutocorrectBlocklist: %v", err)
+	}
+	dir := filepath.Dir(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read directory: %v", err)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".tmp") {
+			t.Errorf("temp artifact %s left in the config directory — the rename never completed", e.Name())
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat result: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("result mode = %v, want -rw------- (0600)", got)
+	}
+}
+
+// TestWriter_AppendBrokenSourceUntouched pins the failure atomicity of the
+// append: a source the writer cannot land (unparseable YAML, a non-mapping
+// root, or an edited RESULT the strict decoder would reject) yields an error
+// and leaves the original file byte-equal.
+func TestWriter_AppendBrokenSourceUntouched(t *testing.T) {
+	t.Run("unparseable yaml", func(t *testing.T) {
+		path := writeWriterDoc(t, writerBrokenYAML)
+		before, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read broken source: %v", readErr)
+		}
+		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err == nil {
+			t.Fatal("the append on a broken document returned nil — the broken YAML went unnoticed")
+		}
+		after, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read untouched source: %v", readErr)
+		}
+		if !bytes.Equal(before, after) {
+			t.Error("the broken source file changed — a failed write must leave the original byte-equal")
+		}
+	})
+
+	t.Run("scalar document", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocScalarDocumentYAML)
+		before, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read scalar source: %v", readErr)
+		}
+		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err == nil {
+			t.Fatal("the append on a scalar document returned nil — there is no mapping to hold a section")
+		}
+		after, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read untouched source: %v", readErr)
+		}
+		if !bytes.Equal(before, after) {
+			t.Error("the scalar source file changed — a failed write must leave the original byte-equal")
+		}
+	})
+
+	t.Run("sequence document", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocSeqDocumentYAML)
+		before, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read sequence source: %v", readErr)
+		}
+		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err == nil {
+			t.Fatal("the append on a sequence document returned nil — there is no mapping to hold a section")
+		}
+		after, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read untouched source: %v", readErr)
+		}
+		if !bytes.Equal(before, after) {
+			t.Error("the sequence source file changed — a failed write must leave the original byte-equal")
+		}
+	})
+
+	t.Run("edited result fails the strict load", func(t *testing.T) {
+		path := writeWriterDoc(t, writerDocUnknownKeyYAML)
+		before, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read unknown-key source: %v", readErr)
+		}
+		err := config.AppendAutocorrectBlocklist(path, "chrom")
+		if err == nil {
+			t.Fatal("the append on a document with an unknown key returned nil — the writer persisted a document the strict decoder rejects")
+		}
+		if !strings.Contains(err.Error(), "validate") {
+			t.Errorf("error %q does not name the strict-validation refusal", err)
+		}
+		after, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read untouched source: %v", readErr)
+		}
+		if !bytes.Equal(before, after) {
+			t.Error("the unknown-key source file changed — the pre-write refusal must leave the original byte-equal")
+		}
+	})
+}
+
+// TestWriter_AppendEmptyPatternRefused pins the empty-pattern guard: an
+// empty or blank pattern is a VALID RE2 that matches everything — the strict
+// Load would reject the whole edited document, so the append refuses before
+// any bytes land and the file stays byte-equal (T-07-02-03's trap, the
+// pre-write mirror).
+func TestWriter_AppendEmptyPatternRefused(t *testing.T) {
+	for _, pattern := range []string{"", "   "} {
+		path := writeWriterDoc(t, writerDocBlocklistYAML)
+		before, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read source: %v", err)
+		}
+		if err := config.AppendAutocorrectBlocklist(path, pattern); err == nil {
+			t.Fatalf("blank pattern %q accepted, want a refusal before the write", pattern)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read untouched source: %v", err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Errorf("the blank-pattern append %q changed the file — the refusal must leave the original byte-equal", pattern)
+		}
 	}
 }
