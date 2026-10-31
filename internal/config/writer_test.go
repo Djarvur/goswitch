@@ -464,12 +464,22 @@ autocorrect:
   trigram_floor: 1.0
 `
 
-// writerDocNoBlocklistKeyYAML carries the autocorrect section WITHOUT the
-// apps_blocklist key — the absent-key corpus: the append creates the key.
+// writerDocNoBlocklistKeyYAML carries a complete Load-valid document whose
+// autocorrect section lacks the apps_blocklist key — the absent-key corpus:
+// the append creates the key (an autocorrect-only document would be refused
+// by the strict pre-write validation, D-33 — the daemon never accepted
+// partial documents).
 const writerDocNoBlocklistKeyYAML = `# goswitch config — hand-tuned
 hotkeys:
   tap_key: shift_r
   word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
 autocorrect:
   enabled: false # the section exists, the blocklist key does not
   min_word_len: 4
@@ -477,9 +487,20 @@ autocorrect:
   trigram_floor: 1.0
 `
 
-// writerDocNullBlocklistYAML carries an explicit null blocklist key — the
-// null corpus: the append replaces the null with a real sequence.
+// writerDocNullBlocklistYAML is a complete Load-valid document with an
+// explicit null blocklist key — the null corpus: the append replaces the
+// null with a real sequence.
 const writerDocNullBlocklistYAML = `# goswitch config — hand-tuned
+hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: true
 autocorrect:
   enabled: false
   apps_blocklist:
@@ -531,7 +552,7 @@ func goldenAddedLines(t *testing.T, before, after []byte) []string {
 		added = append(added, line)
 	}
 	if consumed != len(beforeLines) {
-		t.Fatalf("the write removed, reordered or edited %d existing lines — the golden diff is broken", len(beforeLines)-consumed)
+		t.Fatalf("golden diff broken: the write moved %d existing lines", len(beforeLines)-consumed)
 	}
 
 	return added
@@ -554,6 +575,13 @@ func assertAppendCommentsSurvive(t *testing.T, raw []byte) {
 	}
 }
 
+// The append corpus's own names (the goconst discipline — the shared
+// appGedit and acBlockSubstr live in config_test.go of this test package).
+const (
+	appWezterm   = "wezterm"
+	blankPattern = "   "
+)
+
 // TestWriter_AppendRoundTrip pins the append's one path — disk → Node →
 // disk → Load: the pattern lands in the file and the whole document reads
 // BACK through the strict Load (the FlipRoundTrip form; a test without the
@@ -561,15 +589,15 @@ func assertAppendCommentsSurvive(t *testing.T, raw []byte) {
 func TestWriter_AppendRoundTrip(t *testing.T) {
 	t.Run("joins the listed pattern", func(t *testing.T) {
 		path := writeWriterDoc(t, writerDocBlocklistYAML)
-		if err := config.AppendAutocorrectBlocklist(path, "wezterm"); err != nil {
+		if err := config.AppendAutocorrectBlocklist(path, appWezterm); err != nil {
 			t.Fatalf("AppendAutocorrectBlocklist: %v", err)
 		}
 		cfg, err := config.Load(path)
 		if err != nil {
 			t.Fatalf("reload appended config: %v", err)
 		}
-		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"org.gnome.Gedit", "wezterm"}) {
-			t.Errorf("reloaded blocklist = %v, want the original entry followed by the append", cfg.Autocorrect.AppsBlocklist)
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{appGedit, appWezterm}) {
+			t.Errorf("reloaded blocklist = %v, want original entry + append", cfg.Autocorrect.AppsBlocklist)
 		}
 		if cfg.Autocorrect.Enabled {
 			t.Error("the append switched autocorrect.enabled on — blocking an app never enables the layer (D-54)")
@@ -578,14 +606,14 @@ func TestWriter_AppendRoundTrip(t *testing.T) {
 
 	t.Run("fills the empty list", func(t *testing.T) {
 		path := writeWriterDoc(t, writerDocYAML)
-		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+		if err := config.AppendAutocorrectBlocklist(path, acBlockSubstr); err != nil {
 			t.Fatalf("AppendAutocorrectBlocklist: %v", err)
 		}
 		cfg, err := config.Load(path)
 		if err != nil {
 			t.Fatalf("reload appended config: %v", err)
 		}
-		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{acBlockSubstr}) {
 			t.Errorf("reloaded blocklist = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
 		}
 	})
@@ -601,7 +629,7 @@ func TestWriter_AppendGoldenDiff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read before: %v", err)
 	}
-	if err := config.AppendAutocorrectBlocklist(path, "wezterm"); err != nil {
+	if err := config.AppendAutocorrectBlocklist(path, appWezterm); err != nil {
 		t.Fatalf("AppendAutocorrectBlocklist: %v", err)
 	}
 	after, err := os.ReadFile(path)
@@ -612,8 +640,8 @@ func TestWriter_AppendGoldenDiff(t *testing.T) {
 	if len(added) != 1 {
 		t.Fatalf("the append changed %d lines (%v), want exactly one new list line", len(added), added)
 	}
-	if strings.TrimSpace(added[0]) != "- wezterm" {
-		t.Errorf("the new line = %q, want the plain block-sequence item - wezterm", added[0])
+	if strings.TrimSpace(added[0]) != "- "+appWezterm {
+		t.Errorf("the new line = %q, want the plain block-sequence item - %s", added[0], appWezterm)
 	}
 	assertAppendCommentsSurvive(t, after)
 }
@@ -624,14 +652,14 @@ func TestWriter_AppendGoldenDiff(t *testing.T) {
 // and the created document passes the strict Load.
 func TestWriter_AppendAbsentFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml") // absent — the test never creates it
-	if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+	if err := config.AppendAutocorrectBlocklist(path, acBlockSubstr); err != nil {
 		t.Fatalf("AppendAutocorrectBlocklist on an absent file: %v", err)
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("load created document: %v", err)
 	}
-	if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+	if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{acBlockSubstr}) {
 		t.Errorf("created blocklist = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
 	}
 	if cfg.Autocorrect.Enabled {
@@ -643,7 +671,7 @@ func TestWriter_AppendAbsentFile(t *testing.T) {
 			cfg.Autocorrect.MinWordLen, cfg.Autocorrect.TrigramMargin, cfg.Autocorrect.TrigramFloor,
 		)
 	}
-	if cfg.Hotkeys.TapKey != "shift_r" || cfg.Timeouts.TapWindowMs != 300 {
+	if cfg.Hotkeys.TapKey != defTapKey || cfg.Timeouts.TapWindowMs != 300 {
 		t.Errorf("the rest of the created document changed: hotkeys/timeouts = %v/%v", cfg.Hotkeys, cfg.Timeouts)
 	}
 }
@@ -654,28 +682,28 @@ func TestWriter_AppendAbsentFile(t *testing.T) {
 func TestWriter_AppendAbsentKeyAndNull(t *testing.T) {
 	t.Run("absent key", func(t *testing.T) {
 		path := writeWriterDoc(t, writerDocNoBlocklistKeyYAML)
-		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+		if err := config.AppendAutocorrectBlocklist(path, acBlockSubstr); err != nil {
 			t.Fatalf("AppendAutocorrectBlocklist without the key: %v", err)
 		}
 		cfg, err := config.Load(path)
 		if err != nil {
 			t.Fatalf("reload after key insert: %v", err)
 		}
-		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{acBlockSubstr}) {
 			t.Errorf("blocklist after key insert = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
 		}
 	})
 
 	t.Run("explicit null", func(t *testing.T) {
 		path := writeWriterDoc(t, writerDocNullBlocklistYAML)
-		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+		if err := config.AppendAutocorrectBlocklist(path, acBlockSubstr); err != nil {
 			t.Fatalf("AppendAutocorrectBlocklist on a null key: %v", err)
 		}
 		cfg, err := config.Load(path)
 		if err != nil {
 			t.Fatalf("reload after null replace: %v", err)
 		}
-		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+		if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{acBlockSubstr}) {
 			t.Errorf("blocklist after null replace = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
 		}
 	})
@@ -688,14 +716,14 @@ func TestWriter_AppendAbsentKeyAndNull(t *testing.T) {
 // comment included — survives.
 func TestWriter_AppendInsertsMissingSection(t *testing.T) {
 	path := writeWriterDoc(t, writerDocNoAutocorrectYAML)
-	if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+	if err := config.AppendAutocorrectBlocklist(path, acBlockSubstr); err != nil {
 		t.Fatalf("AppendAutocorrectBlocklist without the section: %v", err)
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("load after insert: %v", err)
 	}
-	if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{"chrom"}) {
+	if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{acBlockSubstr}) {
 		t.Errorf("inserted blocklist = %v, want [chrom]", cfg.Autocorrect.AppsBlocklist)
 	}
 	if cfg.Autocorrect.Enabled {
@@ -721,14 +749,14 @@ func TestWriter_AppendInsertsMissingSection(t *testing.T) {
 // success and the file bytes are unchanged — no write happens at all.
 func TestWriter_AppendDedupNoOp(t *testing.T) {
 	path := writeWriterDoc(t, writerDocBlocklistYAML)
-	if err := config.AppendAutocorrectBlocklist(path, "org.gnome.Gedit"); err != nil {
+	if err := config.AppendAutocorrectBlocklist(path, appGedit); err != nil {
 		t.Fatalf("AppendAutocorrectBlocklist (already listed): %v", err)
 	}
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read first result: %v", err)
 	}
-	if err := config.AppendAutocorrectBlocklist(path, "org.gnome.Gedit"); err != nil {
+	if err := config.AppendAutocorrectBlocklist(path, appGedit); err != nil {
 		t.Fatalf("idempotent AppendAutocorrectBlocklist: %v", err)
 	}
 	after, err := os.ReadFile(path)
@@ -745,7 +773,7 @@ func TestWriter_AppendDedupNoOp(t *testing.T) {
 // owner-only 0600 (the TestWriter_AtomicWrite form, T-07-03-02).
 func TestWriter_AppendAtomicWrite(t *testing.T) {
 	path := writeWriterDoc(t, writerDocYAML)
-	if err := config.AppendAutocorrectBlocklist(path, "chrom"); err != nil {
+	if err := config.AppendAutocorrectBlocklist(path, acBlockSubstr); err != nil {
 		t.Fatalf("AppendAutocorrectBlocklist: %v", err)
 	}
 	dir := filepath.Dir(path)
@@ -767,84 +795,54 @@ func TestWriter_AppendAtomicWrite(t *testing.T) {
 	}
 }
 
+// appendRefusedUntouched is the shared refusal oracle of the broken-source
+// corpus: the append on the corpus returns an error and the file stays
+// byte-equal — the failure-atomicity tail every subtest proves. The error
+// is returned for the caller's message assertions.
+func appendRefusedUntouched(t *testing.T, corpus string) error {
+	t.Helper()
+
+	path := writeWriterDoc(t, corpus)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	appendErr := config.AppendAutocorrectBlocklist(path, acBlockSubstr)
+	if appendErr == nil {
+		t.Fatal("the append returned nil — the broken source went unnoticed")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read untouched source: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("the source file changed — a failed write must leave the original byte-equal")
+	}
+
+	return appendErr
+}
+
 // TestWriter_AppendBrokenSourceUntouched pins the failure atomicity of the
 // append: a source the writer cannot land (unparseable YAML, a non-mapping
 // root, or an edited RESULT the strict decoder would reject) yields an error
 // and leaves the original file byte-equal.
 func TestWriter_AppendBrokenSourceUntouched(t *testing.T) {
 	t.Run("unparseable yaml", func(t *testing.T) {
-		path := writeWriterDoc(t, writerBrokenYAML)
-		before, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read broken source: %v", readErr)
-		}
-		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err == nil {
-			t.Fatal("the append on a broken document returned nil — the broken YAML went unnoticed")
-		}
-		after, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read untouched source: %v", readErr)
-		}
-		if !bytes.Equal(before, after) {
-			t.Error("the broken source file changed — a failed write must leave the original byte-equal")
-		}
+		_ = appendRefusedUntouched(t, writerBrokenYAML)
 	})
 
 	t.Run("scalar document", func(t *testing.T) {
-		path := writeWriterDoc(t, writerDocScalarDocumentYAML)
-		before, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read scalar source: %v", readErr)
-		}
-		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err == nil {
-			t.Fatal("the append on a scalar document returned nil — there is no mapping to hold a section")
-		}
-		after, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read untouched source: %v", readErr)
-		}
-		if !bytes.Equal(before, after) {
-			t.Error("the scalar source file changed — a failed write must leave the original byte-equal")
-		}
+		_ = appendRefusedUntouched(t, writerDocScalarDocumentYAML)
 	})
 
 	t.Run("sequence document", func(t *testing.T) {
-		path := writeWriterDoc(t, writerDocSeqDocumentYAML)
-		before, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read sequence source: %v", readErr)
-		}
-		if err := config.AppendAutocorrectBlocklist(path, "chrom"); err == nil {
-			t.Fatal("the append on a sequence document returned nil — there is no mapping to hold a section")
-		}
-		after, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read untouched source: %v", readErr)
-		}
-		if !bytes.Equal(before, after) {
-			t.Error("the sequence source file changed — a failed write must leave the original byte-equal")
-		}
+		_ = appendRefusedUntouched(t, writerDocSeqDocumentYAML)
 	})
 
 	t.Run("edited result fails the strict load", func(t *testing.T) {
-		path := writeWriterDoc(t, writerDocUnknownKeyYAML)
-		before, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read unknown-key source: %v", readErr)
-		}
-		err := config.AppendAutocorrectBlocklist(path, "chrom")
-		if err == nil {
-			t.Fatal("the append on a document with an unknown key returned nil — the writer persisted a document the strict decoder rejects")
-		}
+		err := appendRefusedUntouched(t, writerDocUnknownKeyYAML)
 		if !strings.Contains(err.Error(), "validate") {
 			t.Errorf("error %q does not name the strict-validation refusal", err)
-		}
-		after, readErr := os.ReadFile(path)
-		if readErr != nil {
-			t.Fatalf("read untouched source: %v", readErr)
-		}
-		if !bytes.Equal(before, after) {
-			t.Error("the unknown-key source file changed — the pre-write refusal must leave the original byte-equal")
 		}
 	})
 }
@@ -855,7 +853,7 @@ func TestWriter_AppendBrokenSourceUntouched(t *testing.T) {
 // any bytes land and the file stays byte-equal (T-07-02-03's trap, the
 // pre-write mirror).
 func TestWriter_AppendEmptyPatternRefused(t *testing.T) {
-	for _, pattern := range []string{"", "   "} {
+	for _, pattern := range []string{"", blankPattern} {
 		path := writeWriterDoc(t, writerDocBlocklistYAML)
 		before, err := os.ReadFile(path)
 		if err != nil {
@@ -869,7 +867,7 @@ func TestWriter_AppendEmptyPatternRefused(t *testing.T) {
 			t.Fatalf("read untouched source: %v", err)
 		}
 		if !bytes.Equal(before, after) {
-			t.Errorf("the blank-pattern append %q changed the file — the refusal must leave the original byte-equal", pattern)
+			t.Errorf("the append of %q changed the file — the refusal must keep the bytes", pattern)
 		}
 	}
 }

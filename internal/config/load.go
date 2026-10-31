@@ -24,7 +24,17 @@ func Load(path string) (*Config, error) {
 	}
 	defer func() { _ = f.Close() }() // read-only: the close error carries no signal
 
-	dec := yaml.NewDecoder(f)
+	return decodeValid(f)
+}
+
+// decodeValid decodes ONE document from r with the strict KnownFields
+// decoder and validates it — the Load semantics over an arbitrary reader.
+// The writer's pre-write gate (plan 11-03) runs the SAME semantics over
+// the encoded result bytes in memory: a document the strict decoder would
+// reject never lands on disk (D-33, S5 — one Load, never a duplicated
+// decoder).
+func decodeValid(r io.Reader) (*Config, error) {
+	dec := yaml.NewDecoder(r)
 	dec.KnownFields(true) // D-33: a typo'd key invalidates the whole config.
 
 	var cfg Config
