@@ -283,6 +283,28 @@ func runMenuBlocklist(ctx context.Context, s *stand) error {
 	return nil
 }
 
+// blocklistObserverRound is the observer-start round in the VM-stand form
+// (the 10-08 machine-activation discipline): the zenity control spawns, the
+// daemon focus_in gate PROVOKES the pair with the ydotool center-click
+// nudge, and the single boundary-free keystroke starts the daemon's lazy
+// a11y observer without moving any autocorrect counter. The host-era
+// acStartObserverRound (waitZenityEntry) rides the 30-minute human-click
+// manual-activation budget — a budget this unattended venue cannot spend
+// (the 11-05 live finding: the first run hung the whole case watchdog on
+// it); the proceed signal stays the daemon's own focus_in.
+func (s *stand) blocklistObserverRound(ctx context.Context, caseName string) error {
+	focusBase := s.focusBaseline()
+	if err := s.startZenity(ctx); err != nil {
+		return err
+	}
+	defer s.reapZenity()
+	if err := s.waitFocusInFrom(ctx, caseName, "zenity observer round", focusBase); err != nil {
+		return err
+	}
+
+	return s.injectText(ctx, "x")
+}
+
 // blocklistObserveFixture runs the observation prologue (the
 // runAutocorrectBlocklistSilent shape): the observer-start round wakes the
 // daemon's lazy a11y source (the 07-06 live finding — the daemon's
@@ -292,7 +314,7 @@ func runMenuBlocklist(ctx context.Context, s *stand) error {
 // the click. The started fixture is the caller's to reap (the case's
 // deferred reap) — it must stay focused through the silence round.
 func blocklistObserveFixture(ctx context.Context, s *stand) (witness, app string, err error) {
-	if err := s.acStartObserverRound(ctx); err != nil {
+	if err := s.blocklistObserverRound(ctx, caseMenuBlocklist); err != nil {
 		return "", "", err
 	}
 	obs, err := appid.Start(ctx)
