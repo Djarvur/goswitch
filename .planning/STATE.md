@@ -5,11 +5,11 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 11
 current_phase_name: MENU — пункт «в чёрный список»
 status: planning
-stopped_at: Phase 10 complete, ready to plan Phase 11
-last_updated: "2026-10-31T10:10:33.136Z"
+stopped_at: Phase 11 context gathered
+last_updated: "2026-10-31T13:33:20.988Z"
 last_activity: 2026-10-31
 last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: a3523874946d608eaac83ceb5e753654b406d34b
+state_head: 9b97a976449109fe3555cbf582c1349b3f36054b
 progress:
   total_phases: 5
   completed_phases: 2
@@ -141,9 +141,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-31T10:12:00Z
-Stopped at: Phases 9-10 verified complete (UAT, VERIFICATION passed, SECURITY 0 open); Phase 11 (MENU) next — discuss then plan
-Resume file: None
+Last session: 2026-10-31T13:33:20.883Z
+Stopped at: Phase 11 context gathered
+Resume file: .planning/phases/11-menu-punkt-v-chernyy-spisok/11-CONTEXT.md
 
 ## Operator Next Steps
 
