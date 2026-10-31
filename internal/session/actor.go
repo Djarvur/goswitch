@@ -1630,6 +1630,21 @@ func (a *Actor) pushBlocklistAppLocked() {
 	a.menuSync.SetBlocklistApp(app, fresh, covered, full)
 }
 
+// EnsureAppid is the public wrapper over the lazy observer start (plan
+// 11-04 wires it into OnConn — the unconditional-start cure of Pitfall 2:
+// the lazy condition must not leave the blocklist item dead on a default
+// D-54-off install). RED stub: no-op.
+func (a *Actor) EnsureAppid() {
+}
+
+// BlocklistAppState is the composition accessor (plan 11-04's only state
+// channel): app+known (known requires FRESHNESS — a stale cache name never
+// leaks to the composition, D-03), covered and full per the same snapshot
+// computation the menu pushes ride. RED stub: the zero unknown.
+func (a *Actor) BlocklistAppState() (app string, known, covered, full bool) {
+	return "", false, false, false
+}
+
 // SoundSink is the acoustic-feedback seam (plan 07-08, the owner's «Звуки
 // при переключении»): Flip plays the flip tone, AutoCorrect the distinct
 // autocorrect tone, SetAutocorrectEvent re-pins that tone's document event

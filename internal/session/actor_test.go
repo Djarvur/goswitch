@@ -5201,6 +5201,199 @@ func TestActor_BlocklistItemFreshMachine(t *testing.T) {
 	})
 }
 
+// TestActor_BlocklistFoldRecompute pins the fold's push moment ((в) of the
+// RESEARCH push moments): a document whose apps_blocklist GREW recomputes
+// covered/full and pushes SetBlocklistApp WITHOUT any click — the checkmark
+// and the fill state follow the document, not only the gain (pushMenuSync
+// discipline: synchronous under the mutex, quick, the menu dedupes). The
+// covered match is the GATE's discipline: any compiled pattern matched by
+// re.MatchString against the FRESH identity.
+func TestActor_BlocklistFoldRecompute(t *testing.T) {
+	t.Run("document with the identity's pattern flips covered without a click", func(t *testing.T) {
+		a, _ := wiredActor()
+		ms := &fakeMenuSync{}
+		a.SetMenuSync(ms)
+		src := &reloadSource{cfg: config.Defaults()}
+		a.AttachConfig(src)
+
+		a.PushFocusedApp("gedit")
+		last := ms.menuBlocklist()
+		if len(last) == 0 || last[len(last)-1].covered {
+			t.Fatalf("pre-fold push = %+v, want covered=false before the document grows", last)
+		}
+
+		cfg := config.Defaults()
+		cfg.Autocorrect.AppsBlocklist = []string{"gedit"}
+		src.set(cfg)
+		a.FoldAppliedConfig()
+
+		pushes := ms.menuBlocklist()
+		if len(pushes) != len(last)+1 {
+			t.Fatalf("the fold pushed %d states (had %d), want exactly one more", len(pushes)-len(last), len(last))
+		}
+		want := blocklistPush{app: "gedit", fresh: true, covered: true}
+		if pushes[len(pushes)-1] != want {
+			t.Errorf("fold push = %+v, want %+v — covered without a click", pushes[len(pushes)-1], want)
+		}
+	})
+
+	t.Run("ceiling document flips full without a click", func(t *testing.T) {
+		a, _ := wiredActor()
+		ms := &fakeMenuSync{}
+		a.SetMenuSync(ms)
+		src := &reloadSource{cfg: config.Defaults()}
+		a.AttachConfig(src)
+
+		a.PushFocusedApp("org.gnome.other")
+
+		full := make([]string, config.MaxAutocorrectBlocklist)
+		for i := range full {
+			full[i] = fmt.Sprintf("pattern-%02d", i)
+		}
+		cfg := config.Defaults()
+		cfg.Autocorrect.AppsBlocklist = full
+		src.set(cfg)
+		a.FoldAppliedConfig()
+
+		pushes := ms.menuBlocklist()
+		if len(pushes) == 0 {
+			t.Fatal("no pushes recorded")
+		}
+		last := pushes[len(pushes)-1]
+		if !last.full {
+			t.Errorf("fold push = %+v, want full=true at the 64-pattern document", last)
+		}
+		if last.covered {
+			t.Errorf("fold push = %+v, want covered=false — the identity matches no pattern", last)
+		}
+	})
+
+	t.Run("freshness beats the cache on the fold too", func(t *testing.T) {
+		a, _ := wiredActor()
+		ms := &fakeMenuSync{}
+		a.SetMenuSync(ms)
+		src := &reloadSource{cfg: config.Defaults()}
+		a.AttachConfig(src)
+
+		a.PushFocusedApp("gedit")
+		a.HandleLifecycle(engine.LifecycleFocusOut) // the real loss clears freshness
+
+		cfg := config.Defaults()
+		cfg.Autocorrect.AppsBlocklist = []string{"gedit"}
+		src.set(cfg)
+		a.FoldAppliedConfig()
+
+		pushes := ms.menuBlocklist()
+		if len(pushes) == 0 {
+			t.Fatal("no pushes recorded")
+		}
+		last := pushes[len(pushes)-1]
+		if last.fresh || last.covered || last.app != "" {
+			t.Errorf("fold push after the real FocusOut = %+v, want the unknown state — freshness, not the cache, decides", last)
+		}
+	})
+}
+
+// TestActor_BlocklistAppState pins the composition accessor (the ONLY state
+// channel of the click composition, plan 11-04): known requires FRESHNESS
+// (a stale cache name never reads as known — D-03), covered rides the
+// gate's match discipline, full rides the document length at the ceiling.
+func TestActor_BlocklistAppState(t *testing.T) {
+	t.Run("unknown before any gain", func(t *testing.T) {
+		a, _ := wiredActor()
+
+		app, known, covered, full := a.BlocklistAppState()
+		if app != "" || known || covered || full {
+			t.Errorf("initial state = (%q, %t, %t, %t), want the zero unknown", app, known, covered, full)
+		}
+	})
+
+	t.Run("known requires freshness", func(t *testing.T) {
+		a, _ := wiredActor()
+		a.PushFocusedApp("gedit")
+		a.HandleLifecycle(engine.LifecycleFocusOut) // real loss
+
+		app, known, _, _ := a.BlocklistAppState()
+		if known || app != "" {
+			t.Errorf("state after the real FocusOut = (%q, %t), want unknown — the stale name must not leak to the composition", app, known)
+		}
+	})
+
+	t.Run("known fresh uncovered", func(t *testing.T) {
+		a, _ := wiredActor()
+		a.PushFocusedApp("gedit")
+
+		app, known, covered, full := a.BlocklistAppState()
+		if app != "gedit" || !known || covered || full {
+			t.Errorf("state = (%q, %t, %t, %t), want (gedit, true, false, false)", app, known, covered, full)
+		}
+	})
+
+	t.Run("covered by the document's pattern", func(t *testing.T) {
+		a, _ := wiredActor()
+		src := &reloadSource{cfg: config.Defaults()}
+		a.AttachConfig(src)
+		a.PushFocusedApp("gedit")
+		cfg := config.Defaults()
+		cfg.Autocorrect.AppsBlocklist = []string{"^gedit$"}
+		src.set(cfg)
+		a.FoldAppliedConfig()
+
+		_, known, covered, _ := a.BlocklistAppState()
+		if !known || !covered {
+			t.Errorf("state = (known %t, covered %t), want known+covered by ^gedit$", known, covered)
+		}
+	})
+
+	t.Run("full at the ceiling document", func(t *testing.T) {
+		a, _ := wiredActor()
+		src := &reloadSource{cfg: config.Defaults()}
+		a.AttachConfig(src)
+		a.PushFocusedApp("org.gnome.other")
+
+		full := make([]string, config.MaxAutocorrectBlocklist)
+		for i := range full {
+			full[i] = fmt.Sprintf("pattern-%02d", i)
+		}
+		cfg := config.Defaults()
+		cfg.Autocorrect.AppsBlocklist = full
+		src.set(cfg)
+		a.FoldAppliedConfig()
+
+		_, known, covered, fullState := a.BlocklistAppState()
+		if !known || covered || !fullState {
+			t.Errorf("state = (known %t, covered %t, full %t), want known, uncovered, full", known, covered, fullState)
+		}
+	})
+}
+
+// TestActor_EnsureAppidUnconditional pins the Pitfall-2 cure: the lazy
+// start's condition (a non-empty macr list OR enabled autocorrect) must NOT
+// gate the blocklist item's observer — with autocorrect OFF (the D-54
+// default) and an EMPTY macr list, EnsureAppid starts the observer anyway,
+// or the item would stay dead forever on a default install.
+func TestActor_EnsureAppidUnconditional(t *testing.T) {
+	a, _ := wiredActor()
+	starts := 0
+	a.UseAppidStarter(func() (session.AppidSource, error) {
+		starts++
+		return fakeAppid{app: "org.gnome.Zenity"}, nil
+	})
+	// AutoCorrectEnabled=false and MACR empty — the ensureAppid condition
+	// would refuse.
+
+	a.EnsureAppid()
+
+	if starts != 1 {
+		t.Fatalf("observer starts after EnsureAppid = %d, want exactly 1 — the item must live without autocorrect (Pitfall 2)", starts)
+	}
+	// Idempotent: the once-per-actor discipline stands.
+	a.EnsureAppid()
+	if starts != 1 {
+		t.Errorf("observer starts after the second EnsureAppid = %d, want still 1", starts)
+	}
+}
+
 // TestActor_SwitchModeFlipsToTarget pins the radio pair's gesture (plan
 // 07-05): SwitchMode drives the SAME flipTo execution path — the target
 // mode's switch, the byte-stable mode record, one panel symbol — and the
