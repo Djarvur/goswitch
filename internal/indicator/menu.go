@@ -85,12 +85,21 @@ const (
 	// state serves it WITHOUT the app name and WITHOUT any explanatory
 	// text (D-03, the owner's «не пишем ничего»).
 	labelBlocklistApp = "Добавить в чёрный список"
+	// labelBlocklistFull is the FULL state's label (the ceiling's visible
+	// refusal — S9: уведомления на этом столе невидимы, отказ виден
+	// состоянием пункта; формулировка — дискреция владельца A5). The 64
+	// figure mirrors config.MaxAutocorrectBlocklist (plan 11-03, the single
+	// source); the reconciliation rides plan 11-04's point edit, as the
+	// session-side autocorrectBlocklistCeil does.
+	labelBlocklistFull = "Чёрный список заполнен — 64/64"
 
 	// The macro-row wrappers (canonical layout, research A4): RU text around
 	// the RAW config key names — the menu renders, the actor never
-	// transforms.
+	// transforms. The chord's tail is « — язык» (D-04, the owner's decision
+	// 2026-10-27: super+space is the SAME language flip as the single tap —
+	// the honest label, the same tail as the «1× … — язык» row).
 	macroComboWhat = " — слово и язык"
-	macroChordWhat = " — смена режима"
+	macroChordWhat = " — язык"
 
 	// The tap-series counts of the macro rows (canonical: 1× язык, 2×
 	// слово, 3× фраза).
@@ -456,6 +465,10 @@ func (m *Menu) dispatchClick(id int32) {
 		if m.cb.ToggleAutocorrect != nil {
 			m.cb.ToggleAutocorrect()
 		}
+	case menuIDBlocklistApp:
+		if m.cb.BlockCurrentApp != nil {
+			m.cb.BlockCurrentApp()
+		}
 	case menuIDSoundToggle:
 		if m.cb.ToggleSound != nil {
 			m.cb.ToggleSound()
@@ -550,19 +563,41 @@ func (m *Menu) checkProps(id int32) map[string]dbus.Variant {
 }
 
 // blocklistProps builds the blocklist item's snapshot render (phase 11,
-// MENU-01): a FRESH identity serves the named label enabled («Добавить
-// <имя> в чёрный список», the name through the mnemonic doubling — Pitfall
-// 4); anything else — an empty state or a stale (fresh=false) cache entry —
-// serves the STATIC label disabled, without the name and without any
-// explanatory text (D-03, the owner's «не пишем ничего»). Props are
-// computed AT REQUEST TIME from the snapshot (S1, D-02 — no live a11y
-// query ever serves the menu).
+// MENU-01) — the full state machine, computed AT REQUEST TIME from the
+// snapshot (S1, D-02: no live a11y query ever serves the menu). The
+// priority ladder: UNKNOWN (an empty state or a stale fresh=false one —
+// freshness, not the cache, decides) → the static label disabled without
+// the name and without explanations (D-03); COVERED → the named label
+// enabled with the checkmark (D-01 — the click is the safe dedup no-op,
+// the composition's guard, plan 11-04); FULL without coverage → the
+// visible fill state disabled (S9: the refusal is the item's state, never
+// a desktop notification); otherwise ACTIVE → the named label enabled.
+// COVERED beats FULL (an already-listed app must show its checkmark even
+// at the ceiling). Every state is a visible checkmark-carrying standard
+// row; the name rides the mnemonic doubling (Pitfall 4).
 func (m *Menu) blocklistProps() map[string]dbus.Variant {
-	if m.blFresh && m.blApp != "" {
-		return standardProps(blocklistLabel(m.blApp), true)
+	switch {
+	case !m.blFresh || m.blApp == "":
+		return blocklistRow(labelBlocklistApp, false, false)
+	case m.blCovered:
+		return blocklistRow(blocklistLabel(m.blApp), true, true)
+	case m.blFull:
+		return blocklistRow(labelBlocklistFull, false, false)
 	}
 
-	return standardProps(labelBlocklistApp, false)
+	return blocklistRow(blocklistLabel(m.blApp), true, false)
+}
+
+// blocklistRow is the blocklist item's prop set: a visible standard row
+// with the checkmark ornament (D-01's carrier), the enable flag and the
+// toggle-state per the state machine — the free form toggleProps cannot
+// serve (it hardwires enabled).
+func blocklistRow(label string, enabled, covered bool) map[string]dbus.Variant {
+	p := baseProps(label, enabled, true)
+	p[menuPropToggleType] = dbus.MakeVariant(menuToggleCheckmark)
+	p[menuPropToggleState] = dbus.MakeVariant(stateInt(covered))
+
+	return p
 }
 
 // blocklistLabel renders the item's named label; the app name rides the

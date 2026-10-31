@@ -96,7 +96,7 @@ click opens the v1.1 menu —
 - greyed macro hints with the live key names from the config —
   `1× <key> — язык`, `2× <key> — слово`, `3× <key> — фраза`, the
   correct-and-switch combination (`<combo> — слово и язык`) and the
-  mode-switch combination (`<chord> — смена режима`) — refreshed on every
+  mode-switch combination (`<chord> — язык`) — refreshed on every
   config reload;
 - **Настройки…** — opens `config.yaml` in the system editor;
 - a greyed About info row carrying the build identity (`goswitch` and
