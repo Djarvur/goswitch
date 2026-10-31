@@ -103,7 +103,7 @@ Plans:
   3. Когда личность приложения неизвестна (snap, wezterm/winit) — пункт неактивен с объяснением; демон не угадывает и не пишет мусорные паттерны вида :1.NN
   4. Имя приложения с метасимволами regex не ломает конфиг: после записи через меню строгий декодер (KnownFields) принимает файл целиком; при отказе (потолок 64) пользователь получает уведомление из трея
 
-**Plans**: 2/5 plans executed
+**Plans**: 3/5 plans executed
 
 Plans:
 **Wave 1**
@@ -113,7 +113,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 11-02-PLAN.md — пункт меню id 16: трассер identity→меню (freshness), машина состояний, D-04 *(depends on 11-01: правит ту же область HandleLifecycle actor.go — пины берутся по post-fix файлу)*
+- [x] 11-02-PLAN.md — пункт меню id 16: трассер identity→меню (freshness), машина состояний, D-04 *(depends on 11-01: правит ту же область HandleLifecycle actor.go — пины берутся по post-fix файлу)*
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -162,7 +162,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 9. Спайк и дефект wezterm | v1.2 | 2/2 | Complete    | 2026-10-20 |
 | 10. TERM-слово | v1.2 | 16/16 | Complete    | 2026-10-20 |
-| 11. MENU — пункт «в чёрный список» | v1.2 | 2/5 | In Progress|  |
+| 11. MENU — пункт «в чёрный список» | v1.2 | 3/5 | In Progress|  |
 | 12. TERM-строка | v1.2 | 0/? | Not started | - |
 | 13. A11Y — рецепты Telegram/ZCode | v1.2 | 0/? | Not started | - |
 

@@ -5,16 +5,16 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 11
 current_phase_name: MENU — пункт «в чёрный список»
 status: executing
-stopped_at: Completed 11-03-PLAN.md
-last_updated: "2026-10-31T21:22:04.967Z"
+stopped_at: Completed 11-02-PLAN.md
+last_updated: "2026-10-31T22:14:46.081Z"
 last_activity: 2026-10-31
 last_activity_desc: Phase 11 execution started
-state_head: 3f7b5b5d1917485d8888215cac1a65831bfcb06c
+state_head: e1278a69d2d2c3877c5a03cbc5384b2e28ee9945
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 23
-  completed_plans: 19
+  completed_plans: 20
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 ## Current Position
 
 Phase: 11 (MENU — пункт «в чёрный список») — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-10-31 — Phase 11 execution started
 
@@ -68,6 +68,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 09 P02 | 4d live arc (2026-10-08..12) + close-out | 2 tasks | 28 files |
 | Phase 11 P01 | 51min | 2 tasks | 6 files |
 | Phase 11 P03 | 34min | 2 tasks | 5 files |
+| Phase 11 P02 | 46min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,8 @@ Recent decisions affecting current work:
 - [Phase 11]: Pre-write валидация writer-метода одноисточна: decodeValid извлечён в load.go — Load и append-гейт (11-03) делят одну строгую семантику KnownFields+Validate, дублированного декодера нет
 - [Phase 11]: Потолок 64 appends-пути стоит ПОСЛЕ дедупа и ДО append: sentinel errAutocorrectBlocklistOverCeil называет ТЕКУЩИЙ размер списка; MaxAutocorrectBlocklist экспортирован — единый источник для validate/writer/actor(11-02)/menu(11-04)
 - [Phase 11]: Форма-отказ apps_blocklist (не последовательность) реализован на writer-уровне уже в Задаче 1 (errWriterBlocklistNotSequence) — append ребёнка в скаляр портит документ; тест Задачи 2 пинит готовое поведение
+- [Phase 11]: Freshness = actor-snapshot, не меню и не кэш: blApp/blFresh под a.mu; пустая/несвежая identity никогда не доходит до меню и композиции (аксессор отдаёт пустое имя при !known — двойной барьер против D-03-мусора); сброс ТОЛЬКО на реальном FocusOut, synthetic-флип G-2-3 и Reset не трогают
+- [Phase 11]: EnsureAppid — обёртка над startAppidOnce, а НЕ над ensureAppid: буквально-«обёртка» оставила бы ленивое условие в силе (Pitfall 2 — пункт мёртв при D-54-дефолте); обход условия при сохранении once-per-actor пойман GREEN-прогоном и записан отклонением Rule 1
 
 ### Pending Todos
 
@@ -146,8 +149,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-31T21:21:10.815Z
-Stopped at: Completed 11-03-PLAN.md
+Last session: 2026-10-31T22:14:25.203Z
+Stopped at: Completed 11-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
