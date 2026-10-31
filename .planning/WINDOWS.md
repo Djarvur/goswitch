@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 11
 waived_count: 4
 fixed_count: 7
-total_count: 21
-last_updated: 2026-10-20T14:00:23.408Z
+total_count: 22
+last_updated: 2026-10-31T20:39:21.173Z
 ---
 
 # Broken Windows Ledger
@@ -36,6 +36,7 @@ last_updated: 2026-10-20T14:00:23.408Z
 | 19 | 10 | unrun-verify | .planning/debug/DEBUG-term-host-live-failures.md |  | 10-12 D4: вердикт re-acceptance round-2 (шесть пунктов, закрывающий оракул G-10-1) — ОЖИДАНИЕ ответа владельца; grep-гейт матчится с текстом инструкции, не с вердиктом | open |  | 2026-10-14T10:03:44.986Z |  |
 | 20 | 10 | unrun-verify | .planning/debug/DEBUG-term-host-live-failures.md | 556 | Вердикт владельца round-4 (гейт: слово в wezterm ОСТАЁТСЯ на v1.1.1-180-gefac750) — human-check честно ОЖИДАЕТ; UAT Current Test №5 pending; не синтезируется | open |  | 2026-10-16T21:57:28.487Z |  |
 | 21 | 9 | unrun-verify | .planning/phases/09-spayk-i-defekt-wezterm/09-02-SUMMARY.md | 72 | 09-02 (D3–D5): живые раунды R2–R6, полная лестница P1–P5 и two-round wezterm-flip RED-контракт не исполнены — владелец прекратил участие в живых тестах 2026-10-12 (T2-ядро: фоновые окна клавиатурно мертвы); ряды не синтезированы; capability-потребитель Фаз 10/12 обслужен стенд-рядами Фазы 10 (adr-008-spike-log.md) | open |  | 2026-10-20T14:00:23.408Z |  |
+| 22 | 11 | unrun-verify | .planning/debug/orca-terminal-second-shift.md |  | Round 2 journal-verify: живой ряд «следующая коррекция с одного нажатия + lifecycle aftermath=true» не снят — владелец вышел из сессии 23:21; демон активен, ряд завершится на следующей сессии; by-ear зачёт — UAT end-of-phase (G-10-1) | open |  | 2026-10-31T20:39:21.173Z |  |
 
 ````json
 [
@@ -289,6 +290,18 @@ last_updated: 2026-10-20T14:00:23.408Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-20T14:00:23.408Z",
+    "resolved_at": null
+  },
+  {
+    "id": 22,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": ".planning/debug/orca-terminal-second-shift.md",
+    "line": null,
+    "description": "Round 2 journal-verify: живой ряд «следующая коррекция с одного нажатия + lifecycle aftermath=true» не снят — владелец вышел из сессии 23:21; демон активен, ряд завершится на следующей сессии; by-ear зачёт — UAT end-of-phase (G-10-1)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-31T20:39:21.173Z",
     "resolved_at": null
   }
 ]
