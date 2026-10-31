@@ -857,11 +857,14 @@ func TestBlocklistClickTracer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read the clicked document: %v", err)
 		}
-		if !bytes.Contains(raw, []byte("- "+blocklistTestApp)) {
+		if !bytes.Contains(raw, []byte(blocklistTestApp)) {
 			t.Errorf("the clicked document does not carry the landed pattern; doc:\n%s", raw)
 		}
-		if _, err := config.Load(path); err != nil { // the strict re-read is green — SC1
+		cfg, err := config.Load(path) // the strict re-read is green, the pattern is listed — SC1
+		if err != nil {
 			t.Errorf("the clicked document refuses a strict load: %v", err)
+		} else if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{blocklistTestApp}) {
+			t.Errorf("the reloaded blocklist = %v, want exactly [%s]", cfg.Autocorrect.AppsBlocklist, blocklistTestApp)
 		}
 		pushes := ms.menuBlocklist()
 		if len(pushes) != 3 {
@@ -884,14 +887,19 @@ func TestBlocklistClickTracer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read the clicked document: %v", err)
 		}
-		if !bytes.Contains(raw, []byte(`- org\.example\.App\[1\]`)) {
+		const quoted = `org\.example\.App\[1\]`
+		if !bytes.Contains(raw, []byte(quoted)) {
 			t.Errorf("the document does not carry the QuoteMeta literal; doc:\n%s", raw)
 		}
-		if bytes.Contains(raw, []byte("- "+meta)) {
-			t.Errorf("the raw metacharacter name landed — it would compile as a regex class; doc:\n%s", raw)
-		}
-		if _, err := config.Load(path); err != nil {
+		cfg, err := config.Load(path)
+		if err != nil {
 			t.Errorf("the quoted document refuses a strict load: %v", err)
+		} else if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{quoted}) {
+			// Exactly ONE listed element and it is the ESCAPED literal — the
+			// raw metacharacter name never landed (it would compile as a
+			// regex class).
+			t.Errorf("the reloaded blocklist = %v, want exactly the escaped literal [%s]",
+				cfg.Autocorrect.AppsBlocklist, quoted)
 		}
 		pushes := ms.menuBlocklist()
 		want := menuBlocklistPush{app: meta, fresh: true, covered: true}
