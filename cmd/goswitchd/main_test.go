@@ -934,6 +934,186 @@ func TestBlocklistClickTracer(t *testing.T) {
 	})
 }
 
+// The guard-matrix corpus of plan 11-04 Task 2: every early guard of the
+// composition is a fail-closed refusal — the recording writer counts ZERO
+// calls, the planted document stays byte-identical, and the silent guards
+// never log (the WARN rows name the outcome and the path, never the
+// pattern or the identity — D-20/D-21).
+
+// blocklistGuardCase is one guard-matrix row: the canned BlocklistAppState
+// answer, the injected writer failure, and the row's expectations.
+type blocklistGuardCase struct {
+	name        string
+	plantDoc    bool                              // false — the degenerate no-path row
+	state       func() (string, bool, bool, bool) // the canned accessor answer
+	writeErr    error                             // the injected writer failure
+	wantWrites  int                               // the recording writer's call count
+	wantReloads int
+	wantWarn    string // "" — no WARN expected; else the msg substring
+	wantPattern string // "" — no pattern assertion; else the exact pattern argument
+}
+
+// runBlocklistGuard executes one guard row: the composition over the canned
+// state and a RECORDING writer on a planted temp document. Asserts the
+// writer and reload counts, the exact pattern argument, the WARN verdict,
+// the document's fate (byte-identical for every refused click) and the
+// journal's content-free discipline (D-20/D-21) — across ALL rows.
+func runBlocklistGuard(t *testing.T, tc blocklistGuardCase) {
+	t.Helper()
+
+	buf := captureLogs(t)
+	path := ""
+	var before []byte
+	if tc.plantDoc {
+		path = filepath.Join(t.TempDir(), "config.yaml")
+		before = []byte(blocklistDoc)
+		if err := os.WriteFile(path, before, 0o600); err != nil {
+			t.Fatalf("plant the document: %v", err)
+		}
+	}
+	var writes, reloads int
+	var gotPattern string
+	tg := &blocklistToggle{
+		path:  path,
+		state: tc.state,
+		write: func(_ string, pattern string) error {
+			writes++
+			gotPattern = pattern
+
+			return tc.writeErr
+		},
+		reload: func() { reloads++ },
+	}
+
+	tg.add()
+
+	if writes != tc.wantWrites {
+		t.Errorf("writer calls = %d, want %d — every early guard leaves the writer untouched", writes, tc.wantWrites)
+	}
+	if reloads != tc.wantReloads {
+		t.Errorf("reload calls = %d, want %d", reloads, tc.wantReloads)
+	}
+	if tc.wantPattern != "" && gotPattern != tc.wantPattern {
+		t.Errorf("write pattern = %q, want %q", gotPattern, tc.wantPattern)
+	}
+	assertGuardJournal(t, buf.String(), tc)
+	if len(before) > 0 && (tc.wantWrites == 0 || tc.writeErr != nil) {
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read the document after the refused click: %v", err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Error("the refused click changed the document — the file must be byte-untouched")
+		}
+	}
+}
+
+// assertGuardJournal pins one guard row's journal verdict (D-20/D-21): the
+// loud refusals carry their WARN substring, the silent guards log nothing
+// at all, and NO row ever names the identity — the WARN's shape is the
+// outcome and the config path, never the pattern or the app name.
+func assertGuardJournal(t *testing.T, logged string, tc blocklistGuardCase) {
+	t.Helper()
+
+	if tc.wantWarn == "" {
+		if strings.Contains(logged, `"level":"WARN"`) {
+			t.Errorf("a silent guard warned; log:\n%s", logged)
+		}
+	} else if !strings.Contains(logged, tc.wantWarn) {
+		t.Errorf("the expected WARN %q is missing; log:\n%s", tc.wantWarn, logged)
+	}
+	if strings.Contains(logged, blocklistTestApp) {
+		t.Errorf("the journal carries the identity — D-20/D-21: outcome and path only; log:\n%s", logged)
+	}
+}
+
+// TestBlocklistGuardMatrixSilent pins the four SILENT no-op guards: an
+// unknown identity (the empty cache), a stale identity (freshness decides,
+// not the cache — a real FocusOut was), a covered identity (D-01) and a
+// full list (the refusal the item's state already shows) — all four leave
+// the writer, the document and the journal untouched.
+func TestBlocklistGuardMatrixSilent(t *testing.T) {
+	for _, tc := range []blocklistGuardCase{
+		{
+			name:     "unknown identity (empty cache) is a silent no-op",
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return "", false, false, false },
+		},
+		{
+			name:     "stale identity (freshness decides, not the cache) is a silent no-op",
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, false, false, false },
+		},
+		{
+			name:     "covered identity is the checked item's silent no-op (D-01)",
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, true, true, false },
+		},
+		{
+			name:     "full list keeps the refusal the item state shows",
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, true, false, true },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runBlocklistGuard(t, tc)
+		})
+	}
+}
+
+// TestBlocklistGuardRefusals pins the two loud refusals: the degenerate
+// no-path environment (WR-03 — the guard precedes the identity read, so a
+// covered state STILL warns instead of vanishing silently) and the writer
+// failure (one WARN with the outcome and the path, the apply never runs).
+func TestBlocklistGuardRefusals(t *testing.T) {
+	t.Run("empty config path refuses with one WARN (WR-03)", func(t *testing.T) {
+		runBlocklistGuard(t, blocklistGuardCase{
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, true, true, true },
+			wantWarn: "no config path",
+		})
+	})
+
+	t.Run("writer failure warns the outcome without content", func(t *testing.T) {
+		runBlocklistGuard(t, blocklistGuardCase{
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, true, false, false },
+			writeErr: errWriteInjected,
+			// The failed write still received the QuoteMeta pattern — S8
+			// holds on the failure path too (the WARN names the outcome,
+			// never the pattern; D-20/D-21).
+			wantPattern: blocklistTestApp,
+			wantWrites:  1,
+			wantWarn:    "blocklist write failed",
+		})
+	})
+}
+
+// TestBlocklistGuardOrder pins the guards' final rung: with every guard
+// passed the click writes EXACTLY ONCE with the QuoteMeta pattern and then
+// applies (the reload rides the same click) — the metacharacter identity
+// quoted BEFORE the writer sees it (S8).
+func TestBlocklistGuardOrder(t *testing.T) {
+	t.Run("guards passed — one write with the plain pattern, then the reload", func(t *testing.T) {
+		runBlocklistGuard(t, blocklistGuardCase{
+			plantDoc:    true,
+			state:       func() (string, bool, bool, bool) { return blocklistTestApp, true, false, false },
+			wantWrites:  1,
+			wantReloads: 1,
+			wantPattern: blocklistTestApp, // QuoteMeta("gedit") == "gedit"
+		})
+	})
+
+	t.Run("metacharacter identity is quoted before the writer", func(t *testing.T) {
+		runBlocklistGuard(t, blocklistGuardCase{
+			plantDoc:    true,
+			state:       func() (string, bool, bool, bool) { return "org.example.App[1]", true, false, false },
+			wantWrites:  1,
+			wantReloads: 1,
+			wantPattern: `org\.example\.App\[1\]`,
+		})
+	})
+}
+
 // TestOpenConfigEditorLauncher pins the settings launcher's happy path
 // (plan 07-05, research Q7): the document is ensured first, then xdg-open
 // starts on the pinned path as its ONLY argument with NO piped descriptors
