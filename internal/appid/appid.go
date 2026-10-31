@@ -104,6 +104,16 @@ func WithRoleCall(fn RoleCall) Option {
 	return func(o *Observer) { o.roleCall = fn }
 }
 
+// WithGainHook installs the freshness hook of the blocklist menu item
+// (phase 11): every focus GAIN delivers the identity to the hook AFTER the
+// cache store — outside the observer's mutex, so a hook that reads the
+// observer (the actor's PushFocusedApp) can never deadlock (Pitfall 9).
+// Without it every gain stays a cache update only — the zero value keeps
+// today's behavior.
+func WithGainHook(fn func(name string)) Option {
+	return func(o *Observer) { o.gainHook = fn }
+}
+
 // Observer caches the freshest focused application from the a11y bus's
 // focus events, together with the (sender, path) address of the focused
 // object — the destination of Role's live role query. The zero value is
@@ -115,6 +125,7 @@ type Observer struct {
 	focusSender dbus.Sender
 	focusPath   dbus.ObjectPath
 	roleCall    RoleCall
+	gainHook    func(name string)
 	err         error
 	cleanup     func()
 }

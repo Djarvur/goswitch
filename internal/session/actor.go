@@ -1534,6 +1534,15 @@ func (a *Actor) SetMenuSync(ms MenuSync) {
 	}
 }
 
+// PushFocusedApp receives one focus GAIN identity from the appid observer's
+// freshness hook (phase 11, MENU-01 — wired via appid.WithGainHook in the
+// default startAppid): the snapshot identity and its freshness are stored
+// under the actor's mutex and the blocklist menu item's state is pushed.
+func (a *Actor) PushFocusedApp(name string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+}
+
 // SoundSink is the acoustic-feedback seam (plan 07-08, the owner's «Звуки
 // при переключении»): Flip plays the flip tone, AutoCorrect the distinct
 // autocorrect tone, SetAutocorrectEvent re-pins that tone's document event
@@ -2028,6 +2037,7 @@ type MenuSync interface {
 	SetSoundEnabled(on bool)
 	SetKeys(tap, combo, chord string)
 	SetCorrections(n int)
+	SetBlocklistApp(app string, fresh, covered, full bool)
 }
 
 // emitter returns the attached emitter sink — the snapshot accessor of the

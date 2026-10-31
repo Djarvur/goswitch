@@ -396,3 +396,75 @@ func TestAppid_StartBusUnavailable(t *testing.T) {
 		t.Fatalf("Start over an unreachable bus = nil error, want the dial failure (never a panic)")
 	}
 }
+
+// TestObserver_GainHook pins the freshness hook of the blocklist menu item
+// (phase 11, MENU-01): every focus GAIN delivers the identity to the
+// installed hook — the actor's PushFocusedApp lives on this seam — a LOSS
+// never calls it (freshness rides gains only), and the hook may read the
+// observer back WITHOUT deadlocking: the call happens OUTSIDE the observer's
+// mutex (Pitfall 9 — the hook under o.mu entering the actor's mutex would
+// invert the one-way actor.mu → sink.mu ordering). The -race corpus of the
+// three-package verify watches every one of these crossings.
+func TestObserver_GainHook(t *testing.T) {
+	t.Run("gain delivers the identity to the hook", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		feed := make(chan *dbus.Signal, 4)
+		got := make(chan string, 1)
+		appid.New(ctx, feed, nil, appid.WithGainHook(func(name string) {
+			got <- name
+		}))
+
+		feed <- focusSignal(senderZenity, zenityPath, 1)
+		select {
+		case name := <-got:
+			if name != "org.gnome.Zenity" {
+				t.Errorf("gain hook name = %q, want org.gnome.Zenity", name)
+			}
+		case <-time.After(appidObserverWait):
+			t.Fatalf("the gain hook never fired for a bridge-namespaced gain")
+		}
+	})
+
+	t.Run("loss events never call the hook", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		feed := make(chan *dbus.Signal, 4)
+		got := make(chan string, 1)
+		appid.New(ctx, feed, nil, appid.WithGainHook(func(name string) {
+			got <- name
+		}))
+
+		feed <- focusSignal(senderEditor, editorPath, 0) // a loss
+		feed <- focusSignal(senderEditor, "/root", 1)    // not bridge-namespaced — no identity
+		time.Sleep(50 * time.Millisecond)                // let the loop see both
+		if len(got) != 0 {
+			t.Errorf("the hook fired %d time(s) on loss/non-identity events, want never", len(got))
+		}
+	})
+
+	t.Run("hook may read the observer without deadlocking", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		feed := make(chan *dbus.Signal, 4)
+		var obs *appid.Observer
+		seen := make(chan string, 1)
+		obs = appid.New(ctx, feed, nil, appid.WithGainHook(func(name string) {
+			// Pitfall 9: the hook runs OUTSIDE the observer's mutex — a read
+			// of the observer FROM the hook must return, never deadlock.
+			if app, err := obs.FocusedApp(); err == nil {
+				seen <- app
+			}
+		}))
+
+		feed <- focusSignal(senderEditor, editorPath, 1)
+		select {
+		case app := <-seen:
+			if app != "org.gnome.gnome-text-editor" {
+				t.Errorf("observer read from the hook = %q, want the fresh gain's identity", app)
+			}
+		case <-time.After(appidObserverWait):
+			t.Fatalf("the hook blocked reading the observer — the mutex inversion of Pitfall 9")
+		}
+	})
+}

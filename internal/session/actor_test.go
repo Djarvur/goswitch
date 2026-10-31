@@ -5010,6 +5010,7 @@ type fakeMenuSync struct {
 	sound       []bool
 	keys        []string
 	corrections []int
+	blocklist   []blocklistPush
 	onMode      func(symbol string)
 }
 
@@ -5091,6 +5092,113 @@ func (f *fakeMenuSync) menuCorrections() []int {
 	defer f.mu.Unlock()
 
 	return append([]int(nil), f.corrections...)
+}
+
+// blocklistPush is one recorded SetBlocklistApp push — the blocklist menu
+// item's full state triple (phase 11, MENU-01).
+type blocklistPush struct {
+	app     string
+	fresh   bool
+	covered bool
+	full    bool
+}
+
+// SetBlocklistApp records the blocklist-item state push (MENU-01: the item
+// lives from the identity's freshness — gain pushes fresh, a real FocusOut
+// clears it).
+func (f *fakeMenuSync) SetBlocklistApp(app string, fresh, covered, full bool) {
+	f.mu.Lock()
+	f.blocklist = append(f.blocklist, blocklistPush{app, fresh, covered, full})
+	f.mu.Unlock()
+}
+
+// menuBlocklist snapshots the recorded blocklist-item pushes.
+func (f *fakeMenuSync) menuBlocklist() []blocklistPush {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]blocklistPush(nil), f.blocklist...)
+}
+
+// TestActor_BlocklistItemFreshMachine pins the freshness machine of the
+// blocklist menu item (MENU-01, D-03 «демон не угадывает»): the install
+// push reports the initial UNKNOWN (fresh=false, no name); a
+// PushFocusedApp gain pushes the identity with fresh=true; a REAL FocusOut
+// (no flip credit armed) clears the freshness and pushes again; a
+// SYNTHETIC FocusOut (the own flip's credit, G-2-3) — not a window switch —
+// touches neither the freshness nor the menu. The identity never outlives
+// its freshness: a stale cache name must not reach the menu.
+func TestActor_BlocklistItemFreshMachine(t *testing.T) {
+	t.Run("install push reports the initial unknown", func(t *testing.T) {
+		a, _ := wiredActor()
+		ms := &fakeMenuSync{}
+		a.SetMenuSync(ms)
+
+		pushes := ms.menuBlocklist()
+		if len(pushes) != 1 {
+			t.Fatalf("install pushes = %d, want exactly 1 (the startup self-sync)", len(pushes))
+		}
+		if pushes[0] != (blocklistPush{}) {
+			t.Errorf("install push = %+v, want the zero unknown state (D-03)", pushes[0])
+		}
+	})
+
+	t.Run("gain pushes the fresh identity", func(t *testing.T) {
+		a, _ := wiredActor()
+		ms := &fakeMenuSync{}
+		a.SetMenuSync(ms)
+
+		a.PushFocusedApp("gedit")
+
+		pushes := ms.menuBlocklist()
+		if len(pushes) != 2 {
+			t.Fatalf("pushes after the gain = %d, want install + gain", len(pushes))
+		}
+		want := blocklistPush{app: "gedit", fresh: true}
+		if pushes[1] != want {
+			t.Errorf("gain push = %+v, want %+v", pushes[1], want)
+		}
+	})
+
+	t.Run("real FocusOut clears freshness and pushes", func(t *testing.T) {
+		a, _ := wiredActor()
+		ms := &fakeMenuSync{}
+		a.SetMenuSync(ms)
+
+		a.PushFocusedApp("gedit")
+		a.HandleLifecycle(engine.LifecycleFocusOut) // no credit armed — a real loss
+
+		pushes := ms.menuBlocklist()
+		if len(pushes) != 3 {
+			t.Fatalf("pushes after the real FocusOut = %d, want install + gain + reset", len(pushes))
+		}
+		if pushes[2].fresh {
+			t.Errorf("post-FocusOut fresh = true, want false — freshness died with the window")
+		}
+		if pushes[2].app != "" {
+			t.Errorf("post-FocusOut name = %q, want empty — the stale cache name must not reach the menu (D-03)", pushes[2].app)
+		}
+	})
+
+	t.Run("synthetic FocusOut keeps freshness silent", func(t *testing.T) {
+		a, _ := wiredActor()
+		ms := &fakeMenuSync{}
+		a.SetMenuSync(ms)
+		a.SetSwitcher(func(_ context.Context, _ string) error { return nil })
+
+		a.PushFocusedApp("gedit")
+		flipMode(a)                                 // the successful round trip arms exactly one credit
+		a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes it
+
+		pushes := ms.menuBlocklist()
+		if len(pushes) != 2 {
+			t.Fatalf("the synthetic FocusOut pushed %d extra states, want none; pushes: %+v",
+				len(pushes)-2, pushes)
+		}
+		if !pushes[1].fresh {
+			t.Errorf("freshness after the synthetic FocusOut = false, want the gain's true (G-2-3)")
+		}
+	})
 }
 
 // TestActor_SwitchModeFlipsToTarget pins the radio pair's gesture (plan

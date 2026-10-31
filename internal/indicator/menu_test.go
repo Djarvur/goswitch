@@ -152,6 +152,7 @@ func TestMenuLayout(t *testing.T) {
 		{menuIDRU, labelRU, menuTypeStandard, true, true, menuToggleRadio, 1},
 		{menuIDSep1, "", menuTypeSeparator, true, true, "", 0},
 		{menuIDACToggle, labelACToggle, menuTypeStandard, true, true, menuToggleCheckmark, 1},
+		{menuIDBlocklistApp, labelBlocklistApp, menuTypeStandard, false, true, "", 0},
 		{menuIDSoundToggle, labelSoundToggle, menuTypeStandard, true, true, menuToggleCheckmark, 1},
 		{menuIDMacro1, "1× shift__r — язык", menuTypeStandard, false, true, "", 0},
 		{menuIDMacro2, "2× shift__r — слово", menuTypeStandard, false, true, "", 0},
@@ -187,6 +188,47 @@ func TestMenuLayout(t *testing.T) {
 		t.Fatalf("GetLayout(%d) error = %v, want nil", menuIDACToggle, derr)
 	}
 	checkMenuKid(t, one, wantKids[3])
+}
+
+// TestMenuBlocklistItemGroupProps pins the blocklist item's id-16 surface
+// (phase 11, MENU-01): the id lives INSIDE GetGroupProperties' served range
+// (Pitfall 5 — an unextended filter drops the props silently), the
+// initial/unknown state answers the STATIC label disabled (D-03 — no name,
+// no explanations), and the setter's fresh identity renders the named label
+// enabled. The full state machine is the state-matrix corpus's business;
+// this test pins the channel (id range + setter + request-time render).
+func TestMenuBlocklistItemGroupProps(t *testing.T) {
+	m, _ := menuFixture(t)
+
+	props, derr := m.GetGroupProperties([]int32{menuIDBlocklistApp}, nil)
+	if derr != nil {
+		t.Fatalf("GetGroupProperties(%d) error = %v, want nil", menuIDBlocklistApp, derr)
+	}
+	if len(props) != 1 {
+		t.Fatalf("GetGroupProperties(%d) = %d entries, want exactly 1 — the id must not fall out of the served range (Pitfall 5)",
+			menuIDBlocklistApp, len(props))
+	}
+	if label, _ := props[0].Props[menuPropLabel].Value().(string); label != labelBlocklistApp {
+		t.Errorf("unknown-state label = %q, want the static %q (D-03: no name, no explanations)",
+			label, labelBlocklistApp)
+	}
+	if props[0].Props[menuPropEnabled].Value() != false {
+		t.Error("the unknown-state item must answer disabled (D-03)")
+	}
+
+	m.SetBlocklistApp("org.gnome.Zenity", true, false, false)
+	props, derr = m.GetGroupProperties([]int32{menuIDBlocklistApp}, nil)
+	if derr != nil || len(props) != 1 {
+		t.Fatalf("GetGroupProperties(%d) after the gain = (%v, %v), want one entry",
+			menuIDBlocklistApp, props, derr)
+	}
+	want := "Добавить org.gnome.Zenity в чёрный список"
+	if label, _ := props[0].Props[menuPropLabel].Value().(string); label != want {
+		t.Errorf("fresh-state label = %q, want %q", label, want)
+	}
+	if props[0].Props[menuPropEnabled].Value() != true {
+		t.Error("the fresh-state item must answer enabled")
+	}
 }
 
 // TestMenuMacroVisibility pins the disappearing-row contract (canonical

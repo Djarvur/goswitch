@@ -69,6 +69,11 @@ const (
 	menuIDAbout       = int32(13)
 	menuIDStatus      = int32(14)
 	menuIDReload      = int32(15)
+	// menuIDBlocklistApp is the «Добавить <app> в чёрный список» item
+	// (phase 11, MENU-01) — the next free id AFTER the canonical set: the
+	// existing ids are pinned by the e2e menu-v2 case and TestMenuLayout,
+	// a renumber is forbidden.
+	menuIDBlocklistApp = int32(16)
 
 	labelEN          = "EN"
 	labelRU          = "RU"
@@ -76,6 +81,10 @@ const (
 	labelSoundToggle = "Звук"
 	labelSettings    = "Настройки…"
 	labelReload      = "Перечитать конфиг"
+	// labelBlocklistApp is the item's STATIC label — the unknown-identity
+	// state serves it WITHOUT the app name and WITHOUT any explanatory
+	// text (D-03, the owner's «не пишем ничего»).
+	labelBlocklistApp = "Добавить в чёрный список"
 
 	// The macro-row wrappers (canonical layout, research A4): RU text around
 	// the RAW config key names — the menu renders, the actor never
@@ -270,6 +279,13 @@ func (m *Menu) SetCorrections(n int) {
 	m.emitSignal(signalItemsPropsUpdated,
 		[]menuItemProps{m.labelDelta(menuIDStatus)},
 		[]removedProps{})
+}
+
+// SetBlocklistApp installs the blocklist item's identity state (phase 11,
+// MENU-01): the fresh app name and its covered/full flags — the actor's
+// freshness machine is the only source, the menu is a dumb renderer of the
+// snapshot (S1). RED stub: stores nothing, emits nothing.
+func (m *Menu) SetBlocklistApp(app string, fresh, covered, full bool) {
 }
 
 // SetKeys installs the raw config key names of the macro rows — the actor
