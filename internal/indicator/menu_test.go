@@ -152,13 +152,13 @@ func TestMenuLayout(t *testing.T) {
 		{menuIDRU, labelRU, menuTypeStandard, true, true, menuToggleRadio, 1},
 		{menuIDSep1, "", menuTypeSeparator, true, true, "", 0},
 		{menuIDACToggle, labelACToggle, menuTypeStandard, true, true, menuToggleCheckmark, 1},
-		{menuIDBlocklistApp, labelBlocklistApp, menuTypeStandard, false, true, "", 0},
+		{menuIDBlocklistApp, labelBlocklistApp, menuTypeStandard, false, true, menuToggleCheckmark, 0},
 		{menuIDSoundToggle, labelSoundToggle, menuTypeStandard, true, true, menuToggleCheckmark, 1},
 		{menuIDMacro1, "1× shift__r — язык", menuTypeStandard, false, true, "", 0},
 		{menuIDMacro2, "2× shift__r — слово", menuTypeStandard, false, true, "", 0},
 		{menuIDMacro3, "3× shift__r — фраза", menuTypeStandard, false, true, "", 0},
 		{menuIDMacroCombo, "shift+ctrl__r — слово и язык", menuTypeStandard, false, true, "", 0},
-		{menuIDMacroChord, "super+space — смена режима", menuTypeStandard, false, true, "", 0},
+		{menuIDMacroChord, "super+space — язык", menuTypeStandard, false, true, "", 0},
 		{menuIDSep2, "", menuTypeSeparator, true, true, "", 0},
 		{menuIDSettings, labelSettings, menuTypeStandard, true, true, "", 0},
 		{menuIDAbout, "goswitch dev", menuTypeStandard, false, true, "", 0},
@@ -228,6 +228,192 @@ func TestMenuBlocklistItemGroupProps(t *testing.T) {
 	}
 	if props[0].Props[menuPropEnabled].Value() != true {
 		t.Error("the fresh-state item must answer enabled")
+	}
+}
+
+// TestMenuBlocklistStateMatrix pins the blocklist item's full state machine
+// (phase 11, MENU-01 — D-01/D-03/потолок, 7 rows): the UNKNOWN state (an
+// empty push or a stale fresh=false one) serves the static label disabled
+// WITHOUT the name and WITHOUT explanations (D-03, «не пишем ничего»); a
+// fresh identity serves the named label enabled (toggle-state 0); a
+// COVERED identity adds the checkmark (D-01, toggle-state 1); a FULL list
+// without coverage serves the visible fill state disabled (S9 — the refusal
+// is visible as the item's state, never a desktop notification); COVERED
+// beats FULL (the checkmark with the name wins — the safe click, dedup); a
+// name with underscores renders through the mnemonic doubling (Pitfall 4).
+// The item is ALWAYS a checkmark-carrying standard row, visible.
+func TestMenuBlocklistStateMatrix(t *testing.T) {
+	const name = "org.gnome.gedit"
+	const named = "Добавить " + name + " в чёрный список"
+
+	t.Run("unknown empty state is static and disabled", func(t *testing.T) {
+		m, _ := menuFixture(t)
+
+		props := m.blocklistProps()
+		if label, _ := props[menuPropLabel].Value().(string); label != labelBlocklistApp {
+			t.Errorf("empty-state label = %q, want the static %q (D-03)", label, labelBlocklistApp)
+		}
+		if props[menuPropEnabled].Value() != false {
+			t.Error("empty-state item must be disabled (D-03)")
+		}
+		if gotType, _ := props[menuPropToggleType].Value().(string); gotType != menuToggleCheckmark {
+			t.Errorf("empty-state toggle-type = %q, want %q", gotType, menuToggleCheckmark)
+		}
+		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 0 {
+			t.Errorf("empty-state toggle-state = %d, want 0", gotState)
+		}
+	})
+
+	t.Run("stale identity renders unknown, never the previous name", func(t *testing.T) {
+		m, _ := menuFixture(t)
+		m.SetBlocklistApp(name, true, false, false) // a gain landed
+		m.SetBlocklistApp("", false, false, false)  // the real FocusOut cleared it
+
+		props := m.blocklistProps()
+		if label, _ := props[menuPropLabel].Value().(string); label != labelBlocklistApp {
+			t.Errorf("stale-state label = %q, want the static %q — freshness, not the cache, decides (D-03)", label, labelBlocklistApp)
+		}
+		if props[menuPropEnabled].Value() != false {
+			t.Error("stale-state item must be disabled (D-03)")
+		}
+	})
+
+	t.Run("fresh identity is active with the name", func(t *testing.T) {
+		m, _ := menuFixture(t)
+		m.SetBlocklistApp(name, true, false, false)
+
+		props := m.blocklistProps()
+		if label, _ := props[menuPropLabel].Value().(string); label != named {
+			t.Errorf("active-state label = %q, want %q", label, named)
+		}
+		if props[menuPropEnabled].Value() != true {
+			t.Error("active-state item must be enabled")
+		}
+		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 0 {
+			t.Errorf("active-state toggle-state = %d, want 0 (not covered)", gotState)
+		}
+	})
+
+	t.Run("covered identity carries the checkmark", func(t *testing.T) {
+		m, _ := menuFixture(t)
+		m.SetBlocklistApp(name, true, true, false)
+
+		props := m.blocklistProps()
+		if label, _ := props[menuPropLabel].Value().(string); label != named {
+			t.Errorf("covered-state label = %q, want %q (D-01)", label, named)
+		}
+		if props[menuPropEnabled].Value() != true {
+			t.Error("the covered item stays enabled — the click is the safe dedup no-op (D-01)")
+		}
+		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 1 {
+			t.Errorf("covered-state toggle-state = %d, want 1 — the D-01 checkmark", gotState)
+		}
+	})
+
+	t.Run("full list without coverage shows the fill state", func(t *testing.T) {
+		m, _ := menuFixture(t)
+		m.SetBlocklistApp(name, true, false, true)
+
+		props := m.blocklistProps()
+		want := "Чёрный список заполнен — 64/64"
+		if label, _ := props[menuPropLabel].Value().(string); label != want {
+			t.Errorf("full-state label = %q, want %q (S9: the refusal is visible as state)", label, want)
+		}
+		if props[menuPropEnabled].Value() != false {
+			t.Error("the full-state item must be disabled — the ceiling refuses (S9)")
+		}
+		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 0 {
+			t.Errorf("full-state toggle-state = %d, want 0", gotState)
+		}
+	})
+
+	t.Run("covered beats full", func(t *testing.T) {
+		m, _ := menuFixture(t)
+		m.SetBlocklistApp(name, true, true, true)
+
+		props := m.blocklistProps()
+		if label, _ := props[menuPropLabel].Value().(string); label != named {
+			t.Errorf("covered+full label = %q, want the named %q — covered wins", label, named)
+		}
+		if props[menuPropEnabled].Value() != true {
+			t.Error("covered+full must stay enabled with the checkmark")
+		}
+		if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != 1 {
+			t.Errorf("covered+full toggle-state = %d, want 1", gotState)
+		}
+	})
+
+	t.Run("underscored name renders doubled", func(t *testing.T) {
+		m, _ := menuFixture(t)
+		m.SetBlocklistApp("org.gnome.Log_out", true, false, false)
+
+		props := m.blocklistProps()
+		want := "Добавить org.gnome.Log__out в чёрный список"
+		if label, _ := props[menuPropLabel].Value().(string); label != want {
+			t.Errorf("underscored label = %q, want the doubled %q (Pitfall 4)", label, want)
+		}
+	})
+}
+
+// TestMenuBlocklistSetterDeltas pins the setter's push discipline: a CHANGE
+// emits exactly one ItemsPropertiesUpdated carrying the id-16 label delta
+// and the toggle-state delta with an EMPTY removed slice (Pitfall 7), the
+// revision NEVER bumps (the item is always in the layout — Pitfall 10), and
+// an IDENTICAL push is a silent no-op (the menu dedupes, the actor pushes
+// per fold).
+func TestMenuBlocklistSetterDeltas(t *testing.T) {
+	em := &fakeEmitter{}
+	m := newMenu(Callbacks{}, em)
+
+	m.SetBlocklistApp("org.gnome.gedit", true, true, false)
+	calls := em.emitCalls()
+	if len(calls) != 1 {
+		t.Fatalf("SetBlocklistApp emitted %d signals, want exactly one", len(calls))
+	}
+	call := calls[0]
+	if call.signal != signalItemsPropsUpdated {
+		t.Errorf("emit signal = %s, want %s", call.signal, signalItemsPropsUpdated)
+	}
+	deltas := signalDeltas(t, call)
+	if len(deltas) != 2 || deltas[0].ID != menuIDBlocklistApp || deltas[1].ID != menuIDBlocklistApp {
+		t.Fatalf("deltas = %+v, want exactly two id-%d entries (label + toggle-state)", deltas, menuIDBlocklistApp)
+	}
+	if _, ok := deltas[0].Props[menuPropLabel]; !ok {
+		t.Error("the first delta carries no label")
+	}
+	if _, ok := deltas[1].Props[menuPropToggleState]; !ok {
+		t.Error("the second delta carries no toggle-state")
+	}
+	signalRemoved(t, call)
+	if rev := m.layoutRevision(); rev != menuRevisionBase {
+		t.Errorf("revision after the push = %d, want the unchanged %d (Pitfall 10)", rev, menuRevisionBase)
+	}
+
+	// The actor pushes per fold, the menu dedupes.
+	drainEmits(em)
+	m.SetBlocklistApp("org.gnome.gedit", true, true, false)
+	if got := len(em.emitCalls()); got != 0 {
+		t.Errorf("identical SetBlocklistApp emitted %d signals, want none", got)
+	}
+}
+
+// TestMenuBlocklistClickDispatch pins the click composition's seam: a click
+// on id 16 fires Callbacks.BlockCurrentApp exactly once; a nil callback is
+// a silent no-op (the disabled item's gesture discipline of every dispatch).
+func TestMenuBlocklistClickDispatch(t *testing.T) {
+	blocked := 0
+	m := &Menu{cb: Callbacks{BlockCurrentApp: func() { blocked++ }}}
+
+	if derr := m.Event(menuIDBlocklistApp, eventClicked, dbus.Variant{}, 0); derr != nil {
+		t.Fatalf("click id %d error = %v, want nil", menuIDBlocklistApp, derr)
+	}
+	if blocked != 1 {
+		t.Fatalf("BlockCurrentApp fired %d times, want exactly 1", blocked)
+	}
+
+	silent := &Menu{} // the nil-callback degradation
+	if derr := silent.Event(menuIDBlocklistApp, eventClicked, dbus.Variant{}, 0); derr != nil {
+		t.Errorf("nil-callback click error = %v, want nil", derr)
 	}
 }
 

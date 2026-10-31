@@ -153,17 +153,17 @@ type Menu struct {
 	// the snapshot (S1, D-02: props are computed AT REQUEST TIME, the menu
 	// never queries a11y). blFresh=false (or an empty name) is the D-03
 	// unknown state — the static label, disabled.
-	blApp     string
-	blFresh   bool
-	blCovered bool
-	blFull    bool
-	tapKey    string // the RAW config names — the menu renders (mnemonics doubled)
-	wordCombo    string
-	modeChord    string
-	version      string
-	revision     uint32 // bumps ONLY on a change of the item set
-	emitDead     bool   // a failed emit — permanent per connection (the Item discipline)
-	emitWarned   bool   // one WARN per emit-degradation episode
+	blApp      string
+	blFresh    bool
+	blCovered  bool
+	blFull     bool
+	tapKey     string // the RAW config names — the menu renders (mnemonics doubled)
+	wordCombo  string
+	modeChord  string
+	version    string
+	revision   uint32 // bumps ONLY on a change of the item set
+	emitDead   bool   // a failed emit — permanent per connection (the Item discipline)
+	emitWarned bool   // one WARN per emit-degradation episode
 }
 
 // newMenu builds the menu with its startup snapshot: EN active (ADR-001 —
