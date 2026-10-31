@@ -305,6 +305,45 @@ func (s *stand) blocklistObserverRound(ctx context.Context, caseName string) err
 	return s.injectText(ctx, "x")
 }
 
+// blocklistFixtureFocus arms the fresh fixture with the VM-stand's
+// machine-activation form: the ydotool center click grants focus to the
+// topmost fresh window (the 10-08 discipline — a freshly booted stand
+// session does not hand out map-focus), while the AT-SPI witness stays the
+// ONLY proceed signal (honesty untouched — the click is a provocation).
+// The 11-05 live finding: the host-era poke ladder (grab-input-pid) alone
+// never settled the witness on this venue.
+func (s *stand) blocklistFixtureFocus(ctx context.Context, caseName string) (string, error) {
+	want := acRoleTextWitness + ":chars=0"
+	deadline := time.Now().Add(surfaceFocusWait)
+	nextNudge := time.Now() // the fresh map may self-focus; the first nudge rides early
+	var last string
+	for {
+		if pid := strconv.Itoa(s.fixturePid()); pid != "0" {
+			out, err := runCmd(ctx, "/usr/bin/python3", s.cfg.helper, "focused-input-pid", pid)
+			if err == nil {
+				last = out
+				if out == want {
+					return out, nil
+				}
+			} else {
+				last = err.Error()
+			}
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("%s: fixture input did not settle to %q (witness %q)", caseName, want, last)
+		}
+		if time.Now().After(nextNudge) {
+			nextNudge = time.Now().Add(zenityGrabEvery)
+			if err := nudgeFocusClick(ctx); err != nil {
+				fmt.Printf("%s: focus nudge failed (continuing): %v\n", caseName, err)
+			}
+		}
+		if err := sleepCtx(ctx, witnessPoll); err != nil {
+			return "", err
+		}
+	}
+}
+
 // blocklistObserveFixture runs the observation prologue (the
 // runAutocorrectBlocklistSilent shape): the observer-start round wakes the
 // daemon's lazy a11y source (the 07-06 live finding — the daemon's
@@ -324,7 +363,7 @@ func blocklistObserveFixture(ctx context.Context, s *stand) (witness, app string
 	if err := s.startPasswordFixture(ctx); err != nil {
 		return "", "", err
 	}
-	if witness, err = s.waitFixtureWitness(ctx, acRoleTextWitness, 0, true); err != nil {
+	if witness, err = s.blocklistFixtureFocus(ctx, caseMenuBlocklist); err != nil {
 		return "", "", err
 	}
 	if app, err = waitFocusedApp(ctx, obs); err != nil {
