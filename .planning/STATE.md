@@ -5,17 +5,17 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 11
 current_phase_name: MENU — пункт «в чёрный список»
 status: executing
-stopped_at: Phase 11 context gathered
-last_updated: "2026-10-31T14:58:06.206Z"
+stopped_at: Completed 11-01-PLAN.md (journal-verify row awaits next owner session)
+last_updated: "2026-10-31T20:38:50.115Z"
 last_activity: 2026-10-31
-last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: bb7293169c63568ccd06119713ee25886f4bf0db
+last_activity_desc: Phase 11 execution started
+state_head: 0870f5098152d8ce056a1256ff1e213fbe1259a1
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 0
   total_plans: 23
   completed_plans: 17
-  percent: 20
+  percent: 0
 ---
 
 # Project State
@@ -25,16 +25,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-31)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 11 — MENU «в чёрный список»: не спланирована; следующий шаг — обсуждение (/gsd-discuss-phase 11)
+**Current focus:** Phase 11 — MENU — пункт «в чёрный список»
 
 ## Current Position
 
-Phase: 11 (MENU — пункт «в чёрный список») — READY TO EXECUTE
-Plan: Not started
+Phase: 11 (MENU — пункт «в чёрный список») — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-10-31 — Phase 10 complete, transitioned to Phase 11
+Last activity: 2026-10-31 — Phase 11 execution started
 
-Progress: [██░░░░░░░░] 20%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [██░░░░░░░░] 20%
 | Phase 10 P18 | 25min | 3 tasks | 4 files |
 | Phase 10 P17 | 74m | 7 tasks | 9 files |
 | Phase 09 P02 | 4d live arc (2026-10-08..12) + close-out | 2 tasks | 28 files |
+| Phase 11 P01 | 51min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -141,9 +142,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-31T13:33:20.883Z
-Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-menu-punkt-v-chernyy-spisok/11-CONTEXT.md
+Last session: 2026-10-31T20:38:50.050Z
+Stopped at: Completed 11-01-PLAN.md (journal-verify row awaits next owner session)
+Resume file: None
 
 ## Operator Next Steps
 
