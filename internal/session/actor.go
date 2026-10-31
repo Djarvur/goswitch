@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"regexp"
@@ -924,29 +925,14 @@ func NewActor(window time.Duration) *Actor {
 		// wall clock; the corpus installs a controllable double via
 		// UseRoleClock.
 		roleClock: time.Now,
+		// The lazy per-app observer's production starter rides the named
+		// method (the method value lands after construction — a closure
+		// referencing `a` inside its own initializer is out of scope).
+		startAppid: nil,
 	}
-	// The lazy per-app observer's production starter: the a11y dial of
-	// internal/appid on the daemon's lifetime (the clipboard rung's
-	// context.Background precedent — the actor owns no shutdown path).
-	// The WithGainHook wiring (phase 11, MENU-01) delivers every gain
-	// identity to PushFocusedApp — the freshness machine of the blocklist
-	// menu item lives inside the actor; main.go stays untouched. The
-	// assignment sits OUTSIDE the composite literal: a closure referencing
-	// `a` inside its own initializer is out of scope there.
-	a.startAppid = func() (AppidSource, error) {
-		return appid.Start(context.Background(), appid.WithGainHook(a.PushFocusedApp))
-	}
+	a.startAppid = a.startAppidDefault
 
 	return a
-}
-
-// defaultFlapAfter arms one real focusFlapWindow deadline (the production
-// flapAfter): the returned closure stops a still-pending firing; an already
-// fired timer returns false harmlessly — the epoch guard owns the verdict.
-func defaultFlapAfter(d time.Duration, fn func()) func() {
-	t := time.AfterFunc(d, fn)
-
-	return func() { t.Stop() }
 }
 
 // SetOptions stores the correction options (the startup wiring feeds them
@@ -1596,53 +1582,31 @@ func (a *Actor) PushFocusedApp(name string) {
 	a.pushBlocklistAppLocked()
 }
 
-// blocklistStateLocked computes the blocklist menu item's state triple from
-// the actor's snapshot: app+fresh (the freshness machine — empty and false
-// when unknown, the D-03 static state), covered (any compiled blocklist
-// pattern matches the FRESH identity — the same re.MatchString discipline
-// as autoCorrectBoundary's gate, never the raw strings) and full (the
-// document's list length reached the ceiling). The caller holds the mutex.
-func (a *Actor) blocklistStateLocked() (app string, fresh, covered, full bool) {
-	full = len(a.opts.AutoCorrectBlocklist) >= autocorrectBlocklistCeil
-	fresh = a.blFresh && a.blApp != ""
-	if !fresh {
-		return "", false, false, full
-	}
-	for _, re := range a.acBlocklist {
-		if re.MatchString(a.blApp) {
-			return a.blApp, true, true, full
-		}
-	}
+// EnsureAppid is the UNCONDITIONAL observer start (plan 11-04 wires it
+// into OnConn — the Pitfall-2 cure): the lazy condition of ensureAppid — a
+// non-empty macr list OR enabled autocorrect — must not leave the
+// blocklist item dead forever on a default D-54-off install, so the public
+// form bypasses the condition while keeping the once-per-actor discipline
+// and the failed-start degradation (one WARN, no retry loop).
+func (a *Actor) EnsureAppid() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-	return a.blApp, true, false, full
-}
-
-// pushBlocklistAppLocked hands the blocklist item's computed state to the
-// menu — the pushMenuSync discipline: synchronous under the actor's mutex,
-// quick, never panics or blocks; the menu dedupes identical values. A nil
-// menuSync (no menu attached) is the silent no-op. The caller holds the
-// mutex.
-func (a *Actor) pushBlocklistAppLocked() {
-	if a.menuSync == nil {
+	if a.appidStarted {
 		return
 	}
-	app, fresh, covered, full := a.blocklistStateLocked()
-	a.menuSync.SetBlocklistApp(app, fresh, covered, full)
-}
-
-// EnsureAppid is the public wrapper over the lazy observer start (plan
-// 11-04 wires it into OnConn — the unconditional-start cure of Pitfall 2:
-// the lazy condition must not leave the blocklist item dead on a default
-// D-54-off install). RED stub: no-op.
-func (a *Actor) EnsureAppid() {
+	a.startAppidOnce()
 }
 
 // BlocklistAppState is the composition accessor (plan 11-04's only state
 // channel): app+known (known requires FRESHNESS — a stale cache name never
 // leaks to the composition, D-03), covered and full per the same snapshot
-// computation the menu pushes ride. RED stub: the zero unknown.
+// computation the menu pushes ride.
 func (a *Actor) BlocklistAppState() (app string, known, covered, full bool) {
-	return "", false, false, false
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.blocklistStateLocked()
 }
 
 // SoundSink is the acoustic-feedback seam (plan 07-08, the owner's «Звуки
@@ -2441,6 +2405,14 @@ func (a *Actor) applySnapshot() {
 	a.refreshACBlocklist(snap.Autocorrect.AppsBlocklist)
 	a.refreshACTerminals(snap.Correction.Terminals)
 	a.ensureAppid() // the per-app list or the enabled autocorrect layer may have appeared with this document
+	// The blocklist item's fold push (phase 11, MENU-01, the push moment
+	// (в) of RESEARCH Pattern 2): the document just changed — covered (a
+	// pattern matching the fresh identity, the gate's discipline) and full
+	// (the list length at the ceiling) are recomputed and pushed WITHOUT
+	// any click, so the checkmark and the fill state follow the document.
+	// Synchronous under the mutex, quick; the menu dedupes identical
+	// pushes (the pushMenuSync contract, the comment 1885-1888 form).
+	a.pushBlocklistAppLocked()
 	// The sound switch folds live (plan 07-08, the autocorrect-fold
 	// precedent): the owner's default ON is the EffectiveEnabled truth —
 	// an absent section reads ON, only an explicit enabled: false mutes,
@@ -3084,6 +3056,76 @@ func (a *Actor) ensureAppid() {
 	if a.appidStarted || (len(a.opts.MACRApps) == 0 && !a.opts.AutoCorrectEnabled) {
 		return
 	}
+	a.startAppidOnce()
+}
+
+// blocklistStateLocked computes the blocklist menu item's state triple from
+// the actor's snapshot: app+fresh (the freshness machine — empty and false
+// when unknown, the D-03 static state), covered (any compiled blocklist
+// pattern matches the FRESH identity — the same re.MatchString discipline
+// as autoCorrectBoundary's gate, never the raw strings) and full (the
+// document's list length reached the ceiling). The caller holds the mutex.
+func (a *Actor) blocklistStateLocked() (app string, fresh, covered, full bool) {
+	full = len(a.opts.AutoCorrectBlocklist) >= autocorrectBlocklistCeil
+	fresh = a.blFresh && a.blApp != ""
+	if !fresh {
+		return "", false, false, full
+	}
+	for _, re := range a.acBlocklist {
+		if re.MatchString(a.blApp) {
+			return a.blApp, true, true, full
+		}
+	}
+
+	return a.blApp, true, false, full
+}
+
+// pushBlocklistAppLocked hands the blocklist item's computed state to the
+// menu — the pushMenuSync discipline: synchronous under the actor's mutex,
+// quick, never panics or blocks; the menu dedupes identical values. A nil
+// menuSync (no menu attached) is the silent no-op. The caller holds the
+// mutex.
+func (a *Actor) pushBlocklistAppLocked() {
+	if a.menuSync == nil {
+		return
+	}
+	app, fresh, covered, full := a.blocklistStateLocked()
+	a.menuSync.SetBlocklistApp(app, fresh, covered, full)
+}
+
+// startAppidDefault is the lazy per-app observer's production starter: the
+// a11y dial of internal/appid on the daemon's lifetime (the clipboard
+// rung's context.Background precedent — the actor owns no shutdown path).
+// The WithGainHook wiring (phase 11, MENU-01) delivers every gain identity
+// to PushFocusedApp — the freshness machine of the blocklist menu item
+// lives inside the actor; main.go stays untouched.
+//
+//nolint:ireturn // the starter seam stores AppidSource; the method hands the interface back (G-6-1)
+func (a *Actor) startAppidDefault() (AppidSource, error) {
+	src, err := appid.Start(context.Background(), appid.WithGainHook(a.PushFocusedApp))
+	if err != nil {
+		return nil, fmt.Errorf("start app identity observer: %w", err)
+	}
+
+	return src, nil
+}
+
+// defaultFlapAfter arms one real focusFlapWindow deadline (the production
+// flapAfter): the returned closure stops a still-pending firing; an already
+// fired timer returns false harmlessly — the epoch guard owns the verdict.
+func defaultFlapAfter(d time.Duration, fn func()) func() {
+	t := time.AfterFunc(d, fn)
+
+	return func() { t.Stop() }
+}
+
+// startAppidOnce is the once-per-actor observer start — the shared body of
+// ensureAppid and EnsureAppid (the extraction is the Pitfall-2 cure's
+// shape): the start flag is armed, a failed dial WARNs and leaves the
+// source nil — the quiet unknown-identity pass-through covers the gap for
+// good (one documented degradation, not a retry loop). The caller holds
+// the mutex.
+func (a *Actor) startAppidOnce() {
 	a.appidStarted = true
 	src, err := a.startAppid()
 	if err != nil {
