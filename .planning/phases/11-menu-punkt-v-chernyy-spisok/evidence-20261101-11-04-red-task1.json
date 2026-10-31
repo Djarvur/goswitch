@@ -1,0 +1,12 @@
+{
+ "command": "mise exec -- go test ./cmd/goswitchd/ -run TestBlocklistClickTracer -count=1 -v",
+ "exitCode": 1,
+ "output": "not ok 1 - TestBlocklistClickTracer\nnot ok 2 - TestBlocklistClickTracer/click_lands_the_fresh_identity_and_applies_in_the_same_click\nnot ok 3 - TestBlocklistClickTracer/metacharacter_identity_lands_as_a_literal\nnot ok 4 - TestBlocklistClickTracer/the_gate_goes_silent_with_the_clicked_document\n# tests 4\n# pass 0\n# fail 4",
+ "targetTest": "TestBlocklistClickTracer",
+ "expected": "клик пишет QuoteMeta(identity) в temp-документ (reload==1, элемент '- gedit' в файле, строгий Load зелёный, fold-пуш covered=true); метасимвол 'org.example.App[1]' литералом 'org\\.example\\.App\\[1\\]'; гейт воздерживается app-blocked",
+ "actual": "stub add() no-op: reload calls = 0; документ не вырос; fold-пуш covered=false; гейт abstained=0 reasons=map[] — все три subtest упали на planned-behavior assertions",
+ "note": "TAP-проекция go test -v 1:1 (конвертер — прецедент 10-10); raw: /tmp/gsd-11-04-t1-red-raw.txt",
+ "verdict": "RED_EVIDENCE_OK",
+ "reason": "target_test_failed",
+ "failing_test": "TestBlocklistClickTracer"
+}

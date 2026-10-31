@@ -350,6 +350,7 @@ func newCtlDeps(actor *session.Actor, reload ctlsvc.Reloader, debug bool) ctlsvc
 type menuToggles struct {
 	ac    *configToggle
 	sound *configToggle
+	block *blocklistToggle
 }
 
 // newMenuToggles wires the compositions: the applied value reads from the
@@ -388,8 +389,31 @@ func newMenuToggles(
 			},
 			reload: syncReload,
 		},
+		block: &blocklistToggle{
+			path:   cfgPath,
+			state:  actor.BlocklistAppState,
+			write:  config.AppendAutocorrectBlocklist,
+			reload: syncReload,
+		},
 	}
 }
+
+// blocklistToggle is the «Добавить <app> в чёрный список» click composition
+// (phase 11, MENU-01): the click lands the FRESH identity into
+// autocorrect.apps_blocklist (the QuoteMeta pattern, through the 11-03
+// writer — the single persist path) and applies the document in the same
+// click. The state seam is the actor's BlocklistAppState accessor — the
+// only state channel (S1/S3: the composition knows no blocklist schema).
+type blocklistToggle struct {
+	path   string
+	state  func() (app string, known, covered, full bool)
+	write  func(path, pattern string) error
+	reload func() // nil without a config source — the flip's deferred-apply guard, mirrored
+}
+
+// add executes one click — the RED stub of plan 11-04 Task 1: the GREEN
+// commit replaces the body with the pinned guard order (RESEARCH Pattern 4).
+func (t *blocklistToggle) add() {}
 
 // procStarter is the started-process seam of the settings launcher (plan
 // 07-05): Start brings the editor up, Wait reaps it. *exec.Cmd is the
