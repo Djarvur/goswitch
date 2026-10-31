@@ -7554,6 +7554,126 @@ func TestTerminalClass_VerifyDeadSurvivesOwnFlip(t *testing.T) {
 	}
 }
 
+// TestTerminalClass_VerifyDeadSurvivesClientResetAfterOwnFlip pins the Round
+// 2 finding of debug session orca-terminal-second-shift (green106, owner
+// acceptance 2026-10-31 13:55 «работает со второго», the Round 1 fix
+// 946b4cd already in main): the synthetic carve-out survives the re-mint's
+// focus pair, but ~0.9 s later the SLOW CLIENT (Electron ibus-IM, the
+// journal's Orca IDE terminal) reconnects its IM context and delivers a
+// Reset on the re-minted engine object — and the Reset branch wipes the
+// class the carve-out had just saved (the acceptance row's wipe 41.874,
+// 923 ms after the flip, followed by the same-engine flap pair; the
+// machine-verified journal elimination: all 22 wipe rows of the day ran the
+// Reset branch). Within the re-mint aftermath window the Reset is the
+// re-mint's own echo — the same client field re-engaging: the class
+// survives and the next correction rides it on the FIRST press.
+func TestTerminalClass_VerifyDeadSurvivesClientResetAfterOwnFlip(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	aftermath := &flapClock{}
+	a.UseFlipAftermathTimer(aftermath.arm)
+	a.SetOptions(session.Options{FlipAfterCorrection: true})
+	a.SetSwitcher(func(_ context.Context, _ string) error { return nil })
+
+	// Gesture 1 — the verify round expires on the living context: the class
+	// is learned, the round skipped (the journal's first press).
+	teachVerifyDead(t, a, wordEN)
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 1 {
+		t.Fatalf("verify-timeout records after the teaching round = %d, want 1; log:\n%s",
+			got, buf.String())
+	}
+
+	// Gesture 2 — rides the learned class: the terminal write branch
+	// delivers, and the terminal flip arms (the release waits for the next
+	// keystroke — the journal's flip-armed).
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	if !strings.Contains(buf.String(), `"msg":"correction delivery","stage":"flip-armed"`) {
+		t.Fatalf("the terminal flip never armed — gesture 2 must deliver through the "+
+			"terminal write branch off the learned class; log:\n%s", buf.String())
+	}
+
+	// The keystroke releases the flip (a successful SetGlobalEngine round
+	// trip: one credit AND the aftermath window), the re-mint's synthetic
+	// pair arrives — and then the client's late Reset lands INSIDE the
+	// aftermath window (the journal's +923 ms echo).
+	a.HandleKey(spaceKey())
+	a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes the credit
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+	if armed, _ := aftermath.counts(); armed != 1 {
+		t.Fatalf("aftermath windows armed by the flip = %d, want 1 — the successful round trip "+
+			"arms the echo window next to the credit", armed)
+	}
+	a.HandleLifecycle(engine.LifecycleReset) // the client's re-mint echo, inside the window
+
+	// Gesture 3 — the NEXT correction (the journal's press after the echo):
+	// the class survived the client Reset — no verify round re-arms, no
+	// second verify-timeout, the delivery commits.
+	teachVerifyDead(t, a, wordEN)
+
+	logged := buf.String()
+	if got := strings.Count(logged, `"reason":"verify-timeout"`); got != 1 {
+		t.Fatalf("verify-timeout records after the client Reset = %d, want 1 — the re-mint "+
+			"aftermath Reset must not wipe the learned class (the two-press cycle); log:\n%s",
+			got, logged)
+	}
+	if got := strings.Count(logged, `"msg":"terminal class"`); got != 1 {
+		t.Fatalf("terminal-class markers = %d, want exactly 1 (learn only) — the aftermath "+
+			"Reset is not a context change for the behavioral class; log:\n%s", got, logged)
+	}
+	if got := strings.Count(logged, `"msg":"correction","outcome":"done","changed":true`); got != 2 {
+		t.Fatalf("done records = %d, want 2 — gestures 2 and 3 both deliver; log:\n%s", got, logged)
+	}
+}
+
+// TestTerminalClass_VerifyDeadClearedByResetOutsideAftermath pins the
+// fail-closed arm of the Round 2 carve-out: a Reset arriving AFTER the
+// re-mint aftermath window closed is a REAL context change and wipes the
+// learned class immediately, byte as before — the next correction re-pays
+// the verify round a push-less terminal always loses. The aftermath window
+// must never grow into a class-immunity blanket: its only tenant is the
+// re-mint echo of the daemon's own flip.
+func TestTerminalClass_VerifyDeadClearedByResetOutsideAftermath(t *testing.T) {
+	buf := captureLogs(t)
+	a, _ := wiredActor()
+	aftermath := &flapClock{}
+	a.UseFlipAftermathTimer(aftermath.arm)
+	a.SetOptions(session.Options{FlipAfterCorrection: true})
+	a.SetSwitcher(func(_ context.Context, _ string) error { return nil })
+
+	teachVerifyDead(t, a, wordEN) // the class learns (the first press)
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow) // gesture 2 delivers, the terminal flip arms
+	a.HandleKey(spaceKey())       // the flip's release keystroke: credit + aftermath window
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+
+	aftermath.fire()                         // the window closed — the echo never came
+	a.HandleLifecycle(engine.LifecycleReset) // a REAL Reset: the immediate wipe stands
+
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
+		t.Fatalf("terminal-class markers after the outside Reset = %d, want exactly 2 (learn + clear); log:\n%s",
+			got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `"verify_dead":false`) {
+		t.Errorf("the cleared-class marker is missing; log:\n%s", buf.String())
+	}
+
+	// The fresh context learns afresh: the next correction re-pays the
+	// verify round (the fail-closed cost of a real context change).
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	teachVerifyDead(t, a, wordEN)
+
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 2 {
+		t.Errorf("verify-timeout records = %d, want 2 — the outside Reset really cleared the "+
+			"class and the next correction re-pays the verify round (fail-closed kept); log:\n%s",
+			got, buf.String())
+	}
+}
+
 // TestTerminalClass_FlapWindowRearmsNotBreeds pins the single-window
 // discipline (T-10-07-04): a second real FocusOut while a window is pending
 // RE-ARMS the same window (arm 2, stop 1), the completing FocusIn cancels
