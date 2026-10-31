@@ -414,9 +414,12 @@ func caseRegistry() map[string]caseSpec {
 			fn: runAutocorrectTerminalSilent, noSurfacePreflight: true, watchdog: autocorrectWatchdog,
 		},
 		"autocorrect-blocklist-silent": {fn: runAutocorrectBlocklistSilent},
-		"menu-v2":                      {fn: runMenuV2},
-		// menu-blocklist (11-05): the blocklist negative's own surfaces — the default preflight fits.
-		"menu-blocklist":     {fn: runMenuBlocklist},
+		// menu-v2 and menu-blocklist drive zenity/fixtures/gdbus only — the
+		// chromium/gte/gedit preflight checks are surfaces neither uses
+		// (the noSurfacePreflight philosophy of 10-05; the VM stand live
+		// finding of plan 10-06, extended to the menu family by 11-05).
+		"menu-v2":            {fn: runMenuV2, noSurfacePreflight: true},
+		"menu-blocklist":     {fn: runMenuBlocklist, noSurfacePreflight: true},
 		"term-word-vte":      {fn: runTermWordVTE, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-word-wezterm":  {fn: runTermWordWezterm, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-word-vte-flip": {fn: runTermWordVTEFlip, noSurfacePreflight: true, watchdog: recipeWatchdog},
