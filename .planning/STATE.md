@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Терминалы и видимость приложений
 current_phase: 11
 current_phase_name: MENU — пункт «в чёрный список»
-status: executing
-stopped_at: Completed 11-04-PLAN.md
-last_updated: "2026-10-31T22:56:56.478Z"
+status: verifying
+stopped_at: Completed 11-05-PLAN.md
+last_updated: "2026-11-01T00:35:10.010Z"
 last_activity: 2026-10-31
 last_activity_desc: Phase 11 execution started
-state_head: 575124f4239b39868d2f999bc8aaecc9811b29a9
+state_head: c0dd7aba574c6d493d59f5cc7be639fa3f4dd1c8
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 23
-  completed_plans: 21
+  completed_plans: 22
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 
 Phase: 11 (MENU — пункт «в чёрный список») — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-31 — Phase 11 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -70,6 +70,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 11 P03 | 34min | 2 tasks | 5 files |
 | Phase 11 P02 | 46min | 3 tasks | 9 files |
 | Phase 11 P04 | 30min | 2 tasks | 4 files |
+| Phase 11 P05 | 85min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -153,8 +154,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-31T22:56:45.118Z
-Stopped at: Completed 11-04-PLAN.md
+Last session: 2026-11-01T00:35:09.920Z
+Stopped at: Completed 11-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

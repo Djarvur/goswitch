@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 16
 waived_count: 4
 fixed_count: 7
-total_count: 25
-last_updated: 2026-10-31T22:56:21.036Z
+total_count: 27
+last_updated: 2026-11-01T00:32:19.021Z
 ---
 
 # Broken Windows Ledger
@@ -40,6 +40,8 @@ last_updated: 2026-10-31T22:56:21.036Z
 | 23 | 11 | unrun-verify | mise.toml |  | 11-03: literal 'mise run ci' unrun in the executor session (toolchain seam, 11-01 Rule-3 precedent): GOROOT(mise go1.23.12) vs go binary(system 1.27.3) mismatch in task shells; the SAME gates ran green directly — go build/vet/test -race ./... (22 packages) + golangci-lint 2.15.0 (mise install, GOROOT unset) 0 issues + go mod tidy git-diff clean, STACK.md-sanctioned | open |  | 2026-10-31T21:18:56.408Z |  |
 | 24 | 11 | unrun-verify | mise.toml |  | 11-02: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly — go build/vet/test -race ./... (22 packages) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean + D-53 gate functions byte-identical vs 34059d8 | open |  | 2026-10-31T22:11:49.019Z |  |
 | 25 | 11 | unrun-verify | mise.toml |  | 11-04: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD e8f7f82 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 (mise install, GOROOT unset) 0 issues + go mod tidy git-diff clean | open |  | 2026-10-31T22:56:21.036Z |  |
+| 26 | 11 | unrun-verify | mise.toml |  | 11-05: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24/#25): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD bc5a506 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean; the live stand runs (menu-blocklist + menu-v2) are the plan's own verification and are green | open |  | 2026-11-01T00:32:10.554Z |  |
+| 27 | 11 | unrun-verify | mise.toml |  | 11-05: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24/#25): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD bc5a506 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean; the live stand runs (menu-blocklist + menu-v2) are the plan's own verification and are green | open |  | 2026-11-01T00:32:19.021Z |  |
 
 ````json
 [
@@ -341,6 +343,30 @@ last_updated: 2026-10-31T22:56:21.036Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-31T22:56:21.036Z",
+    "resolved_at": null
+  },
+  {
+    "id": 26,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "mise.toml",
+    "line": null,
+    "description": "11-05: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24/#25): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD bc5a506 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean; the live stand runs (menu-blocklist + menu-v2) are the plan's own verification and are green",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-01T00:32:10.554Z",
+    "resolved_at": null
+  },
+  {
+    "id": 27,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "mise.toml",
+    "line": null,
+    "description": "11-05: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24/#25): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD bc5a506 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean; the live stand runs (menu-blocklist + menu-v2) are the plan's own verification and are green",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-01T00:32:19.021Z",
     "resolved_at": null
   }
 ]
