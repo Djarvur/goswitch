@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 11
-current_phase_name: MENU — пункт «в чёрный список»
-status: verifying
-stopped_at: Completed 11-05-PLAN.md
-last_updated: "2026-11-01T00:35:10.010Z"
-last_activity: 2026-10-31
-last_activity_desc: Phase 11 execution started
-state_head: c0dd7aba574c6d493d59f5cc7be639fa3f4dd1c8
+current_phase: 12
+current_phase_name: TERM-строка
+status: planning
+stopped_at: Phase 11 complete, ready to plan Phase 12
+last_updated: "2026-11-01T20:49:40.350Z"
+last_activity: 2026-11-01
+last_activity_desc: Phase 11 complete, transitioned to Phase 12
+state_head: 428260b534d476c574d7cbbb3786acfcd447edd6
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 3
   total_plans: 23
   completed_plans: 22
-  percent: 0
+  percent: 60
 ---
 
 # Project State
@@ -25,16 +25,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-31)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 11 — MENU — пункт «в чёрный список»
+**Current focus:** Phase 12 — TERM-строка
 
 ## Current Position
 
-Phase: 11 (MENU — пункт «в чёрный список») — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-10-31 — Phase 11 execution started
+Phase: 12 — TERM-строка
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-11-01 — Phase 11 complete, transitioned to Phase 12
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -155,7 +155,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-11-01T00:35:09.920Z
-Stopped at: Completed 11-05-PLAN.md
+Stopped at: Phase 11 complete, ready to plan Phase 12
 Resume file: None
 
 ## Operator Next Steps
