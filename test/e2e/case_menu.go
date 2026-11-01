@@ -191,6 +191,11 @@ func startMenuDaemon(ctx context.Context, s *stand, doc string) (string, error) 
 // spawnMenuDaemon restarts the daemon on an EXISTING document (the
 // restart-survival step: the toggled file on disk is the thing being
 // proven — never rewritten) and waits the readiness marks + re-activates.
+// The re-activation is the RETRY form (the 11-05 live finding, the VM
+// stand: a single-shot SetGlobalEngine races the fresh daemon's engine
+// re-creation for beats after the readiness marks — "Cannot find engine
+// goswitch-en"; the same term-negative-witnesses live finding of
+// 2026-10-12 the -config spawn ladders carry the retry for).
 func spawnMenuDaemon(ctx context.Context, s *stand, cfgPath string) error {
 	if err := s.activateGoswitch(ctx); err != nil {
 		return err
@@ -204,7 +209,7 @@ func spawnMenuDaemon(ctx context.Context, s *stand, cfgPath string) error {
 		}
 	}
 
-	return s.activateGoswitch(ctx)
+	return s.activateGoswitchRetry(ctx)
 }
 
 // runMenuV2 drives the menu v2 over the Event channel: the radio pair,
