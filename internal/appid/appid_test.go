@@ -28,6 +28,10 @@ const (
 	senderZenity = dbus.Sender(":1.90")
 	senderEditor = dbus.Sender(":1.91")
 
+	// editorIdentity is the editor's bridge-namespace identity — the
+	// extraction of editorPath (the corpus's expected cache value).
+	editorIdentity = "org.gnome.gnome-text-editor"
+
 	zenityPath = "/org/gnome/Zenity/a11y/6c20c914_1a35"
 	editorPath = "/org/gnome/gnome-text-editor/a11y/n1"
 )
@@ -394,5 +398,229 @@ func TestAppid_StartBusUnavailable(t *testing.T) {
 
 	if _, err := appid.Start(context.Background()); err == nil {
 		t.Fatalf("Start over an unreachable bus = nil error, want the dial failure (never a panic)")
+	}
+}
+
+// TestObserver_GainHook pins the freshness hook of the blocklist menu item
+// (phase 11, MENU-01): every focus GAIN delivers the identity to the
+// installed hook — the actor's PushFocusedApp lives on this seam — a LOSS
+// never calls it (freshness rides gains only), and the hook may read the
+// observer back WITHOUT deadlocking: the call happens OUTSIDE the observer's
+// mutex (Pitfall 9 — the hook under o.mu entering the actor's mutex would
+// invert the one-way actor.mu → sink.mu ordering). The -race corpus of the
+// three-package verify watches every one of these crossings.
+func TestObserver_GainHook(t *testing.T) {
+	t.Run("gain delivers the identity to the hook", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		feed := make(chan *dbus.Signal, 4)
+		got := make(chan string, 1)
+		appid.New(ctx, feed, nil, appid.WithGainHook(func(name string) {
+			got <- name
+		}))
+
+		feed <- focusSignal(senderZenity, zenityPath, 1)
+		select {
+		case name := <-got:
+			if name != "org.gnome.Zenity" {
+				t.Errorf("gain hook name = %q, want org.gnome.Zenity", name)
+			}
+		case <-time.After(appidObserverWait):
+			t.Fatalf("the gain hook never fired for a bridge-namespaced gain")
+		}
+	})
+
+	t.Run("loss events never call the hook", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		feed := make(chan *dbus.Signal, 4)
+		got := make(chan string, 1)
+		appid.New(ctx, feed, nil, appid.WithGainHook(func(name string) {
+			got <- name
+		}))
+
+		feed <- focusSignal(senderEditor, editorPath, 0) // a loss
+		feed <- focusSignal(senderEditor, "/root", 1)    // not bridge-namespaced — no identity
+		time.Sleep(50 * time.Millisecond)                // let the loop see both
+		if len(got) != 0 {
+			t.Errorf("the hook fired %d time(s) on loss/non-identity events, want never", len(got))
+		}
+	})
+
+	t.Run("hook may read the observer without deadlocking", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		feed := make(chan *dbus.Signal, 4)
+		var obs *appid.Observer
+		seen := make(chan string, 1)
+		obs = appid.New(ctx, feed, nil, appid.WithGainHook(func(name string) {
+			// Pitfall 9: the hook runs OUTSIDE the observer's mutex — a read
+			// of the observer FROM the hook must return, never deadlock.
+			if app, err := obs.FocusedApp(); err == nil {
+				seen <- app
+			}
+		}))
+
+		feed <- focusSignal(senderEditor, editorPath, 1)
+		select {
+		case app := <-seen:
+			if app != "org.gnome.gnome-text-editor" {
+				t.Errorf("observer read from the hook = %q, want the fresh gain's identity", app)
+			}
+		case <-time.After(appidObserverWait):
+			t.Fatalf("the hook blocked reading the observer — the mutex inversion of Pitfall 9")
+		}
+	})
+}
+
+// TestBridgeApp_RefusesRegistryNamespace pins the identity extraction's
+// namespace guard (plan 11-05, the VM live finding): the at-spi2 relay
+// re-emits apps' events under its OWN accessible-id addressing
+// (/org/a11y/atspi/accessible/<id>) and those events RACE the app's direct
+// legacy emissions on real venues — a naive "/a11y/" scan truncates the
+// relay prefix to the garbage identity "org", and the last gain wins the
+// cache. The registry namespace reports "" (the unmarked-path discipline:
+// cache-keep, never a guessed identity); the app bridge forms keep their
+// documented extraction.
+func TestBridgeApp_RefusesRegistryNamespace(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		path dbus.ObjectPath
+		want string
+	}{
+		// The registry relay's accessible-id addressing (the 11-05 live
+		// capture) — not an application.
+		{"/org/a11y/atspi/accessible/2720", ""},
+		{"/org/a11y/atspi/accessible/root", ""},
+		// The documented app bridge forms.
+		{"/org/gtk/application/gs_e2e_password/a11y/3d4aadb3_de21_4364_b45d_5d9c16ecc29c",
+			"org.gtk.application.gs_e2e_password"},
+		{"/org/gnome/Zenity/a11y/0f40fed1_535a_4a96_8b66_d6f1c161eb08", "org.gnome.Zenity"},
+		// The unmarked shapes stay "".
+		{"/root/node", ""},
+		{"", ""},
+	} {
+		if got := appid.BridgeApp(tc.path); got != tc.want {
+			t.Errorf("bridgeApp(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}
+
+// lossRecorder wires an observer whose hook records every identity push;
+// pushes returns the snapshot (the mutex-protected recorder form).
+func lossRecorder(ctx context.Context, feed chan *dbus.Signal) (obs *appid.Observer, pushes func() []string) {
+	var mu sync.Mutex
+	var seen []string
+	obs = appid.New(ctx, feed, nil, appid.WithGainHook(func(name string) {
+		mu.Lock()
+		seen = append(seen, name)
+		mu.Unlock()
+	}))
+
+	return obs, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return append([]string(nil), seen...)
+	}
+}
+
+// TestObserver_LossHook pins the freshness hook's LOSS half (plan 11-05,
+// the VM live finding): the tracked surface's OWN blur (a focused=0 event
+// whose bridge namespace matches the cached identity) reaches the hook as
+// the empty identity — the actor's de-arm signal; a blur attributable to
+// ANOTHER application, and every relayed (registry-namespaced) event,
+// never de-arm. The cache itself keeps its value through any loss (the
+// D-53 gate's semantics are untouched).
+func TestObserver_LossHook(t *testing.T) {
+	t.Run("own blur reports the empty identity to the hook", testLossOwnBlur)
+	t.Run("another app's blur never de-arms", testLossForeignBlur)
+	t.Run("relayed blur never de-arms", testLossRelayedBlur)
+}
+
+// testLossOwnBlur is the de-arm half: the same surface's focused=0 rides
+// the hook as the empty identity, the cache keeps its value (the D-53
+// gate reads it).
+func testLossOwnBlur(t *testing.T) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	feed := make(chan *dbus.Signal, 8)
+	obs, pushes := lossRecorder(ctx, feed)
+
+	feed <- focusSignal(senderEditor, editorPath, 1) // the gain arms the editor
+	feed <- focusSignal(senderEditor, editorPath, 0) // the same surface blurs — the de-arm
+
+	deadline := time.Now().Add(appidObserverWait)
+	for {
+		got := pushes()
+		if len(got) == 2 && got[1] == "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("hook sequence = %q, want [identity, \"\"] — the own blur must de-arm", got)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if app, err := obs.FocusedApp(); err != nil || app != editorIdentity {
+		t.Errorf("cache after the loss = (%q, %v), want the kept identity", app, err)
+	}
+}
+
+// testLossForeignBlur pins the attribution guard: a blur of ANOTHER
+// application's node never reaches the hook — the identity layer never
+// de-arms on an event it cannot attribute to the tracked surface.
+func testLossForeignBlur(t *testing.T) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	feed := make(chan *dbus.Signal, 8)
+	_, pushes := lossRecorder(ctx, feed)
+
+	feed <- focusSignal(senderEditor, editorPath, 1)
+	feed <- focusSignal(senderEditor, "/org/gnome/Zenity/a11y/n9", 0) // a DIFFERENT app blurs
+
+	deadline := time.Now().Add(appidObserverWait)
+	for {
+		got := pushes()
+		if len(got) >= 2 {
+			t.Fatalf("hook sequence = %q, want only the gain — a foreign blur must not de-arm", got)
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// testLossRelayedBlur pins the namespace guard: the registry relay's
+// accessible-id addressing carries no identity — its blur never de-arms.
+func testLossRelayedBlur(t *testing.T) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	feed := make(chan *dbus.Signal, 8)
+	obs, pushes := lossRecorder(ctx, feed)
+
+	feed <- focusSignal(senderEditor, editorPath, 1)
+	feed <- focusSignal(senderEditor, "/org/a11y/atspi/accessible/2721", 0) // relayed — no identity
+
+	deadline := time.Now().Add(appidObserverWait)
+	for {
+		got := pushes()
+		if len(got) >= 2 {
+			t.Fatalf("hook sequence = %q, want only the gain — a relayed blur must not de-arm", got)
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if app, _ := obs.FocusedApp(); app != editorIdentity {
+		t.Errorf("cache = %q, want the kept identity", app)
 	}
 }

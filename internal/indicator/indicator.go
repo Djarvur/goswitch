@@ -104,6 +104,11 @@ type Callbacks struct {
 	ToggleAutocorrect func()
 	ToggleSound       func()
 	Settings          func()
+	// BlockCurrentApp is the blocklist item's gesture (phase 11, MENU-01):
+	// the click composition writes the FRESH identity into
+	// autocorrect.apps_blocklist (QuoteMeta pattern, dedup, ceiling) — the
+	// menu itself decides nothing, the guards live in the composition.
+	BlockCurrentApp func()
 }
 
 // Watcher probes the org.kde.StatusNotifierWatcher owner, registers the

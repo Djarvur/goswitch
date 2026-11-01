@@ -47,6 +47,15 @@ const (
 	a11yRegistryName   = "org.a11y.atspi.Registry"
 	a11yRegistryPath   = "/org/a11y/atspi/registry"
 	eventStateInterest = "Object:state-changed"
+
+	// registryPathPrefix is the at-spi2 relay's OWN object namespace on the
+	// a11y bus: the registry re-emits apps' events under its accessible-id
+	// addressing (/org/a11y/atspi/accessible/<id>). Those paths are node
+	// addresses, never application identities — bridgeApp refuses them (the
+	// 11-05 VM live finding: the naive "/a11y/" scan truncated the prefix to
+	// the garbage identity "org", and the relayed events race the app's
+	// direct legacy emissions, so the garbage could win the cache).
+	registryPathPrefix = "/org/a11y/"
 )
 
 // ErrBusClosed reports that the observer's a11y bus connection went away —
@@ -104,6 +113,16 @@ func WithRoleCall(fn RoleCall) Option {
 	return func(o *Observer) { o.roleCall = fn }
 }
 
+// WithGainHook installs the freshness hook of the blocklist menu item
+// (phase 11): every focus GAIN delivers the identity to the hook AFTER the
+// cache store — outside the observer's mutex, so a hook that reads the
+// observer (the actor's PushFocusedApp) can never deadlock (Pitfall 9).
+// Without it every gain stays a cache update only — the zero value keeps
+// today's behavior.
+func WithGainHook(fn func(name string)) Option {
+	return func(o *Observer) { o.gainHook = fn }
+}
+
 // Observer caches the freshest focused application from the a11y bus's
 // focus events, together with the (sender, path) address of the focused
 // object — the destination of Role's live role query. The zero value is
@@ -115,6 +134,7 @@ type Observer struct {
 	focusSender dbus.Sender
 	focusPath   dbus.ObjectPath
 	roleCall    RoleCall
+	gainHook    func(name string)
 	err         error
 	cleanup     func()
 }
@@ -155,13 +175,42 @@ func focusGain(sig *dbus.Signal) (string, bool) {
 	return name, name != ""
 }
 
+// focusLoss extracts the app-attributable focused-state DROP from one
+// StateChanged signal: a "focused" state-0 event on a bridge-namespaced
+// path — the tracked surface's blur. Relayed events (the registry's own
+// namespace) carry no identity and never match (bridgeApp reports "" —
+// the loss phase never de-arms on an unattributable event).
+func focusLoss(sig *dbus.Signal) (string, bool) {
+	if sig.Name != eventIface+"."+stateChanged || len(sig.Body) < 2 {
+		return "", false
+	}
+	kind, ok := sig.Body[0].(string)
+	if !ok || kind != "focused" {
+		return "", false
+	}
+	state, ok := sig.Body[1].(int32)
+	if !ok || state != 0 {
+		return "", false
+	}
+	name := bridgeApp(sig.Path)
+
+	return name, name != ""
+}
+
 // bridgeApp maps a bridge-namespaced accessible path to the application
 // identity: /org/gnome/Zenity/a11y/<uuid> → org.gnome.Zenity. Paths
 // without the bridge marker (older atk trees' /root nodes) report "" —
 // the observer only tracks bridge-marked applications (the documented
 // A4 scope; an unmarked app leaves the cache at the last known value).
+// The registry's own namespace (registryPathPrefix — the relay's
+// accessible-id addressing) is refused the same way: its "/a11y/" span is
+// the registry's NAME, not an app's bridge marker, and the naive scan
+// would truncate it to the garbage identity "org".
 func bridgeApp(path dbus.ObjectPath) string {
 	s := string(path)
+	if strings.HasPrefix(s, registryPathPrefix) {
+		return ""
+	}
 	i := strings.Index(s, "/a11y/")
 	if i <= 0 {
 		return ""
@@ -174,11 +223,13 @@ func bridgeApp(path dbus.ObjectPath) string {
 // session bus answers org.a11y.Bus.GetAddress, a second connection dials
 // that socket (EXTERNAL auth with the decimal uid — the same SO_PEERCRED
 // idiom as the IBus socket, engine/conn.go), subscribes to the
-// StateChanged signals and feeds the observer. Any failure is returned,
-// never panicked (T-03-05-02: the a11y bus is a secondary source; its
-// absence degrades the per-app lists, it never takes the daemon down).
+// StateChanged signals and feeds the observer. The variadic options ride
+// through to New (the WithGainHook freshness seam — phase 11 — is wired by
+// the actor's default starter, main.go stays untouched). Any failure is
+// returned, never panicked (T-03-05-02: the a11y bus is a secondary source;
+// its absence degrades the per-app lists, it never takes the daemon down).
 // The connection lives until ctx dies (the daemon's lifetime).
-func Start(ctx context.Context) (*Observer, error) {
+func Start(ctx context.Context, opts ...Option) (*Observer, error) {
 	sess, err := dbus.ConnectSessionBus()
 	if err != nil {
 		return nil, fmt.Errorf("connect session bus: %w", err)
@@ -234,7 +285,7 @@ func Start(ctx context.Context) (*Observer, error) {
 	// The wire layer wraps the transport error (the seam's answer IS Role's
 	// error); a dead object behind the path is an error return — the D-53
 	// policy silences, never panics.
-	return New(ctx, feed, func() { _ = conn.Close() }, WithRoleCall(
+	allOpts := append([]Option{WithRoleCall(
 		func(ctx context.Context, sender dbus.Sender, path dbus.ObjectPath) (uint32, error) {
 			var role uint32
 			if err := conn.Object(string(sender), path).
@@ -244,7 +295,9 @@ func Start(ctx context.Context) (*Observer, error) {
 
 			return role, nil
 		},
-	)), nil
+	)}, opts...)
+
+	return New(ctx, feed, func() { _ = conn.Close() }, allOpts...), nil
 }
 
 // FocusedApp returns the cached identity of the focused application (the
@@ -283,7 +336,11 @@ func (o *Observer) Role(ctx context.Context) (uint32, error) {
 // keep both (the cache-keep semantics mirror FocusedApp — an event without a
 // bridge identity carries nothing to refresh with). A closed feed or a
 // cancelled context retires the observer with ErrBusClosed and runs the
-// cleanup exactly once (the conn.go:132-145 loop idiom).
+// cleanup exactly once (the conn.go:132-145 loop idiom). A gain ALSO hands
+// the identity to the freshness hook (phase 11, WithGainHook) — AFTER the
+// mutex is released: the hook (the actor's PushFocusedApp) takes the actor's
+// mutex, and calling it under o.mu would invert the one-way
+// actor.mu → sink.mu ordering into a deadlock (Pitfall 9).
 func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
 	defer func() {
 		if o.cleanup != nil {
@@ -307,7 +364,29 @@ func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
 				o.app = name
 				o.focusSender = dbus.Sender(sig.Sender)
 				o.focusPath = sig.Path
+				hook := o.gainHook
 				o.mu.Unlock()
+				if hook != nil {
+					hook(name)
+				}
+
+				continue
+			}
+			// The identity-attributable blur (plan 11-05, the VM live
+			// finding): the tracked surface blurred — the freshness hook
+			// hears the LOSS as an empty identity, and the actor de-arms
+			// the blocklist item. The cache itself KEEPS its value (the
+			// D-53 gate's semantics are untouched); only the menu
+			// freshness is loss-scoped. The engine's focus churn carries
+			// no identity and never reaches this branch.
+			if lossApp, lost := focusLoss(sig); lost {
+				o.mu.Lock()
+				mine := lossApp == o.app
+				hook := o.gainHook
+				o.mu.Unlock()
+				if mine && hook != nil {
+					hook("")
+				}
 			}
 		}
 	}

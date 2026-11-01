@@ -16,7 +16,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### MENU — Меню
 
-- [ ] **MENU-01**: Динамический пункт трей-меню «Добавить ИмяПриложения в чёрный список»: добавляет текущее наблюдаемое приложение в `autocorrect.apps_blocklist` — `regexp.QuoteMeta` имени, без дублей, потолок 64, атомарная запись конфига + живая перечитка; когда личность приложения неизвестна (wezterm/winit, snap) — пункт неактивен, демон не угадывает.
+- [x] **MENU-01**: Динамический пункт трей-меню «Добавить ИмяПриложения в чёрный список»: добавляет текущее наблюдаемое приложение в `autocorrect.apps_blocklist` — `regexp.QuoteMeta` имени, без дублей, потолок 64, атомарная запись конфига + живая перечитка; когда личность приложения неизвестна (wezterm/winit, snap) — пункт неактивен, демон не угадывает.
 
 ### A11Y — Видимость приложений
 
@@ -50,7 +50,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TERM-01 | Phase 9 | Complete |
 | TERM-04 | Phase 9 | Complete |
 | TERM-02 | Phase 10 | Complete |
-| MENU-01 | Phase 11 | Pending |
+| MENU-01 | Phase 11 | Complete |
 | TERM-03 | Phase 12 | Pending |
 | A11Y-01 | Phase 13 | Pending |
 | A11Y-02 | Phase 13 | Pending |

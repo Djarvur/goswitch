@@ -662,6 +662,477 @@ func TestToggleEmptyPathRefused(t *testing.T) {
 	}
 }
 
+// The blocklist click-composition corpus of plan 11-04 (MENU-01): the
+// in-process tracer — the id-16 click (through the Callbacks field, the
+// exact dispatchClick target the indicator corpus pins) lands the fresh
+// identity into autocorrect.apps_blocklist through the REAL 11-03 writer on
+// a temp document, applies it in the SAME click (strict re-read + fold, the
+// write strictly before the reload) and the fold pushes the covered
+// checkmark; the metacharacter identity lands as a QuoteMeta literal (SC4);
+// the existing block-gate machine goes silent on the clicked document.
+
+// blocklistDoc is the composition corpus's document: complete and
+// Load-valid, the autocorrect layer ON (the gate round needs the armed
+// layer), the blocklist empty until the click lands the pattern.
+const blocklistDoc = `hotkeys:
+  tap_key: shift_r
+  word_layout_combo: shift+ctrl_r
+  mode_switch_chord: super+space
+timeouts:
+  tap_window_ms: 300
+  verify_wait_ms: 100
+correction:
+  backspace_cap: 50
+  clipboard_rung: false
+  flip_after_correction: false
+macr:
+  enabled: false
+  letters: ""
+  apps: []
+  alt_modifier: ""
+autocorrect:
+  enabled: true
+  apps_blocklist: []
+  min_word_len: 4
+  trigram_margin: 2.0
+  trigram_floor: 1.0
+sound:
+  enabled: true
+`
+
+// blocklistTestApp/blocklistTestWord are the composition corpus's fixture
+// identity and word (the session corpus's blTestApp/wordEN shape — local
+// copies: that corpus is a test package).
+const (
+	blocklistTestApp  = "gedit"
+	blocklistTestWord = "ghbdtn"
+)
+
+// menuBlocklistPush is one recorded SetBlocklistApp push — the blocklist
+// menu item's full state triple (the session corpus's blocklistPush shape).
+type menuBlocklistPush struct {
+	app     string
+	fresh   bool
+	covered bool
+	full    bool
+}
+
+// fakeMenuSync is the actor's MenuSync double of the composition corpus:
+// the blocklist pushes recorded, the rest of the surface silent.
+type fakeMenuSync struct {
+	mu        sync.Mutex
+	blocklist []menuBlocklistPush
+}
+
+func (f *fakeMenuSync) SetMode(string)                 {}
+func (f *fakeMenuSync) SetAutocorrectEnabled(bool)     {}
+func (f *fakeMenuSync) SetSoundEnabled(bool)           {}
+func (f *fakeMenuSync) SetKeys(string, string, string) {}
+func (f *fakeMenuSync) SetCorrections(int)             {}
+
+// SetBlocklistApp records the blocklist-item state push.
+func (f *fakeMenuSync) SetBlocklistApp(app string, fresh, covered, full bool) {
+	f.mu.Lock()
+	f.blocklist = append(f.blocklist, menuBlocklistPush{app, fresh, covered, full})
+	f.mu.Unlock()
+}
+
+// menuBlocklist snapshots the recorded blocklist-item pushes.
+func (f *fakeMenuSync) menuBlocklist() []menuBlocklistPush {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]menuBlocklistPush(nil), f.blocklist...)
+}
+
+// fakeAppID is the identity-source double of the gate round (the session
+// corpus's fakeAppid shape).
+type fakeAppID struct{ app string }
+
+// FocusedApp answers the double's programmed identity.
+func (f fakeAppID) FocusedApp() (string, error) { return f.app, nil }
+
+// fakeEngineEmitter is the silent engine sink of the gate round — the
+// blocked gate refuses before any emission exists to record.
+type fakeEngineEmitter struct{}
+
+func (fakeEngineEmitter) RequireSurroundingText()                {}
+func (fakeEngineEmitter) DeleteSurroundingText(int32, uint32)    {}
+func (fakeEngineEmitter) ForwardKeyEvent(uint32, uint32, uint32) {}
+func (fakeEngineEmitter) CommitText(engine.IBusText)             {}
+func (fakeEngineEmitter) UpdateModeSymbol(string)                {}
+
+// typeWord feeds one press/release pair per rune — the session corpus's
+// typeWord shape (the engine delivers keyvals equal to the runes).
+func typeWord(a *session.Actor, word string) {
+	for _, r := range word {
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r)})
+		a.HandleKey(engine.EngineEvent{Keyval: uint32(r), Release: true})
+	}
+}
+
+// blocklistFixture builds the tracer's in-process stand: a temp document on
+// disk, the actor folded over it through a value source (the watcher's
+// Snapshot stand-in), the menu double installed. The gain is the caller's —
+// PushFocusedApp is the WithGainHook delivery the daemon wires.
+func blocklistFixture(t *testing.T) (*session.Actor, *foldSource, *fakeMenuSync, string) {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(blocklistDoc), 0o600); err != nil {
+		t.Fatalf("write config document: %v", err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("load config document: %v", err)
+	}
+	src := &foldSource{cfg: *cfg}
+	actor := newActor(*cfg, nil)
+	actor.AttachConfig(src)
+	actor.ExpiryAt(time.Second) // the startup fold
+
+	ms := &fakeMenuSync{}
+	actor.SetMenuSync(ms)
+
+	return actor, src, ms, path
+}
+
+// clickBlocklistApp runs one composition click through the Callbacks field —
+// the dispatchClick(menuIDBlocklistApp) target — with the sync-apply reload
+// shape of OnConn: strict re-read → snapshot re-store → FoldAppliedConfig.
+func clickBlocklistApp(t *testing.T, actor *session.Actor, src *foldSource, path string) {
+	t.Helper()
+
+	toggles := newMenuToggles(actor, &atomic.Pointer[indicator.Menu]{}, path, func() {
+		fresh, err := config.Load(path)
+		if err != nil {
+			t.Errorf("strict reload of the clicked document: %v", err)
+
+			return
+		}
+		src.set(*fresh)
+		actor.FoldAppliedConfig()
+	})
+	cb := indicator.Callbacks{BlockCurrentApp: toggles.block.add}
+	cb.BlockCurrentApp()
+}
+
+// TestBlocklistClickTracer pins the whole id-16 chain in-process (plan
+// 11-04, the tracer): the click lands the fresh identity into
+// autocorrect.apps_blocklist through the REAL writer, applies the document
+// in the SAME click (the write strictly before the reload), the fold pushes
+// the covered checkmark without a second click; the metacharacter identity
+// lands as a QuoteMeta literal a strict load accepts (SC4); with the
+// clicked document the autocorrect gate abstains with app-blocked.
+func TestBlocklistClickTracer(t *testing.T) {
+	t.Run("click lands the fresh identity and applies in the same click", testBlocklistClickLandsFresh)
+	t.Run("metacharacter identity lands as a literal", testBlocklistClickMetacharLiteral)
+	t.Run("the gate goes silent with the clicked document", testBlocklistClickGateSilent)
+}
+
+// testBlocklistClickLandsFresh is the tracer's main chain: one click on the
+// fresh «gedit» identity — exactly ONE apply-reload (the write strictly
+// before it), the document grown by the listed pattern a strict Load
+// accepts (SC1), and the fold's covered push arriving without a second
+// click (the checkmark delta, the fold's push moment).
+func testBlocklistClickLandsFresh(t *testing.T) {
+	t.Helper()
+
+	actor, src, ms, path := blocklistFixture(t)
+	actor.PushFocusedApp(blocklistTestApp) // the gain — the fresh identity
+
+	var reloads int
+	toggles := newMenuToggles(actor, &atomic.Pointer[indicator.Menu]{}, path, func() {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("read the document at reload: %v", err)
+		} else if !bytes.Contains(raw, []byte(blocklistTestApp)) {
+			t.Errorf("the reload ran before the write landed — the apply would fold a stale document")
+		}
+		reloads++
+		fresh, err := config.Load(path)
+		if err != nil {
+			t.Errorf("strict reload of the clicked document: %v", err)
+
+			return
+		}
+		src.set(*fresh)
+		actor.FoldAppliedConfig()
+	})
+	cb := indicator.Callbacks{BlockCurrentApp: toggles.block.add}
+	cb.BlockCurrentApp()
+
+	if reloads != 1 {
+		t.Fatalf("reload calls = %d, want exactly 1 — the apply rides the same click", reloads)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the clicked document: %v", err)
+	}
+	if !bytes.Contains(raw, []byte(blocklistTestApp)) {
+		t.Errorf("the clicked document does not carry the landed pattern; doc:\n%s", raw)
+	}
+	cfg, err := config.Load(path) // the strict re-read is green, the pattern is listed — SC1
+	if err != nil {
+		t.Errorf("the clicked document refuses a strict load: %v", err)
+	} else if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{blocklistTestApp}) {
+		t.Errorf("the reloaded blocklist = %v, want exactly [%s]", cfg.Autocorrect.AppsBlocklist, blocklistTestApp)
+	}
+	pushes := ms.menuBlocklist()
+	if len(pushes) != 3 {
+		t.Fatalf("menu pushes = %d (%+v), want install + gain + covered", len(pushes), pushes)
+	}
+	want := menuBlocklistPush{app: blocklistTestApp, fresh: true, covered: true}
+	if pushes[2] != want {
+		t.Errorf("the fold's push = %+v, want %+v — the checkmark arrives without a second click", pushes[2], want)
+	}
+}
+
+// testBlocklistClickMetacharLiteral pins SC4 on the tracer's stand: the
+// metacharacter identity lands as the ESCAPED literal — exactly one listed
+// element, a strict Load accepts it, and the raw metacharacter name never
+// reached the document (it would compile as a regex class).
+func testBlocklistClickMetacharLiteral(t *testing.T) {
+	t.Helper()
+
+	const meta = "org.example.App[1]"
+	actor, src, ms, path := blocklistFixture(t)
+	actor.PushFocusedApp(meta)
+
+	clickBlocklistApp(t, actor, src, path)
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the clicked document: %v", err)
+	}
+	const quoted = `org\.example\.App\[1\]`
+	if !bytes.Contains(raw, []byte(quoted)) {
+		t.Errorf("the document does not carry the QuoteMeta literal; doc:\n%s", raw)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Errorf("the quoted document refuses a strict load: %v", err)
+	} else if !slices.Equal(cfg.Autocorrect.AppsBlocklist, []string{quoted}) {
+		// Exactly ONE listed element and it is the ESCAPED literal — the
+		// raw metacharacter name never landed (it would compile as a
+		// regex class).
+		t.Errorf("the reloaded blocklist = %v, want exactly the escaped literal [%s]",
+			cfg.Autocorrect.AppsBlocklist, quoted)
+	}
+	pushes := ms.menuBlocklist()
+	want := menuBlocklistPush{app: meta, fresh: true, covered: true}
+	if len(pushes) == 0 || pushes[len(pushes)-1] != want {
+		t.Errorf("the fold's last push = %+v, want the covered literal match %+v", pushes, want)
+	}
+}
+
+// testBlocklistClickGateSilent is the tracer's last rung: the EXISTING
+// block-gate machine, fed with the clicked document — the identity source
+// answers the blocked app, the word lands its boundary — abstains with
+// app-blocked before any emission, and the separator transits.
+func testBlocklistClickGateSilent(t *testing.T) {
+	t.Helper()
+
+	actor, src, _, path := blocklistFixture(t)
+	actor.PushFocusedApp(blocklistTestApp)
+
+	clickBlocklistApp(t, actor, src, path)
+
+	actor.UseAppid(fakeAppID{app: blocklistTestApp})
+	actor.AttachEngine(fakeEngineEmitter{})
+	actor.HandleCapabilities(engine.CapSurroundingText)
+	typeWord(actor, blocklistTestWord)
+	if actor.HandleKey(engine.EngineEvent{Keyval: uint32(' ')}) {
+		t.Fatal("the boundary separator was consumed — a block refusal never changes consumption")
+	}
+
+	st := actor.StatusSnapshot()
+	if st.AutoCorrectAbstained != 1 || st.AutoCorrectSkipReasons["app-blocked"] != 1 {
+		t.Errorf("the gate did not abstain with app-blocked: abstained=%d reasons=%v",
+			st.AutoCorrectAbstained, st.AutoCorrectSkipReasons)
+	}
+}
+
+// The guard-matrix corpus of plan 11-04 Task 2: every early guard of the
+// composition is a fail-closed refusal — the recording writer counts ZERO
+// calls, the planted document stays byte-identical, and the silent guards
+// never log (the WARN rows name the outcome and the path, never the
+// pattern or the identity — D-20/D-21).
+
+// blocklistGuardCase is one guard-matrix row: the canned BlocklistAppState
+// answer, the injected writer failure, and the row's expectations.
+type blocklistGuardCase struct {
+	name        string
+	plantDoc    bool                              // false — the degenerate no-path row
+	state       func() (string, bool, bool, bool) // the canned accessor answer
+	writeErr    error                             // the injected writer failure
+	wantWrites  int                               // the recording writer's call count
+	wantReloads int
+	wantWarn    string // "" — no WARN expected; else the msg substring
+	wantPattern string // "" — no pattern assertion; else the exact pattern argument
+}
+
+// runBlocklistGuard executes one guard row: the composition over the canned
+// state and a RECORDING writer on a planted temp document. Asserts the
+// writer and reload counts, the exact pattern argument, the WARN verdict,
+// the document's fate (byte-identical for every refused click) and the
+// journal's content-free discipline (D-20/D-21) — across ALL rows.
+func runBlocklistGuard(t *testing.T, tc blocklistGuardCase) {
+	t.Helper()
+
+	buf := captureLogs(t)
+	path := ""
+	var before []byte
+	if tc.plantDoc {
+		path = filepath.Join(t.TempDir(), "config.yaml")
+		before = []byte(blocklistDoc)
+		if err := os.WriteFile(path, before, 0o600); err != nil {
+			t.Fatalf("plant the document: %v", err)
+		}
+	}
+	var writes, reloads int
+	var gotPattern string
+	tg := &blocklistToggle{
+		path:  path,
+		state: tc.state,
+		write: func(_ string, pattern string) error {
+			writes++
+			gotPattern = pattern
+
+			return tc.writeErr
+		},
+		reload: func() { reloads++ },
+	}
+
+	tg.add()
+
+	if writes != tc.wantWrites {
+		t.Errorf("writer calls = %d, want %d — every early guard leaves the writer untouched", writes, tc.wantWrites)
+	}
+	if reloads != tc.wantReloads {
+		t.Errorf("reload calls = %d, want %d", reloads, tc.wantReloads)
+	}
+	if tc.wantPattern != "" && gotPattern != tc.wantPattern {
+		t.Errorf("write pattern = %q, want %q", gotPattern, tc.wantPattern)
+	}
+	assertGuardJournal(t, buf.String(), tc)
+	if len(before) > 0 && (tc.wantWrites == 0 || tc.writeErr != nil) {
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read the document after the refused click: %v", err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Error("the refused click changed the document — the file must be byte-untouched")
+		}
+	}
+}
+
+// assertGuardJournal pins one guard row's journal verdict (D-20/D-21): the
+// loud refusals carry their WARN substring, the silent guards log nothing
+// at all, and NO row ever names the identity — the WARN's shape is the
+// outcome and the config path, never the pattern or the app name.
+func assertGuardJournal(t *testing.T, logged string, tc blocklistGuardCase) {
+	t.Helper()
+
+	if tc.wantWarn == "" {
+		if strings.Contains(logged, `"level":"WARN"`) {
+			t.Errorf("a silent guard warned; log:\n%s", logged)
+		}
+	} else if !strings.Contains(logged, tc.wantWarn) {
+		t.Errorf("the expected WARN %q is missing; log:\n%s", tc.wantWarn, logged)
+	}
+	if strings.Contains(logged, blocklistTestApp) {
+		t.Errorf("the journal carries the identity — D-20/D-21: outcome and path only; log:\n%s", logged)
+	}
+}
+
+// TestBlocklistGuardMatrixSilent pins the four SILENT no-op guards: an
+// unknown identity (the empty cache), a stale identity (freshness decides,
+// not the cache — a real FocusOut was), a covered identity (D-01) and a
+// full list (the refusal the item's state already shows) — all four leave
+// the writer, the document and the journal untouched.
+func TestBlocklistGuardMatrixSilent(t *testing.T) {
+	for _, tc := range []blocklistGuardCase{
+		{
+			name:     "unknown identity (empty cache) is a silent no-op",
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return "", false, false, false },
+		},
+		{
+			name:     "stale identity (freshness decides, not the cache) is a silent no-op",
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, false, false, false },
+		},
+		{
+			name:     "covered identity is the checked item's silent no-op (D-01)",
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, true, true, false },
+		},
+		{
+			name:     "full list keeps the refusal the item state shows",
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, true, false, true },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runBlocklistGuard(t, tc)
+		})
+	}
+}
+
+// TestBlocklistGuardRefusals pins the two loud refusals: the degenerate
+// no-path environment (WR-03 — the guard precedes the identity read, so a
+// covered state STILL warns instead of vanishing silently) and the writer
+// failure (one WARN with the outcome and the path, the apply never runs).
+func TestBlocklistGuardRefusals(t *testing.T) {
+	t.Run("empty config path refuses with one WARN (WR-03)", func(t *testing.T) {
+		runBlocklistGuard(t, blocklistGuardCase{
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, true, true, true },
+			wantWarn: "no config path",
+		})
+	})
+
+	t.Run("writer failure warns the outcome without content", func(t *testing.T) {
+		runBlocklistGuard(t, blocklistGuardCase{
+			plantDoc: true,
+			state:    func() (string, bool, bool, bool) { return blocklistTestApp, true, false, false },
+			writeErr: errWriteInjected,
+			// The failed write still received the QuoteMeta pattern — S8
+			// holds on the failure path too (the WARN names the outcome,
+			// never the pattern; D-20/D-21).
+			wantPattern: blocklistTestApp,
+			wantWrites:  1,
+			wantWarn:    "blocklist write failed",
+		})
+	})
+}
+
+// TestBlocklistGuardOrder pins the guards' final rung: with every guard
+// passed the click writes EXACTLY ONCE with the QuoteMeta pattern and then
+// applies (the reload rides the same click) — the metacharacter identity
+// quoted BEFORE the writer sees it (S8).
+func TestBlocklistGuardOrder(t *testing.T) {
+	t.Run("guards passed — one write with the plain pattern, then the reload", func(t *testing.T) {
+		runBlocklistGuard(t, blocklistGuardCase{
+			plantDoc:    true,
+			state:       func() (string, bool, bool, bool) { return blocklistTestApp, true, false, false },
+			wantWrites:  1,
+			wantReloads: 1,
+			wantPattern: blocklistTestApp, // QuoteMeta("gedit") == "gedit"
+		})
+	})
+
+	t.Run("metacharacter identity is quoted before the writer", func(t *testing.T) {
+		runBlocklistGuard(t, blocklistGuardCase{
+			plantDoc:    true,
+			state:       func() (string, bool, bool, bool) { return "org.example.App[1]", true, false, false },
+			wantWrites:  1,
+			wantReloads: 1,
+			wantPattern: `org\.example\.App\[1\]`,
+		})
+	})
+}
+
 // TestOpenConfigEditorLauncher pins the settings launcher's happy path
 // (plan 07-05, research Q7): the document is ensured first, then xdg-open
 // starts on the pinned path as its ONLY argument with NO piped descriptors

@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 11
-current_phase_name: MENU — пункт «в чёрный список»
+current_phase: 12
+current_phase_name: TERM-строка
 status: planning
-stopped_at: Phase 10 complete, ready to plan Phase 11
-last_updated: "2026-10-31T10:10:33.136Z"
-last_activity: 2026-10-31
-last_activity_desc: Phase 10 complete, transitioned to Phase 11
-state_head: a3523874946d608eaac83ceb5e753654b406d34b
+stopped_at: Phase 11 complete, ready to plan Phase 12
+last_updated: "2026-11-01T20:49:40.350Z"
+last_activity: 2026-11-01
+last_activity_desc: Phase 11 complete, transitioned to Phase 12
+state_head: 428260b534d476c574d7cbbb3786acfcd447edd6
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 18
-  completed_plans: 17
-  percent: 40
+  completed_phases: 3
+  total_plans: 23
+  completed_plans: 22
+  percent: 60
 ---
 
 # Project State
@@ -25,16 +25,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-31)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 11 — MENU «в чёрный список»: не спланирована; следующий шаг — обсуждение (/gsd-discuss-phase 11)
+**Current focus:** Phase 12 — TERM-строка
 
 ## Current Position
 
-Phase: 11 — MENU — пункт «в чёрный список»
+Phase: 12 — TERM-строка
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-31 — Phase 10 complete, transitioned to Phase 11
+Last activity: 2026-11-01 — Phase 11 complete, transitioned to Phase 12
 
-Progress: [████░░░░░░] 40%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -66,6 +66,11 @@ Progress: [████░░░░░░] 40%
 | Phase 10 P18 | 25min | 3 tasks | 4 files |
 | Phase 10 P17 | 74m | 7 tasks | 9 files |
 | Phase 09 P02 | 4d live arc (2026-10-08..12) + close-out | 2 tasks | 28 files |
+| Phase 11 P01 | 51min | 2 tasks | 6 files |
+| Phase 11 P03 | 34min | 2 tasks | 5 files |
+| Phase 11 P02 | 46min | 3 tasks | 9 files |
+| Phase 11 P04 | 30min | 2 tasks | 4 files |
+| Phase 11 P05 | 85min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -103,10 +108,18 @@ Recent decisions affecting current work:
 - [Phase 10]: G-10-1 закрыт 2026-10-20 вердиктом владельца «осталось» (UAT Тест 6, selftype): корень — press-only форварды взводили клиентский автоповтор wezterm (исходники e2a98e1b), фикс — пары press+release (амендмент (7) ADR-008, сборка v1.1.1-226-g8bd4edc). Шесть раундов: флап-стойкость → маршрутизация → доставка → гвард mutter → парные форварды. — G-10-1 закрыт 2026-10-20 вердиктом владельца «осталось» (UAT Тест 6, selftype): корень — press-only форварды взводили клиентский автоповтор wezterm (исходники e2a98e1b), фикс — пары press+release (амендмент (7) ADR-008, сборка v1.1.1-226-g8bd4edc). Шесть раундов: флап-стойкость → маршрутизация → доставка → гвард mutter → парные форварды.
 - [Phase 9]: [Phase 09 close-out]: 09-02 HALTED честной записью (status: halted) — ядро стоит (десинк engine→stale-context XIM воспроизведён дважды, журналы сохранены), рецепт нативного Wayland доставлен (wezterm-nightly 20261010 + enable_wayland=true, 7365a93 — daily-driver владельца), харнесс headless-green; R2–R6 и two-round RED не исполнены (владелец вышел из роли тестера 2026-10-12); capability-таблица фактически заполнена стенд-рядами Фазы 10
 - [Phase 9]: [Phase 09 close-out]: 09-03/09-04 retired superseded (#2349-форма, как 10-14/10-15) — 09-03 доставлен Фазой 10 (ADR-008 Accepted 2026-10-12 планом 10-06, фикс = nightly-рецепт 09-02, зачёт G-10-1 «осталось» 2026-10-20); 09-04 вердикты рассеяны (Telegram AppArmor 2026-10-08 живой пробой — гейт Фазы 13 за владельцем; фаза-7 UAT a11y; фаза-10 ac_role_errors), журнал d09 не создавался
+- [Phase 11]: Pre-write валидация writer-метода одноисточна: decodeValid извлечён в load.go — Load и append-гейт (11-03) делят одну строгую семантику KnownFields+Validate, дублированного декодера нет
+- [Phase 11]: Потолок 64 appends-пути стоит ПОСЛЕ дедупа и ДО append: sentinel errAutocorrectBlocklistOverCeil называет ТЕКУЩИЙ размер списка; MaxAutocorrectBlocklist экспортирован — единый источник для validate/writer/actor(11-02)/menu(11-04)
+- [Phase 11]: Форма-отказ apps_blocklist (не последовательность) реализован на writer-уровне уже в Задаче 1 (errWriterBlocklistNotSequence) — append ребёнка в скаляр портит документ; тест Задачи 2 пинит готовое поведение
+- [Phase 11]: Freshness = actor-snapshot, не меню и не кэш: blApp/blFresh под a.mu; пустая/несвежая identity никогда не доходит до меню и композиции (аксессор отдаёт пустое имя при !known — двойной барьер против D-03-мусора); сброс ТОЛЬКО на реальном FocusOut, synthetic-флип G-2-3 и Reset не трогают
+- [Phase 11]: EnsureAppid — обёртка над startAppidOnce, а НЕ над ensureAppid: буквально-«обёртка» оставила бы ленивое условие в силе (Pitfall 2 — пункт мёртв при D-54-дефолте); обход условия при сохранении once-per-actor пойман GREEN-прогоном и записан отклонением Rule 1
+- [Phase 11]: [Phase 11] Гвард-матрица 11-04 — пин-корпус на готовой композиции: трассер по дизайну плана построил гварды production-качества в GREEN Task 1, матрица закрепляет 8 behavior-строк; план-RED-гейт закрыт трассером (RED_EVIDENCE_OK)
+- [Phase 11]: [Phase 11] Потолок blocklist сведён на единый источник: session-константа autocorrectBlocklistCeil удалена, blocklistStateLocked читает config.MaxAutocorrectBlocklist; поведение full байт-то же, корпус 11-02 без правок
+- [Phase 11]: [Phase 11] OnConn-проводка blocklist-пункта: Callbacks.BlockCurrentApp + installMenuState (одна точка первой покраски меню: install-пуши 07-06 + начальное состояние пункта до SetMenuSync) + EnsureAppid; живая сборка OnConn — за e2e 11-05 на ВМ (директива 6: проверки продукта только на ВМ)
 
 ### Pending Todos
 
-- [ ] [Orca fix closure] Установить на хост сборку с 946b4cd (ветка fix/orca-terminal-verify-class-own-flip: выученный терминальный класс переживает собственный флип — корень бага «коррекция в Orca только со второго double-shift», debug-док .planning/debug/orca-terminal-second-shift.md, status: resolved); приёмка владельца — коррекция с ПЕРВОГО double-shift (журнал: нет verify-timeout перед первой коррекцией; регресс-маркер — `terminal class verify_dead=false` после flip-released); затем PR в защищённый main. Включено в план по решению владельца 2026-10-31; кандидат в Task 0 плана Фазы 11.
+- [ ] [Orca fix closure — Round 2] Round 1 (946b4cd, PR #24/fac7c89) слит и установлен (v1.2.0-alpha.2-12-g80f3955), приёмка владельца 2026-10-31 13:55 ПРОВАЛЕНА («работает со второго»). Round 2: гипотеза — клиентский `LifecycleReset` ~0,9 с после ре-минта стирает выученный класс (debug-док .planning/debug/orca-terminal-second-shift.md, секция «Round 2»); фикс + пассивная верификация по журналу = Task 1 плана 11-01 (ревизия 111ddfd); владелец освобождён от mid-phase приёмки («проверяй сам в виртуалке, не дергай меня»), by-ear зачёт — UAT end-of-phase (прецедент G-10-1).
 
 ### Blockers/Concerns
 
@@ -141,8 +154,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-31T10:12:00Z
-Stopped at: Phases 9-10 verified complete (UAT, VERIFICATION passed, SECURITY 0 open); Phase 11 (MENU) next — discuss then plan
+Last session: 2026-11-01T00:35:09.920Z
+Stopped at: Phase 11 complete, ready to plan Phase 12
 Resume file: None
 
 ## Operator Next Steps

@@ -152,12 +152,13 @@ func TestMenuLayout(t *testing.T) {
 		{menuIDRU, labelRU, menuTypeStandard, true, true, menuToggleRadio, 1},
 		{menuIDSep1, "", menuTypeSeparator, true, true, "", 0},
 		{menuIDACToggle, labelACToggle, menuTypeStandard, true, true, menuToggleCheckmark, 1},
+		{menuIDBlocklistApp, labelBlocklistApp, menuTypeStandard, false, true, menuToggleCheckmark, 0},
 		{menuIDSoundToggle, labelSoundToggle, menuTypeStandard, true, true, menuToggleCheckmark, 1},
 		{menuIDMacro1, "1× shift__r — язык", menuTypeStandard, false, true, "", 0},
 		{menuIDMacro2, "2× shift__r — слово", menuTypeStandard, false, true, "", 0},
 		{menuIDMacro3, "3× shift__r — фраза", menuTypeStandard, false, true, "", 0},
 		{menuIDMacroCombo, "shift+ctrl__r — слово и язык", menuTypeStandard, false, true, "", 0},
-		{menuIDMacroChord, "super+space — смена режима", menuTypeStandard, false, true, "", 0},
+		{menuIDMacroChord, "super+space — язык", menuTypeStandard, false, true, "", 0},
 		{menuIDSep2, "", menuTypeSeparator, true, true, "", 0},
 		{menuIDSettings, labelSettings, menuTypeStandard, true, true, "", 0},
 		{menuIDAbout, "goswitch dev", menuTypeStandard, false, true, "", 0},
@@ -187,6 +188,248 @@ func TestMenuLayout(t *testing.T) {
 		t.Fatalf("GetLayout(%d) error = %v, want nil", menuIDACToggle, derr)
 	}
 	checkMenuKid(t, one, wantKids[3])
+}
+
+// TestMenuBlocklistItemGroupProps pins the blocklist item's id-16 surface
+// (phase 11, MENU-01): the id lives INSIDE GetGroupProperties' served range
+// (Pitfall 5 — an unextended filter drops the props silently), the
+// initial/unknown state answers the STATIC label disabled (D-03 — no name,
+// no explanations), and the setter's fresh identity renders the named label
+// enabled. The full state machine is the state-matrix corpus's business;
+// this test pins the channel (id range + setter + request-time render).
+func TestMenuBlocklistItemGroupProps(t *testing.T) {
+	m, _ := menuFixture(t)
+
+	props, derr := m.GetGroupProperties([]int32{menuIDBlocklistApp}, nil)
+	if derr != nil {
+		t.Fatalf("GetGroupProperties(%d) error = %v, want nil", menuIDBlocklistApp, derr)
+	}
+	if len(props) != 1 {
+		t.Fatalf("GetGroupProperties(%d) = %d entries, want exactly 1 — "+
+			"the id must not fall out of the served range (Pitfall 5)",
+			menuIDBlocklistApp, len(props))
+	}
+	if label, _ := props[0].Props[menuPropLabel].Value().(string); label != labelBlocklistApp {
+		t.Errorf("unknown-state label = %q, want the static %q (D-03: no name, no explanations)",
+			label, labelBlocklistApp)
+	}
+	if props[0].Props[menuPropEnabled].Value() != false {
+		t.Error("the unknown-state item must answer disabled (D-03)")
+	}
+
+	m.SetBlocklistApp("org.gnome.Zenity", true, false, false)
+	props, derr = m.GetGroupProperties([]int32{menuIDBlocklistApp}, nil)
+	if derr != nil || len(props) != 1 {
+		t.Fatalf("GetGroupProperties(%d) after the gain = (%v, %v), want one entry",
+			menuIDBlocklistApp, props, derr)
+	}
+	want := "Добавить org.gnome.Zenity в чёрный список"
+	if label, _ := props[0].Props[menuPropLabel].Value().(string); label != want {
+		t.Errorf("fresh-state label = %q, want %q", label, want)
+	}
+	if props[0].Props[menuPropEnabled].Value() != true {
+		t.Error("the fresh-state item must answer enabled")
+	}
+}
+
+// blocklistItemState is one matrix row's setter push (the SetBlocklistApp
+// argument bundle).
+type blocklistItemState struct {
+	app     string
+	fresh   bool
+	covered bool
+	full    bool
+}
+
+// checkBlocklistRow replays one matrix row's pushes and asserts the props
+// the item must answer — the shared runner of the state-matrix pair (every
+// state: a visible checkmark-carrying standard row).
+func checkBlocklistRow(t *testing.T, pushes []blocklistItemState, wantLabel string, wantOn bool, wantState int32) {
+	t.Helper()
+
+	m, _ := menuFixture(t)
+	for _, p := range pushes {
+		m.SetBlocklistApp(p.app, p.fresh, p.covered, p.full)
+	}
+
+	props := m.blocklistProps()
+	if label, _ := props[menuPropLabel].Value().(string); label != wantLabel {
+		t.Errorf("label = %q, want %q", label, wantLabel)
+	}
+	if props[menuPropEnabled].Value() != wantOn {
+		t.Errorf("enabled = %v, want %t", props[menuPropEnabled].Value(), wantOn)
+	}
+	if props[menuPropVisible].Value() != true {
+		t.Error("the item must stay visible in every state (D-03 «пункт виден»)")
+	}
+	if gotType, _ := props[menuPropToggleType].Value().(string); gotType != menuToggleCheckmark {
+		t.Errorf("toggle-type = %q, want %q", gotType, menuToggleCheckmark)
+	}
+	if gotState, _ := props[menuPropToggleState].Value().(int32); gotState != wantState {
+		t.Errorf("toggle-state = %d, want %d", gotState, wantState)
+	}
+}
+
+// TestMenuBlocklistStateMatrixUnknown pins the D-03 half of the state
+// machine: the UNKNOWN state (no push at all, or a stale fresh=false one —
+// freshness, not the cache, decides) serves the STATIC label disabled,
+// WITHOUT the app name and WITHOUT any explanatory text («не пишем
+// ничего»); a fresh identity serves the named label enabled.
+func TestMenuBlocklistStateMatrixUnknown(t *testing.T) {
+	const (
+		name  = "org.gnome.gedit"
+		named = "Добавить " + name + " в чёрный список"
+	)
+
+	for _, tc := range []struct {
+		name      string
+		pushes    []blocklistItemState
+		wantLabel string
+		wantOn    bool
+		wantState int32
+	}{
+		{
+			name:      "unknown empty state is static and disabled",
+			pushes:    nil,
+			wantLabel: labelBlocklistApp,
+			wantOn:    false,
+			wantState: 0,
+		},
+		{
+			name:      "stale identity renders unknown",
+			pushes:    []blocklistItemState{{name, true, false, false}, {"", false, false, false}},
+			wantLabel: labelBlocklistApp,
+			wantOn:    false,
+			wantState: 0,
+		},
+		{
+			name:      "fresh identity is active with the name",
+			pushes:    []blocklistItemState{{name, true, false, false}},
+			wantLabel: named,
+			wantOn:    true,
+			wantState: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checkBlocklistRow(t, tc.pushes, tc.wantLabel, tc.wantOn, tc.wantState)
+		})
+	}
+}
+
+// TestMenuBlocklistStateMatrixMarks pins the ornament half of the state
+// machine: COVERED carries the checkmark enabled (D-01 — the click is the
+// safe dedup no-op); FULL without coverage shows the visible fill state
+// disabled (S9/A5 — the refusal is the item's state, never a desktop
+// notification); COVERED beats FULL; an underscored name renders doubled
+// (Pitfall 4).
+func TestMenuBlocklistStateMatrixMarks(t *testing.T) {
+	const (
+		name  = "org.gnome.gedit"
+		named = "Добавить " + name + " в чёрный список"
+	)
+
+	for _, tc := range []struct {
+		name      string
+		pushes    []blocklistItemState
+		wantLabel string
+		wantOn    bool
+		wantState int32
+	}{
+		{
+			name:      "covered identity carries the checkmark",
+			pushes:    []blocklistItemState{{name, true, true, false}},
+			wantLabel: named,
+			wantOn:    true,
+			wantState: 1,
+		},
+		{
+			name:      "full list without coverage shows the fill state",
+			pushes:    []blocklistItemState{{name, true, false, true}},
+			wantLabel: labelBlocklistFull,
+			wantOn:    false,
+			wantState: 0,
+		},
+		{
+			name:      "covered beats full",
+			pushes:    []blocklistItemState{{name, true, true, true}},
+			wantLabel: named,
+			wantOn:    true,
+			wantState: 1,
+		},
+		{
+			name:      "underscored name renders doubled",
+			pushes:    []blocklistItemState{{"org.gnome.Log_out", true, false, false}},
+			wantLabel: "Добавить org.gnome.Log__out в чёрный список",
+			wantOn:    true,
+			wantState: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checkBlocklistRow(t, tc.pushes, tc.wantLabel, tc.wantOn, tc.wantState)
+		})
+	}
+}
+
+// TestMenuBlocklistSetterDeltas pins the setter's push discipline: a CHANGE
+// emits exactly one ItemsPropertiesUpdated carrying the id-16 label delta
+// and the toggle-state delta with an EMPTY removed slice (Pitfall 7), the
+// revision NEVER bumps (the item is always in the layout — Pitfall 10), and
+// an IDENTICAL push is a silent no-op (the menu dedupes, the actor pushes
+// per fold).
+func TestMenuBlocklistSetterDeltas(t *testing.T) {
+	em := &fakeEmitter{}
+	m := newMenu(Callbacks{}, em)
+
+	m.SetBlocklistApp("org.gnome.gedit", true, true, false)
+	calls := em.emitCalls()
+	if len(calls) != 1 {
+		t.Fatalf("SetBlocklistApp emitted %d signals, want exactly one", len(calls))
+	}
+	call := calls[0]
+	if call.signal != signalItemsPropsUpdated {
+		t.Errorf("emit signal = %s, want %s", call.signal, signalItemsPropsUpdated)
+	}
+	deltas := signalDeltas(t, call)
+	if len(deltas) != 2 || deltas[0].ID != menuIDBlocklistApp || deltas[1].ID != menuIDBlocklistApp {
+		t.Fatalf("deltas = %+v, want exactly two id-%d entries (label + toggle-state)", deltas, menuIDBlocklistApp)
+	}
+	if _, ok := deltas[0].Props[menuPropLabel]; !ok {
+		t.Error("the first delta carries no label")
+	}
+	if _, ok := deltas[1].Props[menuPropToggleState]; !ok {
+		t.Error("the second delta carries no toggle-state")
+	}
+	signalRemoved(t, call)
+	if rev := m.layoutRevision(); rev != menuRevisionBase {
+		t.Errorf("revision after the push = %d, want the unchanged %d (Pitfall 10)", rev, menuRevisionBase)
+	}
+
+	// The actor pushes per fold, the menu dedupes.
+	drainEmits(em)
+	m.SetBlocklistApp("org.gnome.gedit", true, true, false)
+	if got := len(em.emitCalls()); got != 0 {
+		t.Errorf("identical SetBlocklistApp emitted %d signals, want none", got)
+	}
+}
+
+// TestMenuBlocklistClickDispatch pins the click composition's seam: a click
+// on id 16 fires Callbacks.BlockCurrentApp exactly once; a nil callback is
+// a silent no-op (the disabled item's gesture discipline of every dispatch).
+func TestMenuBlocklistClickDispatch(t *testing.T) {
+	blocked := 0
+	m := &Menu{cb: Callbacks{BlockCurrentApp: func() { blocked++ }}}
+
+	if derr := m.Event(menuIDBlocklistApp, eventClicked, dbus.Variant{}, 0); derr != nil {
+		t.Fatalf("click id %d error = %v, want nil", menuIDBlocklistApp, derr)
+	}
+	if blocked != 1 {
+		t.Fatalf("BlockCurrentApp fired %d times, want exactly 1", blocked)
+	}
+
+	silent := &Menu{} // the nil-callback degradation
+	if derr := silent.Event(menuIDBlocklistApp, eventClicked, dbus.Variant{}, 0); derr != nil {
+		t.Errorf("nil-callback click error = %v, want nil", derr)
+	}
 }
 
 // TestMenuMacroVisibility pins the disappearing-row contract (canonical

@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -260,6 +261,10 @@ func startCtl(
 				ToggleAutocorrect: toggles.ac.flip,
 				ToggleSound:       toggles.sound.flip,
 				Settings:          func() { editor.open(cfgPath) },
+				// The blocklist item's gesture (phase 11, MENU-01): the click
+				// composition — the guards own the safety, the menu itself
+				// decides nothing.
+				BlockCurrentApp: toggles.block.add,
 			}
 			if syncReload != nil {
 				cb.Reload = syncReload
@@ -267,13 +272,16 @@ func startCtl(
 			item := indicator.Attach(conn, ctlsvc.BusName, cb)
 			menuSlot.Store(item.Menu())
 			menu := menuSlot.Load()
-			// The initial menu state: version, both toggles, the raw key
-			// names — the menu dedupes later identical pushes from the fold.
-			menu.SetVersion(version)
-			menu.SetAutocorrectEnabled(cfg.Autocorrect.Enabled)
-			menu.SetSoundEnabled(cfg.Sound.EffectiveEnabled())
-			menu.SetKeys(cfg.Hotkeys.TapKey, cfg.Hotkeys.WordLayoutCombo, cfg.Hotkeys.ModeSwitchChord)
+			installMenuState(menu, cfg, actor)
 			actor.SetMenuSync(menu) // the install push covers ordering skew, as SetModeDisplay
+			// The identity observer's UNCONDITIONAL start (the Pitfall-2 cure,
+			// RESEARCH Open Q1): the lazy condition — macr list or enabled
+			// autocorrect — would leave the blocklist item dead forever on the
+			// default D-54-off install. The a11y-connection economics are
+			// small, a failed start is the existing one-WARN degradation and
+			// the item stays inactive (the renderer state), so the observer
+			// starts on every connect, once per actor.
+			actor.EnsureAppid()
 			// The sound sink (plan 07-08; the 261006-squ persistent-stream
 			// rewrite): the flip tone rides the schema constant, the
 			// autocorrect tone starts at the startup document's effective
@@ -309,6 +317,22 @@ func startCtl(
 			slog.Error("ctl service stopped", "error", err)
 		}
 	}()
+}
+
+// installMenuState paints the attached menu's INITIAL state: the startup
+// version, both toggles and the raw key names — the menu dedupes later
+// identical pushes from the fold — plus the blocklist item's initial state
+// (phase 11, MENU-01): the state the actor already computed (the startup
+// fold ran in newActor), pushed BEFORE SetMenuSync so a rebuilt menu shows
+// the factual fill state from the first paint; the menu dedupes the
+// identical install push SetMenuSync makes next.
+func installMenuState(menu *indicator.Menu, cfg config.Config, actor *session.Actor) {
+	menu.SetVersion(version)
+	menu.SetAutocorrectEnabled(cfg.Autocorrect.Enabled)
+	menu.SetSoundEnabled(cfg.Sound.EffectiveEnabled())
+	menu.SetKeys(cfg.Hotkeys.TapKey, cfg.Hotkeys.WordLayoutCombo, cfg.Hotkeys.ModeSwitchChord)
+	app, known, covered, full := actor.BlocklistAppState()
+	menu.SetBlocklistApp(app, known, covered, full)
 }
 
 // newCtlDeps assembles the control-service dependencies over the actor. The
@@ -350,6 +374,7 @@ func newCtlDeps(actor *session.Actor, reload ctlsvc.Reloader, debug bool) ctlsvc
 type menuToggles struct {
 	ac    *configToggle
 	sound *configToggle
+	block *blocklistToggle
 }
 
 // newMenuToggles wires the compositions: the applied value reads from the
@@ -388,7 +413,70 @@ func newMenuToggles(
 			},
 			reload: syncReload,
 		},
+		block: &blocklistToggle{
+			path:   cfgPath,
+			state:  actor.BlocklistAppState,
+			write:  config.AppendAutocorrectBlocklist,
+			reload: syncReload,
+		},
 	}
+}
+
+// blocklistToggle is the «Добавить <app> в чёрный список» click composition
+// (phase 11, MENU-01): the click lands the FRESH identity into
+// autocorrect.apps_blocklist (the QuoteMeta pattern, through the 11-03
+// writer — the single persist path) and applies the document in the same
+// click. The state seam is the actor's BlocklistAppState accessor — the
+// only state channel (S1/S3: the composition knows no blocklist schema).
+type blocklistToggle struct {
+	path   string
+	state  func() (app string, known, covered, full bool)
+	write  func(path, pattern string) error
+	reload func() // nil without a config source — the flip's deferred-apply guard, mirrored
+}
+
+// add executes one click in the pinned order (RESEARCH Pattern 4, the
+// configToggle.flip shape): empty-path guard → identity guards →
+// QuoteMeta → write → reload. The EMPTY-PATH guard comes first (WR-03:
+// without a resolvable config path the write would land ./config.yaml in
+// the daemon's working directory) — one WARN, nothing changes. The identity
+// guards are SILENT no-ops — the fail-closed SECOND belt (the renderer
+// already refuses to dispatch a click on the disabled item, but the
+// composition never trusts the renderer): an unknown or stale identity
+// records nothing (D-03 — the daemon never guesses, sender names and stale
+// cache names are never written), an already-covered app is the checked
+// item's no-op (D-01 — the writer's dedup is the second belt), a full list
+// keeps the refusal the item's state already shows (S9 — desktop
+// notifications are invisible on this desk, UAT phase 7). The pattern is
+// QuoteMeta of the identity BEFORE the writer call (S8 — a name with
+// metacharacters lands as a literal, never as a regex). A failed write
+// leaves everything untouched — ONE WARN naming the OUTCOME and the path,
+// never the pattern or the app name (D-20/D-21). The apply rides the
+// toggles' reload (the sync re-read + FoldAppliedConfig): the fold
+// recomputes covered and pushes the menu delta — no separate push exists
+// (the fold's push moment, plan 11-02); a missing reload keeps the write
+// (the file is the truth) and WARNs the deferred apply (the flip form).
+func (t *blocklistToggle) add() {
+	if t.path == "" {
+		slog.Warn("blocklist toggle unavailable", "component", "tray indicator", "reason", "no config path")
+
+		return
+	}
+	app, known, covered, full := t.state()
+	if !known || covered || full {
+		return
+	}
+	if err := t.write(t.path, regexp.QuoteMeta(app)); err != nil {
+		slog.Warn("blocklist write failed", "component", "tray indicator", "path", t.path, "error", err)
+
+		return
+	}
+	if t.reload == nil {
+		slog.Warn("blocklist apply deferred", "component", "tray indicator", "reason", "no config source")
+
+		return
+	}
+	t.reload()
 }
 
 // procStarter is the started-process seam of the settings launcher (plan

@@ -27,7 +27,7 @@
 
 - [x] **Phase 9: Спайк и дефект wezterm** - spec-delta (D-55) + ADR-008 + живая capability-таблица терминалов; починка переключения раскладки в wezterm; ранний A11Y-зонд (completed 2026-10-20)
 - [x] **Phase 10: TERM-слово** - ручная коррекция слова жестом в wezterm и GNOME Terminal через канал IBus (BackSpace-реплей + commit_text) (completed 2026-10-20)
-- [ ] **Phase 11: MENU — пункт «в чёрный список»** - динамический пункт трей-меню с атомарной записью конфига и деградацией при неизвестной личности приложения
+- [x] **Phase 11: MENU — пункт «в чёрный список»** - динамический пункт трей-меню с атомарной записью конфига и деградацией при неизвестной личности приложения (completed 2026-11-01)
 - [ ] **Phase 12: TERM-строка** - исправление всей набранной строки/фразы в терминале — feasibility-gated capability-таблицей Фазы 9
 - [ ] **Phase 13: A11Y — рецепты Telegram/ZCode** - доступность в самих приложениях (desktop-override, unconfined-сборка или демон-fallback) + документация; демон не меняется
 
@@ -103,7 +103,26 @@ Plans:
   3. Когда личность приложения неизвестна (snap, wezterm/winit) — пункт неактивен с объяснением; демон не угадывает и не пишет мусорные паттерны вида :1.NN
   4. Имя приложения с метасимволами regex не ломает конфиг: после записи через меню строгий декодер (KnownFields) принимает файл целиком; при отказе (потолок 64) пользователь получает уведомление из трея
 
-**Plans**: TBD
+**Plans**: 5/5 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 11-01-PLAN.md — Round 2 фикс Orca (клиентский LifecycleReset, новая ветка/PR) + установка + пассивная верификация; спека-ревизия меню v2 (SPEC/CONFIG, D-01..D-04)
+- [x] 11-03-PLAN.md — writer AppendAutocorrectBlocklist (атомарно, дедуп, потолок 64, strict pre-validation)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 11-02-PLAN.md — пункт меню id 16: трассер identity→меню (freshness), машина состояний, D-04 *(depends on 11-01: правит ту же область HandleLifecycle actor.go — пины берутся по post-fix файлу)*
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 11-04-PLAN.md — клик-композиция и проводка main.go (гварды D-01/D-03, QuoteMeta, sync reload)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 11-05-PLAN.md — e2e menu-blocklist + живой прогон стенда (menu-v2 re-pin)
+
 **UI hint**: yes
 
 ### Phase 12: TERM-строка
@@ -143,7 +162,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 9. Спайк и дефект wezterm | v1.2 | 2/2 | Complete    | 2026-10-20 |
 | 10. TERM-слово | v1.2 | 16/16 | Complete    | 2026-10-20 |
-| 11. MENU — пункт «в чёрный список» | v1.2 | 0/? | Not started | - |
+| 11. MENU — пункт «в чёрный список» | v1.2 | 5/5 | Complete    | 2026-11-01 |
 | 12. TERM-строка | v1.2 | 0/? | Not started | - |
 | 13. A11Y — рецепты Telegram/ZCode | v1.2 | 0/? | Not started | - |
 
