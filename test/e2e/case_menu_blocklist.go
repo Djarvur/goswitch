@@ -199,7 +199,10 @@ func waitBlocklistArmed(ctx context.Context, app string) error {
 		// finding — InvalidArgs); the daemon ignores the filter and serves
 		// the FULL prop set, which is exactly what the label gate reads.
 		// The app name is pure ASCII and survives the stand's C-locale
-		// gdbus output.
+		// gdbus output. The label rides the mnemonic doubling (Pitfall 4 —
+		// the 11-05 live finding: gs_e2e_password serves as
+		// gs__e2e__password), so the gate matches the DOUBLED form — the
+		// same discipline the renderer applies.
 		out, err := runCmd(ctx, "gdbus", "call", "--session",
 			"--dest", menuBusName,
 			"--object-path", menuObjPath,
@@ -207,7 +210,7 @@ func waitBlocklistArmed(ctx context.Context, app string) error {
 			"["+strconv.FormatInt(int64(menuIDBlocklistApp), 10)+"]", `["label"]`)
 		if err == nil {
 			last = out
-			if strings.Contains(out, app) {
+			if strings.Contains(out, strings.ReplaceAll(app, "_", "__")) {
 				return nil
 			}
 		} else {
