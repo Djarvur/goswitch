@@ -1,11 +1,11 @@
 ---
 phase: 09-spayk-i-defekt-wezterm
-verified: 2026-11-01T19:33:51Z
-status: human_needed
+verified: 2026-11-01T20:58:00Z
+status: passed
 score: 4/5 must-haves verified
 covered_files: [".planning/REQUIREMENTS.md", ".planning/phases/09-spayk-i-defekt-wezterm/09-01-PLAN.md", ".planning/phases/09-spayk-i-defekt-wezterm/09-01-SUMMARY.md", ".planning/phases/09-spayk-i-defekt-wezterm/09-02-PLAN.md", ".planning/phases/09-spayk-i-defekt-wezterm/09-02-SUMMARY.md", ".planning/phases/09-spayk-i-defekt-wezterm/09-03-PLAN.md", ".planning/phases/09-spayk-i-defekt-wezterm/09-04-PLAN.md", ".planning/phases/09-spayk-i-defekt-wezterm/evidence-20261011-validate-daemon.log", "cmd/goswitchctl/main.go", "cmd/goswitchd/main.go", "docs/SPEC.md", "docs/adr/ADR-008-terminal-transport.md", "docs/adr/adr-008-spike-log.md", "internal/ctlsvc/ctlsvc.go", "internal/engine/keys.go", "internal/session/probe.go", "internal/session/probe_test.go", "mise.toml", "test/e2e/case_spike_caps.go", "test/e2e/case_spike_wezterm.go", "test/e2e/fixtures/gs-e2e-wezterm-stand.lua", "test/e2e/fixtures/gs-e2e-wezterm-wayland.lua", "test/e2e/fixtures/gs-e2e-wezterm-xim.lua", "test/e2e/main.go", "test/e2e/wezterm.go", "test/e2e/wezterm_test.go"]
 covered_digest: "v1:sha256:54aeadd3145295f1696554e66ea96ff346fffda62e4579a4ecca55e4355a22bf"
-behavior_unverified: 1
+behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: passed
@@ -21,15 +21,12 @@ deferred: # Items addressed in later phases — not actionable gaps
   - truth: "Проба ZCode .desktop-override с --force-renderer-accessibility не исполнялась (09-04 retired)"
     addressed_in: "Phase 13"
     evidence: "Goal Фазы 13: «Автокоррекция достижима в ZCode… через включение доступности в самих приложениях» — рецепты + self-check"
-behavior_unverified_items:
-  - truth: "SC1 (настоящее время, текущее дерево HEAD 713ac42): хоткей в wezterm переключает раскладку, и последующий ввод даёт символы новой раскладки"
-    test: "В живом окне wezterm (конфиг без изменений с 2026-10-24: enable_wayland=false, ночник 20261010) нажать хоткей флипа и напечатать несколько клавиш; опционально один double-shift correction"
-    expected: "Ввод после флипа даёт символы новой раскладки (флип видим клиенту); коррекция переписывает слово (outcome done)"
-    why_human: "Вердикт владельца 2026-10-31 закрывал чек на ТОГДАШНЕМ дереве; после него flipTo-машина изменена (flipAftermathWindow, 2c00c10) и демон-меню вшито (Фаза 11); юнит-корпус зелёный (-race, этот прогон), но истина — живое поведение стола; e2e wezterm-flip — live-GNOME кейс (пропущен), журнальная верификация на хосте запрещена директивой 6"
+behavior_unverified_items: []
 human_verification:
-  - test: "Живой жест владельца в wezterm на текущем дереве (сборка с flipAftermath-машиной 2c00c10+ или новее): нажать хоткей флипа, напечатать несколько клавиш; опционально double-shift коррекция"
+  - test: "Живой жест в wezterm на текущем дереве (сборка с flipAftermath-машиной 2c00c10+ или новее): нажать хоткей флипа, напечатать несколько клавиш; опционально double-shift коррекция"
     expected: "Ввод после флипа даёт символы новой раскладки; коррекция (если делалась) — outcome done; поведение не хуже вердикта 2026-10-31"
-    why_human: "Единственный разрыв. Прошлый вердикт (2026-10-31, ответ «1») предшествует изменению flipTo-машины (2c00c10, Round 2 Фазы 11: re-mint echo Reset) и вшивке демон-меню; запись, покрывающей текущее дерево, нет. Живое поведение стола не наблюдаемо из shell без запрещённых директивой 6 проб"
+    why_human: "Единственный разрыв. Прошлый вердикт (2026-10-31, ответ «1») предшествует изменению flipTo-машины (2c00c10, Round 2 Фазы 11) и вшивке демон-меню; запись, покрывающей текущее дерево, не было. Живое поведение стола не наблюдаемо из shell без запрещённых директивой 6 проб"
+    closed: "2026-11-01: владелец делегировал стенду («Тестируй сам в виртуалке»); закрыто живым видимым рядом на ВМ goswitch-stand — wezterm ночника владельца (нативный Wayland/IBus), демон g2c00c10: после собственного флипа демона физические ghbdtn отрисованы панелью как «привет», журнальные mode to ru/en + switch_engine при каждом флипе. См. SC-таблицу (SC1) и 11-UAT Test 2 evidence"
 ---
 
 # Phase 9: Спайк и дефект wezterm — Verification Report
@@ -57,13 +54,13 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | SC1: Переключение раскладки работает в wezterm на живом столе (хоткей → последующий ввод даёт символы новой раскладки) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED (достижение фазы верифицировано и закрыто; текущее дерево — изменено после вердикта, один живой жест) | Доставлено и принято: рецепт 7365a93 (2026-10-12), G-10-1 закрыт вердиктом «осталось» 2026-10-20, подмена оракула two-greens принята владельцем (UAT Test 7). Вердикт 2026-10-31 (ответ «1») закрыл настоящий-time чек на дереве ТОГО дня. НО после него: flipTo взводит flipAftermathWindow (2c00c10 23:06 +0300), демон-меню вшито (a2275a8..56eba96), session-freshness (a943656). Юнит-корпус зелёный (internal/session ok 29.6s под -race, этот прогон; TestTerminalClass_VerifyDeadSurvivesClientResetAfterOwnFlip — зачёт Фазы 11), однако истина — живое поведение стола; e2e wezterm-flip — live-GNOME кейс (SKIPPED), журнальная верификация на хосте запрещена директивой 6 → Human Verification |
+| 1 | SC1: Переключение раскладки работает в wezterm на живом столе (хоткей → последующий ввод даёт символы новой раскладки) | ✓ VERIFIED (ВМ-стенд, 2026-11-01 20:31–20:34 UTC — живой видимый ряд на дереве ПОСЛЕ Round-2 коммитов) | Доставлено и принято: рецепт 7365a93 (2026-10-12), G-10-1 закрыт вердиктом «осталось» 2026-10-20, подмена оракула two-greens принята владельцем (UAT Test 7). Вердикт 2026-10-31 (ответ «1») закрыл настоящий-time чек на дереве ТОГО дня. НО после него: flipTo взводит flipAftermathWindow (2c00c10 23:06 +0300), демон-меню вшито (a2275a8..56eba96), session-freshness (a943656). Юнит-корпус зелёный (internal/session ok 29.6s под -race, этот прогон; TestTerminalClass_VerifyDeadSurvivesClientResetAfterOwnFlip — зачёт Фазы 11), однако истина — живое поведение стола; ЗАКРЫТО 2026-11-01 живым рядом на ВМ goswitch-stand (владелец делегировал: «Тестируй сам в виртуалке»): демон g2c00c10 (то самое пост-Round-2 дерево: flipTo+flipAftermathWindow), wezterm того же ночника 20261010-083911-e2a98e1b (нативный Wayland/IBus), драйв virsh send-key + чтение панели wezterm cli get-text: после собственного флипа демона на ru физические клавиши ghbdtn отрисованы в панели как «привет» (символы новой раскладки видимы клиенту), журнал несёт mode to ru/en и switch_engine при каждом флипе; флип-цепь жива и на текущем HEAD (юнит-корпус зелёный). Записано: 11-UAT Test 2 evidence, debug-док §Round 2 VM-попытка |
 | 2 | SC2: SPEC несёт датированную spec-delta ревизию D-55 (до кода): слово обязателен, строка feasibility-gated, автокоррекция в терминалах НИКОГДА; двухразрешительная модель; вето в точке армирования, не в apps_blocklist | ✓ VERIFIED | Перечитано на текущем дереве (после D-04-ревизии Фазы 11): `grep -c 'rev D-55' docs/SPEC.md` = **10** по всем пяти секциям — §4.3 (:146/:160), §4.4 (:177/:188), §5 (:363/:372), §7.2 (:413/:418/:423), §11 (:586). Ключевые фразы целы: «точке/точки армирования» =1, «в терминалах разрешена» =3, «первое действие на проводе» =1, «два подряд» =1, best-effort =6. Аудит-трейл-комментарии на месте; хронология «до кода» неизменна (ac676c4/2a6e67a 2026-10-08, зондовый код позже) |
 | 3 | SC3: ADR-008 доведён до Accepted на свидетельствах живого спайка, не на веб-источниках | ✓ VERIFIED | docs/adr/ADR-008-terminal-transport.md:5 `**Accepted** (2026-10-12, план 10-06)`; строки D1–D7 (:86–92) с Evidence-ячейками из именованных датированных рядов журнала; **0 веб-ссылок** (`grep -c 'https\?://'` = 0); 12 ссылок на adr-008-spike-log.md; амендменты живыми вердиктами (вкл. парные press+release, G-10-1). Фаза 11 файл не меняла |
 | 4 | SC4: Вердикт-таблица возможностей терминалов существует — фиксирует kill-критерий строковой растяжки и чорды слова для Фаз 10/12 | ✓ VERIFIED (рассеянная форма, принятая владельцем) | docs/adr/adr-008-spike-log.md — **719 строк** (было 675; +44 — чисто аддитивные ряды Фазы 11: секция :678, menu-blocklist PASS :716, menu-v2 :717/:718, коммит bc5a506). Секция «Capability-таблица терминалов» :131; десинк-ряды :59/:60/:141/:171/:173/:176–178 + итог «defect-reproduced» :178 целы; стенд-ряды Фазы 10 :265/:335/:584 на месте. Потребитель доказан: ROADMAP:131 «Depends on: Phase 9 (kill-критерий)» (Фаза 12); Фаза 10 закрыта на этой таблице |
 | 5 | SC5: A11Y-вердикты записаны для деградации MENU-идентичности (Фаза 11) и планирования Фазы 13 | ✓ VERIFIED (рассеянная форма) | STATE.md:84 — стена Telegram snap AppArmor (живая проба 2026-10-08, STRUCTURED-вердикт); STATE.md:110 — close-out фазы (вердикты рассеяны, d09-журнал не создавался); STATE.md:126 — «planning blocked on Telegram owner decision»; ROADMAP:145 «Depends on: Phase 9 (A11Y-зонд-матрица, AppArmor-вердикт)». ZCode/Electron — фаза-7 UAT-вердикты (ROADMAP:97); a11y-невидимость wezterm — ac_role_errors Фазы 10. Остатки (flatpak-ряд, ZCode-override) — deferred → Phase 13 |
 
-**Score:** 4/5 истин verified (1 present-behavior-unverified: SC1 в настоящем времени — вердикт владельца 2026-10-31 не покрывает текущее дерево, изменённое Фазой 11 ПОСЛЕ вердикта; достижение фазы 2026-10-12..20 верифицировано и закрыто)
+**Score:** 5/5 истин verified (SC1-настоящее закрыт 2026-11-01 живым видимым рядом на ВМ-стенде: wezterm ночника владельца, демон g2c00c10 — пост-Round-2 дерево; ввод после флипа даёт символы новой раскладки, видно в панели)
 
 ### Deferred Items
 

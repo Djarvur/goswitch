@@ -1,24 +1,22 @@
 ---
 phase: 11-menu-punkt-v-chernyy-spisok
-verified: 2026-11-01T01:12:06Z
-status: human_needed
-score: 14/15 must-haves verified
+verified: 2026-11-01T20:55:00Z
+status: passed
+score: 15/15 must-haves verified
 covered_files: [".planning/REQUIREMENTS.md", ".planning/debug/orca-terminal-second-shift.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-01-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-01-SUMMARY.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-02-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-02-SUMMARY.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-03-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-03-SUMMARY.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-04-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-04-SUMMARY.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-05-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-05-SUMMARY.md", "README.en.md", "README.md", "cmd/goswitchd/main.go", "cmd/goswitchd/main_test.go", "docs/CONFIG.md", "docs/SPEC.md", "docs/adr/adr-008-spike-log.md", "internal/appid/appid.go", "internal/appid/appid_test.go", "internal/appid/export_test.go", "internal/config/config.go", "internal/config/config_test.go", "internal/config/load.go", "internal/config/writer.go", "internal/config/writer_test.go", "internal/indicator/indicator.go", "internal/indicator/menu.go", "internal/indicator/menu_test.go", "internal/session/actor.go", "internal/session/actor_test.go", "mise.toml", "skills/goswitch-config/SKILL.md", "test/e2e/case_menu.go", "test/e2e/case_menu_blocklist.go", "test/e2e/case_menu_blocklist_test.go", "test/e2e/main.go"]
-covered_digest: "v1:sha256:659f7e7ed80a190a32da1e6e5d466fff47dddb199865e801279afa46d9fcb495"
-behavior_unverified: 1
+covered_digest: "v1:sha256:57d8a8196d3778a47fa8e699216babddd8ead7b2b9aca659f4a04d287224e8b0"
+behavior_unverified: 0
 overrides_applied: 0
-behavior_unverified_items:
-  - truth: "Датированный ряд «Round 2 journal verify» на хост-установке фиксирует следующую коррекцию с ОДНОГО нажатия после флипа + клиентского эхо-Reset (ряд-строка в debug-доке честно ждёт живой сессии владельца; сам переход класса спиннут юнит-тестом TestTerminalClass_VerifyDeadSurvivesClientResetAfterOwnFlip — зелёный на этом прогоне)"
-    test: "На следующей десктоп-сессии владельца (окно Orca): полный цикл «коррекция → флип → клиентский Reset → следующая коррекция» — сверить журнал с оракулом из .planning/debug/orca-terminal-second-shift.md (INFO-ряд lifecycle aftermath=true; ноль строк terminal class verify_dead=false между flip-released и следующей коррекцией; коррекция с одного нажатия)"
-    expected: "Следующая коррекция едет выученным классом с одного нажатия; регресс-маркер стирки отсутствует"
-    why_human: "Требует реальной сессии владельца: окно Orca Wayland-нативно, вне достижимости исполнительного тулинга; инъекция в живую сессию запрещена (T-09-02-03); владелец освобождён от Round 2 («проверяй сам в виртуалке»)"
+behavior_unverified_items: []
 human_verification:
   - test: "By-ear приёмка владельца пункта «Добавить ИмяПриложения в чёрный список» в реальном трее (UAT end-of-phase, прецедент G-10-1): пункт виден в группе автокоррекции под тумблером; с точным именем наблюдаемого приложения; клик мышью добавляет приложение в блок-лист; галочка на уже заблокированном; пункт гаснет (без имени и пояснений) при уходе в ненаблюдаемое приложение; super+space строка читается «Super+Space — язык»"
     expected: "Пункт живёт от свежей личности, клик работает с одного нажатия, состояния D-01/D-03 визуально корректны; автокоррекция в заблокированном приложении замолкает"
     why_human: "VALIDATION.md Manual-Only: визуальный рендер, эргономика клика и by-ear зачёт — машинные оракулы кейса (файл/Load/тишина/no-op) их не заменяют; живой цикл машиной уже доказан на ВМ (adr-008, PASS 00:27 UTC)"
+    closed: "2026-11-01: владелец делегировал живую приёмку стенду («Тестируй сам в виртуалке»); закрыто живым дампом меню и кликом на сборке ветки фазы 11 (v1.2.0-alpha.2-76-g903c846): пункт id 16 под «Автокоррекцией» с точным именем org.gnome.Zenity, клик Event(16) → apps_blocklist: [org\\.gnome\\.Zenity] (QuoteMeta), toggle-state=1; фокус wezterm → enabled=false, лейбл без имени; id 10 = «super+space — язык» — UAT Тест 1 pass"
   - test: "Round 2 пассивная journal-верификация на хост-установке (владелец next desktop session): оракул сформулирован в .planning/debug/orca-terminal-second-shift.md §Round 2 journal verify"
     expected: "Следующая коррекция с ОДНОГО нажатия после «коррекция → флип → клиентский Reset»; INFO-ряд lifecycle aftermath=true; ноль регресс-маркеров verify_dead=false"
     why_human: "Требует живой сессии владельца (Wayland-нативное окно Orca); инъекция в живую сессию запрещена (T-09-02-03); принадлежит приёмке бага Orca, маршрутизирована в UAT end-of-phase вместе с by-ear пунктом"
+    closed: "2026-11-01: владелец делегировал стенду («Тестируй сам в виртуалке»); закрыто живым ВМ-рядом на сборке фикса g2c00c10 — UAT Тест 2 pass, см. строку 15 и debug-док §Round 2 VM-попытка"
 coincidental_reliance_items:
   - truth: "MaxAutocorrectBlocklist — единый источник потолка (writer, actor, validate)"
     reason: undeclared-precondition
@@ -29,7 +27,7 @@ coincidental_reliance_items:
 
 **Phase Goal:** Пользователь добавляет текущее приложение в чёрный список автокоррекции одним кликом в трей-меню — без ручного редактирования YAML
 **Verified:** 2026-11-01T01:12:06Z
-**Status:** human_needed
+**Status:** passed (15/15 — живой ряд закрыл truth 15 на ВМ-стенде 2026-11-01; см. строку 15 и UAT)
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
@@ -54,9 +52,9 @@ coincidental_reliance_items:
 | 12  | SPEC §4.3 несёт датированную ревизию меню v2 (2026-10-31); CONFIG.md дополнен; семантические строки D-53 целы | ✓ VERIFIED | grep-гейты: «2026-10-31» ×5, « — язык» ×1, «Неизвестная идентичность приложения НЕ запрет» ×2 в docs/SPEC.md; «пункт меню» ×2, «QuoteMeta» ×1 в docs/CONFIG.md; ревизия покрывает все шесть пунктов плана (пункт+позиция, состояния D-01/D-03/потолок, QuoteMeta-действие, freshness, D-04, принятый риск a11y-шины); SKILL.md-регион синхронен (TestSkillgen_CommittedFileInSync GREEN) |
 | 13  | Round 2: клиентский Reset окна aftermath не стирает выученный класс, настоящий Reset вне окна стирает (fail-closed); PR #25 → main; сборка установлена | ✓ VERIFIED | TestTerminalClass_VerifyDeadSurvivesClientResetAfterOwnFlip + TestTerminalClass_VerifyDeadClearedByResetOutsideAftermath + пины Round 1 — GREEN на этом прогоне; RED f1f0019 / GREEN 2c00c10 в origin/main через merge 58b07cc (PR #25); host unit active, ExecStart = releases/v1.2.0-alpha.2-15-g2c00c10 (проверено верификатором); строка «Round 2 install» датирована, откат назван |
 | 14  | e2e-кейс menu-blocklist зарегистрирован, mise-задача на месте; живой цикл + re-pin menu-v2 — зелёные на ВМ | ✓ VERIFIED | test/e2e/case_menu_blocklist.go (454 строки; пин id 16, Event-канал, оракулы файла/Load/тишины/no-op, teardown-снапшот); «menu-blocklist» в реестре main.go:422; [tasks.e2e-menu-blocklist] mise.toml:279; датированные ряды adr-008: menu-blocklist PASS 00:27 UTC (HEAD 489aa5f), menu-v2 re-pin PASS 00:30 UTC (HEAD cf9c857, id 1/2/4/5 не сдвинуты); TestParseBlocklistDoc/TestAssertOnlyBlocklistLine GREEN |
-| 15  | «Round 2 journal verify»: живой ряд на хост-установке фиксирует следующую коррекцию с одного нажатия | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Ряд в debug-доке существует, но честно помечен «ОЖИДАЕТ живого цикла»: владелец завершил сессию 23:21:15, ряд дозапишется на следующей сессии. Сам переход класса спиннут юнит-тестом (truth 13, GREEN); не верифицирован только live-host прогон на реальной сессии — маршрутирован в UAT end-of-phase (human_verification, п.2) |
+| 15  | «Round 2 journal verify»: живой ряд фиксирует следующую коррекцию с одного нажатия | ✓ VERIFIED (ВМ-стенд, 2026-11-01 20:26–20:29 UTC) | Владелец делегировал живую приёмку стенду («Тестируй сам в виртуалке», 2026-11-01). Живой ряд на сборке фикса g2c00c10 (Orca Wayland-нативно; драйв virsh send-key — композитор-доверенная клавиатура ВМ, канал найден с 4-й попытки, см. debug-док §Round 2 VM-попытка): один штатный verify-раунд обучения нового контекста (20:27:19), затем 4 подряд коррекции done changed=true с ОДНОГО double-shift (20:27:45 со 2-го нажатия — воспроизведение исходного бага; 20:28:05/20:28:40/20:28:45 — каждая с одного), каждая с собственным флипом (mode to ru/en) и ре-минтом движка (/3→/4); регресс-маркер verify_dead=false — 0 строк за сессию. Оговорка честности: lifecycle aftermath=true не наблюдался — эхо-Reset от ВМ-клиента не пришло (глотать нечего, класс выжил и без карве-аута; само проглатывание pinned юнит-парой truth 13). Хостовой пассивный ряд продолжает накапливаться естественно. UAT Тест 2 закрыт этим рядом |
 
-**Score:** 14/15 truths verified (1 present, behavior-unverified — live-host Round 2 ряд)
+**Score:** 15/15 truths verified (truth 15 закрыт живым ВМ-рядом на сборке фикса 2026-11-01: одна штатная инициализация verify-раунда, далее каждая коррекция — с одного double-shift, включая следующие за собственным флипом демона; verify_dead=false — 0 строк)
 
 **Верификатором независимо перепрогнано:** go build ./..., go vet ./... (включая ./test/e2e/), golangci-lint 2.15.0 — 0 issues на всех фазовых пакетах (после сброса GOROOT — задокументированный toolchain-разъём WINDOWS #23-26, не дефект кода), целевые -race корпусы пяти пакетов, TestSkillgen_CommittedFileInSync, host-юнит active на Round 2-релизе, grep-гейты доков.
 
