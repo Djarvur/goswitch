@@ -175,6 +175,28 @@ func focusGain(sig *dbus.Signal) (string, bool) {
 	return name, name != ""
 }
 
+// focusLoss extracts the app-attributable focused-state DROP from one
+// StateChanged signal: a "focused" state-0 event on a bridge-namespaced
+// path — the tracked surface's blur. Relayed events (the registry's own
+// namespace) carry no identity and never match (bridgeApp reports "" —
+// the loss phase never de-arms on an unattributable event).
+func focusLoss(sig *dbus.Signal) (string, bool) {
+	if sig.Name != eventIface+"."+stateChanged || len(sig.Body) < 2 {
+		return "", false
+	}
+	kind, ok := sig.Body[0].(string)
+	if !ok || kind != "focused" {
+		return "", false
+	}
+	state, ok := sig.Body[1].(int32)
+	if !ok || state != 0 {
+		return "", false
+	}
+	name := bridgeApp(sig.Path)
+
+	return name, name != ""
+}
+
 // bridgeApp maps a bridge-namespaced accessible path to the application
 // identity: /org/gnome/Zenity/a11y/<uuid> → org.gnome.Zenity. Paths
 // without the bridge marker (older atk trees' /root nodes) report "" —
@@ -346,6 +368,24 @@ func (o *Observer) run(ctx context.Context, feed <-chan *dbus.Signal) {
 				o.mu.Unlock()
 				if hook != nil {
 					hook(name)
+				}
+
+				continue
+			}
+			// The identity-attributable blur (plan 11-05, the VM live
+			// finding): the tracked surface blurred — the freshness hook
+			// hears the LOSS as an empty identity, and the actor de-arms
+			// the blocklist item. The cache itself KEEPS its value (the
+			// D-53 gate's semantics are untouched); only the menu
+			// freshness is loss-scoped. The engine's focus churn carries
+			// no identity and never reaches this branch.
+			if lossApp, lost := focusLoss(sig); lost {
+				o.mu.Lock()
+				mine := lossApp == o.app
+				hook := o.gainHook
+				o.mu.Unlock()
+				if mine && hook != nil {
+					hook("")
 				}
 			}
 		}

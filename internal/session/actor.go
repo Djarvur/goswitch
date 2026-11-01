@@ -407,9 +407,12 @@ type Actor struct {
 	// identity through focus losses, so the menu must NOT read it directly —
 	// a stale name would render as the active item of the WRONG window and a
 	// click would record garbage. blApp is the last GAIN identity delivered
-	// by the WithGainHook (PushFocusedApp); blFresh dies on every REAL
-	// FocusOut (no synthetic flip credit, G-2-3) — freshness, not the cache,
-	// decides. Accessed only under a.mu.
+	// by the WithGainHook (PushFocusedApp); blFresh dies on the tracked
+	// surface's OWN blur (the observer's loss report — the empty identity,
+	// plan 11-05) — the engine's focus churn never touches it: a click that
+	// grants a window its focus pairs a real focus_out with the focus_in,
+	// and that churn trails the gain (freshness, not the cache, decides).
+	// Accessed only under a.mu.
 	blApp   string
 	blFresh bool
 	// verifyDead is the behavioral terminal class of the LIVE input
@@ -1365,17 +1368,15 @@ func (a *Actor) HandleLifecycle(kind engine.LifecycleKind) {
 			a.flipCredit--
 			synthetic = true
 		}
-		// The blocklist item's freshness (phase 11, MENU-01 — D-03): a REAL
-		// FocusOut is the window switch the cache kept the identity through —
-		// the item must not render the previous window's name as active, so
-		// the freshness dies and the menu learns immediately. The own flip's
-		// synthetic FocusOut is not a window switch (G-2-3) and a Reset is
-		// not a window switch either (the observed synthetic pair is
-		// focus_out/focus_in) — neither touches the freshness.
-		if kind == engine.LifecycleFocusOut && !synthetic {
-			a.blFresh = false
-			a.pushBlocklistAppLocked()
-		}
+		// The blocklist item's freshness (phase 11, MENU-01 — D-03) is
+		// deliberately NOT touched here (the 11-05 live finding): the
+		// engine's focus churn — the click that grants a fresh window its
+		// focus pairs a REAL focus_out with the focus_in — trails the a11y
+		// gain and would erase a freshness the same surface still holds.
+		// The de-arm rides the identity layer instead: the tracked
+		// surface's own blur arrives as PushFocusedApp("") (the observer's
+		// loss report), which is the only honest «window switched to
+		// something untrackable» signal.
 		// The two-phase level-1 ladder's flush site (plan 10-11): the input
 		// context is leaving — the ladder completes over the window's
 		// CAPTURED emitter snapshot, never the current emitter() (the stale
@@ -1554,20 +1555,37 @@ func (a *Actor) SetMenuSync(ms MenuSync) {
 	}
 }
 
-// PushFocusedApp receives one focus GAIN identity from the appid observer's
-// freshness hook (phase 11, MENU-01 — wired via appid.WithGainHook in the
-// default startAppid): the snapshot identity and its freshness are stored
-// under the actor's mutex and the blocklist menu item's state is pushed.
-// The hook runs on the observer's goroutine OUTSIDE the observer's mutex
-// (Pitfall 9) — taking a.mu here keeps the one-way actor.mu → sink.mu
-// ordering; the menu dedupes identical pushes, so the menuSync call is the
-// documented quick, non-blocking sink (the MenuSync contract).
+// PushFocusedApp receives one focus event identity from the appid
+// observer's freshness hook (phase 11, MENU-01 — wired via
+// appid.WithGainHook in the default startAppid): a GAIN stores the snapshot
+// identity and its freshness, a LOSS (the empty name — the tracked
+// surface's own blur) de-arms both, and the blocklist menu item's state is
+// pushed either way. The hook runs on the observer's goroutine OUTSIDE the
+// observer's mutex (Pitfall 9) — taking a.mu here keeps the one-way
+// actor.mu → sink.mu ordering; the menu dedupes identical pushes, so the
+// menuSync call is the documented quick, non-blocking sink (the MenuSync
+// contract). The ENGINE's focus churn is deliberately out of the freshness
+// business (the 11-05 live finding): a click that grants focus bounces the
+// client context (a real focus_out pairs with the focus_in) — that churn
+// trails the a11y gain and would erase a freshness the same surface still
+// holds; the blur of the tracked surface is the only honest de-arm.
 func (a *Actor) PushFocusedApp(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if name == "" {
-		return // a gain without an identity is nothing to remember (D-03)
+		// The a11y layer's LOSS report: the tracked surface blurred — the
+		// item must not render the departed window's name as active (the
+		// D-03 discipline: the daemon never guesses the next identity). An
+		// already-de-armed state is the silent no-op (the push dedupe).
+		if a.blApp == "" && !a.blFresh {
+			return
+		}
+		a.blApp = ""
+		a.blFresh = false
+		a.pushBlocklistAppLocked()
+
+		return
 	}
 	a.blApp = name
 	a.blFresh = true

@@ -5064,8 +5064,8 @@ type blocklistPush struct {
 }
 
 // SetBlocklistApp records the blocklist-item state push (MENU-01: the item
-// lives from the identity's freshness — gain pushes fresh, a real FocusOut
-// clears it).
+// lives from the identity's freshness — gain pushes fresh, the tracked
+// surface's own blur (the empty identity) clears it).
 func (f *fakeMenuSync) SetBlocklistApp(app string, fresh, covered, full bool) {
 	f.mu.Lock()
 	f.blocklist = append(f.blocklist, blocklistPush{app, fresh, covered, full})
@@ -5162,33 +5162,37 @@ func TestActor_BlocklistItemFreshPushes(t *testing.T) {
 }
 
 // TestActor_BlocklistItemFreshLosses pins the freshness machine's LOSS
-// half: a REAL FocusOut (no flip credit armed) clears the freshness and
-// pushes the unknown state — the stale cache name never reaches the menu —
-// while a SYNTHETIC FocusOut (the own flip's credit, G-2-3) — not a window
-// switch — touches neither the freshness nor the menu.
+// half (plan 11-05, the VM live finding): the tracked surface's OWN blur —
+// the empty identity from the a11y loss report — de-arms and pushes the
+// unknown state (the stale cache name never reaches the menu); the
+// ENGINE's focus churn — real or synthetic — never touches the freshness
+// (the click that grants a fresh window its focus pairs a real focus_out
+// with the focus_in, and that churn trails the a11y gain: a reset here
+// erased freshness the same surface still held). A loss on an
+// already-unknown state is the silent no-op.
 func TestActor_BlocklistItemFreshLosses(t *testing.T) {
-	t.Run("real FocusOut clears freshness and pushes", func(t *testing.T) {
+	t.Run("blur loss de-arms and pushes the unknown", func(t *testing.T) {
 		a, _ := wiredActor()
 		ms := &fakeMenuSync{}
 		a.SetMenuSync(ms)
 
 		a.PushFocusedApp(blTestApp)
-		a.HandleLifecycle(engine.LifecycleFocusOut) // no credit armed — a real loss
+		a.PushFocusedApp("") // the tracked surface's blur (the a11y loss report)
 
 		pushes := ms.menuBlocklist()
 		if len(pushes) != 3 {
-			t.Fatalf("pushes after the real FocusOut = %d, want install + gain + reset", len(pushes))
+			t.Fatalf("pushes after the blur loss = %d, want install + gain + de-arm", len(pushes))
 		}
 		if pushes[2].fresh {
-			t.Errorf("post-FocusOut fresh = true, want false — freshness died with the window")
+			t.Errorf("post-loss fresh = true, want false — freshness died with the surface")
 		}
 		if pushes[2].app != "" {
-			t.Errorf("post-FocusOut name = %q, want empty — "+
+			t.Errorf("post-loss name = %q, want empty — "+
 				"the stale cache name must not reach the menu (D-03)", pushes[2].app)
 		}
 	})
 
-	t.Run("synthetic FocusOut keeps freshness silent", func(t *testing.T) {
+	t.Run("engine focus churn keeps freshness", func(t *testing.T) {
 		a, _ := wiredActor()
 		ms := &fakeMenuSync{}
 		a.SetMenuSync(ms)
@@ -5197,14 +5201,29 @@ func TestActor_BlocklistItemFreshLosses(t *testing.T) {
 		a.PushFocusedApp(blTestApp)
 		flipMode(a)                                 // the successful round trip arms exactly one credit
 		a.HandleLifecycle(engine.LifecycleFocusOut) // the synthetic pair's FocusOut consumes it
+		a.HandleLifecycle(engine.LifecycleFocusOut) // a REAL loss — the engine has no freshness vote
 
 		pushes := ms.menuBlocklist()
 		if len(pushes) != 2 {
-			t.Fatalf("the synthetic FocusOut pushed %d extra states, want none; pushes: %+v",
+			t.Fatalf("the engine churn pushed %d extra states, want none; pushes: %+v",
 				len(pushes)-2, pushes)
 		}
 		if !pushes[1].fresh {
-			t.Errorf("freshness after the synthetic FocusOut = false, want the gain's true (G-2-3)")
+			t.Errorf("freshness after the engine churn = false, want the gain's true — " +
+				"the de-arm is the a11y blur's, never the engine's (11-05)")
+		}
+	})
+
+	t.Run("loss on the unknown state is the silent no-op", func(t *testing.T) {
+		a, _ := wiredActor()
+		ms := &fakeMenuSync{}
+		a.SetMenuSync(ms)
+
+		a.PushFocusedApp("") // nothing armed — nothing to de-arm
+
+		pushes := ms.menuBlocklist()
+		if len(pushes) != 1 {
+			t.Fatalf("pushes after the idle loss = %d, want exactly the install push", len(pushes))
 		}
 	})
 }
@@ -5279,9 +5298,9 @@ func TestActor_BlocklistFoldFull(t *testing.T) {
 }
 
 // TestActor_BlocklistFoldFreshnessBeatsCache pins the fold's D-03 side: a
-// real FocusOut cleared the freshness, so the fold over a document with
-// the identity's pattern pushes the UNKNOWN state anyway — freshness, not
-// the cache, decides.
+// blur loss (the tracked surface's own) cleared the freshness, so the fold
+// over a document with the identity's pattern pushes the UNKNOWN state
+// anyway — freshness, not the cache, decides.
 func TestActor_BlocklistFoldFreshnessBeatsCache(t *testing.T) {
 	a, _ := wiredActor()
 	ms := &fakeMenuSync{}
@@ -5290,7 +5309,7 @@ func TestActor_BlocklistFoldFreshnessBeatsCache(t *testing.T) {
 	a.AttachConfig(src)
 
 	a.PushFocusedApp(blTestApp)
-	a.HandleLifecycle(engine.LifecycleFocusOut) // the real loss clears freshness
+	a.PushFocusedApp("") // the blur loss clears freshness
 
 	cfg := config.Defaults()
 	cfg.Autocorrect.AppsBlocklist = []string{blTestApp}
@@ -5325,11 +5344,11 @@ func TestActor_BlocklistAppState(t *testing.T) {
 	t.Run("known requires freshness", func(t *testing.T) {
 		a, _ := wiredActor()
 		a.PushFocusedApp(blTestApp)
-		a.HandleLifecycle(engine.LifecycleFocusOut) // real loss
+		a.PushFocusedApp("") // the blur loss
 
 		app, known, _, _ := a.BlocklistAppState()
 		if known || app != "" {
-			t.Errorf("state after the real FocusOut = (%q, %t), want unknown — "+
+			t.Errorf("state after the blur loss = (%q, %t), want unknown — "+
 				"the stale name must not leak to the composition", app, known)
 		}
 	})
