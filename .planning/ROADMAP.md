@@ -173,7 +173,13 @@ Plans:
   3. Рецепты в README/CONFIG.md включают побочные эффекты и границы: плашка Telegram «режим экранного диктора», «флаги Electron применяются только на запуске», restart + self-check в каждом рецепте; README несёт residual-risk заметку (ручная коррекция на скрытых полях копирует в PRIMARY)
   4. К каждому рецепту прилагается user-runnable self-check одной командой
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+
+- [ ] 13-01-PLAN.md — probe-first живая ВМ-проба Telegram (D-01/D-02/D-03): подъём стенда, калибровка оракула ГЛАВНЫМ рядом, трёхслойная проба snap+flatpak одной сессией ×2, лестница при красном, вердикт-развилка A11Y-02; трассер — scripts/a11y-selfcheck.py (D-06) + секция журнала
+- [ ] 13-02-PLAN.md — ZCode на ВМ (D-05): rsync-копия, .desktop override + полный рестарт (pid/cmdline), приёмка A11Y-01 по живому дереву RED→GREEN ×2, слой 3 счётчиками; контракт self-check 0/1/2 живой матрицей; итоговое состояние стенда
+- [ ] 13-03-PLAN.md — рецепты в docs/CONFIG.md + README.md/README.en.md (D-07): ZCode-валидация, Telegram-сборка по вердикту пробы, побочка диктора, границы только-на-запуске/трей, residual-risk PRIMARY, self-check строка в каждом рецепте; grep-гейты A11Y-03
 
 ## Progress
 
@@ -186,7 +192,7 @@ Plans:
 | 10. TERM-слово | v1.2 | 16/16 | Complete    | 2026-10-20 |
 | 11. MENU — пункт «в чёрный список» | v1.2 | 5/5 | Complete    | 2026-11-01 |
 | 12. TERM-строка | v1.2 | 0/5 | Not started | - |
-| 13. A11Y — рецепты Telegram/ZCode | v1.2 | 0/? | Not started | - |
+| 13. A11Y — рецепты Telegram/ZCode | v1.2 | 0/3 | Not started | - |
 
 ## Archive
 
