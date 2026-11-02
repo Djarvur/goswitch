@@ -5,15 +5,15 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 12
 current_phase_name: TERM-строка
 status: planning
-stopped_at: Phase 13 context gathered (probe-first Telegram, VM-only acceptance)
-last_updated: "2026-11-02T22:01:07.460Z"
+stopped_at: "Phase 13 planned: 3 plans verified (probe-first 13-01, ZCode 13-02, docs 13-03); ready for execute"
+last_updated: "2026-11-02T22:47:50.421Z"
 last_activity: 2026-11-01
 last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: 0cd04b75787abd81e5bb314b7b42ebdcc347e369
+state_head: 23fae634a4a932cbfa86371c155c746414171410
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 28
+  total_plans: 31
   completed_plans: 23
   percent: 60
 ---
@@ -154,9 +154,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-02T21:38:34.512Z
-Stopped at: Phase 13 context gathered (probe-first Telegram, VM-only acceptance)
-Resume file: .planning/phases/13-a11y-retsepty-telegram-zcode/13-CONTEXT.md
+Last session: 2026-11-02T22:47:50.292Z
+Stopped at: Phase 13 planned: 3 plans verified (probe-first 13-01, ZCode 13-02, docs 13-03); ready for execute
+Resume file: .planning/phases/13-a11y-retsepty-telegram-zcode/13-01-PLAN.md
 
 ## Operator Next Steps
 
