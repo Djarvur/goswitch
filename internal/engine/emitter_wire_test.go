@@ -350,7 +350,7 @@ func TestEmitters_ModeProperty(t *testing.T) {
 
 		rec := newEmitRecorder(t)
 		f := factory{conn: rec.conn}
-		if _, ferr := f.CreateEngine("goswitch-en"); ferr != nil {
+		if _, ferr := f.CreateEngine("goswitch-en", ""); ferr != nil {
 			t.Fatalf("CreateEngine() err = %v, want nil", ferr)
 		}
 		wantFactoryRegistration(t, rec)

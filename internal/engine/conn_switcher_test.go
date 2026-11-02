@@ -726,7 +726,7 @@ func TestFactoryReentrantCreateEngineAnswersDuringAwait(t *testing.T) {
 	f := &factory{conn: fconn, handler: handler}
 	mint := make(chan mintResult, 1)
 	bus.setReattach(func(name string) {
-		path, dbusErr := f.CreateEngine(name)
+		path, dbusErr := f.CreateEngine(name, "")
 		mint <- mintResult{path: path, err: dbusErr}
 	})
 
@@ -791,7 +791,7 @@ func TestFactoryReentrantCreateEngineBlockingHandlerIsOnlyGate(t *testing.T) {
 	}
 	f := &factory{conn: fconn, handler: handler}
 	bus.setReattach(func(name string) {
-		_, _ = f.CreateEngine(name) // the blocked mint's outcome is not this witness's subject
+		_, _ = f.CreateEngine(name, "") // the blocked mint's outcome is not this witness's subject
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), flipDeadline)
