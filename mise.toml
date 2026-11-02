@@ -203,6 +203,13 @@ run = "go run ./test/e2e -case term-word-drain"
 description = "e2e: 10-13 continuation term-dst-apply — the round-6 DST-apply matrix: warm-gated probe-delete (-6,6) apply cells on wezterm-nightly and gnome-terminal/VTE (the RAW pty delta answers honored/ignored/partial — erase bytes 0x7f/0x08 after the typed token) plus the full choreography ghbdtn → DST(6) → 1 s drain-delay → probe-commit привет twice (the byte-order and final-line oracle); every emission rides a Require-witness materialization gate (DST never emitted into an unproven context — the 10-16 bisection discipline) and carries the gnome-shell survival witness; rows to adr-008-spike-log.md round-6 section — the routing input of the round-6 verdict (live GNOME session; NOT in ci)"
 run = "go run ./test/e2e -case term-dst-apply"
 
+# Phase-12 live sel-probe (12-01, TERM-03, the OQ1 phase gate): drives the
+# goswitch-stand VM desktop (vm-primary venue) and appends dated verdict rows
+# to docs/adr/adr-008-spike-log.md — deliberately NOT part of `mise run ci`.
+[tasks.e2e-term-line-probe]
+description = "e2e: 12-01 term-line-probe — the phase-12 read-channel sel-probe (OQ1 phase gate): three cells — the physical CopyMode chord on the wayland fixture, the same chord on the xim-line fixture (owner transport + X11-PRIMARY→wl-paste bridge, A3), the daemon-forwarded future-gesture sequence (End pair, then shift+home pair via probe-forward); CLIPBOARD sentinel frozen through every cell; cell (c) verdict gates the phase (red = owner checkpoint — D-01 forbids the buffer fallback); rows to adr-008-spike-log.md (live GNOME session; NOT in ci)"
+run = "go run ./test/e2e -case term-line-probe"
+
 # The round-5 host self-drive instrument (the wezterm double-delete hunt):
 # this task is the DRY-RUN only — preconditions + parser self-check, zero
 # injections, zero writes (safe anywhere, including headless). The LIVE

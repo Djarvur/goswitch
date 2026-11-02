@@ -32,6 +32,10 @@ func spikeSections() map[string]string {
 		"secCapsDel":      secCapsDel,
 		"secTermDrain":    secTermDrain,
 		"secTermDstApply": secTermDstApply,
+		// secLineProbe names the phase-12 section «Фаза 12 сел-проба канала
+		// чтения (term-line-probe)» — the OQ1 phase gate whose rows the
+		// term-line-probe case owns (plan 12-01).
+		"secLineProbe": secLineProbe,
 	}
 }
 
