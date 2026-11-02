@@ -123,6 +123,16 @@ const flipConfirmGrace = 300 * time.Millisecond
 // provenance, never a config key (the focusFlapWindow precedent).
 const flipAftermathWindow = 2 * time.Second
 
+// appDeadMemoryCap bounds the app-scoped verify-dead memory (debug session
+// orca-first-gesture-dead, owner verdict 2026-11-02 «память по
+// приложению»): one slot per application that ever taught the
+// non-answering class, dropped FIFO past the cap — a desktop's
+// terminal-class apps number in single digits, and the daemon's lifetime is
+// weeks; the cap keeps the memory O(1) without an expiry the wire cannot
+// observe (an app's bus-connection death is invisible behind ibus-daemon's
+// relayed calls). An internal constant, never a config key.
+const appDeadMemoryCap = 8
+
 // defaultLevel2ForwardGap is the DEFAULT pacing quantum between the write
 // branch's wire emissions (plan 10-05, the 2026-10-12 VTE live finding):
 // the client drains forwarded keys lazily — they queue as GDK events —
@@ -256,9 +266,15 @@ const (
 
 // emitterSlot wraps the actor's emitter sink for the atomic pointer: Go
 // atomics store pointers, not interface values, so the engine.Emitter rides
-// in a one-field wrapper (G-6-1).
+// in a one-field wrapper (G-6-1). The peer field carries the engine's
+// minting-peer name (the optional Peer capability resolved at AttachEngine,
+// debug session orca-first-gesture-dead): it is read WITHOUT the actor
+// mutex by the app-memory key resolution, so it lives INSIDE the atomically
+// swapped slot — a re-entrant AttachEngine mid-flip can never pair a new
+// engine with the previous engine's peer.
 type emitterSlot struct {
-	eng engine.Emitter
+	eng  engine.Emitter
+	peer string
 }
 
 // Actor implements engine.EventHandler for the daemon: every key and
@@ -425,6 +441,33 @@ type Actor struct {
 	// the G-2-3 carve-out). A5 insurance: every transition logs one
 	// source-neutral INFO marker, word-free (D-20/D-21).
 	verifyDead bool
+	// appDead/appDeadOrder are the APP-SCOPED half of the behavioral
+	// terminal class (debug session orca-first-gesture-dead, owner verdict
+	// 2026-11-02 «память по приложению»): the push-less verify behavior is
+	// a property of the APPLICATION, not of the input context — Orca's
+	// Electron focus churn and window/tab switches re-mint the engine every
+	// few seconds, and a class that dies with the context made «the first
+	// gesture is sacrificial» the app's permanent tax (five dead first
+	// gestures a day against 26 corrections on the host journal). Every
+	// teach site (setVerifyDead true) also remembers the app under
+	// terminalAppKey — the a11y identity when the observer has one, the
+	// engine's minting peer for the blind regime, "" for an anonymous
+	// context — and classifyTerminal consults the memory beside the live
+	// class, so the SAME app's next context corrects FIRST-PRESS through
+	// the terminal write branch; a DIFFERENT app (key mismatch) classifies
+	// from zero exactly as before. The memory intentionally has NO
+	// falsification path (no «context answers again» signal exists on this
+	// wire) and no per-app expiry (an app's bus connection death is not
+	// observable through ibus-daemon's relayed calls): it lives to the
+	// daemon's restart, bounded FIFO by appDeadMemoryCap so a long session
+	// cannot grow it without end. The trade is the owner's verdict: an
+	// answering field pays the probe exactly once per app lifetime, and a
+	// genuinely mis-taught app (one slow answer beyond the verify budget)
+	// rides the terminal branch until the daemon restarts — level-2 is the
+	// universal write primitive, the fail direction is the probe's cost,
+	// not correctness. Accessed only under a.mu.
+	appDead      map[string]bool
+	appDeadOrder []string
 	// detectCheck is the boundary's detector seam (plan 10-03): the
 	// indirection the veto corpus spies through — UseDetector installs a
 	// counting double, nil keeps the real detect.Check (the production
@@ -1492,7 +1535,16 @@ func (a *Actor) HandleCapabilities(caps uint32) {
 // (out-of-order stores between concurrent CreateEngine calls keep the
 // pre-fix equivalent ordering, and the corpus runs under -race).
 func (a *Actor) AttachEngine(eng engine.Emitter) {
-	a.engSlot.Store(&emitterSlot{eng: eng})
+	slot := &emitterSlot{eng: eng}
+	// The minting peer rides the slot when the engine carries it (the wire
+	// Engine's Peer; the corpus doubles and a detached engine answer ""): the
+	// app-memory key of a BLIND context — no a11y identity, the Orca case —
+	// resolves by this name, so the store must be one atomic write with the
+	// engine (a separate field could transiently mix generations).
+	if p, ok := eng.(interface{ Peer() string }); ok {
+		slot.peer = p.Peer()
+	}
+	a.engSlot.Store(slot)
 }
 
 // SetSwitcher installs the generation-scoped SetGlobalEngine seam (D-52) —
@@ -3704,6 +3756,11 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 //  1. the behavioral verify-dead class — a verify round of this context
 //     expired by budget while the context lived (learned in VerifyExpiry,
 //     cleared by HandleLifecycle); it needs no identity at all;
+//     1b. the app-scoped half of the same class (orca-first-gesture-dead,
+//     owner verdict 2026-11-02 «память по приложению»): the CURRENT app
+//     remembered as non-answering — the same app's fresh context inherits
+//     the terminal routing first-press, a different app's key misses and
+//     falls through to the sources below;
 //  2. the document's terminal identity patterns (correction.terminals) —
 //     substring RE2 against the observable identity; an invisible identity
 //     answers nothing from this source (the quiet norm, not an error);
@@ -3717,6 +3774,9 @@ func (a *Actor) autoCorrectBoundary() (acPayload, bool) {
 // The caller holds the mutex.
 func (a *Actor) classifyTerminal() bool {
 	if a.verifyDead {
+		return true
+	}
+	if a.rememberedVerifyDeadApp() {
 		return true
 	}
 	if app, known := a.acFocusedApp(); known && a.matchACTerminal(app) {
@@ -3818,13 +3878,82 @@ func compileACPatterns(patterns []string, source string) []*regexp.Regexp {
 // context and records the transition with ONE source-neutral INFO marker —
 // the A5 insurance (a flapping class must leave a trail), word-free
 // (D-20/D-21): the marker names neither the typed word nor the source that
-// produced the verdict. The caller holds the mutex.
+// produced the verdict. The caller holds the mutex. A TEACH (dead=true)
+// additionally remembers the app in the app-scoped memory (the
+// orca-first-gesture-dead verdict): every learning site funnels through
+// here, so the verify-timeout expiry and both stale-cache answer routes
+// remember alike; a clear touches ONLY the live class — the app's memory is
+// not a transition and outlives the context by design.
 func (a *Actor) setVerifyDead(dead bool) {
 	if a.verifyDead == dead {
 		return
 	}
 	a.verifyDead = dead
 	slog.Info("terminal class", "verify_dead", dead)
+	if dead {
+		a.rememberVerifyDeadApp()
+	}
+}
+
+// terminalAppKey resolves the identity the app-scoped verify-dead memory
+// keys the CURRENT application by (the caller holds the mutex): the a11y
+// focused-app identity when the observer has one — the honest name of a
+// visible app, the same source the pattern gates read; else the live
+// engine's minting peer — the wire-side name of the app's bus presence,
+// the only key the blind regime (Electron/Orca: no a11y identity, ever)
+// has; else "" — the anonymous slot every unknown context shares. The key
+// composition is one-way by tier: a visible app never lands in the peer
+// slot (its observer answers), so the slots cannot alias upward — an a11y
+// outage merely moves the app to the peer key, and a MISS there fails
+// closed into the probe round, never into a false inheritance.
+func (a *Actor) terminalAppKey() string {
+	if app, known := a.acFocusedApp(); known && app != "" {
+		return app
+	}
+	if slot := a.engSlot.Load(); slot != nil && slot.peer != "" {
+		return "ibus-peer:" + slot.peer
+	}
+
+	return ""
+}
+
+// rememberVerifyDeadApp records the teaching under the app's key (the
+// caller holds the mutex, a TEACH site of setVerifyDead): the map is the
+// membership, the order slice is the FIFO of the appDeadMemoryCap
+// eviction. The DEBUG row carries the key (a bus/app name, never a typed
+// word — D-20/D-21) so the -debug journal of an acceptance run can name
+// which slot an app landed in.
+func (a *Actor) rememberVerifyDeadApp() {
+	key := a.terminalAppKey()
+	if !a.appDead[key] {
+		if a.appDead == nil {
+			a.appDead = make(map[string]bool)
+		}
+		a.appDead[key] = true
+		a.appDeadOrder = append(a.appDeadOrder, key)
+		if len(a.appDeadOrder) > appDeadMemoryCap {
+			delete(a.appDead, a.appDeadOrder[0])
+			a.appDeadOrder = a.appDeadOrder[1:]
+		}
+	}
+	slog.Debug("terminal class app memory", "key", key, "apps", len(a.appDead))
+}
+
+// rememberedVerifyDeadApp reports whether the CURRENT app is remembered as
+// non-answering (the caller holds the mutex): the app-scoped half of the
+// behavioral terminal class — the same app's fresh context inherits the
+// terminal routing FIRST-PRESS, the different app's key misses and
+// classifies from zero. The DEBUG row (not INFO: the memory is consulted
+// per boundary, not on transitions) marks the inheritance for the
+// acceptance journal.
+func (a *Actor) rememberedVerifyDeadApp() bool {
+	key := a.terminalAppKey()
+	if !a.appDead[key] {
+		return false
+	}
+	slog.Debug("terminal class inherited", "key", key)
+
+	return true
 }
 
 // acFocusedApp resolves the focused app identity for the boundary and

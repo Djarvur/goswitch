@@ -107,6 +107,15 @@ type Engine struct {
 	name    string
 	handler EventHandler
 	caps    uint32
+	// peer is the bus name that minted this engine (the CreateEngine
+	// caller's sender, captured by the factory — debug session
+	// orca-first-gesture-dead, owner verdict 2026-11-02 «память по
+	// приложению»): the closest wire-side name of the APPLICATION whose
+	// input context this engine serves. It is the identity the app-scoped
+	// behavioral-class memory keys blind contexts by (the appid observer
+	// sees nothing for Electron/Orca, but the minting peer is on the wire
+	// by construction). Empty on a detached engine (headless unit tests).
+	peer string
 	// onGlobalEngine is the sync-listener input (05-04 criterion 3): set by
 	// the factory from Config.OnGlobalEngine — FocusIn forwards THIS
 	// engine's wire name into it, the second observer beside the
@@ -123,6 +132,15 @@ type Engine struct {
 // constructible in headless unit tests.
 func NewEngine(handler EventHandler, name string) *Engine {
 	return &Engine{handler: handler, name: name}
+}
+
+// Peer names the bus peer that minted the engine — the optional capability
+// the session actor resolves at AttachEngine (a sink without it — the
+// corpus doubles, a detached engine — answers ""). The method form keeps
+// the Emitter interface untouched: the capability is discovered, never
+// required (the SoundStopper precedent).
+func (e *Engine) Peer() string {
+	return e.peer
 }
 
 // recoverHandler contains a panic raised anywhere below a D-Bus handler:

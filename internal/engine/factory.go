@@ -27,7 +27,13 @@ type factory struct {
 // CreateEngine implements org.freedesktop.IBus.Factory.CreateEngine
 // (s engine_name) → (o object_path): it mints a monotonic object path,
 // exports the engine object on all three interfaces and returns the path.
-func (f *factory) CreateEngine(name string) (path dbus.ObjectPath, err *dbus.Error) {
+// The godbus-special `sender` parameter (export.go: the Sender type is
+// filled from the message header and excluded from the D-Bus signature, so
+// the wire shape stays "s" → "o") captures the MINTING PEER — the bus name
+// of the caller — as the engine's app-side identity (debug session
+// orca-first-gesture-dead): the app-scoped behavioral-class memory keys
+// blind contexts by it when the a11y observer has no name for the app.
+func (f *factory) CreateEngine(name string, sender dbus.Sender) (path dbus.ObjectPath, err *dbus.Error) {
 	defer recoverHandler("CreateEngine", &err)
 
 	f.mu.Lock()
@@ -39,6 +45,7 @@ func (f *factory) CreateEngine(name string) (path dbus.ObjectPath, err *dbus.Err
 	eng := NewEngine(f.handler, name)
 	eng.conn = f.conn
 	eng.path = path
+	eng.peer = string(sender)
 	eng.onGlobalEngine = f.onGlobalEngine
 	if f.handler != nil {
 		// The handler (session.Actor) corrects through this engine's
@@ -71,6 +78,12 @@ func (f *factory) CreateEngine(name string) (path dbus.ObjectPath, err *dbus.Err
 		slog.Error("register properties emit failed", "path", string(path), "error", err)
 	}
 	slog.Info("engine created", "path", string(path), "name", name)
+	// The minting peer rides along at DEBUG (D-21): the acceptance oracle
+	// of orca-first-gesture-dead reads it off the -debug journal to verify
+	// how the bus names the callers (per-app unique names or the daemon's
+	// own) — the fact that decides how finely the app memory splits the
+	// blind regime.
+	slog.Debug("engine peer", "path", string(path), "peer", string(sender))
 
 	return path, nil
 }

@@ -130,6 +130,17 @@ type fakeSink struct {
 	forwardHook func(forwardCall)
 	commitHook  func(text string)
 	modeHook    func(symbol string)
+	// peer is the optional engine-peer capability (debug session
+	// orca-first-gesture-dead): a non-empty value makes the double answer
+	// Peer() the way the wire Engine carries its minting caller's bus name;
+	// the zero value stays the anonymous sink the corpus has always used.
+	peer string
+}
+
+// Peer answers the optional peer capability when the double was built with
+// one (the engine.Peer form); the anonymous sink has no peer to name.
+func (f *fakeSink) Peer() string {
+	return f.peer
 }
 
 // RequireSurroundingText records the verification request.
@@ -3281,6 +3292,32 @@ type fakeAppid struct {
 // FocusedApp answers the double's programmed identity.
 func (f fakeAppid) FocusedApp() (string, error) {
 	return f.app, f.err
+}
+
+// mutableAppid is the appid double of a focus SWITCH (debug session
+// orca-first-gesture-dead): the observer's answer changes mid-test exactly
+// the way the a11y gain of a different window does — the same source now
+// names another app. The value-form fakeAppid cannot do this; the pointer
+// form mutates under the same interface.
+type mutableAppid struct {
+	mu  sync.Mutex
+	app string
+}
+
+// FocusedApp answers the currently programmed identity.
+func (m *mutableAppid) FocusedApp() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.app, nil
+}
+
+// set programs the identity the source answers next.
+func (m *mutableAppid) set(app string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.app = app
 }
 
 // TestActor_MACRPerAppMatch pins the scoping itself: with apps
@@ -7775,14 +7812,26 @@ func TestTerminalClass_VerifyDeadClearedByFocusOut(t *testing.T) {
 		t.Errorf("the cleared-class marker is missing; log:\n%s", buf.String())
 	}
 
-	// The fresh context learns afresh: the second expiry transitions again.
-	typeWord(a, "cnhjrf")
+	// The same app's next gesture rides the APP MEMORY (owner verdict
+	// 2026-11-02, orca-first-gesture-dead «память по приложению»): the LIVE
+	// class died with the context — the clearing marker above — but the
+	// app's learning survives its own context's death, so the next gesture
+	// of the SAME app routes through the terminal write branch and the
+	// probe the non-answering field always loses never re-arms. The
+	// re-learn from zero is the DIFFERENT app's lot
+	// (TestFlapWindowContextIdentity_DifferentAppWipesClass).
+	typeWord(a, "cnhjaf")
 	a.HandleKey(spaceKey())
 	teachVerifyDead(t, a, wordEN)
 
-	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 3 {
-		t.Errorf("terminal-class markers after the re-learn = %d, want 3 — "+
-			"the real focus loss really cleared the class, not just logged", got)
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 1 {
+		t.Errorf("verify-timeout records after the same-app re-gesture = %d, want 1 — the app "+
+			"memory must route the gesture terminal; the probe never re-arms; log:\n%s",
+			got, buf.String())
+	}
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
+		t.Errorf("terminal-class markers after the same-app re-gesture = %d, want 2 — no new "+
+			"transition: the live class stays cleared, the memory is not a transition", got)
 	}
 }
 
@@ -8004,15 +8053,20 @@ func TestTerminalClass_VerifyDeadClearedByResetOutsideAftermath(t *testing.T) {
 		t.Errorf("the cleared-class marker is missing; log:\n%s", buf.String())
 	}
 
-	// The fresh context learns afresh: the next correction re-pays the
-	// verify round (the fail-closed cost of a real context change).
-	typeWord(a, "cnhjrf")
+	// The same app's next correction rides the APP MEMORY (owner verdict
+	// 2026-11-02, orca-first-gesture-dead «память по приложению»): the
+	// outside Reset wiped the LIVE class — the marker above — but a Reset
+	// of the SAME app's context is not the app's death; the next correction
+	// routes terminal and the verify round never re-arms. The fail-closed
+	// re-learn belongs to the DIFFERENT app's context
+	// (TestFlapWindowContextIdentity_DifferentAppWipesClass).
+	typeWord(a, "cnhjaf")
 	a.HandleKey(spaceKey())
 	teachVerifyDead(t, a, wordEN)
 
-	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 2 {
-		t.Errorf("verify-timeout records = %d, want 2 — the outside Reset really cleared the "+
-			"class and the next correction re-pays the verify round (fail-closed kept); log:\n%s",
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 1 {
+		t.Errorf("verify-timeout records = %d, want 1 — the app memory must route the next "+
+			"correction terminal; the probe never re-arms for the same app; log:\n%s",
 			got, buf.String())
 	}
 }
@@ -8118,9 +8172,19 @@ func TestTerminalClass_VerifyDeadClearedByReset(t *testing.T) {
 	a.HandleKey(spaceKey())
 	teachVerifyDead(t, a, wordEN)
 
-	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 3 {
-		t.Errorf("terminal-class markers after the re-learn = %d, want 3 — "+
-			"the Reset really cleared the class, not just logged", got)
+	// The same app's next gesture rides the APP MEMORY (owner verdict
+	// 2026-11-02, orca-first-gesture-dead «память по приложению»): the
+	// Reset cleared the LIVE class — 2 markers stand — but the same app's
+	// learning survives its context's death; no third transition, no
+	// re-armed probe (the different-app form carries the re-learn pin).
+	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
+		t.Errorf("terminal-class markers after the re-learn = %d, want 2 — the live class stays "+
+			"cleared and the app memory is not a transition; log:\n%s", got, buf.String())
+	}
+	if got := strings.Count(buf.String(), `"reason":"verify-timeout"`); got != 1 {
+		t.Errorf("verify-timeout records after the same-app re-gesture = %d, want 1 — the app "+
+			"memory must route the gesture terminal; the probe never re-arms; log:\n%s",
+			got, buf.String())
 	}
 }
 
@@ -10126,23 +10190,32 @@ func TestTwoPhaseLevel1_FlipReleasedByNextKey(t *testing.T) {
 	}
 }
 
-// TestFlapWindowContextIdentity_RealSwitchWipesClass pins the WR-03 fix
-// (10-REVIEW :119-148): a REAL window switch completing inside the flap
-// window — between the FocusOut and the FocusIn the input context is
-// re-minted (AttachEngine of a NEW engine object) — must NOT cancel the
-// deferred wipe: the learned class dies with the OLD context, the fresh
-// context starts unclassified (the invariant «класс живого контекста»).
-func TestFlapWindowContextIdentity_RealSwitchWipesClass(t *testing.T) {
+// TestFlapWindowContextIdentity_DifferentAppWipesClass pins the WR-03 fix
+// (10-REVIEW :119-148) as re-expressed by debug session
+// orca-first-gesture-dead (owner verdict 2026-11-02 «память по
+// приложению»): the flap-window discipline itself is untouched — a FocusIn
+// on a DIFFERENT engine object never cancels the deferred wipe — but the
+// falsified premise is gone: «a different object inside the window» no
+// longer MEANS a real switch (Electron re-mints its IM context on same-app
+// focus churn), so the RESET the expired wipe stands for is keyed by app
+// identity, not object identity. A real switch to a DIFFERENT app — the
+// identity seam answers the other app's name across the switch — wipes the
+// live class AND the fresh context classifies from zero: the other app has
+// no memory of its own yet, its first press pays its own probe round.
+func TestFlapWindowContextIdentity_DifferentAppWipesClass(t *testing.T) {
 	buf := captureLogs(t)
 	a, _ := wiredActor()
+	apps := &mutableAppid{app: "app.first.example"}
+	a.UseAppid(apps) // the identity seam — the app that teaches
 	clock := &flapClock{}
 	a.UseFlapTimer(clock.arm)
 
-	teachVerifyDead(t, a, wordEN)
+	teachVerifyDead(t, a, wordEN)               // the one teaching round
 	a.HandleLifecycle(engine.LifecycleFocusOut) // arms the window over THIS context's emitter
-	a.AttachEngine(&fakeSink{})                 // the context was re-minted between the pair
+	apps.set("app.second.example")              // the a11y gain of the OTHER app's window
+	a.AttachEngine(&fakeSink{})                 // the other app's context — a fresh engine object
 	a.HandleLifecycle(engine.LifecycleFocusIn)  // a DIFFERENT engine object — no cancellation
-	clock.fire()                                // the window expires — the class wipes
+	clock.fire()                                // the window expires — the live class wipes
 
 	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 2 {
 		t.Fatalf("terminal-class markers after the real switch = %d, want exactly 2 (learn + clear) — "+
@@ -10154,13 +10227,14 @@ func TestFlapWindowContextIdentity_RealSwitchWipesClass(t *testing.T) {
 			buf.String())
 	}
 
-	// The fresh context learns afresh: the state, not just the log, reset.
-	typeWord(a, "cnhjrf")
+	// The different app's fresh context learns afresh: the state, not just
+	// the log, reset — its own probe round, its own teaching.
+	typeWord(a, "cnhjaf")
 	a.HandleKey(spaceKey())
 	teachVerifyDead(t, a, wordEN)
 	if got := strings.Count(buf.String(), `"msg":"terminal class"`); got != 3 {
-		t.Errorf("terminal-class markers after the re-learn = %d, want 3 — the new context must "+
-			"classify from zero", got)
+		t.Errorf("terminal-class markers after the re-learn = %d, want 3 — the different app's new "+
+			"context must classify from zero", got)
 	}
 }
 
@@ -10185,6 +10259,141 @@ func TestFlapWindowContextIdentity_SameEnginePairSurvives(t *testing.T) {
 	if strings.Contains(buf.String(), `"verify_dead":false`) {
 		t.Errorf("the class was wiped by a same-engine flap pair — the 10-07 fix regressed; log:\n%s",
 			buf.String())
+	}
+}
+
+// TestTerminalClass_VerifyDeadSurvivesRemintFlapPair pins the Electron churn
+// signature of debug session orca-first-gesture-dead (green106 2026-11-02,
+// journal 17:25:55-17:26:01): a same-app focus pair whose FocusIn lands on a
+// RE-MINTED engine object — Electron's ibus-IM re-mints the IM context on
+// focus churn, so the WR-03 premise «a different object inside the window is
+// a real window switch» is false for it — must not force a fresh
+// classification: the gesture after the churn corrects FIRST-PRESS through
+// the terminal write branch, never re-paying the probe round the
+// non-answering field always loses (the host's «холостой первый жест»).
+func TestTerminalClass_VerifyDeadSurvivesRemintFlapPair(t *testing.T) {
+	a, _ := wiredActor()
+	flap := &flapClock{}
+	a.UseFlapTimer(flap.arm)
+
+	teachVerifyDead(t, a, wordEN)               // the one teaching round — accepted by design
+	a.HandleLifecycle(engine.LifecycleFocusOut) // real FocusOut — arms the deferred wipe
+	fresh := &fakeSink{}
+	a.AttachEngine(fresh)                      // Electron re-mints the engine object mid-pair
+	a.HandleLifecycle(engine.LifecycleFocusIn) // the pair completes — same app, new object
+	flap.fire()                                // the window closes without a same-engine FocusIn
+
+	probe := &flipClock{}       // a never-fired verify deadline: a wrongly armed
+	a.UseVerifyTimer(probe.arm) // probe round stays pending — deterministic routing
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := len(fresh.forwardCalls()); got == 0 {
+		t.Fatalf("no destructive replay into the re-minted engine (ops: %v) — the gesture after "+
+			"an Electron-style same-app churn pair must correct first-press through the terminal "+
+			"write branch, not re-arm the probe the field always loses", fresh.opLog())
+	}
+}
+
+// TestTerminalClass_SameAppFreshContextFirstPress pins the strong half of the
+// session's expected contract (orca-first-gesture-dead, Symptoms.expected:
+// «исправляет слово с первого нажатия» for the Orca terminal): a FRESH
+// context of an app whose probe round already died once — a genuinely new
+// window/tab of the same app, a real focus loss the flap window honestly
+// closes — must correct FIRST-PRESS: the non-answering behavior is a
+// property of the APPLICATION (the Round 1 principle of
+// orca-terminal-second-shift, generalized from the own-flip re-mint to every
+// context of the app), so the app's next context inherits the terminal
+// routing instead of re-learning it on the owner's gesture.
+func TestTerminalClass_SameAppFreshContextFirstPress(t *testing.T) {
+	a, _ := wiredActor()
+	a.UseAppid(fakeAppid{app: "orca.term"}) // the identity seam — the SAME app on both contexts
+	flap := &flapClock{}
+	a.UseFlapTimer(flap.arm)
+
+	teachVerifyDead(t, a, wordEN)               // the app's probe died once — the app is known
+	a.HandleLifecycle(engine.LifecycleFocusOut) // a REAL focus loss (a new tab/window)
+	flap.fire()                                 // the window closes — a genuine context death
+
+	fresh := &fakeSink{}
+	a.AttachEngine(fresh) // the app's next context — a fresh engine object
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+
+	probe := &flipClock{}       // a never-fired verify deadline: a wrongly armed
+	a.UseVerifyTimer(probe.arm) // probe round stays pending — deterministic routing
+	typeWord(a, "cnhjrf")
+	a.HandleKey(spaceKey())
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+
+	if got := len(fresh.forwardCalls()); got == 0 {
+		t.Fatalf("no destructive replay into the fresh context of a known non-answering app "+
+			"(ops: %v) — the first press must correct through the terminal write branch; the "+
+			"app already paid its one teaching round", fresh.opLog())
+	}
+}
+
+// TestTerminalClass_VerifyDeadKeysBlindContextsByEnginePeer pins the blind
+// regime's half of the app memory (orca-first-gesture-dead, owner verdict
+// 2026-11-02: the key is the app's IBus connection/peer — Orca has NO a11y
+// identity, so the engine's minting peer is the only name it has): with no
+// appid source at all — two Electron-class apps are indistinguishable to
+// a11y — the app memory must still tell the apps apart by the connection
+// peer of the live engine. A different peer's context inherits NOTHING
+// (its own probe round, exactly as before the fix); the FIRST app's next
+// context — same peer, fresh engine object — rides the memory first-press.
+func TestTerminalClass_VerifyDeadKeysBlindContextsByEnginePeer(t *testing.T) {
+	a, _ := wiredActor() // no appid source — the blind regime (the Orca case)
+	flap := &flapClock{}
+	a.UseFlapTimer(flap.arm)
+
+	// Leg 1: the app's first context pays the one teaching round.
+	a.AttachEngine(&fakeSink{peer: ":1.7"})
+	teachVerifyDead(t, a, wordEN) // remembered under the app's connection key
+	a.HandleLifecycle(engine.LifecycleFocusOut)
+	flap.fire() // the window honestly closes — the live class dies
+
+	// Leg 2: a DIFFERENT app's connection (blind too): its fresh context
+	// must NOT inherit the other app's learning — its own probe arms.
+	other := &fakeSink{peer: ":1.9"}
+	a.AttachEngine(other)
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+	probe := &flipClock{} // a wrongly-armed probe round lands here
+	a.UseVerifyTimer(probe.arm)
+	typeWord(a, "cnhjaf")
+	a.HandleKey(spaceKey())
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	if got := len(probe.armedDurations()); got != 1 {
+		t.Fatalf("verify rounds armed for a different blind peer = %d, want exactly 1 — the app "+
+			"memory keys by the connection peer; a different app never inherits", got)
+	}
+
+	// Leg 3: back to the FIRST app's connection — first-press terminal.
+	a.HandleLifecycle(engine.LifecycleFocusOut) // retires leg 2's pending round
+	flap.fire()
+	back := &fakeSink{peer: ":1.7"}
+	a.AttachEngine(back)
+	a.HandleLifecycle(engine.LifecycleFocusIn)
+	probe2 := &flipClock{} // a wrongly-armed probe round lands here
+	a.UseVerifyTimer(probe2.arm)
+	typeWord(a, "cnhjaf")
+	a.HandleKey(spaceKey())
+	tapShift(a)
+	tapShift(a)
+	a.ExpiryAt(expiryAfterWindow)
+	if got := len(back.forwardCalls()); got == 0 {
+		t.Fatalf("no destructive replay into the returned app's context (ops: %v) — the app's "+
+			"memory must survive its own context's death; the first press corrects", back.opLog())
+	}
+	if got := len(probe2.armedDurations()); got != 0 {
+		t.Errorf("verify rounds armed for the remembered app = %d, want 0 — the probe never "+
+			"re-arms for a known non-answering app", got)
 	}
 }
 
