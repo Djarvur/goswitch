@@ -5,11 +5,11 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 12
 current_phase_name: TERM-строка
 status: planning
-stopped_at: Phase 12 context adopted from 20261031 branch + сверка (XIM confirmed); 5 plans ready for execution
-last_updated: "2026-11-02T19:58:39.347Z"
+stopped_at: Phase 13 context gathered (probe-first Telegram, VM-only acceptance)
+last_updated: "2026-11-02T21:38:34.717Z"
 last_activity: 2026-11-01
 last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: 05e5ed4f99fd94f69a4a5413c7018caf280dfcb8
+state_head: 3797a9042e947d30eed82b05d3359d33e0a32d7d
 progress:
   total_phases: 5
   completed_phases: 3
@@ -154,9 +154,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-02T14:19:25.813Z
-Stopped at: Phase 12 context adopted from 20261031 branch + сверка (XIM confirmed); 5 plans ready for execution
-Resume file: .planning/phases/12-term-stroka/12-CONTEXT.md
+Last session: 2026-11-02T21:38:34.512Z
+Stopped at: Phase 13 context gathered (probe-first Telegram, VM-only acceptance)
+Resume file: .planning/phases/13-a11y-retsepty-telegram-zcode/13-CONTEXT.md
 
 ## Operator Next Steps
 
