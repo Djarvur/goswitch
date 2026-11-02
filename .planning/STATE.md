@@ -5,17 +5,17 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 12
 current_phase_name: TERM-строка
 status: planning
-stopped_at: Phase 11 complete, ready to plan Phase 12
-last_updated: "2026-11-01T20:49:40.350Z"
+stopped_at: Phase 12 context adopted from 20261031 branch + сверка (XIM confirmed); 5 plans ready for execution
+last_updated: "2026-11-02T14:19:26.147Z"
 last_activity: 2026-11-01
 last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: 428260b534d476c574d7cbbb3786acfcd447edd6
+state_head: cb2df851fea7b88980e8d43394d2f79ecc9af77b
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 23
+  completed_phases: 2
+  total_plans: 28
   completed_plans: 22
-  percent: 60
+  percent: 40
 ---
 
 # Project State
@@ -34,7 +34,7 @@ Plan: Not started
 Status: Ready to plan
 Last activity: 2026-11-01 — Phase 11 complete, transitioned to Phase 12
 
-Progress: [████████░░] 80%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -154,9 +154,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-01T00:35:09.920Z
-Stopped at: Phase 11 complete, ready to plan Phase 12
-Resume file: None
+Last session: 2026-11-02T14:19:25.813Z
+Stopped at: Phase 12 context adopted from 20261031 branch + сверка (XIM confirmed); 5 plans ready for execution
+Resume file: .planning/phases/12-term-stroka/12-CONTEXT.md
 
 ## Operator Next Steps
 
