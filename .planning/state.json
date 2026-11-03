@@ -21,7 +21,7 @@
     {
       "number": "12",
       "name": "TERM-строка",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "13",
@@ -34,5 +34,5 @@
     "label": "Advance to the next step (plan phase 12)",
     "reason": "Phase 4 of 5 — needs a plan"
   },
-  "updated_at": "2026-11-02T22:01:07.475Z"
+  "updated_at": "2026-11-03T14:02:30.591Z"
 }
