@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 12
-current_phase_name: TERM-строка
-status: planning
-stopped_at: "Phase 13 planned: 3 plans verified (probe-first 13-01, ZCode 13-02, docs 13-03); ready for execute"
-last_updated: "2026-11-02T22:47:50.421Z"
-last_activity: 2026-11-01
-last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: 23fae634a4a932cbfa86371c155c746414171410
+current_phase: 13
+current_phase_name: A11Y — рецепты Telegram/ZCode
+status: executing
+stopped_at: "Phase 13: 13-01 done (A11Y-02 closed as unattainable by owner), next 13-02"
+last_updated: "2026-11-03T17:38:05.153Z"
+last_activity: 2026-11-03
+last_activity_desc: Phase 13 execution started
+state_head: 3ec3e6b4effc5cc07e2a39764a7e63aee3b49229
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 0
   total_plans: 31
-  completed_plans: 23
-  percent: 60
+  completed_plans: 24
+  percent: 0
 ---
 
 # Project State
@@ -25,16 +25,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-31)
 
 **Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 12 — TERM-строка
+**Current focus:** Phase 13 — A11Y — рецепты Telegram/ZCode
 
 ## Current Position
 
-Phase: 12 — TERM-строка
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-11-01 — Phase 11 complete, transitioned to Phase 12
+Phase: 13 (A11Y — рецепты Telegram/ZCode) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-11-03 — Phase 13 execution started
 
-Progress: [██████░░░░] 60%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [██████░░░░] 60%
 | Phase 11 P02 | 46min | 3 tasks | 9 files |
 | Phase 11 P04 | 30min | 2 tasks | 4 files |
 | Phase 11 P05 | 85min | 2 tasks | 11 files |
+| Phase 13 P01 | 138min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,7 @@ Recent decisions affecting current work:
 - [Phase 11]: [Phase 11] Гвард-матрица 11-04 — пин-корпус на готовой композиции: трассер по дизайну плана построил гварды production-качества в GREEN Task 1, матрица закрепляет 8 behavior-строк; план-RED-гейт закрыт трассером (RED_EVIDENCE_OK)
 - [Phase 11]: [Phase 11] Потолок blocklist сведён на единый источник: session-константа autocorrectBlocklistCeil удалена, blocklistStateLocked читает config.MaxAutocorrectBlocklist; поведение full байт-то же, корпус 11-02 без правок
 - [Phase 11]: [Phase 11] OnConn-проводка blocklist-пункта: Callbacks.BlockCurrentApp + installMenuState (одна точка первой покраски меню: install-пуши 07-06 + начальное состояние пункта до SetMenuSync) + EnsureAppid; живая сборка OnConn — за e2e 11-05 на ВМ (директива 6: проверки продукта только на ВМ)
+- [Phase 13]: A11Y-02 закрыт вердиктом владельца «Задокументировать» (2026-11-03, вариант 2 дословно): автокоррекция Telegram недостижима ни в одной форме — переключение работает во всех сборках ×2, стаб идентичен unconfined (потолок Qt6-моста билда, не confinement); D-04 опровергнут; A5 подтверждена; демон не меняется (граница 2026-10-08 в силе)
 
 ### Pending Todos
 
@@ -154,9 +156,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-02T22:47:50.292Z
-Stopped at: Phase 13 planned: 3 plans verified (probe-first 13-01, ZCode 13-02, docs 13-03); ready for execute
-Resume file: .planning/phases/13-a11y-retsepty-telegram-zcode/13-01-PLAN.md
+Last session: 2026-11-03T17:38:05.053Z
+Stopped at: Phase 13: 13-01 done (A11Y-02 closed as unattainable by owner), next 13-02
+Resume file: None
 
 ## Operator Next Steps
 
