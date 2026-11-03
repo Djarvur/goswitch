@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Терминалы и видимость приложений
 current_phase: 13
 current_phase_name: A11Y — рецепты Telegram/ZCode
-status: executing
-stopped_at: Completed 13-02-PLAN.md (A11Y-01 принят по живому дереву; стенд запаркован)
-last_updated: "2026-11-03T18:12:26.265Z"
+status: verifying
+stopped_at: "Completed 13-03-PLAN.md (фаза 13 исполнена: все 3 плана; рецепты в README×2/CONFIG.md)"
+last_updated: "2026-11-03T18:27:06.537Z"
 last_activity: 2026-11-03
 last_activity_desc: Phase 13 execution started
-state_head: e9d7b1889ed66985833b8925b88fde6810777669
+state_head: bce06c5ecfb1c01a8ccf16038d985b006d6d8fa5
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 0
   total_plans: 31
-  completed_plans: 25
-  percent: 60
+  completed_plans: 26
+  percent: 0
 ---
 
 # Project State
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 
 Phase: 13 (A11Y — рецепты Telegram/ZCode) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-11-03 — Phase 13 execution started
 
-Progress: [██████░░░░] 60%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Progress: [██████░░░░] 60%
 | Phase 11 P05 | 85min | 2 tasks | 11 files |
 | Phase 13 P01 | 138min | 3 tasks | 3 files |
 | Phase 13 P02 | 31min | 3 tasks | 1 files |
+| Phase 13 P03 | 12min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,8 @@ Recent decisions affecting current work:
 - [Phase 13]: A11Y-01 зачтён по живому дереву: RED→GREEN пара ×2 (exit 0 + роль 79); слой 3 — честный красный: мост Electron не эмитит identity-события (13-02)
 - [Phase 13]: cmdline-доказательство флага на Electron 44 невозможно (argv/environ перезаписываются): замена — pid-множества + экранный дифференциал дерева + ground-truth запуск (13-02)
 - [Phase 13]: Рецепт ZCode для 13-03 обязан нести: rsync → chmod 4755 chrome-sandbox → override; caveats: self-rewrite override приложением, флаги только при старте (13-02)
+- [Phase 13]: A11Y-03 закрыт доками по рядам пробы: Telegram-рецепт = граница по вердикту владельца «Задокументировать» (без команд установки flatpak — D-04 опровергнут), ZCode-рецепт = проверенная форма (роль 79, три факта установки, честная граница моста); selfcheck в доках — только полный путь /usr/bin/python3 scripts/a11y-selfcheck.py
+- [Phase 13]: Residual-risk D-07 задокументирован в обоих README: ручная коррекция на скрытых полях копирует в PRIMARY-выделение; плашка диктора Telegram — ровно в наблюдённой форме (flatpak/tarball, не snap)
 
 ### Pending Todos
 
@@ -160,8 +163,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-03T18:12:26.079Z
-Stopped at: Completed 13-02-PLAN.md (A11Y-01 принят по живому дереву; стенд запаркован)
+Last session: 2026-11-03T18:27:06.445Z
+Stopped at: Completed 13-03-PLAN.md (фаза 13 исполнена: все 3 плана; рецепты в README×2/CONFIG.md)
 Resume file: None
 
 ## Operator Next Steps

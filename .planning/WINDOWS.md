@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 16
+open_count: 17
 waived_count: 4
 fixed_count: 7
-total_count: 27
-last_updated: 2026-11-01T00:32:19.021Z
+total_count: 28
+last_updated: 2026-11-03T18:12:12.789Z
 ---
 
 # Broken Windows Ledger
@@ -42,6 +42,7 @@ last_updated: 2026-11-01T00:32:19.021Z
 | 25 | 11 | unrun-verify | mise.toml |  | 11-04: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD e8f7f82 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 (mise install, GOROOT unset) 0 issues + go mod tidy git-diff clean | open |  | 2026-10-31T22:56:21.036Z |  |
 | 26 | 11 | unrun-verify | mise.toml |  | 11-05: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24/#25): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD bc5a506 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean; the live stand runs (menu-blocklist + menu-v2) are the plan's own verification and are green | open |  | 2026-11-01T00:32:10.554Z |  |
 | 27 | 11 | unrun-verify | mise.toml |  | 11-05: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24/#25): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD bc5a506 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean; the live stand runs (menu-blocklist + menu-v2) are the plan's own verification and are green | open |  | 2026-11-01T00:32:19.021Z |  |
+| 28 | 13 | deviation | docs/adr/adr-008-spike-log.md |  | cmdline-доказательство флага заменено на pid-дифференциал + экранный дифференциал дерева (Electron 44 переписывает argv/environ; буквальная форма verify невыполнима) | open |  | 2026-11-03T18:12:12.789Z |  |
 
 ````json
 [
@@ -368,6 +369,19 @@ last_updated: 2026-11-01T00:32:19.021Z
     "reason": "",
     "recorded_at": "2026-11-01T00:32:19.021Z",
     "resolved_at": null
+  },
+  {
+    "id": 28,
+    "kind": "deviation",
+    "phase": "13",
+    "file": "docs/adr/adr-008-spike-log.md",
+    "line": null,
+    "description": "cmdline-доказательство флага заменено на pid-дифференциал + экранный дифференциал дерева (Electron 44 переписывает argv/environ; буквальная форма verify невыполнима)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-03T18:12:12.789Z",
+    "resolved_at": null,
+    "milestone": "v1.2"
   }
 ]
 ````

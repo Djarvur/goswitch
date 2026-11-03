@@ -22,7 +22,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [x] **A11Y-01**: ZCode: автокоррекция работает — рецепт локального `.desktop` override с `--force-renderer-accessibility` (toolkit-accessibility через a11y-магию демона уже работает); приёмка по живому AT-SPI-дереву.
 - [x] **A11Y-02**: Telegram: автокоррекция достижима. Спайк подтверждает AppArmor-блокировку snap для входящих AT-SPI вызовов (env-рецепты не решают — доказано зондированием) и выносит решение владельца: unconfined-сборка Telegram (flatpak/deb) vs демон-fallback; при демон-fallback — отдельная приёмка с владельцем.
-- [ ] **A11Y-03**: Рецепты документированы в README/CONFIG.md, включая побочный эффект Telegram (плашка «режим экранного диктора») и ограничение «флаги Electron применяются только на запуске».
+- [x] **A11Y-03**: Рецепты документированы в README/CONFIG.md, включая побочный эффект Telegram (плашка «режим экранного диктора») и ограничение «флаги Electron применяются только на запуске».
 
 ## Future Requirements
 
@@ -54,7 +54,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TERM-03 | Phase 12 | Pending |
 | A11Y-01 | Phase 13 | Complete |
 | A11Y-02 | Phase 13 | Complete |
-| A11Y-03 | Phase 13 | Pending |
+| A11Y-03 | Phase 13 | Complete |
 
 **Coverage:**
 
