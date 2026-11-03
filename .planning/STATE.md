@@ -6,14 +6,14 @@ current_phase: 13
 current_phase_name: A11Y — рецепты Telegram/ZCode
 status: planning
 stopped_at: "Phase 12 closed by owner decision; next: execute 13"
-last_updated: "2026-11-03T14:02:30.591Z"
+last_updated: "2026-11-03T14:17:17.780Z"
 last_activity: 2026-11-03
 last_activity_desc: Phase 12 closed by owner decision (goal met by existing machine)
-state_head: 6cf5f807dce5100e9b68abbe41f900cc4294a1d4
+state_head: b0f99bf7cd2784c3beaa505bdde768e43c274074
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 28
+  total_plans: 24
   completed_plans: 24
   percent: 80
 ---
