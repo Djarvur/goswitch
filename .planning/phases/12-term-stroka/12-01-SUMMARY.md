@@ -177,3 +177,7 @@ None - no external service configuration required.
 ---
 *Phase: 12-term-stroka*
 *Completed: 2026-11-03*
+
+## Self-Check: PASSED
+
+SUMMARY exists; key files (case_term_line_probe.go, gs-e2e-wezterm-xim-line.lua) exist; task + closure commits verified in git log (12c49fe, 231d443, 8656321, 2fc7094, a20e981, 10a4c8d, 6cf5f80, ed28c3c); ledger recount 8 commits from plan base 911773c; journal closure row, REQUIREMENTS TERM-03 Complete and ROADMAP phase-12 Complete marks verified by grep; mise run ci green at both production commits; go.mod/go.sum untouched.
