@@ -717,3 +717,28 @@ mnemonic-удвоением (gs__e2e__password; 489aa5f).
 | menu-v2 re-pin fail 2026-11-01 00:28 UTC (заезд 1) | `go run ./test/e2e -case menu-v2 (зеркало = HEAD 489aa5f)` | радио-клики id 1/2 ЗЕЛЁНЫЕ (mode-записи to=ru/to=en на месте — существующие пины не сдвинуты новым пунктом id 16, Pitfall 5 «ломается громко by design» не сработал = сдвига НЕТ); рестарт-survival шаг упал: одиночный SetGlobalEngine обогнал пересоздание engine свежим демоном — «Cannot find engine goswitch-en» (класс находки term-negative-witnesses 2026-10-12) | Verdict: честный FAIL среды активации (не сдвиг пинов); фикс cf9c857 — spawnMenuDaemon на activateGoswitchRetry |
 | menu-v2 re-pin 2026-11-01 00:30 UTC (заезд 2) | `go run ./test/e2e -case menu-v2 (сессионный env; зеркало = HEAD cf9c857)` | EN/RU радио-записи (id 1/2), оба тумблера persist+apply синхронно (id 4/5: документ И ctl status в том же клике), оба enabled-значения пережили рестарт на том же -config, обратные клики вернули off — id 1/2/4/5 не сдвинуты новым пунктом id 16 | Verdict: **PASS** — re-pin зелёный тем же прогоном стенда: расширение layout без сдвига существующих ID |
 | menu-family mechanics 2026-11-01 | `диагностика живого стенда (instrumented daemon, a11y-монитор, dbus-пробы)` | (1) экспорт /Menu условен регистрацией StatusNotifierWatcher (indicator.registerItem: probe → export → register) — без трей-стека Event-канал мёртв на корню; (2) a11y-шина ВМ несёт ДВА потока StateChanged: прямые legacy-эмиссии приложений (/org/<app>/a11y/<uuid> — identity-носители) и relay реестра (/org/a11y/atspi/accessible/<id> — без identity; naive-парс давал мусор «org»); (3) engine-фокус и a11y-gain — независимые каналы: focus_out гонит gain (порядок в diag16) — деарм freshness на FocusOut结构性 проигрывает гонку; (4) у fixture/zenity GTK4 a11y-дерево живо на ВМ (gs-e2e-password в дереве, pid процесса) — witness-машина валидна, нужен только nudge-грант фокуса; (5) label пункта несёт mnemonic-удвоение подчёркиваний (Pitfall 4) — гейты по label обязаны матчит удвоенную форму | Verdict: механика menu-семейства на ВМ закреплена пятью находками; venue-мутация (appindicator) и три фикса демона/кейсов (c980d2e, a943656, b67d1cd/19fc9a8/5fa8781/e78789c/489aa5f/cf9c857) — в план-коммитах 11-05 |
+
+## Фаза 13 A11Y-проба сборок (telegram snap/flatpak, zcode)
+
+Probe-first гейт Фазы 13 (план 13-01, D-01/D-02): подъём запаркованного стенда → калибровка
+a11y-оракула ГЛАВНЫМ рядом (известный GTK-апп: gedit → роль 94, резерв zenity --entry → 79;
+глухой контрольный ряд при живой шине = вердиктов по сборкам НЕТ — оживление оракула по
+прецеденту 10-05 GTK_MODULES через activation-environment до любых Telegram-рядов, Pitfall 2) →
+трёхслойная проба ОБЕИХ сборок Telegram ОДНОЙ Wayland-сессией (D-02): snap 7.3.3 из store
+(реплика хоста владельца, перепроверка AppArmor-вердикта 2026-10-08, снятого на 7.2.9 rev 7150)
+и flatpak org.telegram.desktop (кандидат-рунг D-04). Каждый рунг — ТРИ независимых слоя
+датированным рядом: (1) key-trace флипа из журнала демона -debug; (2) номер роли сфокусированного
+поля от зонда scripts/a11y-selfcheck.py — ЧИСЛО из node.get_role() против канона
+internal/appid/appid.go:85-96 (текст-класс {61, 79, 94}), не имя (Pitfall 8); (3) дельты
+goswitchctl status (autocorrect_fired / autocorrect_abstained / ac_skip_role-* / ac_role_errors)
+до/после синтетического корпуса ghbdtn-класса. Вердиктный ряд = ×2 зелёных ПОДРЯД (SPEC §7.2,
+форма venue-probe r1/r2). Демон НЕ меняется (решение владельца 2026-10-08): internal/ и cmd/ —
+только оракулы. Слова владельца «сейчас у меня переключенив телеграме работает» (D-01, дословно)
+— повод для пробы, не вердикт: состав работающего (переключение ≠ автокоррекция) решает машина.
+Содержимое полей приложений в журнал не попадает: сентинел-корпус ghbdtn-класса, номера ролей,
+имена счётчиков и дельты — никогда реальный текст. Лестница D-03 (tarball → deb, стейджинг через
+хост — telegram.org с ВМ недоступен) — только при красном flatpak, стоп на первом зелёном.
+
+| Проба | Команда | Наблюдаемое | Вердикт |
+|---|---|---|---|
+| a11y-стенд подъём 2026-11-03 | `план 13-01; статус на входе: стенд запаркован (конфиг стенда удалён, /tmp/stand-env.sh отсутствует — tmp зачищен ребутом; юнит goswitchd указывает на goswitch-rel фазы 12 без -debug) — подъём далее` | pending: пересоздание /tmp/stand-env.sh, rsync-зеркало текущей ветки, gap-сборка, юнит goswitchd с -debug drop-in, конфиг стенда с autocorrect enabled, sources-takeover, ibus engine goswitch-en | Verdict: pending — ряд будет заполнен подъёмом (задача 2 плана 13-01) |
