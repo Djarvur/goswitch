@@ -5,17 +5,17 @@ milestone_name: Терминалы и видимость приложений
 current_phase: 13
 current_phase_name: A11Y — рецепты Telegram/ZCode
 status: executing
-stopped_at: "Phase 13: 13-01 done (A11Y-02 closed as unattainable by owner), next 13-02"
-last_updated: "2026-11-03T17:38:05.153Z"
+stopped_at: Completed 13-02-PLAN.md (A11Y-01 принят по живому дереву; стенд запаркован)
+last_updated: "2026-11-03T18:12:26.265Z"
 last_activity: 2026-11-03
 last_activity_desc: Phase 13 execution started
-state_head: 3ec3e6b4effc5cc07e2a39764a7e63aee3b49229
+state_head: e9d7b1889ed66985833b8925b88fde6810777669
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 3
   total_plans: 31
-  completed_plans: 24
-  percent: 0
+  completed_plans: 25
+  percent: 60
 ---
 
 # Project State
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 ## Current Position
 
 Phase: 13 (A11Y — рецепты Telegram/ZCode) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-11-03 — Phase 13 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 11 P04 | 30min | 2 tasks | 4 files |
 | Phase 11 P05 | 85min | 2 tasks | 11 files |
 | Phase 13 P01 | 138min | 3 tasks | 3 files |
+| Phase 13 P02 | 31min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,9 @@ Recent decisions affecting current work:
 - [Phase 11]: [Phase 11] Потолок blocklist сведён на единый источник: session-константа autocorrectBlocklistCeil удалена, blocklistStateLocked читает config.MaxAutocorrectBlocklist; поведение full байт-то же, корпус 11-02 без правок
 - [Phase 11]: [Phase 11] OnConn-проводка blocklist-пункта: Callbacks.BlockCurrentApp + installMenuState (одна точка первой покраски меню: install-пуши 07-06 + начальное состояние пункта до SetMenuSync) + EnsureAppid; живая сборка OnConn — за e2e 11-05 на ВМ (директива 6: проверки продукта только на ВМ)
 - [Phase 13]: A11Y-02 закрыт вердиктом владельца «Задокументировать» (2026-11-03, вариант 2 дословно): автокоррекция Telegram недостижима ни в одной форме — переключение работает во всех сборках ×2, стаб идентичен unconfined (потолок Qt6-моста билда, не confinement); D-04 опровергнут; A5 подтверждена; демон не меняется (граница 2026-10-08 в силе)
+- [Phase 13]: A11Y-01 зачтён по живому дереву: RED→GREEN пара ×2 (exit 0 + роль 79); слой 3 — честный красный: мост Electron не эмитит identity-события (13-02)
+- [Phase 13]: cmdline-доказательство флага на Electron 44 невозможно (argv/environ перезаписываются): замена — pid-множества + экранный дифференциал дерева + ground-truth запуск (13-02)
+- [Phase 13]: Рецепт ZCode для 13-03 обязан нести: rsync → chmod 4755 chrome-sandbox → override; caveats: self-rewrite override приложением, флаги только при старте (13-02)
 
 ### Pending Todos
 
@@ -156,8 +160,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-03T17:38:05.053Z
-Stopped at: Phase 13: 13-01 done (A11Y-02 closed as unattainable by owner), next 13-02
+Last session: 2026-11-03T18:12:26.079Z
+Stopped at: Completed 13-02-PLAN.md (A11Y-01 принят по живому дереву; стенд запаркован)
 Resume file: None
 
 ## Operator Next Steps
