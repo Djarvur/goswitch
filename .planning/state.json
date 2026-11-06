@@ -26,13 +26,13 @@
     {
       "number": "13",
       "name": "A11Y — рецепты Telegram/ZCode",
-      "status": "in_progress"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 13 of 5 · 0% · ready to verify"
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 4 of 5 · 80% · executing"
   },
-  "updated_at": "2026-11-03T18:26:43.903Z"
+  "updated_at": "2026-11-06T15:33:40.257Z"
 }

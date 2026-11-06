@@ -29,7 +29,7 @@
 - [x] **Phase 10: TERM-слово** - ручная коррекция слова жестом в wezterm и GNOME Terminal через канал IBus (BackSpace-реплей + commit_text) (completed 2026-10-20)
 - [x] **Phase 11: MENU — пункт «в чёрный список»** - динамический пункт трей-меню с атомарной записью конфига и деградацией при неизвестной личности приложения (completed 2026-11-01)
 - [ ] **Phase 12: TERM-строка** - исправление всей набранной строки/фразы в терминале — feasibility-gated capability-таблицей Фазы 9
-- [ ] **Phase 13: A11Y — рецепты Telegram/ZCode** - доступность в самих приложениях (desktop-override, unconfined-сборка или демон-fallback) + документация; демон не меняется
+- [x] **Phase 13: A11Y — рецепты Telegram/ZCode** - доступность в самих приложениях (desktop-override, unconfined-сборка или демон-fallback) + документация; демон не меняется (completed 2026-11-06)
 
 ## Phase Details
 
@@ -173,7 +173,7 @@ Plans:
   3. Рецепты в README/CONFIG.md включают побочные эффекты и границы: плашка Telegram «режим экранного диктора», «флаги Electron применяются только на запуске», restart + self-check в каждом рецепте; README несёт residual-risk заметку (ручная коррекция на скрытых полях копирует в PRIMARY)
   4. К каждому рецепту прилагается user-runnable self-check одной командой
 
-**Plans**: 3/3 plans executed
+**Plans**: 3/3 plans complete
 
 Plans:
 
@@ -192,7 +192,7 @@ Plans:
 | 10. TERM-слово | v1.2 | 16/16 | Complete    | 2026-10-20 |
 | 11. MENU — пункт «в чёрный список» | v1.2 | 5/5 | Complete    | 2026-11-01 |
 | 12. TERM-строка | v1.2 | 0/5 | Not started | - |
-| 13. A11Y — рецепты Telegram/ZCode | v1.2 | 3/3 | In Progress|  |
+| 13. A11Y — рецепты Telegram/ZCode | v1.2 | 3/3 | Complete    | 2026-11-06 |
 
 ## Archive
 

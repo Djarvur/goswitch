@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 13
-current_phase_name: A11Y — рецепты Telegram/ZCode
-status: verifying
-stopped_at: "Completed 13-03-PLAN.md (фаза 13 исполнена: все 3 плана; рецепты в README×2/CONFIG.md)"
-last_updated: "2026-11-03T18:27:06.537Z"
-last_activity: 2026-11-03
-last_activity_desc: Phase 13 execution started
-state_head: bce06c5ecfb1c01a8ccf16038d985b006d6d8fa5
+current_phase: 12
+current_phase_name: TERM-строка
+status: executing
+stopped_at: Phase 13 complete, ready to execute Phase 12
+last_updated: "2026-11-06T15:33:40.244Z"
+last_activity: 2026-11-06
+last_activity_desc: Phase 13 complete, transitioned to Phase 12
+state_head: 2677fa5648353a1f7c6f0b9891d665e8a28a95c2
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 4
   total_plans: 31
   completed_plans: 26
-  percent: 0
+  percent: 80
 ---
 
 # Project State
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 
 ## Current Position
 
-Phase: 13 (A11Y — рецепты Telegram/ZCode) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-11-03 — Phase 13 execution started
+Phase: 12 — TERM-строка
+Plan: Not started
+Status: Ready to execute
+Last activity: 2026-11-06 — Phase 13 complete, transitioned to Phase 12
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -164,7 +164,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-11-03T18:27:06.445Z
-Stopped at: Completed 13-03-PLAN.md (фаза 13 исполнена: все 3 плана; рецепты в README×2/CONFIG.md)
+Stopped at: Phase 13 complete, ready to execute Phase 12
 Resume file: None
 
 ## Operator Next Steps
