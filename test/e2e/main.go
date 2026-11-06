@@ -173,6 +173,7 @@ func caseListUsage() string {
 		" | term-cap-delivery" +
 		" | term-word-drain" +
 		" | term-dst-apply" +
+		" | term-line-probe" +
 		" | install-cycle | perf | perf-autocorrect"
 }
 
@@ -358,6 +359,7 @@ func pickCase(name string) (caseSpec, error) {
 			" term-word-vte, term-negative-witnesses,"+
 			" term-word-wezterm, term-word-vte-flip,"+
 			" term-cap-delivery, term-word-drain, term-dst-apply,"+
+			" term-line-probe,"+
 			" install-cycle, perf, perf-autocorrect)", name)
 	}
 
@@ -441,6 +443,14 @@ func caseRegistry() map[string]caseSpec {
 		// row, so four fixture cycles plus the daemon/config setup ride
 		// inside the budget.
 		"term-dst-apply": {fn: runTermDstApply, noSurfacePreflight: true, watchdog: recipeWatchdog},
+		// term-line-probe (plan 12-01, the phase-12 gate): three sel-probe
+		// cells — the physical CopyMode chord on the wayland fixture, the
+		// same chord on the xim-line fixture (the owner's transport), and
+		// the daemon-forwarded future-gesture sequence — plus the summary
+		// row; the read-channel question OQ1 BEFORE any line machinery.
+		// Three fixture rounds with their focus gates ride inside the
+		// standard recipe budget.
+		"term-line-probe": {fn: runTermLineProbe, noSurfacePreflight: true, watchdog: recipeWatchdog},
 		"term-negative-witnesses": {
 			fn:                 runTermNegativeWitnesses,
 			noSurfacePreflight: true,

@@ -37,3 +37,5 @@ __pycache__/
 
 # go build output of the e2e stand (go build -o e2e ./test/e2e)
 /e2e
+.planning/tmp/
+.planning/phases/*/evidence-*.log
