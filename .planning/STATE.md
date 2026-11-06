@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 13
-current_phase_name: A11Y — рецепты Telegram/ZCode
-status: complete
+status: Awaiting next milestone
 stopped_at: "v1.2: все 5 фаз закрыты (12 — решением владельца 2026-11-03, 13 — исполнена 2026-11-06; ветки слиты); next: проход верификаторов 9→13, verify-work, complete-milestone"
-last_updated: "2026-11-06T16:05:00.000Z"
+last_updated: "2026-11-06T17:34:45.501Z"
 last_activity: 2026-11-06
-last_activity_desc: Milestone v1.2 phases complete (merge of branches 12+13)
-state_head: 5544d7e
+last_activity_desc: Milestone v1.2 completed and archived
+state_head: df452a58381c4ac13f683bca337254c62bba23bc
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 31
+  total_plans: 27
   completed_plans: 27
   percent: 100
+current_phase: 13
+current_phase_name: A11Y — рецепты Telegram/ZCode
 ---
 
 # Project State
@@ -29,12 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 
 ## Current Position
 
-Phase: 13 — A11Y — рецепты Telegram/ZCode — complete (3/3 плана)
-Plan: 3 of 3 (13-03 рецепты закрыты 2026-11-06)
-Status: Веха v1.2 — все 5 фаз закрыты (ветки 12 и 13 слиты 2026-11-06)
-Last activity: 2026-11-06 — сведение веток; осталось: проход верификаторов 9→13, verify-work, complete-milestone
-
-Progress: [████████░░] 80%
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-11-06 — Milestone v1.2 completed and archived
 
 ## Performance Metrics
 
@@ -170,6 +168,5 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Одобрить роадмап (оркестратор презентует); затем /gsd:plan-phase 9
-- [Phase 9 / 09-02] HALT (owner, 2026-10-11 вечер): attach-батч остановлен после R1 — клик подтверждён (focus_in демона, AT-SPI-свидетель исключён из гейта), инъекция ВИДИМА в окне владельцем, но key-trace демона пуст (armGate FAIL 5/5) — слой (3) клиент↔движок разорван; R2–R6 не исполнялись. Окруженческие находки стоят: лаунч-атрибуция (фон-спавн мёртв, owner-launch печатает), пути активации (grab/EWMH/auto-grant ✗). Возобновление: owner-runbook R2–R6 (готов, команды в журнале батча) после чина арм/трейс-гейтинга; всё записано в adr-008-spike-log.md (HALT-запись).
 
+- Start the next milestone with /gsd-new-milestone
