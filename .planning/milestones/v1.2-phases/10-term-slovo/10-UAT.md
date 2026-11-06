@@ -1,14 +1,16 @@
 ---
-status: approved
+status: complete
 phase: 10-term-slovo
 source: [10-VERIFICATION.md]
 started: 2026-10-12T22:20:00Z
-updated: 2026-10-31T09:43:24Z
+updated: 2026-11-06T12:00:00+03:00
 ---
 
 ## Current Test
 
 [testing complete]
+
+> 2026-11-06 (закрытие вехи v1.2): все тесты pass; критерий 1 зачтён владельцем вердиктом G-10-1 (2026-10-20, «осталось»); статус нормализован `approved` → `complete` — терминальная форма аудита (как у Фаз 9 и 11).
 
 ## Tests
 

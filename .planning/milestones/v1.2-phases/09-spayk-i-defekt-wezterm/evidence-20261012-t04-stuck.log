@@ -1,0 +1,66 @@
+{"time":"2026-10-12T01:30:00.425288542+03:00","level":"INFO","msg":"config loaded","path":"/home/nil/.config/goswitch/config.yaml","tap_window_ms":220}
+{"time":"2026-10-12T01:30:00.43545172+03:00","level":"INFO","msg":"connected","address":"unix:path=/home/nil/.cache/ibus/dbus-2nlan5HO,guid=d88349045ed13cd44b2f0c796acbf4b8"}
+{"time":"2026-10-12T01:30:00.436029422+03:00","level":"INFO","msg":"ctl service listening","name":"org.djarvur.goswitch"}
+{"time":"2026-10-12T01:30:00.437550622+03:00","level":"INFO","msg":"component registered","engines":2}
+{"time":"2026-10-12T01:30:00.439267565+03:00","level":"DEBUG","msg":"global engine unreadable","reason":"cold bus; falling back to the current index"}
+{"time":"2026-10-12T01:30:00.484539858+03:00","level":"INFO","msg":"engine created","path":"/org/freedesktop/IBus/Engine/goswitch/1","name":"goswitch-en"}
+{"time":"2026-10-12T01:30:00.488388163+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-en"}
+{"time":"2026-10-12T01:30:00.488468381+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:00.488951043+03:00","level":"DEBUG","msg":"lifecycle","kind":"enable"}
+{"time":"2026-10-12T01:30:00.489488277+03:00","level":"DEBUG","msg":"capabilities","caps":"0x29"}
+{"time":"2026-10-12T01:30:00.54710011+03:00","level":"DEBUG","msg":"key","keyval":"0xffe2","keycode":54,"release":false,"mods":"0x10"}
+{"time":"2026-10-12T01:30:00.55390072+03:00","level":"INFO","msg":"engine reactivated","engine":"goswitch-en"}
+{"time":"2026-10-12T01:30:00.596746543+03:00","level":"DEBUG","msg":"key","keyval":"0xffe2","keycode":54,"release":true,"mods":"0x11"}
+{"time":"2026-10-12T01:30:00.817525673+03:00","level":"INFO","msg":"action","n":1}
+{"time":"2026-10-12T01:30:00.817632882+03:00","level":"INFO","msg":"mode","to":"ru"}
+{"time":"2026-10-12T01:30:00.819434793+03:00","level":"INFO","msg":"engine created","path":"/org/freedesktop/IBus/Engine/goswitch/2","name":"goswitch-ru"}
+{"time":"2026-10-12T01:30:00.82290996+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-en"}
+{"time":"2026-10-12T01:30:00.824303733+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:00.825155252+03:00","level":"DEBUG","msg":"capabilities","caps":"0x29"}
+{"time":"2026-10-12T01:30:00.825745049+03:00","level":"INFO","msg":"switch_engine","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:00.826208238+03:00","level":"DEBUG","msg":"lifecycle","kind":"disable"}
+{"time":"2026-10-12T01:30:00.826244877+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:00.826464451+03:00","level":"DEBUG","msg":"lifecycle","kind":"enable"}
+{"time":"2026-10-12T01:30:05.760697578+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:05.761360473+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:05.76138383+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:05.780016203+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:05.780429177+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:05.780449705+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:16.273169011+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:16.274553129+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:16.274623821+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:16.326275855+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:16.327412139+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:16.327456628+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:17.482580111+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:17.483323141+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:17.483340715+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:17.491382879+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:17.491429907+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:17.491442248+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:17.957561167+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:17.960650518+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:17.960702619+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:17.982105163+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:17.982503567+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:17.98254355+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:18.786948117+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:18.788421762+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:18.78846253+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:18.818395058+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:18.81947301+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:18.819534429+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:19.182031594+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:19.182609116+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:19.182622928+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:19.199812538+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:19.200032169+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-12T01:30:19.200049794+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-12T01:30:19.280749714+03:00","level":"INFO","msg":"config loaded","path":"/tmp/goswitch-e2e-2068196626/autocorrect.yaml","tap_window_ms":300}
+{"time":"2026-10-12T01:30:19.281334203+03:00","level":"WARN","msg":"mode switch chord disabled","reason":"binding name is empty"}
+{"time":"2026-10-12T01:30:19.290791893+03:00","level":"INFO","msg":"connected","address":"unix:path=/home/nil/.cache/ibus/dbus-2nlan5HO,guid=d88349045ed13cd44b2f0c796acbf4b8"}
+{"time":"2026-10-12T01:30:19.290955752+03:00","level":"INFO","msg":"ctl service listening","name":"org.djarvur.goswitch"}
+{"time":"2026-10-12T01:30:19.292378357+03:00","level":"INFO","msg":"component registered","engines":2}
+{"time":"2026-10-12T01:30:19.294191983+03:00","level":"DEBUG","msg":"global engine unreadable","reason":"cold bus; falling back to the current index"}
+{"time":"2026-10-12T01:30:19.295674656+03:00","level":"DEBUG","msg":"engine reactivation skipped","reason":"gsettings unavailable","error":"gsettings get org.gnome.desktop.input-sources sources: signal: killed: "}

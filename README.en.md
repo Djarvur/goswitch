@@ -248,6 +248,34 @@ application exposes its accessibility tree, autocorrect starts working
 in it without any further configuration. The `a11y` config section
 automates this step — see App accessibility magic below.
 
+Verified short recipes (full versions, side effects and boundaries —
+in [docs/CONFIG.md](docs/CONFIG.md)):
+
+- **ZCode** — a user-local `.desktop` override with
+  `--force-renderer-accessibility` plus a full restart: closing the
+  window is not enough — the tray keeps the process alive, and
+  Electron flags apply only at launch. Verified by a live probe on
+  2026-11-03: the tree comes alive and the field is visible (role
+  number 79), yet autocorrect still stays silent in this build —
+  the bridge emits no identity events, and the daemon honestly
+  skips role-unknown. Self-check:
+  `/usr/bin/python3 scripts/a11y-selfcheck.py zcode`.
+- **Telegram** — autocorrect is unachievable in every build form
+  (snap/flatpak/tarball; probe 2026-11-03: the a11y tree is a stub
+  even without confinement — a ceiling of the build's own Qt6
+  bridge, and switching formats does not fix it), while layout
+  switching works everywhere. Self-check:
+  `/usr/bin/python3 scripts/a11y-selfcheck.py telegram` (expected
+  exit code 1); on the flatpak and tarball builds the «Telegram is
+  working in Screen Reader mode» banner is an expected side effect,
+  not a breakage.
+
+The residual risk of hidden fields: while a field has no a11y
+visibility, the daemon can neither verify nor replace the text in
+place — the manual correction gesture puts the corrected text into
+the PRIMARY selection (paste with the middle mouse button) instead
+of the field itself.
+
 **Password and role-less fields.** A GTK4 password field reports the
 dedicated password role (40) and is never corrected. A widget that
 exposes no defined role at all stays silent too. The GTK3 generation
@@ -323,6 +351,18 @@ limitation). The daemon never unsets the key — a manually-enabled state
 is indistinguishable from a goswitch-enabled one; the only way back is
 `goswitchctl uninstall`, which restores the key's pre-install value
 from the snapshot taken at install.
+
+What the magic does NOT do: the global key enables toolkit
+accessibility, but it does not replace a specific Electron
+application's own flag (ZCode — see the recipe in Where autocorrect
+stays silent above) and it does not open an accessibility tree that
+the build itself never exposes (the Telegram snap — which, per the
+2026-11-03 probe verdict, is true of every build form, even
+unconfined). Whether an application exposes its field is checked
+with a single command — `/usr/bin/python3 scripts/a11y-selfcheck.py
+<app>`: exit code 0 — the field is visible, 1 — a live process
+without a tree/field, 2 — no process, a usage error, or the probe
+environment is unavailable.
 
 If a leftover application-list line from earlier versions remains
 inside the `a11y` section, the whole config is rejected at load (the

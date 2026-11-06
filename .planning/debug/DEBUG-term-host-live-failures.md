@@ -1,9 +1,11 @@
 ---
-status: investigating
+status: resolved
 trigger: "Phase-10 terminal word correction (double right Shift, EN<->RU) is byte-exact green on the VM stand but fails on the owner's host desktop in two modes: (A) wezterm — daemon self-aborts via verify-timeout (after terminal class verify_dead=true) and verify-mismatch, owner sees nothing; (B) GNOME Terminal (VTE) — daemon reports correction done changed=true (6 times), owner sees backspaces render but the committed replacement word never appears (final CommitText lost). Mode: find_root_cause_only. Host daemon is the owner's live input method — read-only host access only; VM stand experiments allowed with logging."
 created: 2026-10-13T00:00:00+03:00
-updated: 2026-10-17T00:54:00+03:00
+updated: 2026-11-06T12:00:00+03:00
 ---
+
+> **Закрыто 2026-11-06 (закрытие вехи v1.2):** сессия закрыта вердиктом владельца G-10-1 «ОСТАЛОСЬ» (2026-10-20, раздел «ЗАКРЫТИЕ G-10-1» ниже) — шестираундовая цепочка корней завершена, парные форварды в проде. Хвосты: ZCode-потеря фразы — вне скоупа мандата; WR-05/OQ5 — учтены в планах фаз; WINDOWS:28 зачтён Фазой 12 (2026-11-03).
 
 ## Current Focus
 

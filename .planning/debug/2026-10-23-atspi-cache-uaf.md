@@ -1,11 +1,13 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Nightly e2e-matrix schedule (removed same day, PR #22) crashed the owner's live gnome-shell ~every run: SIGSEGV in libgobject+0x3cd61 during the idle-desktop AT-SPI preflight, session teardown, owner logged out. 6 confirmed crashes 2026-10-14..10-21."
 created: 2026-10-23T17:05:00Z
-updated: 2026-10-23T18:30:00Z
+updated: 2026-11-06T12:00:00+03:00
 symptoms_prefilled: true
 goal: find_root_cause_only
 ---
+
+> **Закрыто 2026-11-06 (закрытие вехи v1.2):** корень найден (UAF в SpiCache atk-adaptor'а, at-spi2-core 2.52.0; upstream-фикс `d442ee182e` вышел в 2.56, Ubuntu 24.04 остаётся на 2.52.0); митигации в проде с 2026-10-24 — ночной cron снят (PR #22), раннер перенесён на ВМ goswitch-stand; директива владельца №6 (2026-11-01, «проверки только на ВМ») закрепила обход постоянно.
 
 ## Current Focus
 

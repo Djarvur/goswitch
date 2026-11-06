@@ -1,13 +1,15 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Source-only investigation (no stand runs): explain from exact sources why the host defect (6x ForwardKeyEvent(BackSpace) + CommitText('привет') → text appears, then ~1 s later gets deleted AGAIN) double-applies the six backspaces in wezterm-nightly 20261010-083911-e2a98e1b on GNOME 46, while the stock-kernel stand never reproduces. Sources pinned: wezterm e2a98e1b8af156988ad0ac778658ac27b60a55fb, mutter tag 46.2 (020504148), gnome-shell tag 46.0 (046351145)."
 created: 2026-10-19T00:00:00Z
-updated: 2026-10-19T00:00:00Z
+updated: 2026-11-06T12:00:00+03:00
 symptoms_prefilled: true
 goal: find_root_cause_only
 ---
 
 # DEBUG: wezterm «повторное применение» BackSpace — разбор по исходникам (sourcedig)
+
+> **Закрыто 2026-11-06 (закрытие вехи v1.2):** корень найден по исходникам точных версий (press-only форварды взводят клиентский автоповтор wezterm, `window.rs:1194-1206`; снимается только release'ом); предсказание §6.4 сбылось дословно — вердикт владельца «ОСТАЛОСЬ» (G-10-1, 2026-10-20); фикс — парные press+release форварды round-6 (8bd4edc).
 
 - **Date:** 2026-10-19
 - **Method:** read-only source dig; clones at exact commits: wezterm `e2a98e1b8af156988ad0ac778658ac27b60a55fb` (= nightly `20261010-083911-e2a98e1b`), mutter `46.2`, gnome-shell `46.0` (Ubuntu 24.04 base of the owner host; host mutter build `46.2-1ubuntu0.24.04.18` — same upstream 46.2 sources, Ubuntu patch drift not inspected, flagged below). No builds, no runs, host untouched.

@@ -21,18 +21,18 @@
     {
       "number": "12",
       "name": "TERM-строка",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "13",
       "name": "A11Y — рецепты Telegram/ZCode",
-      "status": "pending"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 12)",
-    "reason": "Phase 12 of 5 — needs a plan"
+    "command": "/gsd-progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-11-01T20:49:40.365Z"
+  "updated_at": "2026-11-06T17:34:45.549Z"
 }

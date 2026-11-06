@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
-current_phase: 12
-current_phase_name: TERM-строка
-status: planning
-stopped_at: Phase 11 complete, ready to plan Phase 12
-last_updated: "2026-11-01T20:49:40.350Z"
-last_activity: 2026-11-01
-last_activity_desc: Phase 11 complete, transitioned to Phase 12
-state_head: 428260b534d476c574d7cbbb3786acfcd447edd6
+status: Awaiting next milestone
+stopped_at: "v1.2: все 5 фаз закрыты (12 — решением владельца 2026-11-03, 13 — исполнена 2026-11-06; ветки слиты); next: проход верификаторов 9→13, verify-work, complete-milestone"
+last_updated: "2026-11-06T17:34:45.501Z"
+last_activity: 2026-11-06
+last_activity_desc: Milestone v1.2 completed and archived
+state_head: df452a58381c4ac13f683bca337254c62bba23bc
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 23
-  completed_plans: 22
-  percent: 60
+  completed_phases: 5
+  total_plans: 27
+  completed_plans: 27
+  percent: 100
+current_phase: 13
+current_phase_name: A11Y — рецепты Telegram/ZCode
 ---
 
 # Project State
@@ -24,17 +24,15 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-10-31)
 
-**Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с keyd/xremap.
-**Current focus:** Phase 12 — TERM-строка
+**Core value:** По горячей клавише исправить текст, набранный не в той раскладке (EN↔RU), в любом поле ввода GNOME Wayland — через IBus engine, без root и без конфликтов с ремапперами (keyd/xremap).
+**Current focus:** Phase 13 — A11Y — рецепты Telegram/ZCode
 
 ## Current Position
 
-Phase: 12 — TERM-строка
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-11-01 — Phase 11 complete, transitioned to Phase 12
-
-Progress: [████████░░] 80%
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-11-06 — Milestone v1.2 completed and archived
 
 ## Performance Metrics
 
@@ -71,6 +69,9 @@ Progress: [████████░░] 80%
 | Phase 11 P02 | 46min | 3 tasks | 9 files |
 | Phase 11 P04 | 30min | 2 tasks | 4 files |
 | Phase 11 P05 | 85min | 2 tasks | 11 files |
+| Phase 13 P01 | 138min | 3 tasks | 3 files |
+| Phase 13 P02 | 31min | 3 tasks | 1 files |
+| Phase 13 P03 | 12min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,13 @@ Recent decisions affecting current work:
 - [Phase 11]: [Phase 11] Гвард-матрица 11-04 — пин-корпус на готовой композиции: трассер по дизайну плана построил гварды production-качества в GREEN Task 1, матрица закрепляет 8 behavior-строк; план-RED-гейт закрыт трассером (RED_EVIDENCE_OK)
 - [Phase 11]: [Phase 11] Потолок blocklist сведён на единый источник: session-константа autocorrectBlocklistCeil удалена, blocklistStateLocked читает config.MaxAutocorrectBlocklist; поведение full байт-то же, корпус 11-02 без правок
 - [Phase 11]: [Phase 11] OnConn-проводка blocklist-пункта: Callbacks.BlockCurrentApp + installMenuState (одна точка первой покраски меню: install-пуши 07-06 + начальное состояние пункта до SetMenuSync) + EnsureAppid; живая сборка OnConn — за e2e 11-05 на ВМ (директива 6: проверки продукта только на ВМ)
+- [Phase 13]: A11Y-02 закрыт вердиктом владельца «Задокументировать» (2026-11-03, вариант 2 дословно): автокоррекция Telegram недостижима ни в одной форме — переключение работает во всех сборках ×2, стаб идентичен unconfined (потолок Qt6-моста билда, не confinement); D-04 опровергнут; A5 подтверждена; демон не меняется (граница 2026-10-08 в силе)
+- [Phase 13]: A11Y-01 зачтён по живому дереву: RED→GREEN пара ×2 (exit 0 + роль 79); слой 3 — честный красный: мост Electron не эмитит identity-события (13-02)
+- [Phase 13]: cmdline-доказательство флага на Electron 44 невозможно (argv/environ перезаписываются): замена — pid-множества + экранный дифференциал дерева + ground-truth запуск (13-02)
+- [Phase 13]: Рецепт ZCode для 13-03 обязан нести: rsync → chmod 4755 chrome-sandbox → override; caveats: self-rewrite override приложением, флаги только при старте (13-02)
+- [Phase 13]: A11Y-03 закрыт доками по рядам пробы: Telegram-рецепт = граница по вердикту владельца «Задокументировать» (без команд установки flatpak — D-04 опровергнут), ZCode-рецепт = проверенная форма (роль 79, три факта установки, честная граница моста); selfcheck в доках — только полный путь /usr/bin/python3 scripts/a11y-selfcheck.py
+- [Phase 13]: Residual-risk D-07 задокументирован в обоих README: ручная коррекция на скрытых полях копирует в PRIMARY-выделение; плашка диктора Telegram — ровно в наблюдённой форме (flatpak/tarball, не snap)
+- [Phase 12]: Фаза 12 закрыта вердиктом владельца 2026-11-03 (дословно: «коррекция всей строки в wezterm у меня работает, а коррекция выделения мне не нужна»): цель строки достигнута существующей машиной слова Фазы 10 на длинных пробегах — журнал хоста green106 (юнит v1.2.0-alpha.2-83-gda4ced8, 2026-10-31…2026-11-03): 160 коррекций done / 0 skipped / 0 rejected, одиночные жесты до 47 символов (forwards:94 = 47 пар BackSpace+release + commit, машина round-4); примитив чтения выделения (CopyMode→PRIMARY, кандидат capability-таблицы Фазы 9) на живой сел-пробе 12-01 мёртв на корне — все три ячейки RED (физика-wayland / физика-xim / форвард; сентинел-раундтрип доказал: инструмент чтения функционален, красное — свойство рецепта), владельцем не запрошен — рецепт помечен неактуальным для этого применения; фолбэк «буфер вместо выделения» не предлагался и не исполнялся (D-01); 12-02…12-05 retired superseded; кейс term-line-probe остаётся измерительным инструментом (NOT in ci)
 
 ### Pending Todos
 
@@ -124,7 +132,7 @@ Recent decisions affecting current work:
 ### Blockers/Concerns
 
 - [Phase 13]: planning blocked on Telegram owner decision (лестница: snap → deb/flatpak с разовой проверкой a11y-reachability → демон-fallback)
-- [Phase 12]: feasibility-gated — VTE kill-критерий может сузить строку до wezterm-only; вердикт о сужении за владельцем; фаза может быть снята без провала вехи
+- [Phase 12] RESOLVED (owner verdict 2026-11-03): feasibility-гейт закрыт — сел-проба 12-01 доказала канал CopyMode→PRIMARY мёртвым на корне (все три ячейки RED, adr-008); владелец снял фазу без провала вехи: цель строки уже достигнута машиной слова Фазы 10 (160 done / 0 rejected / до 47 символов жестом); 12-02+ retired superseded
 - [Phase 10 / 10-08] RESOLVED (owner approved semantic amendment 2026-10-13): контрольная точка Task 2 — дрейф подписи клиента wezterm-nightly (0x9→0x29 + Require-ответы протухшим кэшем) закрыт амендментом маршрутизации (pendingStaleCache: nil-cache раунд + ответ-без-набранного-пробега = терминальный контекст, класс учится, раунд исполняет терминальную ветку); fail-closed для кэш-свидетельств сохранён; все четыре живых кейса зелёные на одной свежей сессии
 - [Phase 10]: пер-терминальная семантика клавиш (VTE пропускает Shift+Home в шелл, wezterm #4615 может терять Shift) — истина только в живой capability-таблице Фазы 9, не в веб-источниках
 - [Phase 9 / 09-02] Live-session gate STILL BLOCKED after four probes: relogin 10:13 applied the formal fresh-session cure; probes 1 (10:39, age 25 min = within D-48 gate), 2 (10:48), 3 (11:01, idle desk, confound removed) and 4 (13:21, prime suspect REMOVED — owner closed all 7 bitwarden processes with explicit approval; bitwarden was autostarting headless `--ozone-platform=x11` every session, which explains why the relogin did not cure) all reproduce the identical ground truth: AT-SPI witness pinned at gnome-shell:WINDOW:chars=-1 through 30× grabFocus pokes, focused-inputs=(), zenity dialog immune to ydotool Enter, stdout empty. Probe 4 microdelta: focus_out/focus_in pairs DID fire at zenity spawn (13:21:08, absent in probes 2–3) — removing bitwarden changed the map dynamics, but focus still does not stick (no stable zenity:TEXT frame, Enter undelivered). Focus machinery alive (owner typing through the daemon 10:14:20/10:33:02). NEXT RUNG IS OWNER-SIDE (executor forbidden): disable bitwarden autostart, relogin with it NOT running, then one witness probe. All four spike cases + TERM-04 regression still need working injection surfaces; running them now would write false verdicts into adr-008-spike-log.md and risk typing into owner windows (T-09-02-03). Committed RED (c21e043) + GREEN (bbd463d) verified (unit corpus, mise run ci green, keys verbatim vs ibuskeysyms.h, go.mod untouched); drafted fixture/case files stay uncommitted in-tree pending the live smoke run.
@@ -154,11 +162,11 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-01T00:35:09.920Z
-Stopped at: Phase 11 complete, ready to plan Phase 12
+Last session: 2026-11-06T16:05:00Z
+Stopped at: v1.2 — все 5 фаз закрыты, ветки 12+13 слиты; next: проход верификаторов 9→13, verify-work, complete-milestone
 Resume file: None
 
 ## Operator Next Steps
 
-- Одобрить роадмап (оркестратор презентует); затем /gsd:plan-phase 9
-- [Phase 9 / 09-02] HALT (owner, 2026-10-11 вечер): attach-батч остановлен после R1 — клик подтверждён (focus_in демона, AT-SPI-свидетель исключён из гейта), инъекция ВИДИМА в окне владельцем, но key-trace демона пуст (armGate FAIL 5/5) — слой (3) клиент↔движок разорван; R2–R6 не исполнялись. Окруженческие находки стоят: лаунч-атрибуция (фон-спавн мёртв, owner-launch печатает), пути активации (grab/EWMH/auto-grant ✗). Возобновление: owner-runbook R2–R6 (готов, команды в журнале батча) после чина арм/трейс-гейтинга; всё записано в adr-008-spike-log.md (HALT-запись).
+
+- Start the next milestone with /gsd-new-milestone

@@ -32,8 +32,21 @@ func spikeSections() map[string]string {
 		"secCapsDel":      secCapsDel,
 		"secTermDrain":    secTermDrain,
 		"secTermDstApply": secTermDstApply,
+		"secA11yProbe":    secA11yProbe,
+		// secLineProbe names the phase-12 section «Фаза 12 сел-проба канала
+		// чтения (term-line-probe)» — the OQ1 phase gate whose rows the
+		// term-line-probe case owns (plan 12-01).
+		"secLineProbe": secLineProbe,
 	}
 }
+
+// secA11yProbe pins the phase-13 a11y build-probe section (plan 13-01): the
+// dated probe rows — stand raise, gtk calibration, telegram snap/flatpak
+// three-layer rounds r1/r2, the conditional D-03 ladder, the summary row —
+// are the phase's evidence for A11Y-02 and must land under this exact
+// header. The rows are appended by hand over ssh (venue-probe form), so the
+// pin is the only guard that the header survives renames.
+const secA11yProbe = "Фаза 13 A11Y-проба сборок (telegram snap/flatpak, zcode)"
 
 // spikeJournalPath locates the phase journal from the test's working
 // directory: the checkout layout is repo-root/docs/adr, and the candidates

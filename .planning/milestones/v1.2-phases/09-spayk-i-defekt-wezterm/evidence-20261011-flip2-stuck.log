@@ -1,0 +1,975 @@
+{"time":"2026-10-11T21:55:50.631721781+03:00","level":"INFO","msg":"config loaded","path":"/home/nil/.config/goswitch/config.yaml","tap_window_ms":220}
+{"time":"2026-10-11T21:55:50.63515249+03:00","level":"INFO","msg":"connected","address":"unix:path=/home/nil/.cache/ibus/dbus-J04CPxb9,guid=d5abfa468e37dc52b051258e6acbbed8"}
+{"time":"2026-10-11T21:55:50.635381324+03:00","level":"INFO","msg":"ctl service listening","name":"org.djarvur.goswitch"}
+{"time":"2026-10-11T21:55:50.635769334+03:00","level":"INFO","msg":"component registered","engines":2}
+{"time":"2026-10-11T21:55:50.636485735+03:00","level":"DEBUG","msg":"global engine unreadable","reason":"cold bus; falling back to the current index"}
+{"time":"2026-10-11T21:55:50.65369391+03:00","level":"INFO","msg":"engine created","path":"/org/freedesktop/IBus/Engine/goswitch/1","name":"goswitch-en"}
+{"time":"2026-10-11T21:55:50.655291915+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-en"}
+{"time":"2026-10-11T21:55:50.655319832+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:55:50.655464566+03:00","level":"DEBUG","msg":"lifecycle","kind":"enable"}
+{"time":"2026-10-11T21:55:50.655857663+03:00","level":"DEBUG","msg":"capabilities","caps":"0x29"}
+{"time":"2026-10-11T21:55:50.706590688+03:00","level":"INFO","msg":"engine reactivated","engine":"goswitch-en"}
+{"time":"2026-10-11T21:55:50.883880188+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-en"}
+{"time":"2026-10-11T21:55:50.885618839+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-en"}
+{"time":"2026-10-11T21:55:50.885677028+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:56:36.129556173+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-en"}
+{"time":"2026-10-11T21:56:36.130810513+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-en"}
+{"time":"2026-10-11T21:56:36.130905649+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:56:36.144664268+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-en"}
+{"time":"2026-10-11T21:56:36.147465287+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-en"}
+{"time":"2026-10-11T21:56:36.147549365+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:56:36.149383951+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-en"}
+{"time":"2026-10-11T21:56:36.150294465+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-en"}
+{"time":"2026-10-11T21:56:36.150370001+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:56:36.172521189+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":0,"anchor_pos":0}
+{"time":"2026-10-11T21:56:36.172637533+03:00","level":"DEBUG","msg":"surrounding push","text":"\n","cursor":0,"anchor":0}
+{"time":"2026-10-11T21:56:37.127983254+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:37.142688896+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":1,"anchor_pos":1}
+{"time":"2026-10-11T21:56:37.142761705+03:00","level":"DEBUG","msg":"surrounding push","text":"z\n\n","cursor":1,"anchor":1}
+{"time":"2026-10-11T21:56:37.287356857+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:37.311369859+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:37.311444298+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:37.311505825+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:56:37.322514836+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":2,"anchor_pos":2}
+{"time":"2026-10-11T21:56:37.322573838+03:00","level":"DEBUG","msg":"surrounding push","text":"z \n\n","cursor":2,"anchor":2}
+{"time":"2026-10-11T21:56:37.375262571+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:37.655443855+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:37.66660705+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":3,"anchor_pos":3}
+{"time":"2026-10-11T21:56:37.666669424+03:00","level":"DEBUG","msg":"surrounding push","text":"z r\n\n","cursor":3,"anchor":3}
+{"time":"2026-10-11T21:56:37.743306505+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:37.975337472+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:37.986808086+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":4,"anchor_pos":4}
+{"time":"2026-10-11T21:56:37.986895983+03:00","level":"DEBUG","msg":"surrounding push","text":"z rk\n\n","cursor":4,"anchor":4}
+{"time":"2026-10-11T21:56:38.03943642+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:38.183289627+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:38.194508233+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":5,"anchor_pos":5}
+{"time":"2026-10-11T21:56:38.194570857+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkb\n\n","cursor":5,"anchor":5}
+{"time":"2026-10-11T21:56:38.259670274+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:38.439343069+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:38.451970903+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":6,"anchor_pos":6}
+{"time":"2026-10-11T21:56:38.452050251+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbr\n\n","cursor":6,"anchor":6}
+{"time":"2026-10-11T21:56:38.51117314+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:38.871493615+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:38.882583983+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":7,"anchor_pos":7}
+{"time":"2026-10-11T21:56:38.882653142+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbry\n\n","cursor":7,"anchor":7}
+{"time":"2026-10-11T21:56:38.927217159+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:38.991331946+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.004537317+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":8,"anchor_pos":8}
+{"time":"2026-10-11T21:56:39.00460709+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbrye\n\n","cursor":8,"anchor":8}
+{"time":"2026-10-11T21:56:39.063113598+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.431467139+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.44265852+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":9,"anchor_pos":9}
+{"time":"2026-10-11T21:56:39.442718458+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek\n\n","cursor":9,"anchor":9}
+{"time":"2026-10-11T21:56:39.511100093+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.583368512+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.583448407+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:39.583607066+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:56:39.594625091+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":10,"anchor_pos":10}
+{"time":"2026-10-11T21:56:39.59470329+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek \n\n","cursor":10,"anchor":10}
+{"time":"2026-10-11T21:56:39.647282802+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.783414056+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.794357496+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":11,"anchor_pos":11}
+{"time":"2026-10-11T21:56:39.79441708+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek d\n\n","cursor":11,"anchor":11}
+{"time":"2026-10-11T21:56:39.855137511+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.919366995+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:39.919436369+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:39.919494619+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:56:39.930429095+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":12,"anchor_pos":12}
+{"time":"2026-10-11T21:56:39.930489267+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek d \n\n","cursor":12,"anchor":12}
+{"time":"2026-10-11T21:56:39.975181993+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.292902101+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.294265376+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.306240218+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":13,"anchor_pos":13}
+{"time":"2026-10-11T21:56:40.306312336+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek d j\n\n","cursor":13,"anchor":13}
+{"time":"2026-10-11T21:56:40.479599355+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.551417503+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.670154424+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.72605012+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.84595031+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.918007065+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:40.929193107+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":14,"anchor_pos":14}
+{"time":"2026-10-11T21:56:40.929211455+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek d jr\n\n","cursor":14,"anchor":14}
+{"time":"2026-10-11T21:56:41.150085031+03:00","level":"DEBUG","msg":"key","keyval":"0xffe1","keycode":42,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:41.254176168+03:00","level":"DEBUG","msg":"key","keyval":"0x3f","keycode":53,"release":false,"mods":"0x11"}
+{"time":"2026-10-11T21:56:41.254221036+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:41.254362522+03:00","level":"WARN","msg":"autocorrect role unavailable","error":"role: app identity observer: focused object role unknown"}
+{"time":"2026-10-11T21:56:41.254372989+03:00","level":"INFO","msg":"autocorrect skipped","reason":"role-unknown"}
+{"time":"2026-10-11T21:56:41.325993476+03:00","level":"DEBUG","msg":"key","keyval":"0x3f","keycode":53,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:56:41.373753076+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x11"}
+{"time":"2026-10-11T21:56:41.429962523+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:56:41.565997351+03:00","level":"DEBUG","msg":"key","keyval":"0xffe1","keycode":42,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:56:42.69444339+03:00","level":"DEBUG","msg":"key","keyval":"0xffe1","keycode":42,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:42.853914537+03:00","level":"DEBUG","msg":"key","keyval":"0xff50","keycode":102,"release":false,"mods":"0x11"}
+{"time":"2026-10-11T21:56:42.934053637+03:00","level":"DEBUG","msg":"key","keyval":"0xff50","keycode":102,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:56:43.198092782+03:00","level":"DEBUG","msg":"key","keyval":"0xffe1","keycode":42,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:56:43.918034942+03:00","level":"DEBUG","msg":"key","keyval":"0xffe2","keycode":54,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:43.965819544+03:00","level":"DEBUG","msg":"key","keyval":"0xffe2","keycode":54,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:56:43.982421886+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":16,"anchor_pos":16}
+{"time":"2026-10-11T21:56:43.982466648+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek d jryj\n\n","cursor":16,"anchor":16}
+{"time":"2026-10-11T21:56:43.985099518+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":18,"anchor_pos":0}
+{"time":"2026-10-11T21:56:43.985118432+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek d jryj? \n\n","cursor":18,"anchor":0}
+{"time":"2026-10-11T21:56:44.078534222+03:00","level":"DEBUG","msg":"key","keyval":"0xffe2","keycode":54,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:44.135575584+03:00","level":"DEBUG","msg":"key","keyval":"0xffe2","keycode":54,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:56:44.356470044+03:00","level":"INFO","msg":"action","n":2}
+{"time":"2026-10-11T21:56:44.356572308+03:00","level":"DEBUG","msg":"selection geometry","cursor":18,"anchor":0,"start":0,"end":18,"field_len":20}
+{"time":"2026-10-11T21:56:44.356781618+03:00","level":"INFO","msg":"correction","outcome":"done"}
+{"time":"2026-10-11T21:56:44.356810559+03:00","level":"DEBUG","msg":"correction","level":1,"runes":18,"source":"z rkbryek d jryj? ","result":"я кликнул в окно, ","latency_ms":0}
+{"time":"2026-10-11T21:56:44.356872119+03:00","level":"INFO","msg":"mode","to":"ru"}
+{"time":"2026-10-11T21:56:44.359037949+03:00","level":"INFO","msg":"engine created","path":"/org/freedesktop/IBus/Engine/goswitch/2","name":"goswitch-ru"}
+{"time":"2026-10-11T21:56:44.362140481+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-en"}
+{"time":"2026-10-11T21:56:44.363884708+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:56:44.365147418+03:00","level":"DEBUG","msg":"capabilities","caps":"0x29"}
+{"time":"2026-10-11T21:56:44.366061867+03:00","level":"INFO","msg":"switch_engine","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:56:44.366757379+03:00","level":"DEBUG","msg":"lifecycle","kind":"disable"}
+{"time":"2026-10-11T21:56:44.366799574+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:56:44.367234244+03:00","level":"DEBUG","msg":"lifecycle","kind":"enable"}
+{"time":"2026-10-11T21:56:44.373744569+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":18,"anchor_pos":0}
+{"time":"2026-10-11T21:56:44.374036035+03:00","level":"DEBUG","msg":"surrounding push","text":"z rkbryek d jryj? \n\n","cursor":18,"anchor":0}
+{"time":"2026-10-11T21:56:44.416979928+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":18,"anchor_pos":18}
+{"time":"2026-10-11T21:56:44.417054615+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, \n\n","cursor":18,"anchor":18}
+{"time":"2026-10-11T21:56:45.567438045+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:45.578387955+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":19,"anchor_pos":19}
+{"time":"2026-10-11T21:56:45.578476285+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, н\n\n","cursor":19,"anchor":19}
+{"time":"2026-10-11T21:56:45.631430182+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:45.751513207+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:45.762316569+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":20,"anchor_pos":20}
+{"time":"2026-10-11T21:56:45.762380745+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но\n\n","cursor":20,"anchor":20}
+{"time":"2026-10-11T21:56:45.815339207+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:45.871371887+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:45.871469653+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:45.871556628+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:56:45.882362996+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":21,"anchor_pos":21}
+{"time":"2026-10-11T21:56:45.882427316+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но \n\n","cursor":21,"anchor":21}
+{"time":"2026-10-11T21:56:45.935319588+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.16735889+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.178204878+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":22,"anchor_pos":22}
+{"time":"2026-10-11T21:56:46.17827568+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но т\n\n","cursor":22,"anchor":22}
+{"time":"2026-10-11T21:56:46.215275918+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.375621008+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.386790459+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":23,"anchor_pos":23}
+{"time":"2026-10-11T21:56:46.386886402+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но тв\n\n","cursor":23,"anchor":23}
+{"time":"2026-10-11T21:56:46.447353053+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.527529846+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.538506003+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":24,"anchor_pos":24}
+{"time":"2026-10-11T21:56:46.538570389+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но тво\n\n","cursor":24,"anchor":24}
+{"time":"2026-10-11T21:56:46.59152568+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.703458044+03:00","level":"DEBUG","msg":"key","keyval":"0x71","keycode":16,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.714749621+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":25,"anchor_pos":25}
+{"time":"2026-10-11T21:56:46.714812229+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой\n\n","cursor":25,"anchor":25}
+{"time":"2026-10-11T21:56:46.783547625+03:00","level":"DEBUG","msg":"key","keyval":"0x71","keycode":16,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.863462067+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:46.863535225+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:46.863662754+03:00","level":"INFO","msg":"autocorrect skipped","reason":"dict-cur-hit"}
+{"time":"2026-10-11T21:56:46.874841993+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":26,"anchor_pos":26}
+{"time":"2026-10-11T21:56:46.874906494+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой \n\n","cursor":26,"anchor":26}
+{"time":"2026-10-11T21:56:46.928302776+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.167522857+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.17903037+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":27,"anchor_pos":27}
+{"time":"2026-10-11T21:56:47.179098461+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой т\n\n","cursor":27,"anchor":27}
+{"time":"2026-10-11T21:56:47.231490466+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.271569931+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.283105537+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":28,"anchor_pos":28}
+{"time":"2026-10-11T21:56:47.28317911+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой те\n\n","cursor":28,"anchor":28}
+{"time":"2026-10-11T21:56:47.327273319+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.47128143+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.482851914+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":29,"anchor_pos":29}
+{"time":"2026-10-11T21:56:47.482961403+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тес\n\n","cursor":29,"anchor":29}
+{"time":"2026-10-11T21:56:47.543362808+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.607611112+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.618794416+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":30,"anchor_pos":30}
+{"time":"2026-10-11T21:56:47.618884724+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест\n\n","cursor":30,"anchor":30}
+{"time":"2026-10-11T21:56:47.663268714+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.711446538+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.711518459+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:47.711592933+03:00","level":"INFO","msg":"autocorrect skipped","reason":"dict-cur-hit"}
+{"time":"2026-10-11T21:56:47.722530995+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":31,"anchor_pos":31}
+{"time":"2026-10-11T21:56:47.722595753+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест \n\n","cursor":31,"anchor":31}
+{"time":"2026-10-11T21:56:47.783261195+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.871500389+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.882465071+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":32,"anchor_pos":32}
+{"time":"2026-10-11T21:56:47.882531106+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест н\n\n","cursor":32,"anchor":32}
+{"time":"2026-10-11T21:56:47.927292655+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.94043102+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":33,"anchor_pos":33}
+{"time":"2026-10-11T21:56:47.940500789+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не\n\n","cursor":33,"anchor":33}
+{"time":"2026-10-11T21:56:47.94417377+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:47.991382316+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:48.031563364+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:48.03164033+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:48.031699886+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:56:48.042581594+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":34,"anchor_pos":34}
+{"time":"2026-10-11T21:56:48.04264621+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не \n\n","cursor":34,"anchor":34}
+{"time":"2026-10-11T21:56:48.103841156+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:48.335367301+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:48.346624837+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":35,"anchor_pos":35}
+{"time":"2026-10-11T21:56:48.346694237+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не в\n\n","cursor":35,"anchor":35}
+{"time":"2026-10-11T21:56:48.39928923+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:48.455556885+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:48.466536198+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":36,"anchor_pos":36}
+{"time":"2026-10-11T21:56:48.466599799+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не ви\n\n","cursor":36,"anchor":36}
+{"time":"2026-10-11T21:56:48.511279059+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:48.847554287+03:00","level":"DEBUG","msg":"key","keyval":"0x6c","keycode":38,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:48.85853371+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":37,"anchor_pos":37}
+{"time":"2026-10-11T21:56:48.858601186+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не вид\n\n","cursor":37,"anchor":37}
+{"time":"2026-10-11T21:56:48.911288111+03:00","level":"DEBUG","msg":"key","keyval":"0x6c","keycode":38,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:49.071593888+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:49.082579054+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":38,"anchor_pos":38}
+{"time":"2026-10-11T21:56:49.082645634+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не види\n\n","cursor":38,"anchor":38}
+{"time":"2026-10-11T21:56:49.135458675+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:49.319608038+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:49.330629629+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":39,"anchor_pos":39}
+{"time":"2026-10-11T21:56:49.330692962+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит\n\n","cursor":39,"anchor":39}
+{"time":"2026-10-11T21:56:49.383596945+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:49.447564318+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:49.447646415+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:49.447755342+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:56:49.458951797+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":40,"anchor_pos":40}
+{"time":"2026-10-11T21:56:49.459014464+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит \n\n","cursor":40,"anchor":40}
+{"time":"2026-10-11T21:56:49.519245932+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:50.175488755+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:50.186837768+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":41,"anchor_pos":41}
+{"time":"2026-10-11T21:56:50.18692094+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит к\n\n","cursor":41,"anchor":41}
+{"time":"2026-10-11T21:56:50.23933917+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:50.511517269+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:50.54009009+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":42,"anchor_pos":42}
+{"time":"2026-10-11T21:56:50.540196525+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит кл\n\n","cursor":42,"anchor":42}
+{"time":"2026-10-11T21:56:50.575617185+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:50.727588794+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:50.738545552+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":43,"anchor_pos":43}
+{"time":"2026-10-11T21:56:50.738622379+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит кли\n\n","cursor":43,"anchor":43}
+{"time":"2026-10-11T21:56:50.783335515+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:50.951485794+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:50.962475677+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":44,"anchor_pos":44}
+{"time":"2026-10-11T21:56:50.9625402+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клик\n\n","cursor":44,"anchor":44}
+{"time":"2026-10-11T21:56:50.999708373+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:51.119604945+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:51.130519364+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":45,"anchor_pos":45}
+{"time":"2026-10-11T21:56:51.130584841+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика\n\n","cursor":45,"anchor":45}
+{"time":"2026-10-11T21:56:51.183424166+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.12751698+03:00","level":"DEBUG","msg":"key","keyval":"0x2f","keycode":53,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.138407158+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":46,"anchor_pos":46}
+{"time":"2026-10-11T21:56:52.138485298+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика.\n\n","cursor":46,"anchor":46}
+{"time":"2026-10-11T21:56:52.215590612+03:00","level":"DEBUG","msg":"key","keyval":"0x2f","keycode":53,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.239509807+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.239585734+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:52.23966875+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:56:52.253280036+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":47,"anchor_pos":47}
+{"time":"2026-10-11T21:56:52.253350228+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. \n\n","cursor":47,"anchor":47}
+{"time":"2026-10-11T21:56:52.319426316+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.583441147+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.594951729+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":48,"anchor_pos":48}
+{"time":"2026-10-11T21:56:52.595015188+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. т\n\n","cursor":48,"anchor":48}
+{"time":"2026-10-11T21:56:52.656007982+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.663136002+03:00","level":"DEBUG","msg":"key","keyval":"0x73","keycode":31,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.673605403+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":49,"anchor_pos":49}
+{"time":"2026-10-11T21:56:52.673692298+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты\n\n","cursor":49,"anchor":49}
+{"time":"2026-10-11T21:56:52.727766762+03:00","level":"DEBUG","msg":"key","keyval":"0x73","keycode":31,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.79956041+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:52.799634146+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:52.79969314+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:56:52.810938719+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":50,"anchor_pos":50}
+{"time":"2026-10-11T21:56:52.81101838+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты \n\n","cursor":50,"anchor":50}
+{"time":"2026-10-11T21:56:52.863369764+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.039523375+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.050714575+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":51,"anchor_pos":51}
+{"time":"2026-10-11T21:56:53.050809651+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты о\n\n","cursor":51,"anchor":51}
+{"time":"2026-10-11T21:56:53.095360157+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.279504831+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.290640737+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":52,"anchor_pos":52}
+{"time":"2026-10-11T21:56:53.290710856+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты оп\n\n","cursor":52,"anchor":52}
+{"time":"2026-10-11T21:56:53.351417752+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.46351891+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.474448653+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":53,"anchor_pos":53}
+{"time":"2026-10-11T21:56:53.474510443+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опя\n\n","cursor":53,"anchor":53}
+{"time":"2026-10-11T21:56:53.535490319+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.599581923+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.610463222+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":54,"anchor_pos":54}
+{"time":"2026-10-11T21:56:53.610525817+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опят\n\n","cursor":54,"anchor":54}
+{"time":"2026-10-11T21:56:53.655470801+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.791609189+03:00","level":"DEBUG","msg":"key","keyval":"0x6d","keycode":50,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.802583333+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":55,"anchor_pos":55}
+{"time":"2026-10-11T21:56:53.802657021+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять\n\n","cursor":55,"anchor":55}
+{"time":"2026-10-11T21:56:53.864105058+03:00","level":"DEBUG","msg":"key","keyval":"0x6d","keycode":50,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.887464157+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:53.887538553+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:53.887636985+03:00","level":"INFO","msg":"autocorrect skipped","reason":"dict-cur-hit"}
+{"time":"2026-10-11T21:56:53.898607663+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":56,"anchor_pos":56}
+{"time":"2026-10-11T21:56:53.898687216+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять \n\n","cursor":56,"anchor":56}
+{"time":"2026-10-11T21:56:53.967422981+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:54.071586289+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:54.082556254+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":57,"anchor_pos":57}
+{"time":"2026-10-11T21:56:54.082619093+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять п\n\n","cursor":57,"anchor":57}
+{"time":"2026-10-11T21:56:54.14429076+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:54.420857024+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:54.42326259+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:54.433540137+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":58,"anchor_pos":58}
+{"time":"2026-10-11T21:56:54.433604303+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять пл\n\n","cursor":58,"anchor":58}
+{"time":"2026-10-11T21:56:54.559695252+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:54.570923702+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":59,"anchor_pos":59}
+{"time":"2026-10-11T21:56:54.570989711+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять пло\n\n","cursor":59,"anchor":59}
+{"time":"2026-10-11T21:56:54.623479899+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.047659142+03:00","level":"DEBUG","msg":"key","keyval":"0x5b","keycode":26,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.05870783+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":60,"anchor_pos":60}
+{"time":"2026-10-11T21:56:55.058772336+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плох\n\n","cursor":60,"anchor":60}
+{"time":"2026-10-11T21:56:55.111630669+03:00","level":"DEBUG","msg":"key","keyval":"0x5b","keycode":26,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.381905951+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.383199853+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.394901975+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":61,"anchor_pos":61}
+{"time":"2026-10-11T21:56:55.394974105+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плохо\n\n","cursor":61,"anchor":61}
+{"time":"2026-10-11T21:56:55.447389271+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.447484877+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:55.447592375+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:56:55.462219875+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":62,"anchor_pos":62}
+{"time":"2026-10-11T21:56:55.46231321+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плохо \n\n","cursor":62,"anchor":62}
+{"time":"2026-10-11T21:56:55.511982352+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.62356276+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.702435715+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.790273275+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:55.853970201+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.134193152+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.198135257+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.326101984+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.381925237+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.406072575+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.47006582+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.574190087+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.64614087+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.686216422+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.702140032+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":64,"anchor_pos":64}
+{"time":"2026-10-11T21:56:56.702171537+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плохо на\n\n","cursor":64,"anchor":64}
+{"time":"2026-10-11T21:56:56.718283029+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":68,"anchor_pos":68}
+{"time":"2026-10-11T21:56:56.718309441+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плохо написа\n\n","cursor":68,"anchor":68}
+{"time":"2026-10-11T21:56:56.758258321+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.77105472+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":69,"anchor_pos":69}
+{"time":"2026-10-11T21:56:56.771092858+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плохо написал\n\n","cursor":69,"anchor":69}
+{"time":"2026-10-11T21:56:56.806193813+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:56.806214194+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:56.806237074+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:56:56.88611313+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.038303857+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.07917436+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":70,"anchor_pos":70}
+{"time":"2026-10-11T21:56:57.079212898+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плохо написал \n\n","cursor":70,"anchor":70}
+{"time":"2026-10-11T21:56:57.102200835+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.134123673+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.198384039+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.342168072+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.406206019+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.486100411+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.542022446+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.687334425+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":71,"anchor_pos":71}
+{"time":"2026-10-11T21:56:57.68735888+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плохо написал т\n\n","cursor":71,"anchor":71}
+{"time":"2026-10-11T21:56:57.711304031+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":74,"anchor_pos":74}
+{"time":"2026-10-11T21:56:57.711325875+03:00","level":"DEBUG","msg":"surrounding push","text":"я кликнул в окно, но твой тест не видит клика. ты опять плохо написал тест\n\n","cursor":74,"anchor":74}
+{"time":"2026-10-11T21:56:57.846199519+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:57.846220541+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:57.84626046+03:00","level":"INFO","msg":"autocorrect skipped","reason":"dict-cur-hit"}
+{"time":"2026-10-11T21:56:57.902305245+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:56:59.130303872+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":0,"anchor_pos":0}
+{"time":"2026-10-11T21:56:59.130339067+03:00","level":"DEBUG","msg":"surrounding push","text":"\n","cursor":0,"anchor":0}
+{"time":"2026-10-11T21:56:59.791249455+03:00","level":"DEBUG","msg":"key","keyval":"0xffeb","keycode":125,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:56:59.966595823+03:00","level":"DEBUG","msg":"key","keyval":"0xff09","keycode":15,"release":false,"mods":"0x50"}
+{"time":"2026-10-11T21:56:59.966637929+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:56:59.966669776+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:56:59.977484577+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:56:59.978353651+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:56:59.978381825+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:07.462130189+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:07.46362777+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:07.463689751+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:08.002540059+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:08.005128146+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:08.005188068+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:27.028402291+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.028967107+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.028984109+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:27.031485405+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.032098595+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.03210941+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:27.032847447+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.033033189+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.033043092+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:27.035078277+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.035706766+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.035719325+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:27.036466682+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.036538528+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:27.036569754+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:28.173135344+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:28.173291721+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:28.173315537+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:28.173396061+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:28.173545282+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:57:28.173561033+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:57:29.358676366+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:29.36299467+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":1,"anchor_pos":1}
+{"time":"2026-10-11T21:57:29.363024522+03:00","level":"DEBUG","msg":"surrounding push","text":"н\n\n","cursor":1,"anchor":1}
+{"time":"2026-10-11T21:57:29.431188123+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:29.479724117+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:29.503553922+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":2,"anchor_pos":2}
+{"time":"2026-10-11T21:57:29.503622792+03:00","level":"DEBUG","msg":"surrounding push","text":"ну\n\n","cursor":2,"anchor":2}
+{"time":"2026-10-11T21:57:29.559544207+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:30.759656263+03:00","level":"DEBUG","msg":"key","keyval":"0x2d","keycode":12,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:30.759733556+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:30.759787818+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:30.779494553+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":3,"anchor_pos":3}
+{"time":"2026-10-11T21:57:30.779568717+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-\n\n","cursor":3,"anchor":3}
+{"time":"2026-10-11T21:57:30.840444968+03:00","level":"DEBUG","msg":"key","keyval":"0x2d","keycode":12,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:30.950507791+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:30.954304449+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":4,"anchor_pos":4}
+{"time":"2026-10-11T21:57:30.954332871+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-к\n\n","cursor":4,"anchor":4}
+{"time":"2026-10-11T21:57:31.022984729+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.13579674+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.153622625+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":5,"anchor_pos":5}
+{"time":"2026-10-11T21:57:31.153693406+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка\n\n","cursor":5,"anchor":5}
+{"time":"2026-10-11T21:57:31.1995364+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.279241437+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.279295289+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:31.279341473+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:31.28876592+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":6,"anchor_pos":6}
+{"time":"2026-10-11T21:57:31.288837383+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка \n\n","cursor":6,"anchor":6}
+{"time":"2026-10-11T21:57:31.350609343+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.503633478+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.536265956+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":7,"anchor_pos":7}
+{"time":"2026-10-11T21:57:31.536340115+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка п\n\n","cursor":7,"anchor":7}
+{"time":"2026-10-11T21:57:31.559721433+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.584122482+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.59918696+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":8,"anchor_pos":8}
+{"time":"2026-10-11T21:57:31.599255994+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка пе\n\n","cursor":8,"anchor":8}
+{"time":"2026-10-11T21:57:31.639779501+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.742972063+03:00","level":"DEBUG","msg":"key","keyval":"0x68","keycode":35,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.753472568+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":9,"anchor_pos":9}
+{"time":"2026-10-11T21:57:31.753527779+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка пер\n\n","cursor":9,"anchor":9}
+{"time":"2026-10-11T21:57:31.800192763+03:00","level":"DEBUG","msg":"key","keyval":"0x68","keycode":35,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.800639873+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:31.806591163+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":10,"anchor_pos":10}
+{"time":"2026-10-11T21:57:31.806630422+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка пере\n\n","cursor":10,"anchor":10}
+{"time":"2026-10-11T21:57:31.855085045+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:32.25476429+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:32.267035687+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":11,"anchor_pos":11}
+{"time":"2026-10-11T21:57:32.267071616+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка переп\n\n","cursor":11,"anchor":11}
+{"time":"2026-10-11T21:57:32.319928457+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:32.448473137+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:32.467606384+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":12,"anchor_pos":12}
+{"time":"2026-10-11T21:57:32.467677026+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепи\n\n","cursor":12,"anchor":12}
+{"time":"2026-10-11T21:57:32.510893856+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:32.894872684+03:00","level":"DEBUG","msg":"key","keyval":"0x69","keycode":23,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:32.901086097+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":13,"anchor_pos":13}
+{"time":"2026-10-11T21:57:32.901124377+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиш\n\n","cursor":13,"anchor":13}
+{"time":"2026-10-11T21:57:32.967240952+03:00","level":"DEBUG","msg":"key","keyval":"0x69","keycode":23,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:33.151211126+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:33.16287812+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":14,"anchor_pos":14}
+{"time":"2026-10-11T21:57:33.162943003+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши\n\n","cursor":14,"anchor":14}
+{"time":"2026-10-11T21:57:33.248681121+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:33.359167353+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:33.359219686+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:33.359289578+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:57:33.373199811+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":15,"anchor_pos":15}
+{"time":"2026-10-11T21:57:33.373253029+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши \n\n","cursor":15,"anchor":15}
+{"time":"2026-10-11T21:57:33.431729345+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.311224185+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.322005309+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":16,"anchor_pos":16}
+{"time":"2026-10-11T21:57:34.322058027+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши т\n\n","cursor":16,"anchor":16}
+{"time":"2026-10-11T21:57:34.367559131+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.423929531+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.438669155+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":17,"anchor_pos":17}
+{"time":"2026-10-11T21:57:34.438733863+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши те\n\n","cursor":17,"anchor":17}
+{"time":"2026-10-11T21:57:34.487289401+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.647546637+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.655175732+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":18,"anchor_pos":18}
+{"time":"2026-10-11T21:57:34.655225928+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тес\n\n","cursor":18,"anchor":18}
+{"time":"2026-10-11T21:57:34.711247749+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.815202833+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.82330288+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":19,"anchor_pos":19}
+{"time":"2026-10-11T21:57:34.823352672+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тест\n\n","cursor":19,"anchor":19}
+{"time":"2026-10-11T21:57:34.879400652+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.911292325+03:00","level":"DEBUG","msg":"key","keyval":"0x73","keycode":31,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:34.923293841+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":20,"anchor_pos":20}
+{"time":"2026-10-11T21:57:34.923343674+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты\n\n","cursor":20,"anchor":20}
+{"time":"2026-10-11T21:57:34.975232782+03:00","level":"DEBUG","msg":"key","keyval":"0x73","keycode":31,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.095023856+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.095081391+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:35.095125555+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:57:35.106241538+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":21,"anchor_pos":21}
+{"time":"2026-10-11T21:57:35.106280729+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты \n\n","cursor":21,"anchor":21}
+{"time":"2026-10-11T21:57:35.150955723+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.423978632+03:00","level":"DEBUG","msg":"key","keyval":"0x70","keycode":25,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.446608588+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":22,"anchor_pos":22}
+{"time":"2026-10-11T21:57:35.446681987+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты з\n\n","cursor":22,"anchor":22}
+{"time":"2026-10-11T21:57:35.487796415+03:00","level":"DEBUG","msg":"key","keyval":"0x70","keycode":25,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.489059081+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.511691206+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":23,"anchor_pos":23}
+{"time":"2026-10-11T21:57:35.511784987+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты за\n\n","cursor":23,"anchor":23}
+{"time":"2026-10-11T21:57:35.54374024+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.791273715+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.808078958+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":24,"anchor_pos":24}
+{"time":"2026-10-11T21:57:35.8081313+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты зан\n\n","cursor":24,"anchor":24}
+{"time":"2026-10-11T21:57:35.855660928+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.974715258+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:35.982962336+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":25,"anchor_pos":25}
+{"time":"2026-10-11T21:57:35.983001325+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты зано\n\n","cursor":25,"anchor":25}
+{"time":"2026-10-11T21:57:36.038836252+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.119650932+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.143051878+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":26,"anchor_pos":26}
+{"time":"2026-10-11T21:57:36.143128921+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты занов\n\n","cursor":26,"anchor":26}
+{"time":"2026-10-11T21:57:36.175709094+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.279791545+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.296478368+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":27,"anchor_pos":27}
+{"time":"2026-10-11T21:57:36.296566696+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново\n\n","cursor":27,"anchor":27}
+{"time":"2026-10-11T21:57:36.351725799+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.401079095+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.401175188+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:36.401264209+03:00","level":"INFO","msg":"autocorrect skipped","reason":"dict-cur-hit"}
+{"time":"2026-10-11T21:57:36.430249316+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":28,"anchor_pos":28}
+{"time":"2026-10-11T21:57:36.430346079+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново \n\n","cursor":28,"anchor":28}
+{"time":"2026-10-11T21:57:36.4711355+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.591865646+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.618046612+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":29,"anchor_pos":29}
+{"time":"2026-10-11T21:57:36.618133001+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с\n\n","cursor":29,"anchor":29}
+{"time":"2026-10-11T21:57:36.655763125+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.727745389+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.727843344+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:36.727910382+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:36.748616053+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":30,"anchor_pos":30}
+{"time":"2026-10-11T21:57:36.748703174+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с \n\n","cursor":30,"anchor":30}
+{"time":"2026-10-11T21:57:36.791343372+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:36.991860987+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:37.022453833+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":31,"anchor_pos":31}
+{"time":"2026-10-11T21:57:37.022546913+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с н\n\n","cursor":31,"anchor":31}
+{"time":"2026-10-11T21:57:37.047695987+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:37.095747351+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:37.111325841+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":32,"anchor_pos":32}
+{"time":"2026-10-11T21:57:37.111377037+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с ну\n\n","cursor":32,"anchor":32}
+{"time":"2026-10-11T21:57:37.150677617+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:37.434748554+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:37.454443464+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":33,"anchor_pos":33}
+{"time":"2026-10-11T21:57:37.454518938+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нул\n\n","cursor":33,"anchor":33}
+{"time":"2026-10-11T21:57:37.482059898+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:37.567551831+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:37.583096754+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":34,"anchor_pos":34}
+{"time":"2026-10-11T21:57:37.583155703+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n","cursor":34,"anchor":34}
+{"time":"2026-10-11T21:57:37.630571544+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:38.062892014+03:00","level":"DEBUG","msg":"key","keyval":"0xffe1","keycode":42,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:38.238763487+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":false,"mods":"0x11"}
+{"time":"2026-10-11T21:57:38.238795129+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:38.238841035+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:57:38.252019225+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":35,"anchor_pos":35}
+{"time":"2026-10-11T21:57:38.252055683+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n\n","cursor":35,"anchor":35}
+{"time":"2026-10-11T21:57:38.31151605+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:57:38.407624433+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":false,"mods":"0x11"}
+{"time":"2026-10-11T21:57:38.407708267+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:38.407788308+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:38.426987891+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":36,"anchor_pos":36}
+{"time":"2026-10-11T21:57:38.427049736+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n\n\n","cursor":36,"anchor":36}
+{"time":"2026-10-11T21:57:38.472399243+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:57:38.61464763+03:00","level":"DEBUG","msg":"key","keyval":"0xffe1","keycode":42,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:57:39.175618713+03:00","level":"DEBUG","msg":"key","keyval":"0x76","keycode":47,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.210416618+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":37,"anchor_pos":37}
+{"time":"2026-10-11T21:57:39.210485719+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nм\n\n","cursor":37,"anchor":37}
+{"time":"2026-10-11T21:57:39.239536578+03:00","level":"DEBUG","msg":"key","keyval":"0x76","keycode":47,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.255089463+03:00","level":"DEBUG","msg":"key","keyval":"0x73","keycode":31,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.27230775+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":38,"anchor_pos":38}
+{"time":"2026-10-11T21:57:39.272349629+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы\n\n","cursor":38,"anchor":38}
+{"time":"2026-10-11T21:57:39.318664866+03:00","level":"DEBUG","msg":"key","keyval":"0x73","keycode":31,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.416623884+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.416721165+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:39.416836105+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:39.439337197+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":39,"anchor_pos":39}
+{"time":"2026-10-11T21:57:39.439409019+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы \n\n","cursor":39,"anchor":39}
+{"time":"2026-10-11T21:57:39.471918498+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.743901126+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.758957749+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":40,"anchor_pos":40}
+{"time":"2026-10-11T21:57:39.759033045+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы у\n\n","cursor":40,"anchor":40}
+{"time":"2026-10-11T21:57:39.810521223+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.958864125+03:00","level":"DEBUG","msg":"key","keyval":"0x3b","keycode":39,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:39.965477846+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":41,"anchor_pos":41}
+{"time":"2026-10-11T21:57:39.965510384+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы уж\n\n","cursor":41,"anchor":41}
+{"time":"2026-10-11T21:57:40.01519086+03:00","level":"DEBUG","msg":"key","keyval":"0x3b","keycode":39,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.048483435+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.069865523+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":42,"anchor_pos":42}
+{"time":"2026-10-11T21:57:40.069946037+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы уже\n\n","cursor":42,"anchor":42}
+{"time":"2026-10-11T21:57:40.112076441+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.14391025+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.143978414+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:40.144035382+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:40.161237576+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":43,"anchor_pos":43}
+{"time":"2026-10-11T21:57:40.161315093+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы уже \n\n","cursor":43,"anchor":43}
+{"time":"2026-10-11T21:57:40.215851391+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.38498627+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.437402152+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":44,"anchor_pos":44}
+{"time":"2026-10-11T21:57:40.437500626+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы уже н\n\n","cursor":44,"anchor":44}
+{"time":"2026-10-11T21:57:40.456007828+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.457508419+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.487670796+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":45,"anchor_pos":45}
+{"time":"2026-10-11T21:57:40.487750398+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы уже не\n\n","cursor":45,"anchor":45}
+{"time":"2026-10-11T21:57:40.512450243+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.790650609+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.862624662+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:40.95080958+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.022683045+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.040577636+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":44,"anchor_pos":44}
+{"time":"2026-10-11T21:57:41.040596873+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы уже н\n\n","cursor":44,"anchor":44}
+{"time":"2026-10-11T21:57:41.12662922+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.190748172+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.286597257+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.350790236+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.45462454+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.518685651+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.638654688+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.670823951+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":43,"anchor_pos":43}
+{"time":"2026-10-11T21:57:41.670850034+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы уже \n\n","cursor":43,"anchor":43}
+{"time":"2026-10-11T21:57:41.70264652+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:41.718559662+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":39,"anchor_pos":39}
+{"time":"2026-10-11T21:57:41.718599329+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы \n\n","cursor":39,"anchor":39}
+{"time":"2026-10-11T21:57:42.574908055+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:42.646669061+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:42.750723875+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":39,"anchor_pos":38}
+{"time":"2026-10-11T21:57:42.750743856+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы \n\n","cursor":39,"anchor":38}
+{"time":"2026-10-11T21:57:42.767595507+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":38,"anchor_pos":38}
+{"time":"2026-10-11T21:57:42.767654642+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы\n\n","cursor":38,"anchor":38}
+{"time":"2026-10-11T21:57:43.03871923+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:43.115683181+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":38,"anchor_pos":37}
+{"time":"2026-10-11T21:57:43.115718478+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nмы\n\n","cursor":38,"anchor":37}
+{"time":"2026-10-11T21:57:43.126751139+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:43.137532555+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":37,"anchor_pos":37}
+{"time":"2026-10-11T21:57:43.137567516+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nм\n\n","cursor":37,"anchor":37}
+{"time":"2026-10-11T21:57:43.710691496+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:43.788211165+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":37,"anchor_pos":36}
+{"time":"2026-10-11T21:57:43.788253904+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\nм\n\n","cursor":37,"anchor":36}
+{"time":"2026-10-11T21:57:43.790639319+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:44.352658168+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":36,"anchor_pos":36}
+{"time":"2026-10-11T21:57:44.35268365+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n\n\n","cursor":36,"anchor":36}
+{"time":"2026-10-11T21:57:44.415059893+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:44.418197958+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":36,"anchor_pos":35}
+{"time":"2026-10-11T21:57:44.418220328+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n\n\n","cursor":36,"anchor":35}
+{"time":"2026-10-11T21:57:44.454181618+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":35,"anchor_pos":35}
+{"time":"2026-10-11T21:57:44.454236852+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n\n","cursor":35,"anchor":35}
+{"time":"2026-10-11T21:57:44.480031292+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:45.415980318+03:00","level":"DEBUG","msg":"key","keyval":"0xffe1","keycode":42,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:45.640211288+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":false,"mods":"0x11"}
+{"time":"2026-10-11T21:57:45.640303828+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:45.640364144+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:45.652479043+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":36,"anchor_pos":36}
+{"time":"2026-10-11T21:57:45.652549215+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n\n\n","cursor":36,"anchor":36}
+{"time":"2026-10-11T21:57:45.736205767+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:57:45.84006157+03:00","level":"DEBUG","msg":"key","keyval":"0xffe1","keycode":42,"release":true,"mods":"0x11"}
+{"time":"2026-10-11T21:57:46.784336324+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:46.792674367+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":36,"anchor_pos":35}
+{"time":"2026-10-11T21:57:46.792743682+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n\n\n","cursor":36,"anchor":35}
+{"time":"2026-10-11T21:57:46.855205464+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":35,"anchor_pos":35}
+{"time":"2026-10-11T21:57:46.855282273+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\n\n\n","cursor":35,"anchor":35}
+{"time":"2026-10-11T21:57:46.85597777+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:47.944246604+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:47.956215856+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":36,"anchor_pos":36}
+{"time":"2026-10-11T21:57:47.956327123+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nт\n\n","cursor":36,"anchor":36}
+{"time":"2026-10-11T21:57:48.008253226+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.025260999+03:00","level":"DEBUG","msg":"key","keyval":"0x73","keycode":31,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.036427598+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":37,"anchor_pos":37}
+{"time":"2026-10-11T21:57:48.036491204+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты\n\n","cursor":37,"anchor":37}
+{"time":"2026-10-11T21:57:48.09596086+03:00","level":"DEBUG","msg":"key","keyval":"0x73","keycode":31,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.17628589+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.176364148+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:48.176423366+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:48.187449563+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":38,"anchor_pos":38}
+{"time":"2026-10-11T21:57:48.187513343+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты \n\n","cursor":38,"anchor":38}
+{"time":"2026-10-11T21:57:48.247964492+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.488379288+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.501526504+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":39,"anchor_pos":39}
+{"time":"2026-10-11T21:57:48.501600406+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты у\n\n","cursor":39,"anchor":39}
+{"time":"2026-10-11T21:57:48.560335191+03:00","level":"DEBUG","msg":"key","keyval":"0x65","keycode":18,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.672100991+03:00","level":"DEBUG","msg":"key","keyval":"0x3b","keycode":39,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.683430689+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":40,"anchor_pos":40}
+{"time":"2026-10-11T21:57:48.683501422+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уж\n\n","cursor":40,"anchor":40}
+{"time":"2026-10-11T21:57:48.745342034+03:00","level":"DEBUG","msg":"key","keyval":"0x3b","keycode":39,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.77636096+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.787764844+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":41,"anchor_pos":41}
+{"time":"2026-10-11T21:57:48.787848593+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже\n\n","cursor":41,"anchor":41}
+{"time":"2026-10-11T21:57:48.840155226+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.855910287+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:48.855989151+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:48.856050977+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:57:48.866577262+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":42,"anchor_pos":42}
+{"time":"2026-10-11T21:57:48.866644977+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже \n\n","cursor":42,"anchor":42}
+{"time":"2026-10-11T21:57:48.920292924+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.072409673+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.083927931+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":43,"anchor_pos":43}
+{"time":"2026-10-11T21:57:50.083998252+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже н\n\n","cursor":43,"anchor":43}
+{"time":"2026-10-11T21:57:50.144123425+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.145276992+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.156564563+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":44,"anchor_pos":44}
+{"time":"2026-10-11T21:57:50.156635859+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже не\n\n","cursor":44,"anchor":44}
+{"time":"2026-10-11T21:57:50.192006101+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.360276882+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.371325684+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":45,"anchor_pos":45}
+{"time":"2026-10-11T21:57:50.37139132+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже нес\n\n","cursor":45,"anchor":45}
+{"time":"2026-10-11T21:57:50.432044721+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.600269306+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.611593828+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":46,"anchor_pos":46}
+{"time":"2026-10-11T21:57:50.611665252+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже неск\n\n","cursor":46,"anchor":46}
+{"time":"2026-10-11T21:57:50.672000685+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.744300648+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.755277097+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":47,"anchor_pos":47}
+{"time":"2026-10-11T21:57:50.755343295+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже неско\n\n","cursor":47,"anchor":47}
+{"time":"2026-10-11T21:57:50.800007908+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.9441665+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:50.955095199+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":48,"anchor_pos":48}
+{"time":"2026-10-11T21:57:50.955173005+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже нескол\n\n","cursor":48,"anchor":48}
+{"time":"2026-10-11T21:57:51.000108937+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.104297964+03:00","level":"DEBUG","msg":"key","keyval":"0x6d","keycode":50,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.118418909+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":49,"anchor_pos":49}
+{"time":"2026-10-11T21:57:51.118531914+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколь\n\n","cursor":49,"anchor":49}
+{"time":"2026-10-11T21:57:51.16010809+03:00","level":"DEBUG","msg":"key","keyval":"0x6d","keycode":50,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.240218692+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.255469714+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":50,"anchor_pos":50}
+{"time":"2026-10-11T21:57:51.255575837+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже нескольк\n\n","cursor":50,"anchor":50}
+{"time":"2026-10-11T21:57:51.296142767+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.296857647+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.310682632+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":51,"anchor_pos":51}
+{"time":"2026-10-11T21:57:51.310753896+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько\n\n","cursor":51,"anchor":51}
+{"time":"2026-10-11T21:57:51.359779138+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.400083038+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.400150278+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:51.400223909+03:00","level":"INFO","msg":"autocorrect skipped","reason":"dict-cur-hit"}
+{"time":"2026-10-11T21:57:51.41146251+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":52,"anchor_pos":52}
+{"time":"2026-10-11T21:57:51.411524679+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько \n\n","cursor":52,"anchor":52}
+{"time":"2026-10-11T21:57:51.472073611+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.752342934+03:00","level":"DEBUG","msg":"key","keyval":"0x78","keycode":45,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.763592502+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":53,"anchor_pos":53}
+{"time":"2026-10-11T21:57:51.763665003+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько ч\n\n","cursor":53,"anchor":53}
+{"time":"2026-10-11T21:57:51.816272894+03:00","level":"DEBUG","msg":"key","keyval":"0x78","keycode":45,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.944490417+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:51.95557815+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":54,"anchor_pos":54}
+{"time":"2026-10-11T21:57:51.955642251+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько ча\n\n","cursor":54,"anchor":54}
+{"time":"2026-10-11T21:57:52.00875006+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:52.144420241+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:52.155547496+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":55,"anchor_pos":55}
+{"time":"2026-10-11T21:57:52.155617173+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько час\n\n","cursor":55,"anchor":55}
+{"time":"2026-10-11T21:57:52.208233916+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:52.288314709+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:52.299416583+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":56,"anchor_pos":56}
+{"time":"2026-10-11T21:57:52.299508622+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часо\n\n","cursor":56,"anchor":56}
+{"time":"2026-10-11T21:57:52.360172976+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:52.472392638+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:52.48444056+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":57,"anchor_pos":57}
+{"time":"2026-10-11T21:57:52.484534905+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов\n\n","cursor":57,"anchor":57}
+{"time":"2026-10-11T21:57:52.536126923+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:52.632372876+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:52.632461388+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:52.632548717+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:57:52.643534482+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":58,"anchor_pos":58}
+{"time":"2026-10-11T21:57:52.643598828+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов \n\n","cursor":58,"anchor":58}
+{"time":"2026-10-11T21:57:52.696142329+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.048209142+03:00","level":"DEBUG","msg":"key","keyval":"0x70","keycode":25,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.059375869+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":59,"anchor_pos":59}
+{"time":"2026-10-11T21:57:54.059465425+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов з\n\n","cursor":59,"anchor":59}
+{"time":"2026-10-11T21:57:54.144356118+03:00","level":"DEBUG","msg":"key","keyval":"0x70","keycode":25,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.145615753+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.156918008+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":60,"anchor_pos":60}
+{"time":"2026-10-11T21:57:54.156996647+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов за\n\n","cursor":60,"anchor":60}
+{"time":"2026-10-11T21:57:54.200085887+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.368396877+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.419017231+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":61,"anchor_pos":61}
+{"time":"2026-10-11T21:57:54.419109256+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов зас\n\n","cursor":61,"anchor":61}
+{"time":"2026-10-11T21:57:54.432806281+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.528409933+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.539357325+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":62,"anchor_pos":62}
+{"time":"2026-10-11T21:57:54.539443539+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заст\n\n","cursor":62,"anchor":62}
+{"time":"2026-10-11T21:57:54.600102551+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.664278396+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.675367973+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":63,"anchor_pos":63}
+{"time":"2026-10-11T21:57:54.675448741+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заста\n\n","cursor":63,"anchor":63}
+{"time":"2026-10-11T21:57:54.728285309+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.880293462+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:54.891689954+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":64,"anchor_pos":64}
+{"time":"2026-10-11T21:57:54.891774351+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов застав\n\n","cursor":64,"anchor":64}
+{"time":"2026-10-11T21:57:54.960064408+03:00","level":"DEBUG","msg":"key","keyval":"0x64","keycode":32,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:55.15230366+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:55.163571779+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":65,"anchor_pos":65}
+{"time":"2026-10-11T21:57:55.163657224+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставл\n\n","cursor":65,"anchor":65}
+{"time":"2026-10-11T21:57:55.208095053+03:00","level":"DEBUG","msg":"key","keyval":"0x6b","keycode":37,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:55.264326431+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:55.275644926+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":66,"anchor_pos":66}
+{"time":"2026-10-11T21:57:55.27573254+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставля\n\n","cursor":66,"anchor":66}
+{"time":"2026-10-11T21:57:55.344079804+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:55.587741867+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:55.592737603+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:55.603421126+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":67,"anchor_pos":67}
+{"time":"2026-10-11T21:57:55.603507783+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляе\n\n","cursor":67,"anchor":67}
+{"time":"2026-10-11T21:57:55.792694853+03:00","level":"DEBUG","msg":"key","keyval":"0x76","keycode":47,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:55.864272378+03:00","level":"DEBUG","msg":"key","keyval":"0x76","keycode":47,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.095954633+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":68,"anchor_pos":68}
+{"time":"2026-10-11T21:57:56.096030379+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляем\n\n","cursor":68,"anchor":68}
+{"time":"2026-10-11T21:57:56.174951244+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.254905813+03:00","level":"DEBUG","msg":"key","keyval":"0xff08","keycode":14,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.495011385+03:00","level":"DEBUG","msg":"key","keyval":"0x69","keycode":23,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.575227522+03:00","level":"DEBUG","msg":"key","keyval":"0x69","keycode":23,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.647043986+03:00","level":"DEBUG","msg":"key","keyval":"0x6d","keycode":50,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.709925673+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":67,"anchor_pos":67}
+{"time":"2026-10-11T21:57:56.709943707+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляе\n\n","cursor":67,"anchor":67}
+{"time":"2026-10-11T21:57:56.74300774+03:00","level":"DEBUG","msg":"key","keyval":"0x6d","keycode":50,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.782886738+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.782921709+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:56.782966239+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:57:56.839222824+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:56.966951651+03:00","level":"DEBUG","msg":"key","keyval":"0x76","keycode":47,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.030024254+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":68,"anchor_pos":68}
+{"time":"2026-10-11T21:57:57.030054323+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляеш\n\n","cursor":68,"anchor":68}
+{"time":"2026-10-11T21:57:57.046020229+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":70,"anchor_pos":70}
+{"time":"2026-10-11T21:57:57.046044865+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь \n\n","cursor":70,"anchor":70}
+{"time":"2026-10-11T21:57:57.050822886+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":71,"anchor_pos":71}
+{"time":"2026-10-11T21:57:57.050875493+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь м\n\n","cursor":71,"anchor":71}
+{"time":"2026-10-11T21:57:57.054849137+03:00","level":"DEBUG","msg":"key","keyval":"0x76","keycode":47,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.087201878+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.142915194+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.190921537+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.270882261+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.35892725+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.430873658+03:00","level":"DEBUG","msg":"key","keyval":"0x7a","keycode":44,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.463022418+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.463043102+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:57.463064581+03:00","level":"INFO","msg":"autocorrect skipped","reason":"dict-cur-hit"}
+{"time":"2026-10-11T21:57:57.518896467+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.561956596+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":72,"anchor_pos":72}
+{"time":"2026-10-11T21:57:57.561975496+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь ме\n\n","cursor":72,"anchor":72}
+{"time":"2026-10-11T21:57:57.628923838+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":75,"anchor_pos":75}
+{"time":"2026-10-11T21:57:57.628944891+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня \n\n","cursor":75,"anchor":75}
+{"time":"2026-10-11T21:57:57.670851211+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.743017948+03:00","level":"DEBUG","msg":"key","keyval":"0x67","keycode":34,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.766877133+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.823018316+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.846852754+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":76,"anchor_pos":76}
+{"time":"2026-10-11T21:57:57.846880057+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня п\n\n","cursor":76,"anchor":76}
+{"time":"2026-10-11T21:57:57.902998388+03:00","level":"DEBUG","msg":"key","keyval":"0x68","keycode":35,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.966891435+03:00","level":"DEBUG","msg":"key","keyval":"0x68","keycode":35,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:57.967169609+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:58.023001635+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:58.102107527+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":77,"anchor_pos":77}
+{"time":"2026-10-11T21:57:58.102134171+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня пе\n\n","cursor":77,"anchor":77}
+{"time":"2026-10-11T21:57:58.117950093+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":79,"anchor_pos":79}
+{"time":"2026-10-11T21:57:58.117967149+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня пере\n\n","cursor":79,"anchor":79}
+{"time":"2026-10-11T21:57:58.638825236+03:00","level":"DEBUG","msg":"key","keyval":"0x2c","keycode":51,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:58.710890662+03:00","level":"DEBUG","msg":"key","keyval":"0x2c","keycode":51,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:58.811836324+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":80,"anchor_pos":80}
+{"time":"2026-10-11T21:57:58.811881841+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня переб\n\n","cursor":80,"anchor":80}
+{"time":"2026-10-11T21:57:58.894949262+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:58.950921867+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.094915836+03:00","level":"DEBUG","msg":"key","keyval":"0x68","keycode":35,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.167024214+03:00","level":"DEBUG","msg":"key","keyval":"0x68","keycode":35,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.222909449+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.286846106+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.398971248+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.457782001+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":81,"anchor_pos":81}
+{"time":"2026-10-11T21:57:59.457834241+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня переби\n\n","cursor":81,"anchor":81}
+{"time":"2026-10-11T21:57:59.459117873+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":83,"anchor_pos":83}
+{"time":"2026-10-11T21:57:59.459134721+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебира\n\n","cursor":83,"anchor":83}
+{"time":"2026-10-11T21:57:59.463139044+03:00","level":"DEBUG","msg":"key","keyval":"0x6e","keycode":49,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.576034264+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":84,"anchor_pos":84}
+{"time":"2026-10-11T21:57:59.576078754+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебират\n\n","cursor":84,"anchor":84}
+{"time":"2026-10-11T21:57:59.58287705+03:00","level":"DEBUG","msg":"key","keyval":"0x6d","keycode":50,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.595752055+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":85,"anchor_pos":85}
+{"time":"2026-10-11T21:57:59.59582636+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать\n\n","cursor":85,"anchor":85}
+{"time":"2026-10-11T21:57:59.663654566+03:00","level":"DEBUG","msg":"key","keyval":"0x6d","keycode":50,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.688008478+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:57:59.688071743+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:57:59.688139106+03:00","level":"INFO","msg":"autocorrect skipped","reason":"dict-cur-hit"}
+{"time":"2026-10-11T21:57:59.698193722+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":86,"anchor_pos":86}
+{"time":"2026-10-11T21:57:59.698264478+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать \n\n","cursor":86,"anchor":86}
+{"time":"2026-10-11T21:57:59.760038842+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:00.32799341+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:00.337949405+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":87,"anchor_pos":87}
+{"time":"2026-10-11T21:58:00.33801613+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать н\n\n","cursor":87,"anchor":87}
+{"time":"2026-10-11T21:58:00.400245264+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:00.440385823+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:00.450809198+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":88,"anchor_pos":88}
+{"time":"2026-10-11T21:58:00.450892729+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать не\n\n","cursor":88,"anchor":88}
+{"time":"2026-10-11T21:58:00.503996238+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:00.752515518+03:00","level":"DEBUG","msg":"key","keyval":"0x68","keycode":35,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:00.763088663+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":89,"anchor_pos":89}
+{"time":"2026-10-11T21:58:00.763158011+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нер\n\n","cursor":89,"anchor":89}
+{"time":"2026-10-11T21:58:00.824326701+03:00","level":"DEBUG","msg":"key","keyval":"0x68","keycode":35,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:00.888398554+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:00.898950428+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":90,"anchor_pos":90}
+{"time":"2026-10-11T21:58:00.89901127+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нера\n\n","cursor":90,"anchor":90}
+{"time":"2026-10-11T21:58:00.951889839+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:01.184410376+03:00","level":"DEBUG","msg":"key","keyval":"0x2c","keycode":51,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:01.195977461+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":91,"anchor_pos":91}
+{"time":"2026-10-11T21:58:01.196051253+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нераб\n\n","cursor":91,"anchor":91}
+{"time":"2026-10-11T21:58:01.248172919+03:00","level":"DEBUG","msg":"key","keyval":"0x2c","keycode":51,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:01.43252776+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:01.443577117+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":92,"anchor_pos":92}
+{"time":"2026-10-11T21:58:01.443646359+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабо\n\n","cursor":92,"anchor":92}
+{"time":"2026-10-11T21:58:01.504118415+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:01.856371634+03:00","level":"DEBUG","msg":"key","keyval":"0x78","keycode":45,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:01.86758612+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":93,"anchor_pos":93}
+{"time":"2026-10-11T21:58:01.867655355+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабоч\n\n","cursor":93,"anchor":93}
+{"time":"2026-10-11T21:58:01.928092213+03:00","level":"DEBUG","msg":"key","keyval":"0x78","keycode":45,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.000682181+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.011797558+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":94,"anchor_pos":94}
+{"time":"2026-10-11T21:58:02.01188534+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочи\n\n","cursor":94,"anchor":94}
+{"time":"2026-10-11T21:58:02.080333637+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.176489892+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.187625674+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":95,"anchor_pos":95}
+{"time":"2026-10-11T21:58:02.187699987+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие\n\n","cursor":95,"anchor":95}
+{"time":"2026-10-11T21:58:02.256406412+03:00","level":"DEBUG","msg":"key","keyval":"0x74","keycode":20,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.304359202+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.304444046+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:58:02.304571327+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:58:02.315914874+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":96,"anchor_pos":96}
+{"time":"2026-10-11T21:58:02.315983552+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие \n\n","cursor":96,"anchor":96}
+{"time":"2026-10-11T21:58:02.368161644+03:00","level":"DEBUG","msg":"key","keyval":"0x20","keycode":57,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.440437692+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.452365139+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":97,"anchor_pos":97}
+{"time":"2026-10-11T21:58:02.452449856+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие к\n\n","cursor":97,"anchor":97}
+{"time":"2026-10-11T21:58:02.512240211+03:00","level":"DEBUG","msg":"key","keyval":"0x72","keycode":19,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.576443956+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.587698873+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":98,"anchor_pos":98}
+{"time":"2026-10-11T21:58:02.587775679+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие ко\n\n","cursor":98,"anchor":98}
+{"time":"2026-10-11T21:58:02.640227537+03:00","level":"DEBUG","msg":"key","keyval":"0x6a","keycode":36,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.880437672+03:00","level":"DEBUG","msg":"key","keyval":"0x76","keycode":47,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:02.891644242+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":99,"anchor_pos":99}
+{"time":"2026-10-11T21:58:02.891746949+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие ком\n\n","cursor":99,"anchor":99}
+{"time":"2026-10-11T21:58:02.952562809+03:00","level":"DEBUG","msg":"key","keyval":"0x76","keycode":47,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:03.512284126+03:00","level":"DEBUG","msg":"key","keyval":"0x2c","keycode":51,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:03.528317252+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":100,"anchor_pos":100}
+{"time":"2026-10-11T21:58:03.528416391+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие комб\n\n","cursor":100,"anchor":100}
+{"time":"2026-10-11T21:58:03.568325555+03:00","level":"DEBUG","msg":"key","keyval":"0x2c","keycode":51,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:03.784548626+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:03.795904308+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":101,"anchor_pos":101}
+{"time":"2026-10-11T21:58:03.795975845+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие комби\n\n","cursor":101,"anchor":101}
+{"time":"2026-10-11T21:58:03.840290877+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.040451449+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.051785684+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":102,"anchor_pos":102}
+{"time":"2026-10-11T21:58:04.051883042+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие комбин\n\n","cursor":102,"anchor":102}
+{"time":"2026-10-11T21:58:04.120555788+03:00","level":"DEBUG","msg":"key","keyval":"0x79","keycode":21,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.121636332+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.133270816+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":103,"anchor_pos":103}
+{"time":"2026-10-11T21:58:04.133366511+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие комбина\n\n","cursor":103,"anchor":103}
+{"time":"2026-10-11T21:58:04.192693141+03:00","level":"DEBUG","msg":"key","keyval":"0x66","keycode":33,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.521208933+03:00","level":"DEBUG","msg":"key","keyval":"0x77","keycode":17,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.532759403+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":104,"anchor_pos":104}
+{"time":"2026-10-11T21:58:04.532876018+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие комбинац\n\n","cursor":104,"anchor":104}
+{"time":"2026-10-11T21:58:04.600423136+03:00","level":"DEBUG","msg":"key","keyval":"0x77","keycode":17,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.760478277+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.771617445+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":105,"anchor_pos":105}
+{"time":"2026-10-11T21:58:04.771709994+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие комбинаци\n\n","cursor":105,"anchor":105}
+{"time":"2026-10-11T21:58:04.824450998+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.89665321+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:04.907984359+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":106,"anchor_pos":106}
+{"time":"2026-10-11T21:58:04.908071777+03:00","level":"DEBUG","msg":"surrounding push","text":"ну-ка перепиши тесты заново с нуля\nты уже несколько часов заставляешь меня перебирать нерабочие комбинации\n\n","cursor":106,"anchor":106}
+{"time":"2026-10-11T21:58:04.96041408+03:00","level":"DEBUG","msg":"key","keyval":"0x62","keycode":48,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:05.232564928+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:05.232639415+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:58:05.232730306+03:00","level":"INFO","msg":"autocorrect skipped","reason":"trigram-unsure"}
+{"time":"2026-10-11T21:58:05.304632104+03:00","level":"DEBUG","msg":"key","keyval":"0xff0d","keycode":28,"release":true,"mods":"0x10"}
+{"time":"2026-10-11T21:58:05.588199669+03:00","level":"DEBUG","msg":"surrounding_text","cursor_pos":0,"anchor_pos":0}
+{"time":"2026-10-11T21:58:05.588234219+03:00","level":"DEBUG","msg":"surrounding push","text":"\n","cursor":0,"anchor":0}
+{"time":"2026-10-11T21:58:28.07966112+03:00","level":"DEBUG","msg":"key","keyval":"0xffeb","keycode":125,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:28.271271507+03:00","level":"DEBUG","msg":"key","keyval":"0xff09","keycode":15,"release":false,"mods":"0x50"}
+{"time":"2026-10-11T21:58:28.271297183+03:00","level":"DEBUG","msg":"autocorrect app identity unknown","reason":"no focus event yet"}
+{"time":"2026-10-11T21:58:28.271312819+03:00","level":"INFO","msg":"autocorrect skipped","reason":"abstain-short"}
+{"time":"2026-10-11T21:58:28.277048223+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:58:28.277732661+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:58:28.277746105+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:58:30.804674652+03:00","level":"INFO","msg":"focus_out","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:58:30.805905583+03:00","level":"INFO","msg":"focus_in","engine":"goswitch-ru"}
+{"time":"2026-10-11T21:58:30.805954851+03:00","level":"DEBUG","msg":"lifecycle","kind":"focus_in"}
+{"time":"2026-10-11T21:58:32.752157989+03:00","level":"DEBUG","msg":"key","keyval":"0xffe3","keycode":29,"release":false,"mods":"0x10"}
+{"time":"2026-10-11T21:58:33.239678123+03:00","level":"DEBUG","msg":"key","keyval":"0x63","keycode":46,"release":false,"mods":"0x14"}
