@@ -210,7 +210,7 @@ def cmd_selfcheck(needle, pids):
               " text class) — the daemon's autocorrect gate can engage")
         return None
     if ROLE_PASSWORD_TEXT in role_counts:
-        print(f"password field found (role 40) — видимо, но неисправимо"
+        print("password field found (role 40) — видимо, но неисправимо"
               " (password): the autocorrect policy never corrects it")
         return ("only a password field (role 40) is visible — видимо, но"
                 " неисправимо; no correctable text field (61/79/94)")
