@@ -82,10 +82,15 @@ def walk(app):
             continue
         yield node
         try:
-            children = [node.get_child_at_index(k) for k in range(node.get_child_count())]
+            count = node.get_child_count()
         except Exception:
             continue
-        stack.extend(children)
+        for k in range(count):
+            try:
+                child = node.get_child_at_index(k)
+            except Exception:
+                continue  # one dead child hides only itself, not its siblings
+            stack.append(child)
 
 
 def process_pids(needle):
