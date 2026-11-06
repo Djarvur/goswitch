@@ -1,9 +1,11 @@
 ---
-status: awaiting_human_verify
+status: resolved
 trigger: "Live validation of the pty-arming fix: mechanically the round ended FAIL (probe never landed in the fixture pty) but the NEW evidence supersedes the R1 layer-3 story — the engine journal HAS full key records for every probe (0x31–0x34, five tries), and the probes LANDED IN THE OWNER'S OWN TERMINAL (prompt collected 123422123422…). Engine receives the keys and delivers/forwards them to a STALE IM context instead of the freshly focused wezterm-XIM fixture — that IS the TERM-01 defect mechanism, honestly reproduced by the smoke. Verdict semantics must change: engine-traced-but-pty-absent is a reproduced verdict, not a failure; only absent-from-BOTH is a harness FAIL."
 created: 2026-10-09T00:00:00+03:00
-updated: 2026-10-09T13:00:00+03:00
+updated: 2026-11-06T12:00:00+03:00
 ---
+
+> **Закрыто 2026-11-06 (закрытие вехи v1.2):** фикс e2ce145 (classifyArm / armStaleContext) в проде со времён Фазы 10; ожидавшийся подтверждающий прогон владельца перекрыт закрывающим вердиктом G-10-1 (2026-10-20, «осталось») — арминг-гейт и pty-оракул живут в e2e-харнессе вехи.
 
 ## Current Focus
 

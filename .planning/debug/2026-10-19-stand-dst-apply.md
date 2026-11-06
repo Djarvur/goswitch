@@ -1,11 +1,13 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Round-6 stand experiment: does wezterm-nightly (the client on the goswitch stand VM) APPLY DeleteSurroundingText — do the deleted characters actually disappear from the terminal's input line? Matrix: warm-context DST apply on wezterm, same on VTE, the full DST+commit choreography on wezterm (pty oracle: final line «привет»), mutter survival per run. Verdict = the round-6 routing recommendation (DST+commit vs forwards+Require-drain fallback)."
 created: 2026-10-19T00:00:00Z
-updated: 2026-10-19T18:10:00Z
+updated: 2026-11-06T12:00:00+03:00
 symptoms_prefilled: true
 goal: find_root_cause_only
 ---
+
+> **Закрыто 2026-11-06 (закрытие вехи v1.2):** вердикт доставлен — DST-маршрут мёртв (wezterm-nightly игнорирует DeleteSurroundingText в обоих классах контекста, VTE роняет сессию mutter 46.2); round-4 фолбэк (парные форварды + pty-drain + delivery-метки + флип вне окна) въехал в Фазу 10 и зачтён владельцем G-10-1 (2026-10-20).
 
 ## Current Focus
 

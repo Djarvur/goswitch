@@ -1,11 +1,13 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "On stand VM, emitting IBus engine messages DeleteSurroundingText + RequireSurroundingText reproducibly crashes gnome-shell (signal 11, ~1s after probe). 4/4 with emission died; 2/2 controls without emission survived; kernel 6.8.0-146 one-off boot also crashed (kernel regression ruled out). Localize trigger by bisection, capture stack, deliver round-4 verdict."
 created: 2026-10-16T17:40:00Z
-updated: 2026-10-16T18:55:00Z
+updated: 2026-11-06T12:00:00+03:00
 symptoms_prefilled: true
 goal: find_root_cause_only
 ---
+
+> **Закрыто 2026-11-06 (закрытие вехи v1.2):** корень найден и доставлен (mutter 46.2, `meta-wayland-text-input.c:254`, UAF в virgin-окне контекста); DST-маршрут закрыт гардом плана 10-16 (round-4, счётчик `corr_dst_guarded`); дефект upstream — на Ubuntu 24.04 остаётся, обход институционализирован в продукте.
 
 ## Current Focus
 
