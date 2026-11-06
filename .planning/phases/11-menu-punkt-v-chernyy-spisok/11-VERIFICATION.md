@@ -1,17 +1,17 @@
 ---
 phase: 11-menu-punkt-v-chernyy-spisok
-verified: 2026-11-02T19:56:09Z
+verified: 2026-11-06T15:54:17Z
 status: passed
 score: 15/15 must-haves verified
 covered_files: [".planning/REQUIREMENTS.md", ".planning/debug/orca-terminal-second-shift.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-01-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-01-SUMMARY.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-02-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-02-SUMMARY.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-03-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-03-SUMMARY.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-04-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-04-SUMMARY.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-05-PLAN.md", ".planning/phases/11-menu-punkt-v-chernyy-spisok/11-05-SUMMARY.md", "README.en.md", "README.md", "cmd/goswitchd/main.go", "cmd/goswitchd/main_test.go", "docs/CONFIG.md", "docs/SPEC.md", "docs/adr/adr-008-spike-log.md", "internal/appid/appid.go", "internal/appid/appid_test.go", "internal/appid/export_test.go", "internal/config/config.go", "internal/config/config_test.go", "internal/config/load.go", "internal/config/writer.go", "internal/config/writer_test.go", "internal/indicator/indicator.go", "internal/indicator/menu.go", "internal/indicator/menu_test.go", "internal/session/actor.go", "internal/session/actor_test.go", "mise.toml", "skills/goswitch-config/SKILL.md", "test/e2e/case_menu.go", "test/e2e/case_menu_blocklist.go", "test/e2e/case_menu_blocklist_test.go", "test/e2e/main.go"]
-covered_digest: "v4:sha256:ef77990feb185e6897f20eb12bfc5c45db44aa78ed183be43b83edf99dc651da"
+covered_digest: "v4:sha256:f036cc3a179116df4738328c6df3b897923084d34863b425ca8a75c4214f8a16"
 behavior_unverified: 0
 overrides_applied: 0
 behavior_unverified_items: []
 re_verification:
   previous_status: passed
   previous_score: 15/15
-  stale_reason: "Прошлый отчёт (verified 2026-11-01T20:55:00Z, passed 15/15) устарел ТОЛЬКО сменой covered-файлов после прогона: PR #27 (merge 6086cdb, коммит 5a259ad «fix(session): verifyDead class rides app memory», Orca first-gesture fix) изменил internal/session/actor.go и internal/session/actor_test.go. Пробелов в прошлом отчёте не было; это stale-refresh по текущему дереву, включающему PR #27"
+  stale_reason: "Прошлый отчёт (verified 2026-11-02T19:56:09Z, passed 15/15, digest v4:ef7799…, коммит dda1e0b) устарел ТОЛЬКО записями в covered-файлах после прогона: закрытие фаз 12/13 и merge c54a388 (HEAD) добавили контент в 7 covered-входов — REQUIREMENTS.md (трекинг статусов 12/13), README.md/README.en.md, docs/CONFIG.md, docs/adr/adr-008-spike-log.md, mise.toml, test/e2e/main.go (регистрация term-line-probe). Всё добавленное — аддитивная работа фаз 12/13; ни одна строка фазы 11 не изменена: git diff 6086cdb..HEAD по internal/session/, internal/indicator/, internal/config/, internal/appid/, cmd/ — ПУСТ. Пробелов в прошлом отчёте не было; это stale-refresh по текущему дереву"
   gaps_closed: []
   gaps_remaining: []
   regressions: []
@@ -33,37 +33,39 @@ coincidental_reliance_items:
 # Phase 11: MENU — пункт «в чёрный список» Verification Report
 
 **Phase Goal:** Пользователь добавляет текущее приложение в чёрный список автокоррекции одним кликом в трей-меню — без ручного редактирования YAML
-**Verified:** 2026-11-02T19:56:09Z
-**Status:** passed (15/15 — stale-refresh после PR #27; обе human-приёмки закрыты 2026-11-01 и перенесены как закрытые)
-**Re-verification:** Yes — stale-refresh: прошлый PASS (15/15, 2026-11-01) устарел сменой covered-файлов (actor.go/actor_test.go, PR #27 Orca first-gesture fix); пробелов в нём не было
+**Verified:** 2026-11-06T15:54:17Z
+**Status:** passed (15/15 — stale-refresh после закрытия фаз 12/13 и merge c54a388; обе human-приёмки закрыты 2026-11-01 и перенесены как закрытые)
+**Re-verification:** Yes — stale-refresh: прошлый PASS (15/15, 2026-11-02, digest ef7799…) устарел записями фаз 12/13 в covered-входах (трекинг/доки/задачи/реестр e2e); исходный код фазы 11 не тронут (пустой дифф 6086cdb..HEAD по всем фазовым пакетам); пробелов в прошлом отчёте не было
 
 ## Goal Achievement
 
-Фаза достигнута и остаётся достигнутой на текущем дереве (HEAD 05e5ed4, включает PR #27 / merge 6086cdb). Вся цепочка MENU-01 существует, проводна и доказана поведенчески: пункт id 16 (menu.go), fresh-машина (actor.go), writer (11-03), клик-композиция с гвардами (main.go), живой e2e на ВМ (adr-008, датированные PASS-ряды). Причина устаревания — PR #27 — довёл до actor.go/actor_test.go только app-memory расширение behavioral-класса (orca-first-gesture-dead, вердикт владельца 2026-11-02): ни один блок-лист-механизм фазы 11 не изменён (проверено полным диффом 5a259ad по actor.go и перепрогоном корпусов на текущем дереве). Обе human-приёмки закрыты 2026-11-01 живыми ВМ-рядами по делегации владельца («Тестируй сам в виртуалке») — перенесены как закрытые, не переоткрыты.
+Фаза достигнута и остаётся достигнутой на текущем дереве (HEAD c54a388 — merge ветки Фазы 12 в ветку Фазы 13, «веха v1.2 все фазы закрыты»). Вся цепочка MENU-01 существует, проводна и доказана поведенчески: пункт id 16 (menu.go), fresh-машина (actor.go), writer, клик-композиция с гвардами (main.go), живой e2e на ВМ (adr-008, датированные PASS-ряды). Причина устаревания — пост-прогонные записи фаз 12/13 в covered-входах — не тронула ни одного механизма фазы 11: дифф 6086cdb..HEAD по internal/session/, internal/indicator/, internal/config/, internal/appid/, cmd/ ПУСТ (проверено верификатором этого прогона); изменения ограничились аддитивным контентом фаз 12/13 в REQUIREMENTS.md (трекинг статусов), README ×2 и docs/CONFIG.md (рецепры A11Y), adr-008 (новые ряды 12/13), mise.toml (задача e2e-term-line-probe) и test/e2e/main.go (регистрация term-line-probe, +10 строк вокруг — фазовая строка «menu-blocklist» цела, см. Behavioral Spot-Checks). Обе human-приёмки закрыты 2026-11-01 живыми ВМ-рядами по делегации владельца («Тестируй сам в виртуалке») — перенесены как закрытые, не переоткрыты.
 
 ### Observable Truths
 
+Все 15 истин прошлого отчёта перепроверены на HEAD c54a388 (quick-regression по политике re-verification: существование + здравость + перепрогон корпусов; исходники фазовых пакетов байт-идентичны состоянию прошлого прогона, поэтому номера строк сдвинулись только в test/e2e/main.go и mise.toml — обновлены в таблицах ниже).
+
 | #   | Truth   | Status     | Evidence       |
 | --- | ------- | ---------- | -------------- |
-| 1   | SC1: пункт «Добавить ИмяПриложения в чёрный список» (id 16) виден; клик пишет regexp.QuoteMeta в apps_blocklist (дедуп, потолок 64) и автокоррекция замолкает без рестарта | ✓ VERIFIED | `menu.go:76` menuIDBlocklistApp=16 (реестр :501, rootKids после ACToggle); композиция `blocklistToggle.add` (main.go:436-484): empty-path WARN → гварды known/covered/full → `regexp.QuoteMeta(app)` main.go:469 → `t.write` = config.AppendAutocorrectBlocklist (main.go:419) → `t.reload` = syncReload+FoldAppliedConfig (main.go:254); корпус `TestBlocklist*` (трассер+гварды+порядок) — ok 1.158s на этом прогоне; живой ряд adr-008:716 (menu-blocklist PASS 2026-11-01 00:27 UTC) |
-| 2   | SC2: запись атомарна — golden-дифф «только новая строка», комментарии целы, pre-write валидация, atomic rename | ✓ VERIFIED | `writer.go:92` AppendAutocorrectBlocklist → rewriteAtomically (:121) + decodeValid pre-write гейт (:274, семантика Load); корпус `TestWriter_Append*\|TestMaxAutocorrectBlocklistExport` — ok 1.703s на этом прогоне |
-| 3   | SC3 (в сужении D-03): неизвестная/несвежая личность — пункт неактивен со статической меткой без имени и пояснений; демон не угадывает, :1.NN не становится ни меткой, ни паттерном | ✓ VERIFIED | Двойной барьер: actor `blocklistStateLocked` (actor.go:3133-3145) отдаёт ПУСТОЕ имя при !fresh; menu `blocklistProps` (menu.go:578-585) — `!fresh \|\| app==""` → labelBlocklistApp disabled; bridgeApp отказывает namespace реестра (appid.go:211, registryPathPrefix); `TestBridgeApp_RefusesRegistryNamespace` + `TestBlocklistGuardMatrixSilent` GREEN |
-| 4   | SC4: имя с метасимволами не ломает конфиг (строгий декодер принимает); отказ потолка 64 виден состоянием пункта в трее | ✓ VERIFIED | TestWriter_AppendMetacharPatterns GREEN (QuoteMeta-литерал переживает строгий Load); labelBlocklistFull «Чёрный список заполнен — 64/64» (menu.go:94) disabled; sentinel errAutocorrectBlocklistOverCeil (config.go:72) ДО записи, файл байт-нетронут. «Уведомление из трея» = состояние пункта — осознанное решение (десктоп-уведомления невидимы, UAT фазы 7; зафиксировано в CONTEXT и SPEC-ревизии) |
-| 5   | D-04: macroChordWhat « — язык»; метка «super+space — язык»; README синхронны | ✓ VERIFIED | `menu.go:102` macroChordWhat = " — язык"; grep « — язык»: README.md:100,102 и README.en.md:97,99; пин в TestMenuLayout GREEN |
-| 6   | D-01: covered — галочка (toggle-state 1); клик по отмеченному — no-op | ✓ VERIFIED | TestMenuBlocklistStateMatrixMarks (menu_test.go:325) GREEN; TestBlocklistGuardMatrixSilent/covered (main_test.go:1054) + TestWriter_AppendDedupNoOp (writer_test.go:783) GREEN; живой ряд: повторный клик — документ БАЙТ-ИДЕНТИЧЕН (adr-008:716) |
-| 7   | D-02: props пункта считаются AT REQUEST TIME из снапшота; живых a11y-запросов при открытии меню нет | ✓ VERIFIED | `blocklistProps` (menu.go:578) читает только поля снапшота blApp/blFresh/blCovered/blFull; TestMenuBlocklistItemGroupProps (menu_test.go:200) GREEN |
-| 8   | Freshness-машина: gain ставит fresh=true и пушит; деарм — blur отслеживаемой поверхности (loss-репорт наблюдателя, PushFocusedApp("")); engine-шум/synthetic свежесть не трогают | ✓ VERIFIED (перепроверено на пост-PR27 дереве) | `PushFocusedApp` (actor.go:1624-1645): name=="" → blApp=""/blFresh=false+пуш, gain → fresh=true+пуш; `HandleLifecycle` (actor.go:1414-1422) — свежесть НАМЕРЕННО не тронута engine-churn'ом (живая находка 11-05, дизайн зачётен прошлой верификацией и UAT: фокус wezterm → enabled=false); поля blApp/blFresh под a.mu (actor.go:420-433); TestActor_BlocklistItemFreshPushes (:5168) / FreshLosses (:5210) — ok 6.305s на этом прогоне (корпус TestActor_Blocklist\|TestTerminalClass_VerifyDead) |
-| 9   | Проводка OnConn: Callbacks.BlockCurrentApp, install-пуш начального состояния, EnsureAppid (безусловный старт наблюдателя) | ✓ VERIFIED (перепроверено на пост-PR27 дереве) | main.go:267 (`BlockCurrentApp: toggles.block.add`), :275 installMenuState (→ :329-334, читает BlocklistAppState), :284 actor.EnsureAppid(); indicator.go:107-111 поле Callbacks.BlockCurrentApp; menu.go:468-471 dispatchClick → cb.BlockCurrentApp с nil-гвардом; actor.go:1647-1661 EnsureAppid (безусловный once-per-actor, стартап-флаг), :3117 ensureAppid (ленивый), общее тело startAppidOnce (:3193); проводка хука actor.go:3170 `appid.WithGainHook(a.PushFocusedApp)`; TestActor_EnsureAppidUnconditional + TestObserver_GainHook/LossHook GREEN |
-| 10  | Потолок 64 — единый источник: config.MaxAutocorrectBlocklist экспортирован; actor читает его; старые имена отсутствуют | ✓ VERIFIED (перепроверено на пост-PR27 дереве) | config.go:42 `const MaxAutocorrectBlocklist = 64`; actor.go:3134 `len(...) >= config.MaxAutocorrectBlocklist`; grep `maxAutocorrectBlocklist` по *.go — 0 совпадений; TestMaxAutocorrectBlocklistExport GREEN. (См. coincidental_reliance: метка «64/64» — зеркальный литерал, IN-01) |
-| 11  | Гейты D-53 байт-неизменны (autoCorrectBoundary/acFocusedApp/терминальное вето не тронуты ФАЗОЙ) | ✓ VERIFIED (с пост-фазовой оговоркой) | Фаза гейты не тронута — сверено байт-уровнем против до-планового 34059d8 прошлой верификацией. Пост-фазовой работой PR #27 (владелец-одобренный фикс orca-first-gesture-dead, вне объёма фазы 11) classifyTerminal получил app-memory консульт (actor.go:3779 `rememberedVerifyDeadApp`), а autoCorrectBoundary/acFocusedApp НЕ тронуты (полный дифф 5a259ad: единственная изменённая строка с acFocusedApp — НОВЫЙ вызов чтения внутри terminalAppKey, не правка гейта); корпус гейтов `TestAutoCorrect\|TestAutoConfirm` — ok 1.487s на текущем дереве; семантические строки D-53 в SPEC целы (grep ×2) |
-| 12  | SPEC §4.3 несёт датированную ревизию меню v2 (2026-10-31); CONFIG.md дополнен; семантические строки D-53 целы | ✓ VERIFIED | grep-гейты зелёные на этом прогоне: «2026-10-31» ×5, « — язык» ×1, «Неизвестная идентичность приложения НЕ запрет» ×2 в docs/SPEC.md; «пункт меню» ×2, «QuoteMeta» ×1 в docs/CONFIG.md |
-| 13  | Round 2: клиентский Reset окна aftermath не стирает выученный класс, настоящий Reset вне окна стирает (fail-closed); PR #25 → main; сборка установлена | ✓ VERIFIED (перепроверено на пост-PR27 дереве) | `verifyDeadOnContextDeath` (actor.go:1990-2032): Reset при flipAftermathStop != nil → cancel+class survives, Reset вне окна → немедленная стирка, real FocusOut завершает aftermath; PR #27 дисциплину окна НЕ тронул (карве-аут кода идентичен, память едет РЯДОМ с классом); TestTerminalClass_VerifyDeadSurvivesClientResetAfterOwnFlip (:7962) + ClearedByResetOutsideAftermath (:8029) — ok на этом прогоне; `git merge-base --is-ancestor 2c00c10 HEAD` — да (PR #25 в main); хост-юнит active, ExecStart = releases/v1.2.0-alpha.2-83-gda4ced8 (сборка PR #27-приёмки, несёт и Round 2-фикс; двинулась вперёд с g2c00c10 легитимно — пост-фазовой фиксой владельца); строки «Round 2 install»/«Round 2 journal verify» в debug-доке на месте |
-| 14  | e2e-кейс menu-blocklist зарегистрирован, mise-задача на месте; живой цикл + re-pin menu-v2 — зелёные на ВМ | ✓ VERIFIED | test/e2e/case_menu_blocklist.go (454 строки; пин id 16, Event-канал, оракулы файла/Load/тишины/no-op, teardown) + case_menu_blocklist_test.go (74); «menu-blocklist» в реестре main.go:422; [tasks.e2e-menu-blocklist] mise.toml:279; датированные ряды adr-008:716-718 (menu-blocklist PASS 00:27 UTC; menu-v2 re-pin PASS 00:30 UTC, id 1/2/4/5 не сдвинуты) |
-| 15  | «Round 2 journal verify»: живой ряд фиксирует следующую коррекцию с одного нажатия | ✓ VERIFIED (ВМ-стенд, 2026-11-01 20:26–20:29 UTC — закрыто, перенесено) | Закрыто 2026-11-01 по делегации владельца («Тестируй сам в виртуалке»): живой ряд на сборке фикса g2c00c10 — один штатный verify-раунд обучения, далее 4 подряд коррекции done changed=true с ОДНОГО double-shift (включая 20:27:45 — воспроизведение исходного бага со 2-го нажатия), каждая с собственным флипом и ре-минтом; verify_dead=false — 0 строк за сессию; оговорка честности (эхо-Reset не пришёл — глотать было нечего, карве-аут pinned юнит-парой) — в UAT Тест 2 (pass). Хвост: PR #27 (2026-11-02) закрывает следующую итерацию того же бага (first-gesture после churn) — отдельная сессия, отдельная приёмка, фазу 11 не ретроспективно не инвалидирует |
+| 1   | SC1: пункт «Добавить ИмяПриложения в чёрный список» (id 16) виден; клик пишет regexp.QuoteMeta в apps_blocklist (дедуп, потолок 64) и автокоррекция замолкает без рестарта | ✓ VERIFIED (перепроверено на HEAD c54a388) | menu.go:76 menuIDBlocklistApp=16 (реестр :501, rootKids после ACToggle); композиция `blocklistToggle.add` (main.go:436-484): empty-path WARN → гварды known/covered/full → `regexp.QuoteMeta(app)` main.go:469 → `t.write` = config.AppendAutocorrectBlocklist (main.go:419) → `t.reload` = syncReload+FoldAppliedConfig (main.go:254); корпус `TestBlocklist*` — ok 1.039s на этом прогоне; живой ряд adr-008:716 (menu-blocklist PASS 2026-11-01 00:27 UTC) |
+| 2   | SC2: запись атомарна — golden-дифф «только новая строка», комментарии целы, pre-write валидация, atomic rename | ✓ VERIFIED (перепроверено) | writer.go:92 AppendAutocorrectBlocklist → rewriteAtomically (:121) + decodeValid pre-write гейт (:274, семантика Load); корпус `TestWriter_Append*\|TestMaxAutocorrectBlocklistExport` — ok 1.213s на этом прогоне |
+| 3   | SC3 (в сужении D-03): неизвестная/несвежая личность — пункт неактивен со статической меткой без имени и пояснений; демон не угадывает, :1.NN не становится ни меткой, ни паттерном | ✓ VERIFIED (перепроверено) | Двойной барьер: actor `blocklistStateLocked` (actor.go:3133+) отдаёт ПУСТОЕ имя при !fresh; menu `blocklistProps` — `!fresh \|\| app==""` → labelBlocklistApp disabled (menu.go:87 статическая метка); bridgeApp отказывает namespace реестра (appid.go, registryPathPrefix); `TestBridgeApp_RefusesRegistryNamespace` + `TestBlocklistGuardMatrixSilent` GREEN (корпуса этого прогона) |
+| 4   | SC4: имя с метасимволами не ломает конфиг (строгий декодер принимает); отказ потолка 64 виден состоянием пункта в трее | ✓ VERIFIED (перепроверено) | TestWriter_AppendMetacharPatterns GREEN (корпус этого прогона); labelBlocklistFull «Чёрный список заполнен — 64/64» (menu.go:94) disabled; sentinel errAutocorrectBlocklistOverCeil (config.go:72) ДО записи, файл байт-нетронут. «Уведомление из трея» = состояние пункта — осознанное решение (десктоп-уведомления невидимы, UAT фазы 7; зафиксировано в CONTEXT и SPEC-ревизии) |
+| 5   | D-04: macroChordWhat « — язык»; метка «super+space — язык»; README синхронны | ✓ VERIFIED (перепроверено) | menu.go:102 macroChordWhat = " — язык"; grep « — язык»: README.md:100,102 и README.en.md:97,99 (стрелки не сдвинуты README-дополнениями фаз 12/13); SPEC « — язык» ×1; пин в TestMenuLayout GREEN |
+| 6   | D-01: covered — галочка (toggle-state 1); клик по отмеченному — no-op | ✓ VERIFIED (перепроверено) | TestMenuBlocklistStateMatrixMarks GREEN; TestBlocklistGuardMatrixSilent/covered + TestWriter_AppendDedupNoOp GREEN (корпуса этого прогона); живой ряд: повторный клик — документ БАЙТ-ИДЕНТИЧЕН (adr-008:716) |
+| 7   | D-02: props пункта считаются AT REQUEST TIME из снапшота; живых a11y-запросов при открытии меню нет | ✓ VERIFIED (перепроверено) | blocklistProps читает только поля снапшота blApp/blFresh/blCovered/blFull; TestMenuBlocklistItemGroupProps GREEN (корпус этого прогона) |
+| 8   | Freshness-машина: gain ставит fresh=true и пушит; деарм — blur отслеживаемой поверхности (loss-репорт наблюдателя, PushFocusedApp("")); engine-шум/synthetic свежесть не трогают | ✓ VERIFIED (перепроверено на HEAD c54a388; actor.go байт-идентичен прошлому прогону) | `PushFocusedApp` (actor.go:1624): name=="" → blApp=""/blFresh=false+пуш, gain → fresh=true+пуш; `HandleLifecycle` (actor.go:1414-1422) — свежесть НАМЕРЕННО не тронута engine-churn'ом (живая находка 11-05, дизайн зачтён прежней верификацией и UAT); поля blApp/blFresh под a.mu; TestActor_BlocklistItemFreshPushes/FreshLosses — ok 6.239s на этом прогоне (корпус TestActor_Blocklist\|TestTerminalClass_VerifyDead) |
+| 9   | Проводка OnConn: Callbacks.BlockCurrentApp, install-пуш начального состояния, EnsureAppid (безусловный старт наблюдателя) | ✓ VERIFIED (перепроверено) | main.go:267 (`BlockCurrentApp: toggles.block.add`), :275 installMenuState, :284 actor.EnsureAppid(); indicator.go:107-111 поле Callbacks.BlockCurrentApp; menu.go:468 dispatchClick → cb.BlockCurrentApp с nil-гвардом; EnsureAppid (безусловный once-per-actor) + ленивый ensureAppid + общее тело startAppidOnce; проводка хука appid.WithGainHook(a.PushFocusedApp); TestActor_EnsureAppidUnconditional + TestObserver_GainHook/LossHook GREEN (корпус этого прогона) |
+| 10  | Потолок 64 — единый источник: config.MaxAutocorrectBlocklist экспортирован; actor читает его; старые имена отсутствуют | ✓ VERIFIED (перепроверено) | config.go:42 `const MaxAutocorrectBlocklist = 64`; actor.go:3134 `len(...) >= config.MaxAutocorrectBlocklist`; grep `maxAutocorrectBlocklist` по *.go — 0 совпадений (проверено этим прогоном); TestMaxAutocorrectBlocklistExport GREEN. (См. coincidental_reliance: метка «64/64» — зеркальный литерал, IN-01) |
+| 11  | Гейты D-53 байт-неизменны (autoCorrectBoundary/acFocusedApp/терминальное вето не тронуты ФАЗОЙ) | ✓ VERIFIED (перепроверено: actor.go не менялся с прошлого прогона — пустой дифф 6086cdb..HEAD) | Фаза гейты не тронуты (байт-уровень против до-планового 34059d8 — прошлый отчёт); PR #27 app-memory консульт в classifyTerminal не тронул autoCorrectBoundary/acFocusedApp (полный дифф 5a259ad — прошлый отчёт); после того actor.go не менялся ВООБЩЕ (пустой дифф); корпус гейтов `TestAutoCorrect\|TestAutoConfirm` — ok 1.420s на этом прогоне; семантические строки D-53 в SPEC целы (grep ×2 — этот прогон) |
+| 12  | SPEC §4.3 несёт датированную ревизию меню v2 (2026-10-31); CONFIG.md дополнен; семантические строки D-53 целы | ✓ VERIFIED (перепроверено) | grep-гейты зелёные на этом прогоне: «2026-10-31» ×5, « — язык» ×1, «Неизвестная идентичность приложения НЕ запрет» ×2 в docs/SPEC.md; «пункт меню» ×2, «QuoteMeta» ×1 в docs/CONFIG.md (дополнения фаз 12/13 в CONFIG.md фазовых строк не тронули) |
+| 13  | Round 2: клиентский Reset окна aftermath не стирает выученный класс, настоящий Reset вне окна стирает (fail-closed); PR #25 → main; сборка установлена | ✓ VERIFIED (перепроверено: actor.go байт-идентичен прошлому прогону) | verifyDeadOnContextDeath (actor.go:1990-2032): Reset при flipAftermathStop != nil → cancel+class survives, Reset вне окна → немедленная стирка; TestTerminalClass_VerifyDeadSurvivesClientResetAfterOwnFlip + ClearedByResetOutsideAftermath — ok 6.239s на этом прогоне; `git merge-base --is-ancestor 2c00c10 HEAD` — да (проверено этим прогоном); `git merge-base --is-ancestor 6086cdb HEAD` — да; хост-юнит active, ExecStart = releases/v1.2.0-alpha.2-83-gda4ced8; строки «Round 2 install»/«Round 2 journal verify» в debug-доке на месте (grep ×2 — этот прогон) |
+| 14  | e2e-кейс menu-blocklist зарегистрирован, mise-задача на месте; живой цикл + re-pin menu-v2 — зелёные на ВМ | ✓ VERIFIED (перепроверено) | test/e2e/case_menu_blocklist.go + case_menu_blocklist_test.go на месте (байт-нетронуты — пустой дифф ветки covered); «menu-blocklist» в реестре test/e2e/main.go:424 (стрелка 422→424: +2 строки аддитивной регистрации term-line-probe фазы 12 над ней; факт регистрации перепроверен grep'ом :169/:358/:424); [tasks.e2e-menu-blocklist] mise.toml:286 (было :279 — сдвиг от задач фаз 12/13, проверено grep'ом); датированные ряды adr-008:716-718 целы (grep — этот прогон) |
+| 15  | «Round 2 journal verify»: живой ряд фиксирует следующую коррекцию с одного нажатия | ✓ VERIFIED (ВМ-стенд, 2026-11-01 20:26–20:29 UTC — закрыто, перенесено) | Закрыто 2026-11-01 по делегации владельца («Тестируй сам в виртуалке»): живой ряд на сборке фикса g2c00c10 — один штатный verify-раунд обучения, далее 4 подряд коррекции done changed=true с ОДНОГО double-shift, каждая с собственным флипом и ре-минтом; verify_dead=false — 0 строк за сессию; оговорка честности — в UAT Тест 2 (pass). Хвост PR #27 (2026-11-02, first-gesture после churn) — отдельная сессия, отдельная приёмка, фазу 11 не инвалидирует |
 
 **Score:** 15/15 truths verified (0 present-behavior-unverified)
 
-**Верификатором независимо перепрогнано на текущем дереве (HEAD 05e5ed4):** go build ./... OK; go vet ./... OK; корпусы -race — internal/session `TestActor_Blocklist\|TestTerminalClass_VerifyDead` ok 6.305s, `TestAutoCorrect\|TestAutoConfirm` (гейты D-53) ok 1.487s, `TestFlapWindowContextIdentity\|SameAppFreshContextFirstPress` (PR #27) ok 1.473s; internal/indicator `TestMenuLayout\|TestMenuBlocklist` ok 1.050s; internal/config `TestWriter_Append\|TestMaxAutocorrectBlocklistExport` ok 1.703s; cmd/goswitchd `TestBlocklist` ok 1.158s; internal/appid `TestObserver_GainHook\|TestObserver_LossHook\|TestBridgeApp_RefusesRegistryNamespace` ok 5.095s; grep-гейты доков/README/mise/e2e-реестра — все зелёные; debt-marker скан изменённых файлов (actor.go, actor_test.go) — чист.
+**Верификатором независимо перепрогнано на текущем дереве (HEAD c54a388, merged tree фаз 12/13):** go build ./... OK; корпусы -race — internal/session `TestActor_Blocklist\|TestTerminalClass_VerifyDead` ok 6.239s, `TestAutoCorrect\|TestAutoConfirm` (гейты D-53) ok 1.420s; internal/indicator `TestMenuLayout\|TestMenuBlocklist` ok 1.016s; internal/config `TestWriter_Append\|TestMaxAutocorrectBlocklistExport` ok 1.213s; cmd/goswitchd `TestBlocklist` ok 1.039s; internal/appid `TestObserver_GainHook\|TestObserver_LossHook\|TestBridgeApp_RefusesRegistryNamespace` ok 5.070s; grep-гейты доков/README/mise/e2e-реестра — все зелёные; debt-marker скан единственного изменённого covered-кода (test/e2e/main.go) — чист (rc=1 на обоих grep).
 
 ### Deferred Items
 
@@ -73,51 +75,54 @@ coincidental_reliance_items:
 
 | # | Finding | Category | Why Advisory |
 |---|---------|----------|--------------|
-| — | None | — | новых unevidenced находок Step 7 на этом прогоне нет; PR #27 — задокументированная, протестированная, владельцем-принятая пост-фазовая работа (см. truth 11/13), не находка |
+| — | None | — | новых unevidenced находок Step 7 на этом прогоне нет; записи фаз 12/13 в covered-входах — задокументированная, протестированная, владельцем-принятая пост-фазовая работа (рецепты A11Y, задача/кейс term-line-probe), не находка |
 
-Примечания по известным находкам ревью (11-REVIEW.md WR-01..WR-04, IN-01, IN-02 — документированные advisories, перенесены из прошлого отчёта): ни одна не инвалидирует must-have. WR-03 частично разрешён PR #27 (фальсифицированная посылка «different object inside the window = real switch» снята — reset keys by app identity, TestFlapWindowContextIdentity_DifferentAppWipesClass GREEN).
+Примечания по известным находкам ревью (11-REVIEW.md WR-01..WR-04, IN-01, IN-02 — документированные advisories, перенесены из прошлого отчёта): ни одна не инвалидирует must-have. WR-03 частично разрешён PR #27 (снят фальшивой посылкой — reset keys by app identity, TestFlapWindowContextIdentity_DifferentAppWipesClass GREEN — прошлый отчёт).
 
-Flagged assumption из SUMMARY (spec-less probe fallback: `{"requirement_id":"MENU-01","category":"unclassified","status":"unresolved"}`) — учтена (перенесено из прошлого отчёта): край «неизвестная личность» фактически покрыт 7-строчной матрицей состояний, fresh-машиной, гвард-матрицей и guard'ом реестра — все GREEN на текущем дереве; строка остаётся формально unresolved как артефакт классификации проба, не как пробел реализации.
+Flagged assumption из SUMMARY (spec-less probe fallback: `{"requirement_id":"MENU-01","category":"unclassified","status":"unresolved"}`) — учтена (перенесено из прошлого отчёта): край «неизвестная личность» фактически покрыт матрицей состояний, fresh-машиной, гвард-матрицей и guard'ом реестра — все GREEN на текущем дереве; строка остаётся формально unresolved как артефакт классификации проба, не как пробел реализации.
 
 ### Required Artifacts
 
+Все фазовые артефакты перепроверены существованием + здравостью (grep-пины этого прогона); исходников, изменившихся с прошлого прогона, среди них НЕТ (пустой дифф 6086cdb..HEAD по всем пакетам):
+
 | Artifact | Expected    | Status | Details |
 | -------- | ----------- | ------ | ------- |
-| `internal/indicator/menu.go` | id 16, матрица состояний, сеттер, dispatchClick, D-04 | ✓ VERIFIED | :76/:87/:94/:102/:310/:416/:468/:501/:524/:578 — все элементы на месте (пост-PR27 дереве) |
+| `internal/indicator/menu.go` | id 16, матрица состояний, сеттер, dispatchClick, D-04 | ✓ VERIFIED | :76/:87/:94/:102/:320-321/:416/:468/:501 — все элементы на месте (grep-пины этого прогона) |
 | `internal/indicator/indicator.go` | Callbacks.BlockCurrentApp | ✓ VERIFIED | :107-111 |
-| `internal/indicator/menu_test.go` | layout/матрица/дельты/клик пины | ✓ VERIFIED | TestMenuBlocklistItemGroupProps :200, TestMenuBlocklistStateMatrixMarks :325 — корпус GREEN |
-| `internal/appid/appid.go` | WithGainHook вне o.mu; guard реестра | ✓ VERIFIED | :116-123/:205-211/:340/:367/:385; хук-корпус GREEN |
-| `internal/session/actor.go` | PushFocusedApp/fresh, BlocklistAppState, EnsureAppid, fold-пуш, Round 2 aftermath | ✓ VERIFIED (фокус stale-refresh) | :420-433 (blApp/blFresh под a.mu), :1414-1422 (свежесть не в HandleLifecycle), :1606/:2467-2477 (install/fold пуши), :1624-1645/:1647-1661/:1667-1672, :3108-3159, :3170, :1990-2032 (aftermath карве-аут не тронут PR #27) |
-| `internal/session/actor_test.go` | freshness/fold/accessor/ensure + Round 2 пины | ✓ VERIFIED (фокус stale-refresh) | :5168/:5210/:5452/:7962/:8029 — все фазовые тест-функции живы на пост-PR27 файле и GREEN |
-| `internal/config/writer.go` | AppendAutocorrectBlocklist | ✓ VERIFIED | :92-121; pre-write decodeValid :274; корпус GREEN |
+| `internal/indicator/menu_test.go` | layout/матрица/дельты/клик пины | ✓ VERIFIED | корпус `TestMenuLayout\|TestMenuBlocklist` ok 1.016s на этом прогоне |
+| `internal/appid/appid.go` | WithGainHook вне o.mu; guard реестра | ✓ VERIFIED | хук-корпус ok 5.070s на этом прогоне |
+| `internal/session/actor.go` | PushFocusedApp/fresh, BlocklistAppState, EnsureAppid, fold-пуш, Round 2 aftermath | ✓ VERIFIED (байт-нетронут с прошлого прогона) | :420-433, :1414-1422, :1612/:1624/:1653/:1667/:3124-3164, :1990-2032 — grep-пины этого прогона |
+| `internal/session/actor_test.go` | freshness/fold/accessor/ensure + Round 2 пины | ✓ VERIFIED (байт-нетронут) | корпус ok 6.239s на этом прогоне |
+| `internal/config/writer.go` | AppendAutocorrectBlocklist | ✓ VERIFIED | :92/:121/:274; корпус ok 1.213s |
 | `internal/config/load.go` | decodeValid (единая Load-семантика) | ✓ VERIFIED | используется pre-write гейтом writer.go:274 |
-| `internal/config/config.go` | MaxAutocorrectBlocklist=64 + sentinel | ✓ VERIFIED | :42/:72/:479-482; 0 использований старого имени |
-| `cmd/goswitchd/main.go` | click-композиция + проводка OnConn | ✓ VERIFIED | :254/:267/:275/:284/:329-334/:418-419/:436-484 |
-| `cmd/goswitchd/main_test.go` | трассер + гвард-матрица | ✓ VERIFIED | TestBlocklistClickTracer :827, TestBlocklistGuardMatrixSilent :1054 — GREEN |
-| `test/e2e/case_menu_blocklist.go` | живой кейс с оракулами | ✓ VERIFIED | 454 строки + тест-файл 74 строки |
-| `test/e2e/main.go` + `mise.toml` | регистрация + задача | ✓ VERIFIED | main.go:422, mise.toml:279 |
-| `docs/SPEC.md` / `docs/CONFIG.md` | датированная ревизия + контракт | ✓ VERIFIED | все grep-гейты зелёные |
-| `README.md` / `README.en.md` | D-04 строки | ✓ VERIFIED | :100/:102 и :97/:99 « — язык» |
+| `internal/config/config.go` | MaxAutocorrectBlocklist=64 + sentinel | ✓ VERIFIED | :42/:72/:479; 0 использований старого имени (grep этого прогона) |
+| `cmd/goswitchd/main.go` | click-композиция + проводка OnConn | ✓ VERIFIED | :254/:267/:275/:284/:329/:419/:469 — grep-пины этого прогона |
+| `cmd/goswitchd/main_test.go` | трассер + гвард-матрица | ✓ VERIFIED | корпус `TestBlocklist` ok 1.039s |
+| `test/e2e/case_menu_blocklist.go` (+ тест) | живой кейс с оракулами | ✓ VERIFIED | файлы на месте, байт-нетронуты (пустой дифф) |
+| `test/e2e/main.go` + `mise.toml` | регистрация + задача | ✓ VERIFIED | main.go:424 (сдвиг +2 от регистрации term-line-probe — фазовая строка цела), mise.toml:286 |
+| `docs/SPEC.md` / `docs/CONFIG.md` | датированная ревизия + контракт | ✓ VERIFIED | все grep-гейты зелёные (этот прогон) |
+| `README.md` / `README.en.md` | D-04 строки | ✓ VERIFIED | :100/:102 и :97/:99 « — язык» (стрелки не сдвинуты) |
 | `.planning/debug/orca-terminal-second-shift.md` | ряды Round 2 | ✓ VERIFIED | «Round 2 install» + «Round 2 journal verify» на месте |
+| `docs/adr/adr-008-spike-log.md` | датированные ряды фазы 11 | ✓ VERIFIED | :716-718 целы (дополнения фаз 12/13 — новые секции ниже, фазовые ряды нетронуты) |
 
 ### Key Link Verification
 
-Все 13 линков планов перепроверены вручную на текущем дереве (инструмент verify.key-links не парсит аннотированные from/to — как и в прошлом прогоне):
+Все 13 линков планов перепроверены grep-пинами на текущем дереве (исходники байт-идентичны прошлому прогону; инструмент verify.key-links не парсит аннотированные from/to — как и прежде):
 
 | From | To  | Via | Status | Details |
 | ---- | --- | --- | ------ | ------- |
-| menu.go dispatchClick menuIDBlocklistApp | main.go композиция | Callbacks.BlockCurrentApp | ✓ WIRED | menu.go:468-471 → main.go:267 → blocklistToggle.add :456 |
-| main.go композиция | actor.BlocklistAppState + FoldAppliedConfig | аксессор + toggleReload | ✓ WIRED | main.go:418 state:, :254 reload = syncReload+Fold |
+| menu.go dispatchClick menuIDBlocklistApp | main.go композиция | Callbacks.BlockCurrentApp | ✓ WIRED | menu.go:468 → main.go:267 → blocklistToggle.add |
+| main.go композиция | actor.BlocklistAppState + FoldAppliedConfig | аксессор + toggleReload | ✓ WIRED | main.go:419 state-источник, :254 reload = syncReload+Fold |
 | main.go композиция | config.AppendAutocorrectBlocklist | единственный persist path, QuoteMeta до вызова | ✓ WIRED | main.go:419, :469 |
 | writer.go append | rewriteAtomically | temp same-dir + rename 0600 | ✓ WIRED | writer.go:92→121 |
 | writer.go pre-write | load.go decodeValid | отказ до rename | ✓ WIRED | writer.go:274 |
 | config.MaxAutocorrectBlocklist | actor full-состояние | единый источник | ✓ WIRED | actor.go:3134 |
-| appid.go run() хук | actor.PushFocusedApp | WithGainHook вне o.mu | ✓ WIRED | actor.go:3170; appid.go:367/:385 (после снятия мьютекса) |
-| Identity-layer деарм (loss/blur) | fresh=false + пуш | свежесть живёт в слое identity | ✓ WIRED | actor.go:1628-1641; TestActor_BlocklistItemFreshLosses GREEN (перепрочено: HandleLifecycle :1414-1422 свежесть намеренно не трогает — дизайн 11-05, зачтён прежней верификацией) |
-| actor pushBlocklistAppLocked/fold | menu.SetBlocklistApp | MenuSync-шов, дельты | ✓ WIRED | actor.go:3153-3159 → menu.go:310-321 |
-| SPEC-ревизия меню v2 | internal/indicator/menu.go | спека прежде кода | ✓ WIRED | ревизия SPEC ↔ реализация (id 16, D-01/D-03, D-04) |
-| debug-док Round 2 гипотеза | actor.go verifyDeadOnContextDeath | aftermath-карве-аут | ✓ WIRED | :1990-2032; тест-пара GREEN на пост-PR27 дереве |
-| e2e case Event id 16 | живой демон dbusmenu.Event | канал case_menu.go | ✓ WIRED | регистрация main.go:422; живой PASS-ряд adr-008:716 |
+| appid.go run() хук | actor.PushFocusedApp | WithGainHook вне o.mu | ✓ WIRED | actor.go (проводка в startAppid); корпус хуков GREEN |
+| Identity-layer деарм (loss/blur) | fresh=false + пуш | свежесть живёт в слое identity | ✓ WIRED | actor.go:1624; корпус FreshLosses GREEN |
+| actor pushBlocklistAppLocked/fold | menu.SetBlocklistApp | MenuSync-шов, дельты | ✓ WIRED | actor.go:3157 → menu.go:320-321 (дельты covered) |
+| SPEC-ревизия меню v2 | internal/indicator/menu.go | спека прежде кода | ✓ WIRED | ревизия SPEC ↔ реализация (id 16, D-01/D-03, D-04) — гейты зелёные |
+| debug-док Round 2 гипотеза | actor.go verifyDeadOnContextDeath | aftermath-карве-аут | ✓ WIRED | :1990-2032; тест-пара GREEN на этом прогоне |
+| e2e case Event id 16 | живой демон dbusmenu.Event | канал case_menu.go | ✓ WIRED | регистрация main.go:424; живой PASS-ряд adr-008:716 |
 | e2e silence oracle | case_autocorrect.go blocklist-silent машина | app-blocked абстейнция | ✓ WIRED | переиспользован; fired=0, одна app-blocked в живом ряду |
 
 ### Data-Flow Trace (Level 4)
@@ -131,25 +136,27 @@ Flagged assumption из SUMMARY (spec-less probe fallback: `{"requirement_id":"M
 
 ### Behavioral Spot-Checks
 
-Все команды исполнены верификатором на текущем дереве (HEAD 05e5ed4, пост-PR27) 2026-11-02:
+Все команды исполнены верификатором на текущем дереве (HEAD c54a388, merged tree фаз 12/13) 2026-11-06:
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Fresh-машина + fold + аксессор + Round 2 цикл + fail-closed пины (фокус stale-refresh) | `go test ./internal/session/ -race -count=1 -run 'TestActor_Blocklist\|TestTerminalClass_VerifyDead'` | ok 6.305s | ✓ PASS |
-| Гейты D-53 (не сломаны PR #27) | `go test ./internal/session/ -race -count=1 -run 'TestAutoCorrect\|TestAutoConfirm'` | ok 1.487s | ✓ PASS |
-| PR #27 собственные контракты (не влияют на фазу 11) | `go test ./internal/session/ -race -count=1 -run 'TestFlapWindowContextIdentity\|SameAppFreshContextFirstPress'` | ok 1.473s | ✓ PASS |
-| Layout/матрица/дельты/клик меню | `go test ./internal/indicator/ -race -count=1 -run 'TestMenuLayout\|TestMenuBlocklist'` | ok 1.050s | ✓ PASS |
-| Writer: golden/дедуп/потолок/метасимволы | `go test ./internal/config/ -race -count=1 -run 'TestWriter_Append\|TestMaxAutocorrectBlocklistExport'` | ok 1.703s | ✓ PASS |
-| Клик-композиция: трассер + гвард-матрица | `go test ./cmd/goswitchd/ -race -count=1 -run 'TestBlocklist'` | ok 1.158s | ✓ PASS |
-| Gain/loss хуки + guard реестра | `go test ./internal/appid/ -race -count=1 -run 'TestObserver_GainHook\|TestObserver_LossHook\|TestBridgeApp_RefusesRegistryNamespace'` | ok 5.095s | ✓ PASS |
-| Зелёная итерация (сборка) | `go build ./... && go vet ./...` | OK / OK | ✓ PASS |
-| Ancestry фиксов в main | `git merge-base --is-ancestor 2c00c10 HEAD && git merge-base --is-ancestor 6086cdb HEAD` | оба в HEAD | ✓ PASS |
-| Хост-юнит | `systemctl --user is-active goswitchd` + ExecStart | active; releases/v1.2.0-alpha.2-83-gda4ced8 (сборка PR #27-приёмки, несёт Round 2-фикс; см. truth 13) | ✓ PASS |
-| Doc-гейты | grep SPEC/CONFIG/README/mise/e2e-реестр | все зелёные (значения в truths 5/12/14) | ✓ PASS |
+| Fresh-машина + fold + аксессор + Round 2 цикл + fail-closed пины | `go test ./internal/session/ -race -count=1 -run 'TestActor_Blocklist\|TestTerminalClass_VerifyDead'` | ok 6.239s | ✓ PASS |
+| Гейты D-53 | `go test ./internal/session/ -race -count=1 -run 'TestAutoCorrect\|TestAutoConfirm'` | ok 1.420s | ✓ PASS |
+| Gain/loss хуки + guard реестра | `go test ./internal/appid/ -race -count=1 -run 'TestObserver_GainHook\|TestObserver_LossHook\|TestBridgeApp_RefusesRegistryNamespace'` | ok 5.070s | ✓ PASS |
+| Layout/матрица/дельты/клик меню | `go test ./internal/indicator/ -race -count=1 -run 'TestMenuLayout\|TestMenuBlocklist'` | ok 1.016s | ✓ PASS |
+| Writer: golden/дедуп/потолок/метасимволы | `go test ./internal/config/ -race -count=1 -run 'TestWriter_Append\|TestMaxAutocorrectBlocklistExport'` | ok 1.213s | ✓ PASS |
+| Клик-композиция: трассер + гвард-матрица | `go test ./cmd/goswitchd/ -race -count=1 -run 'TestBlocklist'` | ok 1.039s | ✓ PASS |
+| Зелёная итерация (сборка) | `go build ./...` | OK | ✓ PASS |
+| Ancestry фиксов в HEAD | `git merge-base --is-ancestor 2c00c10 HEAD && git merge-base --is-ancestor 6086cdb HEAD` | оба в HEAD | ✓ PASS |
+| Исходники фазы 11 нетронуты с прошлого прогона | `git diff --stat 6086cdb..HEAD -- internal/session/ internal/indicator/ internal/config/ internal/appid/ cmd/` | пусто (0 файлов) | ✓ PASS |
+| Фазовая строка в e2e-реестре (после регистрации term-line-probe фазы 12) | `grep -n "menu-blocklist" test/e2e/main.go` | :169/:358/:424 — регистрация цела | ✓ PASS |
+| Хост-юнит | `systemctl --user is-active goswitchd` + ExecStart | active; releases/v1.2.0-alpha.2-83-gda4ced8 | ✓ PASS |
+| Doc-гейты | grep SPEC/CONFIG/README/mise/e2e-реестр/debug-док/adr-008 | все зелёные (значения в truths 5/12/13/14) | ✓ PASS |
+| Debt-маркеры изменённого covered-кода | `grep -E "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER" test/e2e/main.go` | 0 совпадений (rc=1) | ✓ PASS |
 
 ### Probe Execution
 
-Конвенциональных `scripts/*/tests/probe-*.sh` в проекте нет. Фазовый probe — живой e2e-прогон 11-05 (ssh-ритуал ВМ); перепрогон из этой среды невозможен (директива владельца de702f6: проверки продукта — только на ВМ goswitch-stand). Вердикты зафиксированы датированными рядами репозитория, произведёнными ровно теми командами, что пинит план (перенесено; ряды не изменились):
+Конвенциональных `scripts/*/tests/probe-*.sh` в проекте нет. Фазовый probe — живой e2e-прогон 11-05 (ssh-ритуал ВМ); перепрогон из этой среды невозможен (директива владельца de702f6: проверки продукта — только на ВМ goswitch-stand). Вердикты зафиксированы датированными рядами репозитория, произведёнными ровно теми командами, что пинит план (перенесено; ряды байт-нетронуты — adr-008:716-718 проверены grep'ом этого прогона):
 
 | Probe | Command | Result | Status |
 | ----- | ------- | ------ | ------ |
@@ -160,7 +167,7 @@ Flagged assumption из SUMMARY (spec-less probe fallback: `{"requirement_id":"M
 
 | Requirement | Source Plan | Description | Status | Evidence |
 | ----------- | ---------- | ----------- | ------ | -------- |
-| MENU-01 | 11-01..11-05 (все пять) | Динамический пункт «Добавить ИмяПриложения в чёрный список»: QuoteMeta, без дублей, потолок 64, атомарная запись + живая перечитка; при неизвестной личности пункт неактивен, демон не угадывает | ✓ SATISFIED | Полная цепочка перепроверена на текущем дереве: пункт id 16 → клик-композиция с гвардами → writer → живой e2e ВМ (датированные ряды); закрытая UAT-приёмка живым дампом (id 16, QuoteMeta, галочка, wezterm-гашение). REQUIREMENTS.md:19 [x], таблица :53 «Complete» |
+| MENU-01 | 11-01..11-05 (все пять) | Динамический пункт «Добавить ИмяПриложения в чёрный список»: QuoteMeta, без дублей, потолок 64, атомарная запись + живая перечитка; при неизвестной личности пункт неактивен, демон не угадывает | ✓ SATISFIED | Полная цепочка перепроверена на HEAD c54a388: пункт id 16 → клик-композиция с гвардами → writer → живой e2e ВМ (датированные ряды целы); закрытая UAT-приёмка живым дампом. REQUIREMENTS.md:19 [x], таблица :53 «Complete» (проверено этим прогоном — правки статусов 12/13 строку MENU-01 не тронули) |
 
 Orphaned requirements: нет — только MENU-01 маппится на Phase 11, объявлен всеми пятью планами.
 
@@ -173,7 +180,7 @@ All trackable CONTEXT.md decisions are honored by shipped artifacts: 4/4 (D-01 �
 | Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
 |-----------|-----------|--------|---------|----------|-----------------|---------|
 | internal/indicator/menu_test.go (blocklist-корпус) | MENU-01 | да | 0 | нет | Value/Behavioral (матрица 7 строк, дельты, dispatch) | VALID |
-| internal/session/actor_test.go (freshness/fold/accessor + Round 2; расширен PR #27 app-memory тестами) | MENU-01 | да | 0 | нет | Behavioral (полные циклы переходов) | VALID |
+| internal/session/actor_test.go (freshness/fold/accessor + Round 2) | MENU-01 | да | 0 | нет | Behavioral (полные циклы переходов) | VALID |
 | internal/config/writer_test.go + config_test.go (append-корпус) | MENU-01 | да | 0 | нет | Value (golden-дифф, байтовые сравнения, потолок) | VALID |
 | cmd/goswitchd/main_test.go (трассер + гвард-матрица) | MENU-01 | да | 0 | нет | Behavioral (write→reload порядок, счётчик writer) | VALID |
 | internal/appid/appid_test.go (GainHook/LossHook/registry guard) | MENU-01 | да | 0 | нет | Behavioral | VALID |
@@ -185,12 +192,12 @@ Disabled tests on requirements: 0. Circular patterns: 0. Insufficient assertions
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| — | — | TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER в изменённых (actor.go, actor_test.go) и фазовых файлах | — | не обнаружено (debt-marker gate чист; rc=1 на обоих grep) |
+| — | — | TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER в единственном изменённом covered-коде (test/e2e/main.go) и фазовых файлах | — | не обнаружено (rc=1 на обоих grep; прочие covered-файлы байт-нетронуты) |
 | — | — | placeholder/coming soon/not-yet-implemented | — | не обнаружено |
 | — | — | пустые реализации / console-only | — | не обнаружено |
-| go.mod/go.sum | — | новые модули | — | ноль (T-11-SC; PR #27 тоже без новых модулей — diff не трогает go.mod/go.sum) |
+| go.mod/go.sum | — | новые модули | — | ноль (дифф 6086cdb..HEAD go.mod/go.sum не трогает) |
 
-Evidence gate (#3304): изменённые с прошлого прогона файлы (actor.go, actor_test.go) проверены полным диффом + перепрогоном всех фазовых корпусов — детерминированных находок нет; unevidenced новых находок нет (advisory пуст).
+Evidence gate (#3304): с прошлого прогона среди covered-входов изменились только 7 файлов (REQUIREMENTS.md, README ×2, CONFIG.md, adr-008, mise.toml, test/e2e/main.go) — все проверены: изменения аддитивные (фазы 12/13), фазовые строки/регистрации/ряды целы (grep-гейты зелёные), debt-маркеров нет; детерминированных находок нет, unevidenced новых находок нет (advisory пуст).
 
 ### Human Verification Required
 
@@ -198,9 +205,9 @@ Evidence gate (#3304): изменённые с прошлого прогона �
 
 ### Gaps Summary
 
-Gaps нет. Stale-refresh подтверждает прошлый PASS на текущем дереве: единственное пост-фазовое изменение covered-файлов (PR #27, Orca first-gesture fix) не тронуло ни один механизм фазы 11 — блок-лист-состояние (blApp/blFresh под a.mu), fresh-машина (gain/loss через PushFocusedApp, engine-churn не трогает), EnsureAppid, BlocklistAppState, fold-пуш, проводка Callbacks.BlockCurrentApp, writer, потолок-единый-источник и Round 2 aftermath-карве-аут — всё на месте и зелёное (-race корпусы перепрогнаны верификатором 2026-11-02). PR #27 расширил classifyTerminal app-memory консультом (владельцем одобрено, спиннуто собственными тестами, корпус гейтов D-53 зелёный) — пост-фазовая эволюция, не регрессия фазы. Обе human-приёмки закрыты и перенесены. covered_digest пересчитан CLI (`verification.fingerprint`, вывод скопирован дословно): v4:sha256:ef77990feb185e6897f20eb12bfc5c45db44aa78ed183be43b83edf99dc651da — версия алгоритма поднялась v1→v4 вместе с gsd-tools, набор covered_files тот же 38-файловый.
+Gaps нет. Stale-refresh подтверждает прошлый PASS на текущем дереве (HEAD c54a388): единственная причина устаревания — аддитивные записи фаз 12/13 в covered-входы (трекинг REQUIREMENTS, доки README/CONFIG/adr-008, mise-задача и e2e-регистрация term-line-probe) — не тронула ни один механизм фазы 11: исходники всех фазовых пакетов (internal/session, internal/indicator, internal/config, internal/appid, cmd/goswitchd) байт-идентичны состоянию прошлого прогона (пустой дифф 6086cdb..HEAD), фазовая регистрация «menu-blocklist» и задача mise целы (grep-пины), датированные ряды adr-008 нетронуты. Все корпуса перепрогнаны верификатором на merged tree 2026-11-06 — зелёные. Обе human-приёмки закрыты и перенесены. covered_digest пересчитан CLI (`verification.fingerprint`, вывод скопирован дословно): v4:sha256:f036cc3a179116df4738328c6df3b897923084d34863b425ca8a75c4214f8a16 — изменился относительно прошлого (ef7799…) легитимно: 7 covered-входов получили контент фаз 12/13; набор covered_files тот же 38-файловый.
 
 ---
 
-_Verified: 2026-11-02T19:56:09Z_
+_Verified: 2026-11-06T15:54:17Z_
 _Verifier: Claude (gsd-verifier)_
