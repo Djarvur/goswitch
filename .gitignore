@@ -37,5 +37,15 @@ __pycache__/
 
 # go build output of the e2e stand (go build -o e2e ./test/e2e)
 /e2e
+/test/e2e/e2e
+
+# scratch `go build` in the repo root (release builds go to dist/, never here)
+/goswitchd
 .planning/tmp/
 .planning/phases/*/evidence-*.log
+
+# local GSD/ZCode runtime state (agents, sentinels, flags — never tracked)
+.gsd/
+.zcode/
+.zcodeignore
+.planning/.gsd-allow-shrink
