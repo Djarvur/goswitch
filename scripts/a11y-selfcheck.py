@@ -27,15 +27,23 @@ Exit codes: 0 success, 1 named failure, 2 usage error.
   1 — the application process is alive, but the tree/text field is not
       there: a11y not enabled, the app not restarted after enabling it, or
       incoming role calls denied (registered on the bus without servicing);
-  2 — usage error or no live process matches the name.
+  2 — usage error, no live process matches the name, or the environment
+      is broken (gi/Atspi unavailable, a11y bus unreachable): the probe
+      cannot answer.
 """
 import os
 import sys
 
-import gi
+try:
+    import gi
 
-gi.require_version("Atspi", "2.0")
-from gi.repository import Atspi  # noqa: E402
+    gi.require_version("Atspi", "2.0")
+    from gi.repository import Atspi  # noqa: E402
+except (ImportError, ValueError) as exc:  # no gi / no Atspi typelib
+    print(f"a11y-selfcheck: python3 gi/Atspi unavailable ({exc}) — "
+          "run via /usr/bin/python3 (PATH python3 may lack gi)",
+          file=sys.stderr)
+    sys.exit(2)  # environment failure, NOT the semantic "not visible" exit 1
 
 # The daemon's role canon (internal/appid/appid.go:85-96): the autocorrect
 # policy gates on role NUMBERS. The probe prints the same numbers the daemon
@@ -46,8 +54,14 @@ ROLE_PASSWORD_TEXT = 40  # RolePasswordText — visible but never corrected
 
 def applications():
     """Yield every AT-SPI application node on the desktop."""
-    desktop = Atspi.get_desktop(0)
-    for i in range(desktop.get_child_count()):
+    try:
+        desktop = Atspi.get_desktop(0)
+        count = desktop.get_child_count()
+    except Exception as exc:  # a11y bus unreachable (e.g. ssh without session env)
+        print(f"a11y-selfcheck: a11y bus unreachable ({exc}) — the probe "
+              "cannot answer", file=sys.stderr)
+        sys.exit(2)  # environment failure, NOT the semantic "not visible" exit 1
+    for i in range(count):
         app = desktop.get_child_at_index(i)
         if app is not None:
             yield app
