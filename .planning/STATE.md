@@ -3,8 +3,8 @@ gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Терминалы и видимость приложений
 status: Awaiting next milestone
-stopped_at: "v1.2: все 5 фаз закрыты (12 — решением владельца 2026-11-03, 13 — исполнена 2026-11-06; ветки слиты); next: проход верификаторов 9→13, verify-work, complete-milestone"
-last_updated: "2026-11-06T17:34:45.501Z"
+stopped_at: "v1.2: веха закрыта и заархивирована (PR #28, 4044ff8); релиз v1.2.0 опубликован 2026-11-06; next: /gsd-new-milestone"
+last_updated: "2026-11-06T20:23:02.000Z"
 last_activity: 2026-11-06
 last_activity_desc: Milestone v1.2 completed and archived
 state_head: df452a58381c4ac13f683bca337254c62bba23bc
@@ -127,7 +127,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- [ ] [Orca fix closure — Round 2] Round 1 (946b4cd, PR #24/fac7c89) слит и установлен (v1.2.0-alpha.2-12-g80f3955), приёмка владельца 2026-10-31 13:55 ПРОВАЛЕНА («работает со второго»). Round 2: гипотеза — клиентский `LifecycleReset` ~0,9 с после ре-минта стирает выученный класс (debug-док .planning/debug/orca-terminal-second-shift.md, секция «Round 2»); фикс + пассивная верификация по журналу = Task 1 плана 11-01 (ревизия 111ddfd); владелец освобождён от mid-phase приёмки («проверяй сам в виртуалке, не дергай меня»), by-ear зачёт — UAT end-of-phase (прецедент G-10-1).
+- None. (Прежний единственный хвост — Orca Round 2 — закрыт: PR #27 слит, by-ear приёмка владельца прошла 2026-10-31; запись удалена 2026-11-06 при послётахной приборке.)
 
 ### Blockers/Concerns
 
@@ -162,8 +162,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-06T16:05:00Z
-Stopped at: v1.2 — все 5 фаз закрыты, ветки 12+13 слиты; next: проход верификаторов 9→13, verify-work, complete-milestone
+Last session: 2026-11-06T20:23:00Z
+Stopped at: v1.2 — веха закрыта, заархивирована и выпущена (тег + GitHub-релиз v1.2.0, 2026-11-06); next: /gsd-new-milestone
 Resume file: None
 
 ## Operator Next Steps
