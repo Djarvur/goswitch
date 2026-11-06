@@ -361,7 +361,8 @@ the build itself never exposes (the Telegram snap — which, per the
 unconfined). Whether an application exposes its field is checked
 with a single command — `/usr/bin/python3 scripts/a11y-selfcheck.py
 <app>`: exit code 0 — the field is visible, 1 — a live process
-without a tree/field, 2 — no process.
+without a tree/field, 2 — no process, a usage error, or the probe
+environment is unavailable.
 
 If a leftover application-list line from earlier versions remains
 inside the `a11y` section, the whole config is rejected at load (the
