@@ -50,7 +50,7 @@ goswitch закрывает мою основную потребность: ис
 - Ubuntu 24.04 (или похожий дистрибутив) с GNOME на **Wayland** и IBus
   (стандартный ввод GNOME);
 - systemd user-сессия (стандарт для Ubuntu);
-- linux/amd64 (архитектура релизных бинарников).
+- linux/amd64 или linux/arm64 (архитектуры релизных бинарников).
 
 ## Установка
 
@@ -59,13 +59,15 @@ goswitch закрывает мою основную потребность: ис
 
 **Канал А — релизный архив (рекомендуется):**
 
-1. Возьмите `goswitch_<version>_linux_amd64.tar.gz` на странице
+1. Возьмите архив под архитектуру процессора:
+   `goswitch_<version>_linux_amd64.tar.gz` или
+   `goswitch_<version>_linux_arm64.tar.gz` на странице
    [Releases](https://github.com/Djarvur/goswitch/releases) — в архиве
    оба бинарника и `checksums.txt`.
 2. Распакуйте и установите:
 
    ```sh
-   tar -xzf goswitch_*_linux_amd64.tar.gz
+   tar -xzf goswitch_*_linux_*.tar.gz
    ./goswitchctl install
    ```
 

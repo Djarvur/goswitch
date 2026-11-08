@@ -3,9 +3,9 @@ gsd_state_version: "1.0"
 milestone: v1.2
 status: Awaiting next milestone
 stopped_at: "v1.2: веха закрыта и заархивирована (PR #28, 4044ff8); релиз v1.2.0 опубликован 2026-11-06; next: /gsd-new-milestone"
-last_updated: "2026-11-08T14:38:15.057Z"
+last_updated: "2026-11-08T16:45:00.000Z"
 last_activity: 2026-11-08
-last_activity_desc: Quick task 261108-o4k — README motivational intro + promo letter
+last_activity_desc: Quick task 261108-qwa — linux/arm64 в релизных бинарниках (goreleaser + README RU/EN)
 state_head: 41eae668e755c2ed5b0d2711668563fd83940a9d
 milestone_name: Терминалы и видимость приложений
 current_phase: 13
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-08 — Quick task 261108-o4k: README мотивационная вводная + письмо docs/PROMO.md
+Last activity: 2026-11-08 — Quick task 261108-qwa: linux/arm64 в релизных бинарниках (goreleaser + README RU/EN)
 
 ## Performance Metrics
 
@@ -151,6 +151,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 261108-o4k | README: мотивационная вводная часть + ироничное сопроводительное письмо (docs/PROMO.md) | 2026-11-08 | 41eae66 | [261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir](./quick/261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir/) |
+| 261108-qwa | Релизы: linux/arm64 в оба билда goreleaser (A7 исполнен, запрос владельца 2026-11-08) + обе архитектуры в README RU/EN | 2026-11-08 | b485d2f | [261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi](./quick/261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi/) |
 
 ## Deferred Items
 
@@ -168,8 +169,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-06T20:23:00Z
-Stopped at: v1.2 — веха закрыта, заархивирована и выпущена (тег + GitHub-релиз v1.2.0, 2026-11-06); next: /gsd-new-milestone
+Last session: 2026-11-08T16:45:00Z
+Stopped at: Quick task 261108-qwa завершён — arm64 в релизах (2 коммита: 9240d28, b485d2f; снапшот-verify зелёный, mise run ci зелёный); публикация arm64 — ближайшим релизным тегом; next: /gsd-new-milestone
 Resume file: None
 
 ## Operator Next Steps

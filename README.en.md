@@ -49,7 +49,7 @@ It runs as an **IBus input method engine** in your user session:
 - Ubuntu 24.04 (or a similar distro) with GNOME on **Wayland** and IBus
   (the GNOME default input framework);
 - a systemd user session (standard on Ubuntu);
-- linux/amd64 (the release binaries' architecture).
+- linux/amd64 or linux/arm64 (architectures of the release binaries).
 
 ## Install
 
@@ -58,13 +58,15 @@ handover, and engine activation — is one command: `goswitchctl install`.
 
 **Channel A — release archive (recommended):**
 
-1. Take `goswitch_<version>_linux_amd64.tar.gz` from the
+1. Take the archive matching your CPU architecture:
+   `goswitch_<version>_linux_amd64.tar.gz` or
+   `goswitch_<version>_linux_arm64.tar.gz` from the
    [Releases](https://github.com/Djarvur/goswitch/releases) page — the
    archive carries both binaries and `checksums.txt`.
 2. Unpack and install:
 
    ```sh
-   tar -xzf goswitch_*_linux_amd64.tar.gz
+   tar -xzf goswitch_*_linux_*.tar.gz
    ./goswitchctl install
    ```
 
