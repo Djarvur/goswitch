@@ -19,8 +19,8 @@
 # stamping and honestly report the "dev" fallback (D-37).
 #
 # Discretion decisions (CONTEXT A7, owner delegated to planner):
-#   - linux/amd64 only for v1 — the target platform is Ubuntu 24.04 amd64;
-#     add arm64 here (+ nothing else) on owner request.
+#   - linux/amd64 + linux/arm64 — arm64 added on owner request 2026-11-08;
+#     nothing beyond these two architectures (A7 "+ nothing else").
 #   - tag scheme is semver, first release v1.0.0 (tag is pushed by plan
 #     04-07 after the green gates).
 #   - asset format: tar.gz + sha256 checksums (T-04-03-01).
@@ -38,12 +38,14 @@ builds:
     main: ./cmd/goswitchd
     binary: goswitchd
     goos: [linux] # default is [darwin, linux, windows] — the daemon targets GNOME Wayland
-    goarch: [amd64] # default is [386, amd64, arm64] — +arm64 on owner request (A7)
+    goarch: [amd64, arm64] # default is [386, amd64, arm64] — arm64 added
+                           # on owner request 2026-11-08 (A7: exactly arm64,
+                           # nothing more)
   - id: goswitchctl
     main: ./cmd/goswitchctl
     binary: goswitchctl
     goos: [linux]
-    goarch: [amd64]
+    goarch: [amd64, arm64]
 
 archives:
   - formats: [tar.gz] # discretion A7 (tar.gz vs bare binaries); default naming
