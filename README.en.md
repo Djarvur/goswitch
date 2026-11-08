@@ -8,9 +8,9 @@ Apple dropped support for Intel MacBooks, and I had to change operating
 systems in a hurry. I have long disliked Windows, and I like Linux even
 less — but whatever does not kill me makes me stronger, so I chose Linux
 and settled on Ubuntu with Wayland. The result exceeded expectations: on
-my MacBook (an i7 with 64 GB of RAM — a perfectly capable machine that
-was simply dropped from support) Linux runs better than the last macOS
-did.
+my MacBook (an Intel Core i9 with 64 GB of RAM and a 1 TB SSD — a
+perfectly capable machine that was simply dropped from support) Linux
+runs better than the last macOS did.
 
 On macOS I had used Caramba Switcher for years — a program that fixes
 text typed in the wrong keyboard layout; I still use it on an ARM
