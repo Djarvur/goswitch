@@ -22,11 +22,11 @@ most of it with GLM 5.3 Flash, the tricky parts with GLM 5.3; I have
 not reviewed the code myself.
 
 goswitch covers my main need: correcting a word or a whole phrase typed
-in the wrong layout. Layout switching is there too, but it does not
-work very well: a significant share of the software I depend on is
-built on dirty hacks and outdated technologies — the X protocol over
-Wayland above all — so input fields are unreachable in such
-applications, and autocorrect mostly does not work there.
+in the wrong layout. Layout switching is there too, and it works
+perfectly. What works poorly is autocorrect: a significant share of the
+software I depend on is built on dirty hacks and outdated technologies —
+the X protocol over Wayland above all — so input fields are unreachable
+in such applications, and autocorrect mostly does not work there.
 
 Give it a try — and send patches if you think it can be done better.
 
