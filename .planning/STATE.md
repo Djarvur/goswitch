@@ -1,21 +1,21 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.2
-milestone_name: Терминалы и видимость приложений
 status: Awaiting next milestone
 stopped_at: "v1.2: веха закрыта и заархивирована (PR #28, 4044ff8); релиз v1.2.0 опубликован 2026-11-06; next: /gsd-new-milestone"
-last_updated: "2026-11-06T20:23:02.000Z"
-last_activity: 2026-11-06
-last_activity_desc: Milestone v1.2 completed and archived
-state_head: df452a58381c4ac13f683bca337254c62bba23bc
+last_updated: "2026-11-08T14:38:15.057Z"
+last_activity: 2026-11-08
+last_activity_desc: Quick task 261108-o4k — README motivational intro + promo letter
+state_head: 41eae668e755c2ed5b0d2711668563fd83940a9d
+milestone_name: Терминалы и видимость приложений
+current_phase: 13
+current_phase_name: A11Y — рецепты Telegram/ZCode
 progress:
   total_phases: 5
   completed_phases: 5
   total_plans: 27
   completed_plans: 27
   percent: 100
-current_phase: 13
-current_phase_name: A11Y — рецепты Telegram/ZCode
 ---
 
 # Project State
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-10-31)
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-11-06 — Milestone v1.2 completed and archived
+Last activity: 2026-11-08 — Quick task 261108-o4k: README мотивационная вводная + письмо docs/PROMO.md
 
 ## Performance Metrics
 
@@ -146,6 +146,12 @@ Recent decisions affecting current work:
 - [Phase 10 / G-10-1] Re-acceptance 2026-10-14 09:39 MSK — REJECTED владельцем: в обоих терминалах «вижу привет, и он удаляется». Журнально: оба жеста прошли уровнем-1 (done за 1,9–2,4 мс, мгновенный флип +0,03 мс) — терминальная ветка и оба фикса не получили управления, классификация терминала на хосте не включается (a11y-identity недоступна ac_role_errors=47, verifyDead не выучен к жесту); «появляется и удаляется» = инверсия delete-surrounding/commit на уровне-1. Нужен новый gap-цикл: /gsd-plan-phase 10 --gaps — фикс обязан реплеем журнальных рядов 09:39 доказываться ДО запуска владельцем (урок 2026-10-12). Откат на v1.1.1 по запросу владельца (не запрашивался). Ряды: DEBUG-term-host-live-failures.md Closure validation 2026-10-14 09:39; UAT Тест 3 rejected.
 - [Phase 10 / G-10-1] Re-acceptance round-2 (2026-10-14 19:21 MSK) — REJECTED: «поведение в wezterm НЕ изменилось». Журнал: терминальная ветка ВОШЛА в работу на хосте (done +144 мс vs 2 мс вчера; флип отложен +104 мс; terminal-veto +2 с — класс выучен впервые), т.е. фиксы round-2 работают как задумано; потеря сместилась на доставку пакета level-2 (перестановка вставка/BackSpace-форварды под хостовой задержкой wezterm; класс A2 внутри level-2; стенд невоспроизводим; verify-после слеп — answer-only клиент не пушит). Нужен цикл №3: доказуемая доставка чанков терминальной записи (двухфазность по Require-ответам клиента ИЛИ delete_surrounding_text вместо форвард-бекспейсов — поддержку проверить на стенде). Ряды: DEBUG Closure validation 19:21; UAT Тест 4 rejected. Откат владельцем не запрошен.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261108-o4k | README: мотивационная вводная часть + ироничное сопроводительное письмо (docs/PROMO.md) | 2026-11-08 | 41eae66 | [261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir](./quick/261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir/) |
+
 ## Deferred Items
 
 Items acknowledged and deferred at milestone close, most recent first:
@@ -167,6 +173,5 @@ Stopped at: v1.2 — веха закрыта, заархивирована и в
 Resume file: None
 
 ## Operator Next Steps
-
 
 - Start the next milestone with /gsd-new-milestone

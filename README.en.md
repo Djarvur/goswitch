@@ -2,6 +2,34 @@
 
 English · [Russian](README.md)
 
+## Why this project exists
+
+Apple dropped support for Intel MacBooks, and I had to change operating
+systems in a hurry. I have long disliked Windows, and I like Linux even
+less — but whatever does not kill me makes me stronger, so I chose Linux
+and settled on Ubuntu with Wayland. The result exceeded expectations: on
+my MacBook (an Intel Core i9 with 64 GB of RAM and a 1 TB SSD — a
+perfectly capable machine that was simply dropped from support) Linux
+runs better than the last macOS did.
+
+On macOS I had used Caramba Switcher for years — a program that fixes
+text typed in the wrong keyboard layout; I still use it on an ARM
+MacBook. For Linux I found no equivalent: I searched on my own and with
+the help of AI. In the course of development I understood why: Linux is
+a jumble of technical decisions, and building this kind of product for
+it is hard. So I wrote one myself. All of the code was produced by AI:
+most of it with GLM 5.3 Flash, the tricky parts with GLM 5.3; I have
+not reviewed the code myself.
+
+goswitch covers my main need: correcting a word or a whole phrase typed
+in the wrong layout. Layout switching is there too, and it works
+perfectly. What works poorly is autocorrect: a significant share of the
+software I depend on is built on dirty hacks and outdated technologies —
+the X protocol over Wayland above all — so input fields are unreachable
+in such applications, and autocorrect mostly does not work there.
+
+Give it a try — and send patches if you think it can be done better.
+
 **goswitch** fixes text typed in the wrong keyboard layout (EN ↔ RU) in any
 input field on GNOME Wayland — and switches layouts by hotkey. Type
 `ghbdtn`, press the hotkey, get `привет`.
