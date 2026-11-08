@@ -5,36 +5,30 @@ English · [Russian](README.md)
 ## Why this project exists
 
 Apple dropped support for Intel MacBooks, and I had to change operating
-systems in a hurry. I have never much liked Windows; I like Linux even
-less — but whatever does not kill me makes me stronger, so the choice
-fell on Linux. I picked up Ubuntu and Wayland — and in a sense it worked
-out: Linux runs on this MacBook even better than the last macOS did.
-The machine, for the record, is no junk: an i7 with 64 GB of RAM — a
-perfectly decent computer even by today's standards; it was simply
-dropped from support.
+systems in a hurry. I have long disliked Windows, and I like Linux even
+less — but whatever does not kill me makes me stronger, so I chose Linux
+and settled on Ubuntu with Wayland. The result exceeded expectations: on
+my MacBook (an i7 with 64 GB of RAM — a perfectly capable machine that
+was simply dropped from support) Linux runs better than the last macOS
+did.
 
-On macOS I was used to my tools, Caramba Switcher in particular (I
-still use it on an ARM MacBook), but it does not exist for Linux.
-Searching the web — on my own and with the help of AI — showed that
-nothing like it exists in Linux today. While building this product I
-understood why: Linux is a jumble of technical decisions, and building
-a product for it is rather hard. And I built it.
+On macOS I had used Caramba Switcher for years — a program that fixes
+text typed in the wrong keyboard layout; I still use it on an ARM
+MacBook. For Linux I found no equivalent: I searched on my own and with
+the help of AI. In the course of development I understood why: Linux is
+a jumble of technical decisions, and building this kind of product for
+it is hard. So I wrote one myself. All of the code was produced by AI:
+most of it with GLM 5.3 Flash, the tricky parts with GLM 5.3; I have
+not reviewed the code myself.
 
-In the interest of honesty: all of the code was written with the help
-of artificial intelligence — most of it with GLM 5.3 Flash, and the
-things Flash-tier models handled poorly with GLM 5.3. I have, of
-course, not looked at the code myself.
+goswitch covers my main need: correcting a word or a whole phrase typed
+in the wrong layout. Layout switching is there too, but it does not
+work very well: a significant share of the software I depend on is
+built on dirty hacks and outdated technologies — the X protocol over
+Wayland above all — so input fields are unreachable in such
+applications, and autocorrect mostly does not work there.
 
-The project covers the main problem — correcting a word or a whole
-phrase typed in the wrong layout. Layout switching is in there too,
-but in my opinion it does not work very well: a large share of the
-software I use is built on dirty hacks and outdated technologies — the
-X protocol over Wayland among them — so there is no sane way to reach
-the input fields, and autocorrect mostly does not work in such
-applications. Still, give it a try — it exists. And send your patches
-if you think it can be done better.
-
-Here is what came out of it:
+Give it a try — and send patches if you think it can be done better.
 
 **goswitch** fixes text typed in the wrong keyboard layout (EN ↔ RU) in any
 input field on GNOME Wayland — and switches layouts by hotkey. Type
