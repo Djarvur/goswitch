@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 17
+open_count: 18
 waived_count: 4
 fixed_count: 7
-total_count: 28
-last_updated: 2026-11-03T18:12:12.789Z
+total_count: 29
+last_updated: 2026-11-08T16:42:33.498Z
 ---
 
 # Broken Windows Ledger
@@ -43,6 +43,7 @@ last_updated: 2026-11-03T18:12:12.789Z
 | 26 | 11 | unrun-verify | mise.toml |  | 11-05: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24/#25): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD bc5a506 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean; the live stand runs (menu-blocklist + menu-v2) are the plan's own verification and are green | open |  | 2026-11-01T00:32:10.554Z |  |
 | 27 | 11 | unrun-verify | mise.toml |  | 11-05: literal 'mise run ci' unrun in the executor session (same toolchain seam, WINDOWS #23/#24/#25): GOROOT(mise go1.23.12) vs go binary(system 1.27.3); the SAME gates ran green directly on HEAD bc5a506 — go build/vet/test -race ./... (exit 0) + golangci-lint 2.15.0 0 issues + go mod tidy git-diff clean; the live stand runs (menu-blocklist + menu-v2) are the plan's own verification and are green | open |  | 2026-11-01T00:32:19.021Z |  |
 | 28 | 13 | deviation | docs/adr/adr-008-spike-log.md |  | cmdline-доказательство флага заменено на pid-дифференциал + экранный дифференциал дерева (Electron 44 переписывает argv/environ; буквальная форма verify невыполнима) | open |  | 2026-11-03T18:12:12.789Z |  |
+| 29 | quick-261108-qwa | deviation | .planning/quick/261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi/261108-qwa-PLAN.md |  | verify-гейты плана исполнены в эквивалентной форме: artifacts.json goarch-arm64 подсчитан вхождениями (compact JSON = 1 строка), EN-квалификация переформулирована во множественное число без запрещённого префикса; хостовое окружение потребовало go-индирект к mise-пину (GOROOT/PATH конфликт 1.23.12/1.27.3) | open |  | 2026-11-08T16:42:33.498Z |  |
 
 ````json
 [
@@ -380,8 +381,19 @@ last_updated: 2026-11-03T18:12:12.789Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-11-03T18:12:12.789Z",
-    "resolved_at": null,
-    "milestone": "v1.2"
+    "resolved_at": null
+  },
+  {
+    "id": 29,
+    "kind": "deviation",
+    "phase": "quick-261108-qwa",
+    "file": ".planning/quick/261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi/261108-qwa-PLAN.md",
+    "line": null,
+    "description": "verify-гейты плана исполнены в эквивалентной форме: artifacts.json goarch-arm64 подсчитан вхождениями (compact JSON = 1 строка), EN-квалификация переформулирована во множественное число без запрещённого префикса; хостовое окружение потребовало go-индирект к mise-пину (GOROOT/PATH конфликт 1.23.12/1.27.3)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-08T16:42:33.498Z",
+    "resolved_at": null
   }
 ]
 ````
