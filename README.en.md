@@ -514,6 +514,64 @@ IBus registry, and **restores your previous input sources** (and the
 accessibility magic above). Your `~/.config/goswitch/` directory is kept;
 remove it too with `goswitchctl uninstall --purge`.
 
+## Alternatives
+
+The genre's originals are proprietary: Punto Switcher (Windows) and
+Caramba Switcher (macOS, Windows) are closed-source and ship no Linux
+builds. Open analogues for Linux exist; below are six projects whose
+sources I have read as code, not as marketing claims (state as of
+November 2026; the registry of ideas worth borrowing from them lives in
+[docs/IDEAS.md](docs/IDEAS.md)).
+
+| Project | Language | Input | Applying edits | GNOME Wayland | License |
+|---------|----------|-------|----------------|---------------|---------|
+| [WaySwitch](https://github.com/Wetoshkin/WaySwitch) | Python | evdev + uaccess, AT-SPI, a GNOME Shell extension | uinput: Backspaces plus re-typing scan codes | yes (extension; GNOME 46–51) | MIT |
+| [lay](https://github.com/radislabus-star/lay-public) | Rust | evdev + uaccess; the IBus mode is auxiliary | uinput: Backspaces plus replaying physical keys | yes (GNOME Shell extension) | non-commercial |
+| [HumanType](https://github.com/Ms0Skrin/HumanType) | Python | evdev (device grab) + uaccess, GNOME Shell extension | uinput: key replay | yes | MIT |
+| [xswitcher](https://github.com/ds-voix/xswitcher) | Go | evdev; windows via X11 | uinput: Backspaces and re-typing | no (X11/XWayland) | AGPL-3 |
+| [WaylandSwitcher](https://github.com/Balans097/WaylandSwitcher) | Nim | evdev, runs as a root service | uinput + clipboard | yes | MIT |
+| [layout-switcher](https://github.com/gimgiwer/layout-switcher) | Rust | the keyboard is not intercepted | selection only: wl-paste + wtype | no (wtype: Sway, niri and other wlroots) | GPL-3 |
+
+The main architectural difference. All six read the keyboard directly
+from `/dev/input` and type through a uinput virtual keyboard; window
+focus, field role and application boundaries are unavailable under this
+approach and are recovered through side channels — GNOME Shell
+extensions, AT-SPI tree walks, or the clipboard. The privileges the
+uaccess rule grants to the active session go to every process of the
+user: WaySwitch's own README states it plainly («reading keyboard events
+by any program»), and the xswitcher README calls the project a
+«low-level keylogger» and recommends the setuid bit. goswitch works one
+level higher — inside the IBus input framework: keys reach the engine
+only while it is the chosen input source, and the correction is applied
+through the native committed-text API (`commit_text`). Hence: no access
+to input devices whatsoever, no udev rules, no shell extensions, no
+root — until goswitch is chosen as the input source, the typed input is
+unavailable to the daemon by construction. Of the six, only lay tries
+IBus — and not as its main mode.
+
+Honestly stating what goswitch lacks. Editing through evdev+uinput
+requires neither surrounding text nor an accessibility tree, so where
+our autocorrect layer stays silent (see above), theirs has no obligation
+to. Beyond layout flipping, WaySwitch fixes typos (double capitals,
+«ю»/«б» typed in place of period and comma, glued particles), performs
+transliteration and numbers-as-words, and carries frequency dictionaries
+of ~50 thousand words; lay builds a configurable rule graph with
+priorities. WaySwitch, lay and HumanType cover KDE, Sway, Hyprland and
+X11; goswitch is limited to GNOME Wayland, the EN↔RU pair, and fields
+that expose surrounding text.
+
+What goswitch offers instead: strictly user-session privileges — no
+input device, udev rule, shell extension or setuid bit is needed at
+install time or at runtime; deterministic layout tables instead of
+statistical models — manual gestures always correct, predictably, and
+mixed-script text inverts character by character; the tray menu, switch
+sounds, config hot reload with a strict decoder, `goswitchctl selfcheck`,
+idempotent installation that restores the previous input sources on
+removal. The implementation is a static Go binary (stdlib and godbus)
+auditable in an evening; the MIT license — without lay's non-commercial
+caveat and without copyleft (xswitcher is AGPL-3, layout-switcher is
+GPL-3).
+
 ## Documentation
 
 - [docs/SPEC.md](docs/SPEC.md) — the full technical specification;
