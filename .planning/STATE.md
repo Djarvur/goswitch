@@ -152,6 +152,7 @@ Recent decisions affecting current work:
 |---|-------------|------|--------|-----------|
 | 261108-o4k | README: мотивационная вводная часть + ироничное сопроводительное письмо (docs/PROMO.md) | 2026-11-08 | 41eae66 | [261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir](./quick/261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir/) |
 | 261108-qwa | Релизы: linux/arm64 в оба билда goreleaser (A7 исполнен, запрос владельца 2026-11-08) + обе архитектуры в README RU/EN | 2026-11-08 | b485d2f | [261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi](./quick/261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi/) |
+| 261109-iqr | README RU/EN: раздел «Альтернативы» (6 проектов по исходникам) + docs/IDEAS.md — реестр 32 идей для заимствования | 2026-11-09 | 9a8a3c2 | [261109-iqr-alternatives-readme-ideas-registry](./quick/261109-iqr-alternatives-readme-ideas-registry/) |
 
 ## Deferred Items
 
@@ -169,8 +170,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-08T16:45:00Z
-Stopped at: Quick task 261108-qwa завершён — arm64 в релизах (2 коммита: 9240d28, b485d2f; снапшот-verify зелёный, mise run ci зелёный); публикация arm64 — ближайшим релизным тегом; next: /gsd-new-milestone
+Last session: 2026-11-09T11:20:00Z
+Stopped at: Quick task 261109-iqr завершён — README RU/EN получили раздел «Альтернативы» (6 проектов изучены по исходникам, клоны /tmp/goswitch-alt-study) + docs/IDEAS.md (32 идеи P1–P3); ворота build/vet/test-race/lint/tidy зелёные; next: /gsd-new-milestone (вход — P1-идеи IDEA-06…09, 18–20)
 Resume file: None
 
 ## Operator Next Steps
