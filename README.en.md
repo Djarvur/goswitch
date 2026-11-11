@@ -51,6 +51,30 @@ It runs as an **IBus input method engine** in your user session:
 - a systemd user session (standard on Ubuntu);
 - linux/amd64 or linux/arm64 (architectures of the release binaries).
 
+### Tested on
+
+The product was written and verified on **Ubuntu 24.04**: GNOME 46,
+Wayland, IBus 1.5.29, systemd 255 — it is both the author's daily
+working session (amd64, where the daemon runs all the time) and the
+system of the e2e stand VM, where the live-check matrix is run on
+manual dispatch; the numbers in the Performance section below were
+measured on the same environment. Release binaries are built for
+linux/arm64 too, but there has been no live arm64 verification.
+
+### Expected to work
+
+In any distro where GNOME runs on Wayland with IBus as the standard
+input framework (GNOME's own default): Fedora Workstation, Debian with
+GNOME, Arch, openSUSE. The daemon needs no Ubuntu packages — only the
+session's standard interfaces (IBus, the systemd user unit, AT-SPI,
+gsettings). GNOME newer than 46 talks to the daemon over the same
+interfaces, but there has been no live verification on those versions —
+reports of it working (and of it not working) are welcome. Sessions
+without IBus are not claimed — KDE Plasma, Sway, Hyprland and other
+wlroots compositors usually run fcitx5 or no input framework at all
+(see the Alternatives section below for those) — nor are X11 sessions:
+all live verification of goswitch was done on Wayland.
+
 ## Install
 
 Everything — the IBus component, the systemd user unit, the input-source
