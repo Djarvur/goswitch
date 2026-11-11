@@ -152,6 +152,7 @@ Recent decisions affecting current work:
 |---|-------------|------|--------|-----------|
 | 261108-o4k | README: мотивационная вводная часть + ироничное сопроводительное письмо (docs/PROMO.md) | 2026-11-08 | 41eae66 | [261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir](./quick/261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir/) |
 | 261108-qwa | Релизы: linux/arm64 в оба билда goreleaser (A7 исполнен, запрос владельца 2026-11-08) + обе архитектуры в README RU/EN | 2026-11-08 | b485d2f | [261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi](./quick/261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi/) |
+| 261111-i9r | README RU/EN: «Протестировано»/«Где предположительно заработает» — Ubuntu 24.04/GNOME 46 + критерий GNOME-on-Wayland-с-IBus, границы arm64/GNOME>46/без-IBus/X11 | 2026-11-11 | 4511608 | [261111-distro-info-readme](./quick/261111-distro-info-readme/) |
 
 ## Deferred Items
 
@@ -169,8 +170,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-08T16:45:00Z
-Stopped at: Quick task 261108-qwa завершён — arm64 в релизах (2 коммита: 9240d28, b485d2f; снапшот-verify зелёный, mise run ci зелёный); публикация arm64 — ближайшим релизным тегом; next: /gsd-new-milestone
+Last session: 2026-11-11T00:00:00Z
+Stopped at: Quick task 261111-i9r завершён — README RU/EN получили «Протестировано»/«Где предположительно заработает» (Ubuntu 24.04/GNOME 46 + границы arm64/GNOME>46/без-IBus/X11), PR #33; смежный PR #32 («Альтернативы» + docs/IDEAS.md) ждёт слияния; next: /gsd-new-milestone (вход — P1-идеи docs/IDEAS.md)
 Resume file: None
 
 ## Operator Next Steps
