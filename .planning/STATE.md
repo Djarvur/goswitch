@@ -152,7 +152,7 @@ Recent decisions affecting current work:
 |---|-------------|------|--------|-----------|
 | 261108-o4k | README: мотивационная вводная часть + ироничное сопроводительное письмо (docs/PROMO.md) | 2026-11-08 | 41eae66 | [261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir](./quick/261108-o4k-readme-motivatsionnaya-vvodnaya-chast-ir/) |
 | 261108-qwa | Релизы: linux/arm64 в оба билда goreleaser (A7 исполнен, запрос владельца 2026-11-08) + обе архитектуры в README RU/EN | 2026-11-08 | b485d2f | [261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi](./quick/261108-qwa-relizy-dobavit-linux-arm64-k-reliznym-bi/) |
-| 261111-i9r | README RU/EN: «Протестировано»/«Где предположительно заработает» — Ubuntu 24.04/GNOME 46 + критерий GNOME-on-Wayland-с-IBus, границы arm64/GNOME>46/без-IBus/X11 | 2026-11-11 | 4511608 | [261111-distro-info-readme](./quick/261111-distro-info-readme/) |
+| 261111-i9r | README RU/EN: «Протестировано»/«Где предположительно заработает» — Ubuntu 24.04/GNOME 46 + критерий GNOME-on-Wayland-с-IBus, границы arm64/GNOME>46/без-IBus/X11 | 2026-11-11 | cc61ecc | [261111-distro-info-readme](./quick/261111-distro-info-readme/) |
 
 ## Deferred Items
 
