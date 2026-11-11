@@ -172,7 +172,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-11-11T00:00:00Z
-Stopped at: Quick task 261111-i9r завершён — README RU/EN получили «Протестировано»/«Где предположительно заработает» (Ubuntu 24.04/GNOME 46 + границы arm64/GNOME>46/без-IBus/X11); PR #32 («Альтернативы» + docs/IDEAS.md) слит 2026-11-11; по поручению владельца после слияния #33 — релизный тег v1.2.3 (docs-only patch); next: /gsd-new-milestone (вход — P1-идеи docs/IDEAS.md)
+Stopped at: Quick task 261111-i9r завершён — README RU/EN получили «Протестировано»/«Где предположительно заработает» (Ubuntu 24.04/GNOME 46 + границы arm64/GNOME>46/без-IBus/X11); PR #32 («Альтернативы» + docs/IDEAS.md) слит 2026-11-11; релиз v1.2.3 опубликован 2026-11-11 10:27 UTC (Latest, оба архива + checksums); next: /gsd-new-milestone (вход — P1-идеи docs/IDEAS.md)
 Resume file: None
 
 ## Operator Next Steps
